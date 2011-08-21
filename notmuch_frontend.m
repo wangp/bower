@@ -26,33 +26,50 @@
 main(!IO) :-
     io.command_line_arguments(Args, !IO),
     ( Args = ["--show-thread", TId] ->
-        Command = "notmuch show --format=json thread:" ++ TId,
-        popen(Command, Res, !IO),
-        (
-            Res = ok(String),
-            parse_json(String, ParseResult),
-            (
-                ParseResult = ok(JSON),
-                ( JSON = array([List]) ->
-                    show_message_list(List, !IO)
-                ; JSON = array([]) ->
-                    io.write_string("no matches\n", !IO)
-                ;
-                    notmuch_json_error
-                )
-            ;
-                ParseResult = error(_, _, _),
-                io.write(ParseResult, !IO),
-                io.nl(!IO)
-            )
-        ;
-            Res = error(_)
-        )
+        run_notmuch(["show", "--format=json", "thread:" ++ TId],
+            show_results, !IO)
+    ; Args = ["--search" | Terms] ->
+        run_notmuch(["search", "--format=json" | Terms],
+            search_results, !IO)
     ;
         io.write_string("command line error\n", !IO)
     ).
 
+:- pred run_notmuch(list(string)::in,
+    pred(json, io, io)::in(pred(in, di, uo) is det), io::di, io::uo) is det.
+
+run_notmuch(Args, P, !IO) :-
+    % XXX escape shell characters
+    Command = ["notmuch" | Args],
+    CommandString = string.join_list(" ", Command),
+    popen(CommandString, Res, !IO),
+    (
+        Res = ok(String),
+        parse_json(String, ParseResult),
+        (
+            ParseResult = ok(JSON),
+            P(JSON, !IO)
+        ;
+            ParseResult = error(_, _, _),
+            io.write(ParseResult, !IO),
+            io.nl(!IO)
+        )
+    ;
+        Res = error(_)
+    ).
+
 %-----------------------------------------------------------------------------%
+
+:- pred show_results(json::in, io::di, io::uo) is det.
+
+show_results(JSON, !IO) :-
+    ( JSON = array([List]) ->
+        show_message_list(List, !IO)
+    ; JSON = array([]) ->
+        io.write_string("no matches\n", !IO)
+    ;
+        notmuch_json_error
+    ).
 
 :- pred show_message_list(json::in, io::di, io::uo) is det.
 
@@ -135,6 +152,49 @@ write_hdr(Header, Value, !IO) :-
 write_nl(String, !IO) :-
     io.write_string(String, !IO),
     io.nl(!IO).
+
+%-----------------------------------------------------------------------------%
+
+:- pred search_results(json::in, io::di, io::uo) is det.
+
+search_results(Json, !IO) :-
+    ( Json = array(List) ->
+        list.foldl(search_result_thread, List, !IO)
+    ;
+        notmuch_json_error
+    ).
+
+:- pred search_result_thread(json::in, io::di, io::uo) is det.
+
+search_result_thread(Json, !IO) :-
+    (
+        Json/"thread" = string(ThreadId),
+        Json/"timestamp" = int(Timestamp),
+        Json/"authors" = string(Authors),
+        Json/"subject" = string(Subject),
+        Json/"tags" = array(Tags),
+        Json/"matched" = int(_Matched),
+        Json/"total" = int(_Total)
+    ->
+        io.write_string("thread:", !IO),
+        io.write_string(ThreadId, !IO),
+        io.nl(!IO),
+        io.write_string("timestamp: ", !IO),
+        io.write_int(Timestamp, !IO),
+        io.nl(!IO),
+        io.write_string("Subject: ", !IO),
+        io.write_string(Subject, !IO),
+        io.nl(!IO),
+        io.write_string("Authors: ", !IO),
+        io.write_string(Authors, !IO),
+        io.nl(!IO),
+        io.write_string("tags:", !IO),
+        io.write(Tags, !IO),
+        io.nl(!IO),
+        io.nl(!IO)
+    ;
+        notmuch_json_error
+    ).
 
 %-----------------------------------------------------------------------------%
 
