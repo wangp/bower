@@ -1,0 +1,1 @@
+MCFLAGS-popen += --no-ansi-c
