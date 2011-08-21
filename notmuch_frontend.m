@@ -12,8 +12,10 @@
 
 :- implementation.
 
+:- import_module cord.
 :- import_module list.
 :- import_module map.
+:- import_module maybe.
 :- import_module parsing_utils.
 :- import_module require.
 :- import_module string.
@@ -23,178 +25,190 @@
 
 %-----------------------------------------------------------------------------%
 
+:- type thread
+    --->    thread(
+                t_id        :: string,
+                t_timestamp :: int,
+                t_authors   :: string,
+                t_subject   :: string,
+                t_tags      :: list(string),
+                t_matched   :: int,
+                t_total     :: int
+            ).
+
+:- type message
+    --->    message(
+                m_id        :: string,
+                m_subject   :: string,
+                m_from      :: string,
+                m_to        :: string,
+                m_date      :: string,
+                m_body      :: cord(content)
+            ).
+
+:- type content
+    --->    content(
+                c_id        :: int,
+                c_type      :: string,
+                c_content   :: maybe(string)
+            ).
+
+%-----------------------------------------------------------------------------%
+
 main(!IO) :-
     io.command_line_arguments(Args, !IO),
     ( Args = ["--show-thread", TId] ->
         run_notmuch(["show", "--format=json", "thread:" ++ TId],
-            show_results, !IO)
+            parse_messages_list, Messages : list(message), !IO),
+        io.write(Messages, !IO),
+        io.nl(!IO)
     ; Args = ["--search" | Terms] ->
         run_notmuch(["search", "--format=json" | Terms],
-            search_results, !IO)
+            parse_threads_list, Threads, !IO),
+        io.write(Threads, !IO),
+        io.nl(!IO)
     ;
         io.write_string("command line error\n", !IO)
     ).
 
-:- pred run_notmuch(list(string)::in,
-    pred(json, io, io)::in(pred(in, di, uo) is det), io::di, io::uo) is det.
+:- pred run_notmuch(list(string)::in, pred(json, T)::in(pred(in, out) is det),
+    T::out, io::di, io::uo) is det.
 
-run_notmuch(Args, P, !IO) :-
+run_notmuch(Args, P, Result, !IO) :-
     % XXX escape shell characters
     Command = ["notmuch" | Args],
     CommandString = string.join_list(" ", Command),
-    popen(CommandString, Res, !IO),
+    popen(CommandString, CommandResult, !IO),
     (
-        Res = ok(String),
+        CommandResult = ok(String),
         parse_json(String, ParseResult),
         (
             ParseResult = ok(JSON),
-            P(JSON, !IO)
+            P(JSON, Result)
         ;
             ParseResult = error(_, _, _),
-            io.write(ParseResult, !IO),
-            io.nl(!IO)
+            error(string(ParseResult))
         )
     ;
-        Res = error(_)
+        CommandResult = error(_),
+        error(string(CommandResult))
     ).
 
 %-----------------------------------------------------------------------------%
 
-:- pred show_results(json::in, io::di, io::uo) is det.
+:- pred parse_messages_list(json::in, list(message)::out) is det.
 
-show_results(JSON, !IO) :-
+parse_messages_list(JSON, Messages) :-
     ( JSON = array([List]) ->
-        show_message_list(List, !IO)
+        parse_messages_list(List, cord.init, Cord),
+        Messages = list(Cord)
     ; JSON = array([]) ->
-        io.write_string("no matches\n", !IO)
+        Messages = []
     ;
         notmuch_json_error
     ).
 
-:- pred show_message_list(json::in, io::di, io::uo) is det.
+:- pred parse_messages_list(json::in, cord(message)::in, cord(message)::out)
+    is det.
 
-show_message_list(JSON, !IO) :-
+parse_messages_list(JSON, !Messages) :-
     ( JSON = array(List) ->
-        list.foldl(show_message_cons_list, List, !IO)
+        list.foldl(parse_messages_cons_list, List, !Messages)
     ;
         notmuch_json_error
     ).
 
-:- pred show_message_cons_list(json::in, io::di, io::uo) is det.
+:- pred parse_messages_cons_list(json::in,
+    cord(message)::in, cord(message)::out) is det.
 
-show_message_cons_list(JSON, !IO) :-
+parse_messages_cons_list(JSON, !Messages) :-
     ( JSON = array([]) ->
         true
     ; JSON = array([Head | Tail]) ->
         ( Head = array(_) ->
-            show_message_cons_list(Head, !IO)
+            parse_messages_cons_list(Head, !Messages)
         ;
-            show_message(Head, !IO)
+            parse_message(Head, Message),
+            snoc(Message, !Messages)
         ),
-        show_message_cons_list(array(Tail), !IO)
+        parse_messages_cons_list(array(Tail), !Messages)
     ;
         notmuch_json_error
     ).
 
-:- pred show_message(json::in, io::di, io::uo) is det.
+:- pred parse_message(json::in, message::out) is det.
 
-show_message(JSON, !IO) :-
+parse_message(JSON, Message) :-
     (
+        JSON/"id" = string(Id),
         JSON/"headers" = Headers,
         Headers/"Subject" = string(Subject),
         Headers/"From" = string(From),
+        Headers/"To" = string(To),
         Headers/"Date" = string(Date),
-        JSON/"body" = array(Body)
+        JSON/"body" = array(BodyList),
+        list.foldl(parse_content, BodyList, cord.init, Body)
     ->
-        write_hdr("Subject: ", Subject, !IO),
-        write_hdr("From: ", From, !IO),
-        write_hdr("Date: ", Date, !IO),
-        io.nl(!IO),
-        list.foldl(show_content, Body, !IO)
+        Message = message(Id, Subject, From, To, Date, Body)
     ;
         notmuch_json_error
     ).
 
-:- pred show_content(json::in, io::di, io::uo) is det.
+:- pred parse_content(json::in, cord(content)::in, cord(content)::out) is det.
 
-show_content(JSON, !IO) :-
+parse_content(JSON, !Contents) :-
     (
         JSON/"id" = int(Id),
         JSON/"content-type" = string(ContentType)
     ->
         ( JSON/"content" = string(ContentString) ->
-            Lines = string.split_at_string("\\n", ContentString),
-            list.foldl(write_nl, Lines, !IO)
+            Content = content(Id, ContentType, yes(ContentString)),
+            snoc(Content, !Contents)
         ; JSON/"content" = array(SubParts) ->
-            list.foldl(show_content, SubParts, !IO)
+            list.foldl(parse_content, SubParts, !Contents)
         ;
             % "content" is unavailable for non-text parts.
             % We can those by running notmuch show --part=N id:NNN
-            io.write_string("[", !IO),
-            io.write_string(ContentType, !IO),
-            io.write_string(" part id=", !IO),
-            io.write_int(Id, !IO),
-            io.write_string("]\n", !IO)
+            Content = content(Id, ContentType, no),
+            snoc(Content, !Contents)
         )
     ;
         notmuch_json_error
     ).
 
-:- pred write_hdr(string::in, string::in, io::di, io::uo) is det.
-
-write_hdr(Header, Value, !IO) :-
-    io.write_string(Header, !IO),
-    io.write_string(Value, !IO),
-    io.nl(!IO).
-
-:- pred write_nl(string::in, io::di, io::uo) is det.
-
-write_nl(String, !IO) :-
-    io.write_string(String, !IO),
-    io.nl(!IO).
-
 %-----------------------------------------------------------------------------%
 
-:- pred search_results(json::in, io::di, io::uo) is det.
+:- pred parse_threads_list(json::in, list(thread)::out) is det.
 
-search_results(Json, !IO) :-
+parse_threads_list(Json, Threads) :-
     ( Json = array(List) ->
-        list.foldl(search_result_thread, List, !IO)
+        list.map(parse_thread, List, Threads)
     ;
         notmuch_json_error
     ).
 
-:- pred search_result_thread(json::in, io::di, io::uo) is det.
+:- pred parse_thread(json::in, thread::out) is det.
 
-search_result_thread(Json, !IO) :-
+parse_thread(Json, Thread) :-
     (
-        Json/"thread" = string(ThreadId),
+        Json/"thread" = string(Id),
         Json/"timestamp" = int(Timestamp),
         Json/"authors" = string(Authors),
         Json/"subject" = string(Subject),
-        Json/"tags" = array(Tags),
-        Json/"matched" = int(_Matched),
-        Json/"total" = int(_Total)
+        Json/"tags" = array(TagsList),
+        Json/"matched" = int(Matched),
+        Json/"total" = int(Total),
+        list.map(parse_tag, TagsList, Tags)
     ->
-        io.write_string("thread:", !IO),
-        io.write_string(ThreadId, !IO),
-        io.nl(!IO),
-        io.write_string("timestamp: ", !IO),
-        io.write_int(Timestamp, !IO),
-        io.nl(!IO),
-        io.write_string("Subject: ", !IO),
-        io.write_string(Subject, !IO),
-        io.nl(!IO),
-        io.write_string("Authors: ", !IO),
-        io.write_string(Authors, !IO),
-        io.nl(!IO),
-        io.write_string("tags:", !IO),
-        io.write(Tags, !IO),
-        io.nl(!IO),
-        io.nl(!IO)
+        Thread = thread(Id, Timestamp, Authors, Subject, Tags, Matched, Total)
     ;
         notmuch_json_error
     ).
+
+:- pred parse_tag(json::in, string::out) is semidet.
+
+parse_tag(Json, Tag) :-
+    Json = string(Tag).
 
 %-----------------------------------------------------------------------------%
 
@@ -202,6 +216,10 @@ search_result_thread(Json, !IO) :-
 
 map(Map) / Key = Value :-
     map.search(Map, Key, Value).
+
+:- pred snoc(T::in, cord(T)::in, cord(T)::out) is det.
+
+snoc(X, C, snoc(C, X)).
 
 :- pred notmuch_json_error is erroneous.
 
