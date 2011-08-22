@@ -20,38 +20,9 @@
 :- import_module require.
 :- import_module string.
 
+:- import_module data.
 :- import_module json.
 :- import_module popen.
-
-%-----------------------------------------------------------------------------%
-
-:- type thread
-    --->    thread(
-                t_id        :: string,
-                t_timestamp :: int,
-                t_authors   :: string,
-                t_subject   :: string,
-                t_tags      :: list(string),
-                t_matched   :: int,
-                t_total     :: int
-            ).
-
-:- type message
-    --->    message(
-                m_id        :: string,
-                m_subject   :: string,
-                m_from      :: string,
-                m_to        :: string,
-                m_date      :: string,
-                m_body      :: cord(content)
-            ).
-
-:- type content
-    --->    content(
-                c_id        :: int,
-                c_type      :: string,
-                c_content   :: maybe(string)
-            ).
 
 %-----------------------------------------------------------------------------%
 
@@ -216,10 +187,6 @@ parse_tag(Json, Tag) :-
 
 map(Map) / Key = Value :-
     map.search(Map, Key, Value).
-
-:- pred snoc(T::in, cord(T)::in, cord(T)::out) is det.
-
-snoc(X, C, snoc(C, X)).
 
 :- pred notmuch_json_error is erroneous.
 
