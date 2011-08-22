@@ -30,6 +30,7 @@
 :- implementation.
 
 :- import_module pair.
+:- import_module string.
 :- import_module unit.
 
 %-----------------------------------------------------------------------------%
@@ -89,9 +90,13 @@ parse_key_value(Src, Key - Value, !PS) :-
 
 :- pred parse_string(src::in, string::out, ps::in, ps::out) is semidet.
 
-parse_string(Src, String, !PS) :-
-    % XXX backslash escapes are left in
-    string_literal('"', Src, String, !PS).
+parse_string(Src, !:String, !PS) :-
+    string_literal('"', Src, !:String, !PS),
+    % XXX do backslash unescaping properly
+    string.replace_all(!.String, "\\n", "\n", !:String),
+    string.replace_all(!.String, "\\t", "\t", !:String),
+    string.replace_all(!.String, "\\""", "\"", !:String),
+    string.replace_all(!.String, "\\\\", "\\", !:String).
 
 :- pred parse_int(src::in, int::out, ps::in, ps::out) is semidet.
 
