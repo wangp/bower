@@ -132,15 +132,21 @@ parse_content(JSON, !Contents) :-
         JSON/"id" = int(Id),
         JSON/"content-type" = string(ContentType)
     ->
+        ( JSON/"filename" = string(Filename) ->
+            MaybeFilename = yes(Filename)
+        ;
+            MaybeFilename = no
+        ),
         ( JSON/"content" = string(ContentString) ->
-            Content = content(Id, ContentType, yes(ContentString)),
+            Content = content(Id, ContentType, yes(ContentString),
+                MaybeFilename),
             snoc(Content, !Contents)
         ; JSON/"content" = array(SubParts) ->
             list.foldl(parse_content, SubParts, !Contents)
         ;
             % "content" is unavailable for non-text parts.
             % We can those by running notmuch show --part=N id:NNN
-            Content = content(Id, ContentType, no),
+            Content = content(Id, ContentType, no, MaybeFilename),
             snoc(Content, !Contents)
         )
     ;

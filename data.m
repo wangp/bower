@@ -34,7 +34,8 @@
     --->    content(
                 c_id        :: int,
                 c_type      :: string,
-                c_content   :: maybe(string)
+                c_content   :: maybe(string),
+                c_filename  :: maybe(string)
             ).
 
 :- pred snoc(T::in, cord(T)::in, cord(T)::out) is det.
