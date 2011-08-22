@@ -22,6 +22,7 @@
 
 :- import_module data.
 :- import_module json.
+:- import_module pager.
 :- import_module popen.
 
 %-----------------------------------------------------------------------------%
@@ -33,6 +34,10 @@ main(!IO) :-
             parse_messages_list, Messages : list(message), !IO),
         io.write(Messages, !IO),
         io.nl(!IO)
+    ; Args = ["--pager", TId] ->
+        run_notmuch(["show", "--format=json", "thread:" ++ TId],
+            parse_messages_list, Messages : list(message), !IO),
+        pager(Messages, !IO)
     ; Args = ["--search" | Terms] ->
         run_notmuch(["search", "--format=json" | Terms],
             parse_threads_list, Threads, !IO),
