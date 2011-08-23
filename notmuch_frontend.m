@@ -21,6 +21,7 @@
 :- import_module string.
 
 :- import_module data.
+:- import_module index_view.
 :- import_module json.
 :- import_module pager.
 :- import_module popen.
@@ -41,8 +42,11 @@ main(!IO) :-
     ; Args = ["--search" | Terms] ->
         run_notmuch(["search", "--format=json" | Terms],
             parse_threads_list, Threads, !IO),
-        io.write(Threads, !IO),
-        io.nl(!IO)
+        io.write(Threads, !IO)
+    ; Args = ["--index" | Terms] ->
+        run_notmuch(["search", "--format=json" | Terms],
+            parse_threads_list, Threads, !IO),
+        index_view(Threads, !IO)
     ;
         io.write_string("command line error\n", !IO)
     ).
