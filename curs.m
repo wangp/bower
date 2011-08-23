@@ -72,9 +72,9 @@
     %
 :- pred addch(attr::in, int::in, io::di, io::uo) is det.
 
-    % Output a string (with the given attributes) and advance the cursor.
+    % Output a string and advance the cursor.
     %
-:- pred addstr(attr::in, string::in, io::di, io::uo) is det.
+:- pred addstr(string::in, io::di, io::uo) is det.
 
     % Turn on/off or set attributes that will be applied by default.
     %
@@ -263,7 +263,7 @@
         % Note that char codes are passed rather than plain chars.
         %
     :- pred addch(panel::in, attr::in, int::in, io::di, io::uo) is det.
-    :- pred addstr(panel::in, attr::in, string::in, io::di, io::uo) is det.
+    :- pred addstr(panel::in, string::in, io::di, io::uo) is det.
 
         % Turn on/off or set attributes that will be applied by default.
         %
@@ -518,10 +518,13 @@ session(P, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-addstr(Attr, Str, !IO) :-
-    string.foldl((pred(Char::in, !.IO::di, !:IO::uo) is det :-
-            addch(Attr, char.to_int(Char), !IO)
-        ), Str, !IO).
+:- pragma foreign_proc("C",
+    addstr(Str::in, IO0::di, IO::uo),
+    [will_not_call_mercury, promise_pure],
+"
+    addstr(Str);
+    IO = IO0;
+").
 
 %-----------------------------------------------------------------------------%
 
@@ -1173,13 +1176,13 @@ addstr(Attr, Str, !IO) :-
 
     %-------------------------------------------------------------------------%
 
-    addstr(Panel, Attr, Str, !IO) :-
-        string.foldl(
-            ( pred(Char::in, !.IO::di, !:IO::uo) is det :-
-                addch(Panel, Attr, char.to_int(Char), !IO)
-            ),
-            Str, !IO
-        ).
+    :- pragma foreign_proc("C",
+        addstr(Panel::in, Str::in, IO0::di, IO::uo),
+        [will_not_call_mercury, promise_pure],
+    "
+        waddstr(panel_window(Panel), Str);
+        IO = IO0;
+    ").
 
     %-------------------------------------------------------------------------%
 
