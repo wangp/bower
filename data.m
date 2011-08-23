@@ -11,7 +11,7 @@
 
 :- type thread
     --->    thread(
-                t_id        :: string,
+                t_id        :: thread_id,
                 t_timestamp :: int,
                 t_authors   :: string,
                 t_subject   :: string,
@@ -20,15 +20,21 @@
                 t_total     :: int
             ).
 
+:- type thread_id
+    --->    thread_id(string).
+
 :- type message
     --->    message(
-                m_id        :: string,
+                m_id        :: message_id,
                 m_subject   :: string,
                 m_from      :: string,
                 m_to        :: string,
                 m_date      :: string,
                 m_body      :: cord(content)
             ).
+
+:- type message_id
+    --->    message_id(string).
 
 :- type content
     --->    content(

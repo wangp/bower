@@ -125,7 +125,7 @@ parse_message(JSON, Message) :-
         JSON/"body" = array(BodyList),
         list.foldl(parse_content, BodyList, cord.init, Body)
     ->
-        Message = message(Id, Subject, From, To, Date, Body)
+        Message = message(message_id(Id), Subject, From, To, Date, Body)
     ;
         notmuch_json_error
     ).
@@ -182,7 +182,8 @@ parse_thread(Json, Thread) :-
         Json/"total" = int(Total),
         list.map(parse_tag, TagsList, Tags)
     ->
-        Thread = thread(Id, Timestamp, Authors, Subject, Tags, Matched, Total)
+        Thread = thread(thread_id(Id), Timestamp, Authors, Subject, Tags,
+            Matched, Total)
     ;
         notmuch_json_error
     ).
