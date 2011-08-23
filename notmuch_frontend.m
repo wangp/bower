@@ -12,17 +12,30 @@
 
 :- implementation.
 
+:- import_module char.
+:- import_module int.
 :- import_module list.
 :- import_module string.
 
 :- import_module callout.
+:- import_module curs.
+:- import_module curs.panel.
 :- import_module data.
 :- import_module index_view.
 :- import_module pager.
+:- import_module views.
+
+%-----------------------------------------------------------------------------%
+
+:- pragma foreign_decl("C", local,
+"
+    #include <locale.h>
+").
 
 %-----------------------------------------------------------------------------%
 
 main(!IO) :-
+    setlocale(!IO),
     io.command_line_arguments(Args, !IO),
     ( Args = ["--show-thread", TId] ->
         run_notmuch(["show", "--format=json", "thread:" ++ TId],
@@ -40,9 +53,48 @@ main(!IO) :-
     ; Args = ["--index" | Terms] ->
         run_notmuch(["search", "--format=json" | Terms],
             parse_threads_list, Threads, !IO),
-        index_view(Threads, !IO)
+        curs.session(interactive(Threads), !IO)
     ;
         io.write_string("command line error\n", !IO)
+    ).
+
+:- pred setlocale(io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    setlocale(IO0::di, IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
+"
+    setlocale(LC_ALL, """");
+    IO = IO0;
+").
+
+:- pred interactive(list(thread)::in, io::di, io::uo) is det.
+
+interactive(Threads, !IO) :-
+    curs.rows_cols(Rows, Cols, !IO),
+    curs.panel.new(Rows - 1, Cols, 0, 0, normal, MainPanel, !IO),
+    BarAttr = fg_bg(white, blue),
+    curs.panel.new(1, Cols, Rows - 2, 0, BarAttr, BarPanel, !IO),
+    curs.panel.hline(BarPanel, char.to_int('-'), Cols, !IO),
+    MsgAttr = fg_bg(red, black) + bold,
+    curs.panel.new(1, Cols, Rows - 1, 0, MsgAttr, MsgEntryPanel, !IO),
+    curs.panel.addstr(MsgEntryPanel, "Hello!", !IO),
+    Panels = panels(Rows, Cols, MainPanel, BarPanel, MsgEntryPanel),
+
+    setup_index_view(Threads, IndexInfo, !IO),
+    interactive_loop(Panels, IndexInfo, !IO).
+
+:- pred interactive_loop(panels::in, index_info::in, io::di, io::uo) is det.
+
+interactive_loop(Panels, IndexInfo, !IO) :-
+    draw_index_view(Panels, IndexInfo, !IO),
+    panel.update_panels(!IO),
+    curs.getch(C, !IO),
+    ( C = char.to_int('q') ->
+        true
+    ;
+        interactive_loop(Panels, IndexInfo, !IO)
     ).
 
 %-----------------------------------------------------------------------------%

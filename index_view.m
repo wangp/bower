@@ -7,8 +7,16 @@
 :- import_module list.
 
 :- import_module data.
+:- import_module views.
 
-:- pred index_view(list(thread)::in, io::di, io::uo) is det.
+%-----------------------------------------------------------------------------%
+
+:- type index_info.
+
+:- pred setup_index_view(list(thread)::in, index_info::out, io::di, io::uo)
+    is det.
+
+:- pred draw_index_view(panels::in, index_info::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -20,10 +28,13 @@
 :- import_module string.
 :- import_module time.
 
-:- import_module ansi_color.
+:- import_module curs.
+:- import_module curs.panel.
 :- import_module time_util.
 
 %-----------------------------------------------------------------------------%
+
+:- type index_info == cord(index_line).
 
 :- type index_line
     --->    index_line(
@@ -56,11 +67,10 @@
 
 %-----------------------------------------------------------------------------%
 
-index_view(Threads, !IO) :-
+setup_index_view(Threads, Lines, !IO) :-
     time(Time, !IO),
     Nowish = localtime(Time),
-    list.foldl(add_thread(Nowish), Threads, cord.init, Lines),
-    cord.foldl_pred(print_line, Lines, !IO).
+    list.foldl(add_thread(Nowish), Threads, cord.init, Lines).
 
 :- pred add_thread(tm::in, thread::in,
     cord(index_line)::in, cord(index_line)::out) is det.
@@ -125,44 +135,56 @@ apply_tag(Tag, !Line) :-
         true
     ).
 
-:- pred print_line(index_line::in, io::di, io::uo) is det.
+%-----------------------------------------------------------------------------%
 
-print_line(Line, !IO) :-
+draw_index_view(Panels, Lines, !IO) :-
+    Panels = panels(_Rows, _Cols, MainPanel, _BarPanel, _MsgEntryPanel),
+    panel.clear(MainPanel, !IO),
+    cord.foldl_pred(draw_index_line(MainPanel), Lines, !IO).
+
+:- pred draw_index_line(panel::in, index_line::in, io::di, io::uo) is det.
+
+draw_index_line(Panel, Line, !IO) :-
     Line = index_line(_Id, _New, Unread, Replied, Flagged, Date, Authors,
         Subject, Total),
-    io.write_string(ansi_bright_blue, !IO),
-    io.write_string(Date, !IO),
-    io.write_string(" ", !IO),
+    % XXX we need to truncate long lines
+    panel.attr_set(Panel, fg(blue) + bold, !IO),
+    panel.addstr(Panel, Date, !IO),
+    panel.addstr(Panel, " ", !IO),
     (
         Unread = unread,
-        Base = ansi_bright_white
+        Base = bold
     ;
         Unread = read,
-        Base = ansi_reset
+        Base = normal
     ),
-    io.write_string(Base, !IO),
+    panel.attr_set(Panel, Base, !IO),
     (
         Replied = replied,
-        io.write_string("r", !IO)
+        panel.addstr(Panel, "r", !IO)
     ;
         Replied = not_replied,
-        io.write_string(" ", !IO)
+        panel.addstr(Panel, " ", !IO)
     ),
     (
         Flagged = flagged,
-        io.write_string(ansi_bright_red, !IO),
-        io.write_string("! ", !IO)
+        panel.attr_set(Panel, fg(red) + bold, !IO),
+        panel.addstr(Panel, "! ", !IO)
     ;
         Flagged = unflagged,
-        io.write_string("  ", !IO)
+        panel.addstr(Panel, "  ", !IO)
     ),
-    io.write_string(ansi_cyan, !IO),
-    io.write_string(Authors, !IO),
-    io.write_string(ansi_green, !IO),
-    io.format(" %-3d ", [i(Total)], !IO),
-    io.write_string(Base, !IO),
-    io.write_string(Subject, !IO),
-    io.nl(!IO).
+    panel.attr_set(Panel, fg(cyan) + Base, !IO),
+    panel.addstr(Panel, Authors, !IO),
+    panel.attr_set(Panel, fg(green) + Base, !IO),
+    panel.addstr(Panel, format(" %-3d ", [i(Total)]), !IO),
+    panel.attr_set(Panel, Base, !IO),
+    panel.addstr(Panel, Subject, !IO),
+    panel.addstr(Panel, "\n", !IO).
+
+:- func fg(colour) = attr.
+
+fg(C) = curs.fg_bg(C, black).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
