@@ -1,1 +1,3 @@
 MCFLAGS-popen += --no-ansi-c
+
+CFLAGS-time_util += -D_POSIX_SOURCE
