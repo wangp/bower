@@ -24,6 +24,8 @@
 :- import_module maybe.
 :- import_module string.
 
+:- import_module ansi_color.
+
 %-----------------------------------------------------------------------------%
 
 :- type pager_line
@@ -204,10 +206,10 @@ print_line(Line, !IO) :-
     (
         Line = header(Header, Value),
         io.write_string("  ", !IO),
-        io.write_string(ansi_red, !IO),
+        io.write_string(ansi_bright_red, !IO),
         io.write_string(Header, !IO),
         io.write_string(": ", !IO),
-        io.write_string(ansi_default, !IO),
+        io.write_string(ansi_reset, !IO),
         io.write_string(Value, !IO),
         io.nl(!IO)
     ;
@@ -215,13 +217,13 @@ print_line(Line, !IO) :-
         Color = quote_level_to_color(QuoteLevel),
         io.write_string(Color, !IO),
         io.write_string(Text, !IO),
-        io.write_string(ansi_default, !IO),
+        io.write_string(ansi_reset, !IO),
         io.nl(!IO)
     ;
         Line = attachment(Content),
         Content ^ c_type = ContentType,
         Content ^ c_filename = MaybeFilename,
-        io.write_string(ansi_magenta, !IO),
+        io.write_string(ansi_bright_magenta, !IO),
         io.write_string("[-- ", !IO),
         io.write_string(ContentType, !IO),
         (
@@ -232,13 +234,13 @@ print_line(Line, !IO) :-
             MaybeFilename = no
         ),
         io.write_string(" --]", !IO),
-        io.write_string(ansi_default, !IO),
+        io.write_string(ansi_reset, !IO),
         io.nl(!IO)
     ;
         Line = message_separator,
-        io.write_string(ansi_blue, !IO),
+        io.write_string(ansi_bright_blue, !IO),
         io.write_string("~", !IO),
-        io.write_string(ansi_default, !IO),
+        io.write_string(ansi_reset, !IO),
         io.nl(!IO)
     ).
 
@@ -246,34 +248,12 @@ print_line(Line, !IO) :-
 
 quote_level_to_color(quote_level(QuoteLevel)) =
     ( QuoteLevel = 0 ->
-        ansi_default
+        ansi_reset
     ; int.odd(QuoteLevel) ->
-        ansi_blue
+        ansi_bright_blue
     ;
-        ansi_darkgreen
+        ansi_green
     ).
-
-%-----------------------------------------------------------------------------%
-
-:- func ansi_default = string.
-:- func ansi_darkred = string.
-:- func ansi_red = string.
-:- func ansi_darkgreen = string.
-:- func ansi_green = string.
-:- func ansi_yellow = string.
-:- func ansi_blue = string.
-:- func ansi_magenta = string.
-:- func ansi_cyan = string.
-
-ansi_default    = "\x1B\[0m".
-ansi_darkred    = "\x1B\[31m".
-ansi_red        = "\x1B\[31;01m".
-ansi_darkgreen  = "\x1B\[32m".
-ansi_green      = "\x1B\[32;01m".
-ansi_yellow     = "\x1B\[33;01m".
-ansi_blue       = "\x1B\[34;01m".
-ansi_magenta    = "\x1B\[35;01m".
-ansi_cyan       = "\x1B\[36;01m".
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
