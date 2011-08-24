@@ -63,7 +63,12 @@
     %
 :- pred move(int::in, int::in, io::di, io::uo) is det.
 
+    % Erase the whole display.
+    %
+:- pred erase(io::di, io::uo) is det.
+
     % Clear the whole display.
+    % Unlike erase, the display will be repainted from scratch.
     %
 :- pred clear(io::di, io::uo) is det.
 
@@ -250,7 +255,12 @@
         %
     :- pred relocate(panel::in, int::in, int::in, io::di, io::uo) is det.
 
-        % Clear a panel.
+        % Erase a panel.
+        %
+    :- pred erase(panel::in, io::di, io::uo) is det.
+
+        % Clear a panel.  Unlike erase, the panel will be repainted from
+        % scratch.
         %
     :- pred clear(panel::in, io::di, io::uo) is det.
 
@@ -493,6 +503,16 @@ session(P, !IO) :-
     [will_not_call_mercury, promise_pure],
 "
     move(Row, Col);
+    IO = IO0;
+").
+
+%-----------------------------------------------------------------------------%
+
+:- pragma foreign_proc("C",
+    erase(IO0::di, IO::uo),
+    [will_not_call_mercury, promise_pure],
+"
+    erase();
     IO = IO0;
 ").
 
@@ -1141,6 +1161,16 @@ session(P, !IO) :-
         [will_not_call_mercury, promise_pure],
     "
         move_panel(Panel, Row, Col);
+        IO = IO0;
+    ").
+
+    %-------------------------------------------------------------------------%
+
+    :- pragma foreign_proc("C",
+        erase(Panel::in, IO0::di, IO::uo),
+        [will_not_call_mercury, promise_pure],
+    "
+        werase(panel_window(Panel));
         IO = IO0;
     ").
 
