@@ -3,14 +3,24 @@
 :- module pager.
 :- interface.
 
+:- import_module char.
 :- import_module io.
 :- import_module list.
 
 :- import_module data.
+:- import_module screen.
 
 %-----------------------------------------------------------------------------%
 
-:- pred pager(list(message)::in, io::di, io::uo) is det.
+:- type pager_info.
+
+:- pred setup_pager(int::in, list(message)::in, pager_info::out,
+    io::di, io::uo) is det.
+
+:- pred pager_input(screen::in, char::in, pager_info::in, pager_info::out)
+    is det.
+
+:- pred draw_pager(screen::in, pager_info::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -18,15 +28,22 @@
 :- implementation.
 
 :- import_module bool.
-:- import_module char.
 :- import_module cord.
 :- import_module int.
 :- import_module maybe.
 :- import_module string.
 
-:- import_module ansi_color.
+:- import_module curs.
+:- import_module curs.panel.
 
 %-----------------------------------------------------------------------------%
+
+:- type pager_info
+    --->    pager_info(
+                p_lines     :: list(pager_line),
+                p_numlines  :: int,
+                p_top       :: int
+            ).
 
 :- type pager_line
     --->    header(string, string)
@@ -43,15 +60,17 @@ default_quote_level = quote_level(0).
 
 %-----------------------------------------------------------------------------%
 
-pager(Messages, !IO) :-
-    list.foldl(append_message, Messages, cord.init, Lines),
-    % XXX actual paging behaviour will have to wait
-    cord.foldl_pred(print_line, Lines, !IO).
+setup_pager(Cols, Messages, Info, !IO) :-
+    list.foldl(append_message(Cols), Messages, cord.init, LinesCord),
+    Lines = list(LinesCord),
+    NumLines = list.length(Lines),
+    Top = 0,
+    Info = pager_info(Lines, NumLines, Top).
 
-:- pred append_message(message::in,
+:- pred append_message(int::in, message::in,
     cord(pager_line)::in, cord(pager_line)::out) is det.
 
-append_message(Message, !Lines) :-
+append_message(Cols, Message, !Lines) :-
     append_header("Subject", Message ^ m_subject, !Lines),
     append_header("From", Message ^ m_from, !Lines),
     append_header("To", Message ^ m_to, !Lines),
@@ -59,8 +78,8 @@ append_message(Message, !Lines) :-
     snoc(blank_line, !Lines),
     Body = Message ^ m_body,
     ( cord.head_tail(Body, FirstPart, RestParts) ->
-        append_content(yes, FirstPart, !Lines),
-        cord.foldl_pred(append_content(no), RestParts, !Lines)
+        append_content(Cols, yes, FirstPart, !Lines),
+        cord.foldl_pred(append_content(Cols, no), RestParts, !Lines)
     ;
         true
     ),
@@ -75,10 +94,10 @@ append_header(Header, Value, !Lines) :-
     Line = header(Header, Value),
     snoc(Line, !Lines).
 
-:- pred append_content(bool::in, content::in,
+:- pred append_content(int::in, bool::in, content::in,
     cord(pager_line)::in, cord(pager_line)::out) is det.
 
-append_content(IsFirst, Content, !Lines) :-
+append_content(Cols, IsFirst, Content, !Lines) :-
     Content = content(_Id, Type, MaybeText, _MaybeFilename),
     (
         IsFirst = yes,
@@ -91,12 +110,10 @@ append_content(IsFirst, Content, !Lines) :-
     ),
     (
         MaybeText = yes(Text),
-        % XXX detect terminal width
-        Max = 80,
         Start = 0,
         LastBreak = 0,
         Cur = 0,
-        append_text(Max, Text, Start, LastBreak, Cur, no, !Lines)
+        append_text(Cols, Text, Start, LastBreak, Cur, no, !Lines)
     ;
         MaybeText = no,
         snoc(text(default_quote_level, "(not supported)"), !Lines)
@@ -200,59 +217,112 @@ skip_whitespace(String, I0, I) :-
 
 blank_line = text(default_quote_level, "").
 
-:- pred print_line(pager_line::in, io::di, io::uo) is det.
+%-----------------------------------------------------------------------------%
 
-print_line(Line, !IO) :-
+pager_input(Screen, Char, !Info) :-
+    % XXX should cache the number of rows
+    NumRows = list.length(Screen ^ main_panels),
+    ( Char = 'j' ->
+        scroll(NumRows, 1, !Info)
+    ; Char = 'k' ->
+        scroll(NumRows, -1, !Info)
+    ; Char = ' ' ->
+        scroll(NumRows, NumRows - 1, !Info)
+    ; Char = 'b' ->
+        scroll(NumRows, -NumRows + 1, !Info)
+    ;
+        true
+    ).
+
+:- pred scroll(int::in, int::in, pager_info::in, pager_info::out) is det.
+
+scroll(NumRows, Delta, !Info) :-
+    NumLines = !.Info ^ p_numlines,
+    Top0 = !.Info ^ p_top,
+    Top = mid(0, Top0 + Delta, NumLines - NumRows),
+    !Info ^ p_top := Top.
+
+:- func mid(int, int, int) = int.
+
+mid(Min, X, Max) =
+    ( X < Min -> Min
+    ; X > Max -> Max
+    ; X
+    ).
+
+%-----------------------------------------------------------------------------%
+
+draw_pager(Screen, Info, !IO) :-
+    MainPanels = Screen ^ main_panels,
+    Info = pager_info(Lines0, _NumLines, Top),
+    ( list.drop(Top, Lines0, Lines1) ->
+        Lines = Lines1
+    ;
+        Lines = []
+    ),
+    draw_pager_lines(MainPanels, Lines, !IO).
+
+:- pred draw_pager_lines(list(panel)::in, list(pager_line)::in,
+    io::di, io::uo) is det.
+
+draw_pager_lines([], _, !IO).
+draw_pager_lines([Panel | Panels], Lines, !IO) :-
+    panel.erase(Panel, !IO),
+    (
+        Lines = [Line | RestLines],
+        draw_pager_line(Panel, Line, !IO)
+    ;
+        Lines = [],
+        RestLines = []
+    ),
+    draw_pager_lines(Panels, RestLines, !IO).
+
+:- pred draw_pager_line(panel::in, pager_line::in, io::di, io::uo) is det.
+
+draw_pager_line(Panel, Line, !IO) :-
     (
         Line = header(Header, Value),
-        io.write_string("  ", !IO),
-        io.write_string(ansi_bright_red, !IO),
-        io.write_string(Header, !IO),
-        io.write_string(": ", !IO),
-        io.write_string(ansi_reset, !IO),
-        io.write_string(Value, !IO),
-        io.nl(!IO)
+        my_addstr(Panel, "  ", !IO),
+        panel.attr_set(Panel, fg_bg(red, black) + bold, !IO),
+        my_addstr(Panel, Header, !IO),
+        my_addstr(Panel, ": ", !IO),
+        panel.attr_set(Panel, normal, !IO),
+        my_addstr(Panel, Value, !IO)
     ;
         Line = text(QuoteLevel, Text),
-        Color = quote_level_to_color(QuoteLevel),
-        io.write_string(Color, !IO),
-        io.write_string(Text, !IO),
-        io.write_string(ansi_reset, !IO),
-        io.nl(!IO)
+        Attr = quote_level_to_attr(QuoteLevel),
+        panel.attr_set(Panel, Attr, !IO),
+        my_addstr(Panel, Text, !IO)
     ;
         Line = attachment(Content),
         Content ^ c_type = ContentType,
         Content ^ c_filename = MaybeFilename,
-        io.write_string(ansi_bright_magenta, !IO),
-        io.write_string("[-- ", !IO),
-        io.write_string(ContentType, !IO),
+        panel.attr_set(Panel, fg_bg(magenta, black) + bold, !IO),
+        my_addstr(Panel, "[-- ", !IO),
+        my_addstr(Panel, ContentType, !IO),
         (
             MaybeFilename = yes(Filename),
-            io.write_string("; ", !IO),
-            io.write_string(Filename, !IO)
+            my_addstr(Panel, "; ", !IO),
+            my_addstr(Panel, Filename, !IO)
         ;
             MaybeFilename = no
         ),
-        io.write_string(" --]", !IO),
-        io.write_string(ansi_reset, !IO),
-        io.nl(!IO)
+        my_addstr(Panel, " --]", !IO)
     ;
         Line = message_separator,
-        io.write_string(ansi_bright_blue, !IO),
-        io.write_string("~", !IO),
-        io.write_string(ansi_reset, !IO),
-        io.nl(!IO)
+        panel.attr_set(Panel, fg_bg(blue, black) + bold, !IO),
+        my_addstr(Panel, "~", !IO)
     ).
 
-:- func quote_level_to_color(quote_level) = string.
+:- func quote_level_to_attr(quote_level) = attr.
 
-quote_level_to_color(quote_level(QuoteLevel)) =
+quote_level_to_attr(quote_level(QuoteLevel)) =
     ( QuoteLevel = 0 ->
-        ansi_reset
+        normal
     ; int.odd(QuoteLevel) ->
-        ansi_bright_blue
+        fg_bg(blue, black) + bold
     ;
-        ansi_green
+        fg_bg(green, black)
     ).
 
 %-----------------------------------------------------------------------------%

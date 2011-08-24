@@ -44,7 +44,7 @@ main(!IO) :-
     ; Args = ["--pager", TId] ->
         run_notmuch(["show", "--format=json", "thread:" ++ TId],
             parse_messages_list, Messages : list(message), !IO),
-        pager(Messages, !IO)
+        curs.session(interactive_pager(Messages), !IO)
     ; Args = ["--search" | Terms] ->
         run_notmuch(["search", "--format=json" | Terms],
             parse_threads_list, Threads, !IO),
@@ -52,7 +52,7 @@ main(!IO) :-
     ; Args = ["--index" | Terms] ->
         run_notmuch(["search", "--format=json" | Terms],
             parse_threads_list, Threads, !IO),
-        curs.session(interactive(Threads), !IO)
+        curs.session(interactive_index(Threads), !IO)
     ;
         io.write_string("command line error\n", !IO)
     ).
@@ -68,9 +68,11 @@ main(!IO) :-
     IO = IO0;
 ").
 
-:- pred interactive(list(thread)::in, io::di, io::uo) is det.
+%-----------------------------------------------------------------------------%
 
-interactive(Threads, !IO) :-
+:- pred interactive_index(list(thread)::in, io::di, io::uo) is det.
+
+interactive_index(Threads, !IO) :-
     create_screen(Screen, !IO),
     setup_index_view(Threads, IndexInfo, !IO),
     interactive_loop(Screen, IndexInfo, !IO).
@@ -88,6 +90,33 @@ interactive_loop(Screen, !.IndexInfo, !IO) :-
         index_view_input(Screen, Char, !IndexInfo),
         interactive_loop(Screen, !.IndexInfo, !IO)
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred interactive_pager(list(message)::in, io::di, io::uo) is det.
+
+interactive_pager(Messages, !IO) :-
+    create_screen(Screen, !IO),
+    Cols = Screen ^ cols,
+    setup_pager(Cols, Messages, PagerInfo, !IO),
+    interactive_pager_loop(Screen, PagerInfo, !IO).
+
+:- pred interactive_pager_loop(screen::in, pager_info::in, io::di, io::uo)
+    is det.
+
+interactive_pager_loop(Screen, !.PagerInfo, !IO) :-
+    draw_pager(Screen, !.PagerInfo, !IO),
+    draw_bar(Screen, !IO),
+    panel.update_panels(!IO),
+    get_char(Char, !IO),
+    ( Char = 'q' ->
+        true
+    ;
+        pager_input(Screen, Char, !PagerInfo),
+        interactive_pager_loop(Screen, !.PagerInfo, !IO)
+    ).
+
+%-----------------------------------------------------------------------------%
 
 :- pred get_char(char::out, io::di, io::uo) is det.
 
