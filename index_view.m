@@ -3,6 +3,7 @@
 :- module index_view.
 :- interface.
 
+:- import_module char.
 :- import_module io.
 :- import_module list.
 
@@ -16,6 +17,9 @@
 :- pred setup_index_view(list(thread)::in, index_info::out, io::di, io::uo)
     is det.
 
+:- pred index_view_input(screen::in, char::in, index_info::in, index_info::out)
+    is det.
+
 :- pred draw_index_view(screen::in, index_info::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
@@ -23,6 +27,7 @@
 
 :- implementation.
 
+:- import_module bool.
 :- import_module cord.
 :- import_module int.
 :- import_module string.
@@ -34,7 +39,13 @@
 
 %-----------------------------------------------------------------------------%
 
-:- type index_info == cord(index_line).
+:- type index_info
+    --->    index_info(
+                i_lines     :: list(index_line),
+                i_numlines  :: int,
+                i_top       :: int,
+                i_cursor    :: int
+            ).
 
 :- type index_line
     --->    index_line(
@@ -67,10 +78,15 @@
 
 %-----------------------------------------------------------------------------%
 
-setup_index_view(Threads, Lines, !IO) :-
+setup_index_view(Threads, Info, !IO) :-
     time(Time, !IO),
     Nowish = localtime(Time),
-    list.foldl(add_thread(Nowish), Threads, cord.init, Lines).
+    list.foldl(add_thread(Nowish), Threads, cord.init, LinesCord),
+    Lines = list(LinesCord),
+    NumLines = list.length(Lines),
+    Top = 0,
+    Cursor = 0,
+    Info = index_info(Lines, NumLines, Top, Cursor).
 
 :- pred add_thread(tm::in, thread::in,
     cord(index_line)::in, cord(index_line)::out) is det.
@@ -129,33 +145,81 @@ apply_tag(Tag, !Line) :-
 
 %-----------------------------------------------------------------------------%
 
-draw_index_view(Screen, Lines, !IO) :-
+index_view_input(Screen, Char, !IndexInfo) :-
+    ( Char = 'j' ->
+        cursor_down(Screen, !IndexInfo)
+    ; Char = 'k' ->
+        cursor_up(!IndexInfo)
+    ;
+        true
+    ).
+
+:- pred cursor_down(screen::in, index_info::in, index_info::out) is det.
+
+cursor_down(Screen, !Info) :-
+    Rows = list.length(Screen ^ main_panels),
+    !.Info = index_info(Lines, NumLines, Top0, Cursor0),
+    Cursor = int.min(Cursor0 + 1, NumLines - 1),
+    Top = int.max(Cursor - Rows + 1, Top0),
+    !:Info = index_info(Lines, NumLines, Top, Cursor).
+
+:- pred cursor_up(index_info::in, index_info::out) is det.
+
+cursor_up(!Info) :-
+    !.Info = index_info(Lines, NumLines, Top0, Cursor0),
+    int.max(0, Cursor0 - 1, Cursor),
+    int.min(Cursor, Top0, Top),
+    !:Info = index_info(Lines, NumLines, Top, Cursor).
+
+%-----------------------------------------------------------------------------%
+
+draw_index_view(Screen, Info, !IO) :-
     MainPanels = Screen ^ main_panels,
-    draw_index_lines(MainPanels, Lines, !IO).
+    Info = index_info(Lines0, _NumLines, Top, Cursor),
+    ( list.drop(Top, Lines0, Lines1) ->
+        Lines = Lines1
+    ;
+        Lines = []
+    ),
+    draw_index_lines(MainPanels, Lines, Top, Cursor, !IO).
 
-:- pred draw_index_lines(list(panel)::in, cord(index_line)::in,
-    io::di, io::uo) is det.
+:- pred draw_index_lines(list(panel)::in, list(index_line)::in,
+    int::in, int::in, io::di, io::uo) is det.
 
-draw_index_lines(Panels, IndexLines, !IO) :-
+draw_index_lines(Panels, IndexLines, Cur, Cursor, !IO) :-
     (
         Panels = []
     ;
         Panels = [Panel | RestPanels],
         panel.erase(Panel, !IO),
-        ( cord.head_tail(IndexLines, IndexLine, RestIndexLines) ->
-            draw_index_line(Panel, IndexLine, !IO),
-            draw_index_lines(RestPanels, RestIndexLines, !IO)
+        (
+            IndexLines = [IndexLine | RestIndexLines],
+            ( Cur = Cursor ->
+                IsCursor = yes
+            ;
+                IsCursor = no
+            ),
+            draw_index_line(Panel, IndexLine, IsCursor, !IO)
         ;
-            draw_index_lines(RestPanels, IndexLines, !IO)
-        )
+            IndexLines = [],
+            RestIndexLines = []
+        ),
+        draw_index_lines(RestPanels, RestIndexLines, Cur + 1, Cursor, !IO)
     ).
 
-:- pred draw_index_line(panel::in, index_line::in, io::di, io::uo) is det.
+:- pred draw_index_line(panel::in, index_line::in, bool::in,
+    io::di, io::uo) is det.
 
-draw_index_line(Panel, Line, !IO) :-
+draw_index_line(Panel, Line, IsCursor, !IO) :-
     Line = index_line(_Id, _New, Unread, Replied, Flagged, Date, Authors,
         Subject, Total),
-    panel.attr_set(Panel, fg(blue) + bold, !IO),
+    (
+        IsCursor = yes,
+        panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
+    ;
+        IsCursor = no,
+        panel.attr_set(Panel, fg(blue) + bold, !IO)
+    ),
     my_addstr(Panel, Date, !IO),
     my_addstr(Panel, " ", !IO),
     (
@@ -165,7 +229,7 @@ draw_index_line(Panel, Line, !IO) :-
         Unread = read,
         Base = normal
     ),
-    panel.attr_set(Panel, Base, !IO),
+    cond_attr_set(Panel, Base, IsCursor, !IO),
     (
         Replied = replied,
         my_addstr(Panel, "r", !IO)
@@ -175,18 +239,28 @@ draw_index_line(Panel, Line, !IO) :-
     ),
     (
         Flagged = flagged,
-        panel.attr_set(Panel, fg(red) + bold, !IO),
+        cond_attr_set(Panel, fg(red) + bold, IsCursor, !IO),
         my_addstr(Panel, "! ", !IO)
     ;
         Flagged = unflagged,
         my_addstr(Panel, "  ", !IO)
     ),
-    panel.attr_set(Panel, fg(cyan) + Base, !IO),
+    cond_attr_set(Panel, fg(cyan) + Base, IsCursor, !IO),
     my_addstr_fixed(Panel, 25, Authors, !IO),
-    panel.attr_set(Panel, fg(green) + Base, !IO),
+    cond_attr_set(Panel, fg(green) + Base, IsCursor, !IO),
     my_addstr(Panel, format(" %-3d ", [i(Total)]), !IO),
-    panel.attr_set(Panel, Base, !IO),
+    cond_attr_set(Panel, Base, IsCursor, !IO),
     my_addstr(Panel, Subject, !IO).
+
+:- pred cond_attr_set(panel::in, attr::in, bool::in, io::di, io::uo) is det.
+
+cond_attr_set(Panel, Attr, IsCursor, !IO) :-
+    (
+        IsCursor = no,
+        panel.attr_set(Panel, Attr, !IO)
+    ;
+        IsCursor = yes
+    ).
 
 :- func fg(colour) = attr.
 

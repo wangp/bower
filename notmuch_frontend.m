@@ -77,15 +77,26 @@ interactive(Threads, !IO) :-
 
 :- pred interactive_loop(screen::in, index_info::in, io::di, io::uo) is det.
 
-interactive_loop(Screen, IndexInfo, !IO) :-
-    draw_index_view(Screen, IndexInfo, !IO),
+interactive_loop(Screen, !.IndexInfo, !IO) :-
+    draw_index_view(Screen, !.IndexInfo, !IO),
     draw_bar(Screen, !IO),
     panel.update_panels(!IO),
-    curs.getch(C, !IO),
-    ( C = char.to_int('q') ->
+    get_char(Char, !IO),
+    ( Char = 'q' ->
         true
     ;
-        interactive_loop(Screen, IndexInfo, !IO)
+        index_view_input(Screen, Char, !IndexInfo),
+        interactive_loop(Screen, !.IndexInfo, !IO)
+    ).
+
+:- pred get_char(char::out, io::di, io::uo) is det.
+
+get_char(Char, !IO) :-
+    curs.getch(C, !IO),
+    ( char.from_int(C, Char0) ->
+        Char = Char0
+    ;
+        get_char(Char, !IO)
     ).
 
 :- pred draw_bar(screen::in, io::di, io::uo) is det.
