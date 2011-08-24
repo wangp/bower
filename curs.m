@@ -241,6 +241,10 @@
         %
     :- pred delete(panel::in, io::di, io::uo) is det.
 
+        % Enable or disable scrolling when cursor leaves bottom of panel.
+        %
+    :- pred scrollok(panel::in, bool::in, io::di, io::uo) is det.
+
         % Get the current cursor position.
         %
     :- pred getyx(panel::in, int::out, int::out, io::di, io::uo) is det.
@@ -1119,6 +1123,16 @@ session(P, !IO) :-
         delwin(panel_window(Panel));
         del_panel(Panel);
 
+        IO = IO0;
+    ").
+
+    %-------------------------------------------------------------------------%
+
+    :- pragma foreign_proc("C",
+        scrollok(Panel::in, Bool::in, IO0::di, IO::uo),
+        [will_not_call_mercury, promise_pure],
+    "
+        scrollok(panel_window(Panel), (Bool == MR_YES));
         IO = IO0;
     ").
 
