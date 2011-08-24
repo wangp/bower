@@ -13,7 +13,6 @@
 :- implementation.
 
 :- import_module char.
-:- import_module int.
 :- import_module list.
 :- import_module string.
 
@@ -23,7 +22,7 @@
 :- import_module data.
 :- import_module index_view.
 :- import_module pager.
-:- import_module views.
+:- import_module screen.
 
 %-----------------------------------------------------------------------------%
 
@@ -72,30 +71,31 @@ main(!IO) :-
 :- pred interactive(list(thread)::in, io::di, io::uo) is det.
 
 interactive(Threads, !IO) :-
-    curs.rows_cols(Rows, Cols, !IO),
-    curs.panel.new(Rows - 1, Cols, 0, 0, normal, MainPanel, !IO),
-    BarAttr = fg_bg(white, blue),
-    curs.panel.new(1, Cols, Rows - 2, 0, BarAttr, BarPanel, !IO),
-    curs.panel.hline(BarPanel, char.to_int('-'), Cols, !IO),
-    MsgAttr = fg_bg(red, black) + bold,
-    curs.panel.new(1, Cols, Rows - 1, 0, MsgAttr, MsgEntryPanel, !IO),
-    curs.panel.addstr(MsgEntryPanel, "Hello!", !IO),
-    Panels = panels(Rows, Cols, MainPanel, BarPanel, MsgEntryPanel),
-
+    create_screen(Screen, !IO),
     setup_index_view(Threads, IndexInfo, !IO),
-    interactive_loop(Panels, IndexInfo, !IO).
+    interactive_loop(Screen, IndexInfo, !IO).
 
-:- pred interactive_loop(panels::in, index_info::in, io::di, io::uo) is det.
+:- pred interactive_loop(screen::in, index_info::in, io::di, io::uo) is det.
 
-interactive_loop(Panels, IndexInfo, !IO) :-
-    draw_index_view(Panels, IndexInfo, !IO),
+interactive_loop(Screen, IndexInfo, !IO) :-
+    draw_index_view(Screen, IndexInfo, !IO),
+    draw_bar(Screen, !IO),
     panel.update_panels(!IO),
     curs.getch(C, !IO),
     ( C = char.to_int('q') ->
         true
     ;
-        interactive_loop(Panels, IndexInfo, !IO)
+        interactive_loop(Screen, IndexInfo, !IO)
     ).
+
+:- pred draw_bar(screen::in, io::di, io::uo) is det.
+
+draw_bar(Screen, !IO) :-
+    Cols = Screen ^ cols,
+    Panel = Screen ^ bar_panel,
+    panel.erase(Panel, !IO),
+    panel.attr_set(Panel, fg_bg(white, blue), !IO),
+    hline(Panel, char.to_int('-'), Cols, !IO).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

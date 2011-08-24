@@ -7,7 +7,7 @@
 :- import_module list.
 
 :- import_module data.
-:- import_module views.
+:- import_module screen.
 
 %-----------------------------------------------------------------------------%
 
@@ -16,7 +16,7 @@
 :- pred setup_index_view(list(thread)::in, index_info::out, io::di, io::uo)
     is det.
 
-:- pred draw_index_view(panels::in, index_info::in, io::di, io::uo) is det.
+:- pred draw_index_view(screen::in, index_info::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -76,9 +76,8 @@ setup_index_view(Threads, Lines, !IO) :-
     cord(index_line)::in, cord(index_line)::out) is det.
 
 add_thread(Nowish, Thread, !Lines) :-
-    Thread = thread(Id, Timestamp, Authors0, Subject, Tags, _Matched, Total),
+    Thread = thread(Id, Timestamp, Authors, Subject, Tags, _Matched, Total),
     make_date_column(Nowish, Timestamp, Date),
-    make_column(25, Authors0, Authors),
     Line0 = index_line(Id, old, read, not_replied, unflagged, Date, Authors,
         Subject, Total),
     list.foldl(apply_tag, Tags, Line0, Line),
@@ -113,13 +112,6 @@ make_date_column(Nowish, Timestamp, String) :-
         String = string.format("%04d-%02d-%02d", [i(Year), i(Month), i(Day)])
     ).
 
-:- pred make_column(int::in, string::in, string::out) is det.
-
-make_column(ColumnWidth, S0, S) :-
-    % XXX not the proper width
-    string.pad_right(S0, ' ', ColumnWidth, S1),
-    string.left(S1, ColumnWidth, S).
-
 :- pred apply_tag(string::in, index_line::in, index_line::out) is det.
 
 apply_tag(Tag, !Line) :-
@@ -137,20 +129,35 @@ apply_tag(Tag, !Line) :-
 
 %-----------------------------------------------------------------------------%
 
-draw_index_view(Panels, Lines, !IO) :-
-    Panels = panels(_Rows, _Cols, MainPanel, _BarPanel, _MsgEntryPanel),
-    panel.clear(MainPanel, !IO),
-    cord.foldl_pred(draw_index_line(MainPanel), Lines, !IO).
+draw_index_view(Screen, Lines, !IO) :-
+    MainPanels = Screen ^ main_panels,
+    draw_index_lines(MainPanels, Lines, !IO).
+
+:- pred draw_index_lines(list(panel)::in, cord(index_line)::in,
+    io::di, io::uo) is det.
+
+draw_index_lines(Panels, IndexLines, !IO) :-
+    (
+        Panels = []
+    ;
+        Panels = [Panel | RestPanels],
+        panel.erase(Panel, !IO),
+        ( cord.head_tail(IndexLines, IndexLine, RestIndexLines) ->
+            draw_index_line(Panel, IndexLine, !IO),
+            draw_index_lines(RestPanels, RestIndexLines, !IO)
+        ;
+            draw_index_lines(RestPanels, IndexLines, !IO)
+        )
+    ).
 
 :- pred draw_index_line(panel::in, index_line::in, io::di, io::uo) is det.
 
 draw_index_line(Panel, Line, !IO) :-
     Line = index_line(_Id, _New, Unread, Replied, Flagged, Date, Authors,
         Subject, Total),
-    % XXX we need to truncate long lines
     panel.attr_set(Panel, fg(blue) + bold, !IO),
-    panel.addstr(Panel, Date, !IO),
-    panel.addstr(Panel, " ", !IO),
+    my_addstr(Panel, Date, !IO),
+    my_addstr(Panel, " ", !IO),
     (
         Unread = unread,
         Base = bold
@@ -161,26 +168,25 @@ draw_index_line(Panel, Line, !IO) :-
     panel.attr_set(Panel, Base, !IO),
     (
         Replied = replied,
-        panel.addstr(Panel, "r", !IO)
+        my_addstr(Panel, "r", !IO)
     ;
         Replied = not_replied,
-        panel.addstr(Panel, " ", !IO)
+        my_addstr(Panel, " ", !IO)
     ),
     (
         Flagged = flagged,
         panel.attr_set(Panel, fg(red) + bold, !IO),
-        panel.addstr(Panel, "! ", !IO)
+        my_addstr(Panel, "! ", !IO)
     ;
         Flagged = unflagged,
-        panel.addstr(Panel, "  ", !IO)
+        my_addstr(Panel, "  ", !IO)
     ),
     panel.attr_set(Panel, fg(cyan) + Base, !IO),
-    panel.addstr(Panel, Authors, !IO),
+    my_addstr_fixed(Panel, 25, Authors, !IO),
     panel.attr_set(Panel, fg(green) + Base, !IO),
-    panel.addstr(Panel, format(" %-3d ", [i(Total)]), !IO),
+    my_addstr(Panel, format(" %-3d ", [i(Total)]), !IO),
     panel.attr_set(Panel, Base, !IO),
-    panel.addstr(Panel, Subject, !IO),
-    panel.addstr(Panel, "\n", !IO).
+    my_addstr(Panel, Subject, !IO).
 
 :- func fg(colour) = attr.
 
