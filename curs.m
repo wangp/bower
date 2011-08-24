@@ -241,6 +241,14 @@
         %
     :- pred delete(panel::in, io::di, io::uo) is det.
 
+        % Get the current cursor position.
+        %
+    :- pred getyx(panel::in, int::out, int::out, io::di, io::uo) is det.
+
+        % Get the size of the panel.
+        %
+    :- pred getmaxyx(panel::in, int::out, int::out, io::di, io::uo) is det.
+
         % Raise/lower a panel to the top/bottom of the stack.
         %
     :- pred raise(panel::in, io::di, io::uo) is det.
@@ -1111,6 +1119,26 @@ session(P, !IO) :-
         delwin(panel_window(Panel));
         del_panel(Panel);
 
+        IO = IO0;
+    ").
+
+    %-------------------------------------------------------------------------%
+
+    :- pragma foreign_proc("C",
+        getyx(Panel::in, Y::out, X::out, IO0::di, IO::uo),
+        [will_not_call_mercury, promise_pure],
+    "
+        getyx(panel_window(Panel), Y, X);
+        IO = IO0;
+    ").
+
+    %-------------------------------------------------------------------------%
+
+    :- pragma foreign_proc("C",
+        getmaxyx(Panel::in, Y::out, X::out, IO0::di, IO::uo),
+        [will_not_call_mercury, promise_pure],
+    "
+        getmaxyx(panel_window(Panel), Y, X);
         IO = IO0;
     ").
 
