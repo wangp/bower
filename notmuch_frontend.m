@@ -36,22 +36,13 @@
 main(!IO) :-
     setlocale(!IO),
     io.command_line_arguments(Args, !IO),
-    ( Args = ["--show-thread", TId] ->
-        run_notmuch(["show", "--format=json", "thread:" ++ TId],
-            parse_messages_list, Messages : list(message), !IO),
-        io.write(Messages, !IO),
-        io.nl(!IO)
-    ; Args = ["--search" | Terms] ->
-        run_notmuch(["search", "--format=json" | Terms],
-            parse_threads_list, Threads, !IO),
-        io.write(Threads, !IO)
-    ; Args = ["--index" | Terms] ->
-        run_notmuch(["search", "--format=json" | Terms],
-            parse_threads_list, Threads, !IO),
-        curs.session(interactive_index(Threads), !IO)
-    ;
-        io.write_string("command line error\n", !IO)
-    ).
+    Terms = Args,
+    run_notmuch(["search", "--format=json" | Terms], parse_threads_list,
+        Threads, !IO),
+    curs.start(!IO),
+    create_screen(Screen, !IO),
+    open_index(Screen, Threads, !IO),
+    curs.stop(!IO).
 
 :- pred setlocale(io::di, io::uo) is det.
 
@@ -66,10 +57,9 @@ main(!IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred interactive_index(list(thread)::in, io::di, io::uo) is det.
+:- pred open_index(screen::in, list(thread)::in, io::di, io::uo) is det.
 
-interactive_index(Threads, !IO) :-
-    create_screen(Screen, !IO),
+open_index(Screen, Threads, !IO) :-
     setup_index_view(Threads, IndexInfo, !IO),
     index_loop(Screen, IndexInfo, !IO).
 
