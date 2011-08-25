@@ -50,7 +50,8 @@
             ).
 
 :- type pager_line
-    --->    header(string, string)
+    --->    start_message_header(message, string, string)
+    ;       header(string, string)
     ;       text(quote_level, string)
     ;       attachment(content)
     ;       message_separator.
@@ -59,13 +60,15 @@
     --->    quote_level(int).
 
 :- type binding
-    --->    scroll_down
+    --->    leave_pager
+    ;       scroll_down
     ;       scroll_up
     ;       page_down
     ;       page_up
     ;       half_page_down
     ;       half_page_up
-    ;       leave_pager.
+    ;       next_message
+    ;       prev_message.
 
 :- func default_quote_level = quote_level.
 
@@ -84,7 +87,9 @@ setup_pager(Cols, Messages, Info, !IO) :-
     cord(pager_line)::in, cord(pager_line)::out) is det.
 
 append_message(Cols, Message, !Lines) :-
-    append_header("Subject", Message ^ m_subject, !Lines),
+    Subject = Message ^ m_subject,
+    StartMessage = start_message_header(Message, "Subject", Subject),
+    snoc(StartMessage, !Lines),
     append_header("From", Message ^ m_from, !Lines),
     append_header("To", Message ^ m_to, !Lines),
     append_header("Date", Message ^ m_date, !Lines),
@@ -237,6 +242,10 @@ pager_input(Screen, Char, Action, MessageUpdate, !Info) :-
         % XXX should cache the number of rows
         NumRows = list.length(Screen ^ main_panels),
         (
+            Binding = leave_pager,
+            Action = leave_pager,
+            MessageUpdate = clear_message
+        ;
             Binding = scroll_down,
             scroll(NumRows, 1, MessageUpdate, !Info),
             Action = continue
@@ -261,9 +270,13 @@ pager_input(Screen, Char, Action, MessageUpdate, !Info) :-
             scroll(NumRows, -NumRows//2, MessageUpdate, !Info),
             Action = continue
         ;
-            Binding = leave_pager,
-            Action = leave_pager,
-            MessageUpdate = clear_message
+            Binding = next_message,
+            next_message(MessageUpdate, !Info),
+            Action = continue
+        ;
+            Binding = prev_message,
+            prev_message(MessageUpdate, !Info),
+            Action = continue
         )
     ;
         Action = continue,
@@ -272,16 +285,16 @@ pager_input(Screen, Char, Action, MessageUpdate, !Info) :-
 
 :- pred key_binding(char::in, binding::out) is semidet.
 
-key_binding('j', scroll_down).
+key_binding('i', leave_pager).
 key_binding('\r', scroll_down).
-key_binding('k', scroll_up).
 key_binding('\\', scroll_up).
-key_binding('\b', scroll_up).
+key_binding('\b', scroll_up).   % XXX doesn't work
 key_binding(' ', page_down).
 key_binding('b', page_up).
 key_binding(']', half_page_down).
 key_binding('[', half_page_up).
-key_binding('i', leave_pager).
+key_binding('j', next_message).
+key_binding('k', prev_message).
 
 :- pred scroll(int::in, int::in, message_update::out,
     pager_info::in, pager_info::out) is det.
@@ -289,7 +302,7 @@ key_binding('i', leave_pager).
 scroll(NumRows, Delta, MessageUpdate, !Info) :-
     NumLines = !.Info ^ p_numlines,
     Top0 = !.Info ^ p_top,
-    TopLimit = int.max(0, NumLines - NumRows),
+    TopLimit = max(max(0, NumLines - NumRows), Top0),
     Top = clamp(0, Top0 + Delta, TopLimit),
     ( Top = Top0, Delta < 0 ->
         MessageUpdate = set_warning("Top of message is shown.")
@@ -299,6 +312,57 @@ scroll(NumRows, Delta, MessageUpdate, !Info) :-
         MessageUpdate = clear_message
     ),
     !Info ^ p_top := Top.
+
+:- pred next_message(message_update::out, pager_info::in, pager_info::out)
+    is det.
+
+next_message(MessageUpdate, !Info) :-
+    Lines0 = !.Info ^ p_lines,
+    Top0 = !.Info ^ p_top,
+    (
+        list.drop(Top0 + 1, Lines0, Lines),
+        next_message_loop(Lines, Top0 + 1, Top)
+    ->
+        !Info ^ p_top := Top,
+        MessageUpdate = clear_message
+    ;
+        MessageUpdate = set_warning("Already at last message.")
+    ).
+
+:- pred next_message_loop(list(pager_line)::in, int::in, int::out) is semidet.
+
+next_message_loop([Line | Lines], Top0, Top) :-
+    ( Line = start_message_header(_, _, _) ->
+        Top = Top0
+    ;
+        next_message_loop(Lines, Top0 + 1, Top)
+    ).
+
+:- pred prev_message(message_update::out, pager_info::in, pager_info::out)
+    is det.
+
+prev_message(MessageUpdate, !Info) :-
+    Lines = !.Info ^ p_lines,
+    Top0 = !.Info ^ p_top,
+    (
+        list.take_upto(Top0, Lines, Lines1),
+        list.reverse(Lines1, RevLines),
+        prev_message_loop(RevLines, Top0 - 1, Top)
+    ->
+        !Info ^ p_top := Top,
+        MessageUpdate = clear_message
+    ;
+        MessageUpdate = set_warning("Already at first message.")
+    ).
+
+:- pred prev_message_loop(list(pager_line)::in, int::in, int::out) is semidet.
+
+prev_message_loop([Line | Lines], Top0, Top) :-
+    ( Line = start_message_header(_, _, _) ->
+        Top = Top0
+    ;
+        prev_message_loop(Lines, Top0 - 1, Top)
+    ).
 
 :- func clamp(int, int, int) = int.
 
@@ -339,9 +403,11 @@ draw_pager_lines([Panel | Panels], Lines, !IO) :-
 
 draw_pager_line(Panel, Line, !IO) :-
     (
-        Line = header(Header, Value),
+        ( Line = start_message_header(_Message, Header, Value)
+        ; Line = header(Header, Value)
+        ),
         panel.attr_set(Panel, fg_bg(red, black) + bold, !IO),
-        my_addstr(Panel, "  ", !IO),
+        my_addstr(Panel, "| ", !IO),
         my_addstr(Panel, Header, !IO),
         my_addstr(Panel, ": ", !IO),
         panel.attr_set(Panel, normal, !IO),
