@@ -68,7 +68,8 @@
     ;       half_page_down
     ;       half_page_up
     ;       next_message
-    ;       prev_message.
+    ;       prev_message
+    ;       skip_quoted_text.
 
 :- func default_quote_level = quote_level.
 
@@ -277,6 +278,10 @@ pager_input(Screen, Char, Action, MessageUpdate, !Info) :-
             Binding = prev_message,
             prev_message(MessageUpdate, !Info),
             Action = continue
+        ;
+            Binding = skip_quoted_text,
+            skip_quoted_text(MessageUpdate, !Info),
+            Action = continue
         )
     ;
         Action = continue,
@@ -295,6 +300,7 @@ key_binding(']', half_page_down).
 key_binding('[', half_page_up).
 key_binding('j', next_message).
 key_binding('k', prev_message).
+key_binding('S', skip_quoted_text).
 
 :- pred scroll(int::in, int::in, message_update::out,
     pager_info::in, pager_info::out) is det.
@@ -362,6 +368,58 @@ prev_message_loop([Line | Lines], Top0, Top) :-
         Top = Top0
     ;
         prev_message_loop(Lines, Top0 - 1, Top)
+    ).
+
+:- pred skip_quoted_text(message_update::out, pager_info::in, pager_info::out)
+    is det.
+
+skip_quoted_text(MessageUpdate, !Info) :-
+    Lines0 = !.Info ^ p_lines,
+    Top0 = !.Info ^ p_top,
+    (
+        list.drop(Top0, Lines0, [FirstLine | RestLines0]),
+        ( is_quoted_text(FirstLine) = yes ->
+            RestLines1 = RestLines0,
+            Top1 = Top0 + 1
+        ;
+            search_quoted_line(yes, RestLines0, RestLines1, Top0 + 1, Top1)
+        ),
+        search_quoted_line(no, RestLines1, _, Top1, Top)
+    ->
+        !Info ^ p_top := Top,
+        MessageUpdate = clear_message
+    ;
+        MessageUpdate = set_warning("No more quoted text.")
+    ).
+
+:- pred search_quoted_line(bool::in,
+    list(pager_line)::in, list(pager_line)::out, int::in, int::out) is semidet.
+
+search_quoted_line(SearchQuotedOrNot, !Lines, Cur0, Cur) :-
+    !.Lines = [Line | TailLines],
+    % Stop at message boundaries.
+    ( Line = start_message_header(_, _, _) ->
+        Cur = Cur0
+    ; is_quoted_text(Line) = SearchQuotedOrNot ->
+        Cur = Cur0
+    ;
+        search_quoted_line(SearchQuotedOrNot, TailLines, !:Lines,
+            Cur0 + 1, Cur)
+    ).
+
+:- func is_quoted_text(pager_line) = bool.
+
+is_quoted_text(Line) = IsQuoted :-
+    (
+        ( Line = start_message_header(_, _, _)
+        ; Line = header(_, _)
+        ; Line = attachment(_)
+        ; Line = message_separator
+        ),
+        IsQuoted = no
+    ;
+        Line = text(quote_level(Level), _),
+        IsQuoted = (Level > 0 -> yes ; no)
     ).
 
 :- func clamp(int, int, int) = int.
