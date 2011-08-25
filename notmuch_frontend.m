@@ -41,10 +41,6 @@ main(!IO) :-
             parse_messages_list, Messages : list(message), !IO),
         io.write(Messages, !IO),
         io.nl(!IO)
-    ; Args = ["--pager", TId] ->
-        run_notmuch(["show", "--format=json", "thread:" ++ TId],
-            parse_messages_list, Messages : list(message), !IO),
-        curs.session(interactive_pager(Messages), !IO)
     ; Args = ["--search" | Terms] ->
         run_notmuch(["search", "--format=json" | Terms],
             parse_threads_list, Threads, !IO),
@@ -75,45 +71,53 @@ main(!IO) :-
 interactive_index(Threads, !IO) :-
     create_screen(Screen, !IO),
     setup_index_view(Threads, IndexInfo, !IO),
-    interactive_loop(Screen, IndexInfo, !IO).
+    index_loop(Screen, IndexInfo, !IO).
 
-:- pred interactive_loop(screen::in, index_info::in, io::di, io::uo) is det.
+:- pred index_loop(screen::in, index_info::in, io::di, io::uo) is det.
 
-interactive_loop(Screen, !.IndexInfo, !IO) :-
+index_loop(Screen, !.IndexInfo, !IO) :-
     draw_index_view(Screen, !.IndexInfo, !IO),
     draw_bar(Screen, !IO),
     panel.update_panels(!IO),
     get_char(Char, !IO),
-    ( Char = 'q' ->
-        true
+    index_view_input(Screen, Char, Action, !IndexInfo),
+    (
+        Action = continue,
+        index_loop(Screen, !.IndexInfo, !IO)
     ;
-        index_view_input(Screen, Char, !IndexInfo),
-        interactive_loop(Screen, !.IndexInfo, !IO)
+        Action = open_pager(ThreadId),
+        open_pager(Screen, ThreadId, !IO),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
+        Action = quit
     ).
 
 %-----------------------------------------------------------------------------%
 
-:- pred interactive_pager(list(message)::in, io::di, io::uo) is det.
+:- pred open_pager(screen::in, thread_id::in, io::di, io::uo) is det.
 
-interactive_pager(Messages, !IO) :-
-    create_screen(Screen, !IO),
+open_pager(Screen, thread_id(ThreadId), !IO) :-
+    run_notmuch(["show", "--format=json", "thread:" ++ ThreadId],
+        parse_messages_list, Messages : list(message), !IO),
     Cols = Screen ^ cols,
     setup_pager(Cols, Messages, PagerInfo, !IO),
-    interactive_pager_loop(Screen, PagerInfo, !IO).
+    pager_loop(Screen, PagerInfo, !IO).
 
-:- pred interactive_pager_loop(screen::in, pager_info::in, io::di, io::uo)
+:- pred pager_loop(screen::in, pager_info::in, io::di, io::uo)
     is det.
 
-interactive_pager_loop(Screen, !.PagerInfo, !IO) :-
+pager_loop(Screen, !.PagerInfo, !IO) :-
     draw_pager(Screen, !.PagerInfo, !IO),
     draw_bar(Screen, !IO),
     panel.update_panels(!IO),
     get_char(Char, !IO),
-    ( Char = 'q' ->
-        true
+    pager_input(Screen, Char, Action, MessageUpdate, !PagerInfo),
+    update_message(Screen, MessageUpdate, !IO),
+    (
+        Action = continue,
+        pager_loop(Screen, !.PagerInfo, !IO)
     ;
-        pager_input(Screen, Char, !PagerInfo),
-        interactive_pager_loop(Screen, !.PagerInfo, !IO)
+        Action = leave_pager
     ).
 
 %-----------------------------------------------------------------------------%

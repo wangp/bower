@@ -17,8 +17,13 @@
 :- pred setup_index_view(list(thread)::in, index_info::out, io::di, io::uo)
     is det.
 
-:- pred index_view_input(screen::in, char::in, index_info::in, index_info::out)
-    is det.
+:- type action
+    --->    continue
+    ;       open_pager(thread_id)
+    ;       quit.
+
+:- pred index_view_input(screen::in, char::in, action::out,
+    index_info::in, index_info::out) is det.
 
 :- pred draw_index_view(screen::in, index_info::in, io::di, io::uo) is det.
 
@@ -75,6 +80,12 @@
 :- type flagged
     --->    flagged
     ;       unflagged.
+
+:- type binding
+    --->    scroll_down
+    ;       scroll_up
+    ;       enter
+    ;       quit.
 
 %-----------------------------------------------------------------------------%
 
@@ -145,14 +156,33 @@ apply_tag(Tag, !Line) :-
 
 %-----------------------------------------------------------------------------%
 
-index_view_input(Screen, Char, !IndexInfo) :-
-    ( Char = 'j' ->
-        cursor_down(Screen, !IndexInfo)
-    ; Char = 'k' ->
-        cursor_up(!IndexInfo)
+index_view_input(Screen, Char, Action, !IndexInfo) :-
+    ( key_binding(Char, Binding) ->
+        (
+            Binding = scroll_down,
+            cursor_down(Screen, !IndexInfo),
+            Action = continue
+        ;
+            Binding = scroll_up,
+            cursor_up(!IndexInfo),
+            Action = continue
+        ;
+            Binding = enter,
+            enter(!.IndexInfo, Action)
+        ;
+            Binding = quit,
+            Action = quit
+        )
     ;
-        true
+        Action = continue
     ).
+
+:- pred key_binding(char::in, binding::out) is semidet.
+
+key_binding('j', scroll_down).
+key_binding('k', scroll_up).
+key_binding('\r', enter).
+key_binding('q', quit).
 
 :- pred cursor_down(screen::in, index_info::in, index_info::out) is det.
 
@@ -170,6 +200,18 @@ cursor_up(!Info) :-
     int.max(0, Cursor0 - 1, Cursor),
     int.min(Cursor, Top0, Top),
     !:Info = index_info(Lines, NumLines, Top, Cursor).
+
+:- pred enter(index_info::in, action::out) is det.
+
+enter(Info, Action) :-
+    IndexLines = Info ^ i_lines,
+    Cursor = Info ^ i_cursor,
+    ( list.index0(IndexLines, Cursor, CursorLine) ->
+        ThreadId = CursorLine ^ i_id,
+        Action = open_pager(ThreadId)
+    ;
+        Action = continue
+    ).
 
 %-----------------------------------------------------------------------------%
 

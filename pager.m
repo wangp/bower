@@ -17,8 +17,12 @@
 :- pred setup_pager(int::in, list(message)::in, pager_info::out,
     io::di, io::uo) is det.
 
-:- pred pager_input(screen::in, char::in, pager_info::in, pager_info::out)
-    is det.
+:- type pager_action
+    --->    continue
+    ;       leave_pager.
+
+:- pred pager_input(screen::in, char::in, pager_action::out,
+    message_update::out, pager_info::in, pager_info::out) is det.
 
 :- pred draw_pager(screen::in, pager_info::in, io::di, io::uo) is det.
 
@@ -53,6 +57,15 @@
 
 :- type quote_level
     --->    quote_level(int).
+
+:- type binding
+    --->    scroll_down
+    ;       scroll_up
+    ;       page_down
+    ;       page_up
+    ;       half_page_down
+    ;       half_page_up
+    ;       leave_pager.
 
 :- func default_quote_level = quote_level.
 
@@ -219,32 +232,77 @@ blank_line = text(default_quote_level, "").
 
 %-----------------------------------------------------------------------------%
 
-pager_input(Screen, Char, !Info) :-
-    % XXX should cache the number of rows
-    NumRows = list.length(Screen ^ main_panels),
-    ( Char = 'j' ->
-        scroll(NumRows, 1, !Info)
-    ; Char = 'k' ->
-        scroll(NumRows, -1, !Info)
-    ; Char = ' ' ->
-        scroll(NumRows, NumRows - 1, !Info)
-    ; Char = 'b' ->
-        scroll(NumRows, -NumRows + 1, !Info)
+pager_input(Screen, Char, Action, MessageUpdate, !Info) :-
+    ( key_binding(Char, Binding) ->
+        % XXX should cache the number of rows
+        NumRows = list.length(Screen ^ main_panels),
+        (
+            Binding = scroll_down,
+            scroll(NumRows, 1, MessageUpdate, !Info),
+            Action = continue
+        ;
+            Binding = scroll_up,
+            scroll(NumRows, -1, MessageUpdate, !Info),
+            Action = continue
+        ;
+            Binding = page_down,
+            scroll(NumRows, NumRows - 1, MessageUpdate, !Info),
+            Action = continue
+        ;
+            Binding = page_up,
+            scroll(NumRows, -NumRows + 1, MessageUpdate, !Info),
+            Action = continue
+        ;
+            Binding = half_page_down,
+            scroll(NumRows, NumRows//2, MessageUpdate, !Info),
+            Action = continue
+        ;
+            Binding = half_page_up,
+            scroll(NumRows, -NumRows//2, MessageUpdate, !Info),
+            Action = continue
+        ;
+            Binding = leave_pager,
+            Action = leave_pager,
+            MessageUpdate = clear_message
+        )
     ;
-        true
+        Action = continue,
+        MessageUpdate = no_change
     ).
 
-:- pred scroll(int::in, int::in, pager_info::in, pager_info::out) is det.
+:- pred key_binding(char::in, binding::out) is semidet.
 
-scroll(NumRows, Delta, !Info) :-
+key_binding('j', scroll_down).
+key_binding('\r', scroll_down).
+key_binding('k', scroll_up).
+key_binding('\\', scroll_up).
+key_binding('\b', scroll_up).
+key_binding(' ', page_down).
+key_binding('b', page_up).
+key_binding(']', half_page_down).
+key_binding('[', half_page_up).
+key_binding('i', leave_pager).
+
+:- pred scroll(int::in, int::in, message_update::out,
+    pager_info::in, pager_info::out) is det.
+
+scroll(NumRows, Delta, MessageUpdate, !Info) :-
     NumLines = !.Info ^ p_numlines,
     Top0 = !.Info ^ p_top,
-    Top = mid(0, Top0 + Delta, NumLines - NumRows),
+    TopLimit = int.max(0, NumLines - NumRows),
+    Top = clamp(0, Top0 + Delta, TopLimit),
+    ( Top = Top0, Delta < 0 ->
+        MessageUpdate = set_warning("Top of message is shown.")
+    ; Top = Top0, Delta > 0 ->
+        MessageUpdate = set_warning("Bottom of message is shown.")
+    ;
+        MessageUpdate = clear_message
+    ),
     !Info ^ p_top := Top.
 
-:- func mid(int, int, int) = int.
+:- func clamp(int, int, int) = int.
 
-mid(Min, X, Max) =
+clamp(Min, X, Max) =
     ( X < Min -> Min
     ; X > Max -> Max
     ; X
@@ -282,8 +340,8 @@ draw_pager_lines([Panel | Panels], Lines, !IO) :-
 draw_pager_line(Panel, Line, !IO) :-
     (
         Line = header(Header, Value),
-        my_addstr(Panel, "  ", !IO),
         panel.attr_set(Panel, fg_bg(red, black) + bold, !IO),
+        my_addstr(Panel, "  ", !IO),
         my_addstr(Panel, Header, !IO),
         my_addstr(Panel, ": ", !IO),
         panel.attr_set(Panel, normal, !IO),

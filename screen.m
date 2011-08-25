@@ -20,6 +20,12 @@
                 msgentry_panel  :: panel
             ).
 
+:- type message_update
+    --->    no_change
+    ;       clear_message
+    ;       set_info(string)
+    ;       set_warning(string).
+
 :- pred create_screen(screen::out, io::di, io::uo) is det.
 
     % Like addstr but doesn't add the string if the cursor is already at the
@@ -34,6 +40,8 @@
     % original position (or otherwise the right margin of the panel).
     %
 :- pred my_addstr_fixed(panel::in, int::in, string::in, io::di, io::uo) is det.
+
+:- pred update_message(screen::in, message_update::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -139,6 +147,27 @@ count_loop(String, RemCols, !Index) :-
 "
     Width = wcwidth(C);
 ").
+
+%-----------------------------------------------------------------------------%
+
+update_message(Screen, MessageUpdate, !IO) :-
+    Panel = Screen ^ msgentry_panel,
+    (
+        MessageUpdate = no_change
+    ;
+        MessageUpdate = clear_message,
+        panel.erase(Panel, !IO)
+    ;
+        MessageUpdate = set_info(String),
+        panel.erase(Panel, !IO),
+        panel.attr_set(Panel, fg_bg(cyan, black) + bold, !IO),
+        my_addstr(Panel, String, !IO)
+    ;
+        MessageUpdate = set_warning(String),
+        panel.erase(Panel, !IO),
+        panel.attr_set(Panel, fg_bg(red, black) + bold, !IO),
+        my_addstr(Panel, String, !IO)
+    ).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
