@@ -20,6 +20,7 @@
 :- type action
     --->    continue
     ;       open_pager(thread_id)
+    ;       enter_limit
     ;       quit.
 
 :- pred index_view_input(screen::in, char::in, action::out,
@@ -85,6 +86,7 @@
     --->    scroll_down
     ;       scroll_up
     ;       enter
+    ;       enter_limit
     ;       quit.
 
 %-----------------------------------------------------------------------------%
@@ -170,6 +172,9 @@ index_view_input(Screen, Char, Action, !IndexInfo) :-
             Binding = enter,
             enter(!.IndexInfo, Action)
         ;
+            Binding = enter_limit,
+            Action = enter_limit
+        ;
             Binding = quit,
             Action = quit
         )
@@ -182,6 +187,7 @@ index_view_input(Screen, Char, Action, !IndexInfo) :-
 key_binding('j', scroll_down).
 key_binding('k', scroll_up).
 key_binding('\r', enter).
+key_binding('l', enter_limit).
 key_binding('q', quit).
 
 :- pred cursor_down(screen::in, index_info::in, index_info::out) is det.

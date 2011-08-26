@@ -3,6 +3,7 @@
 :- module screen.
 :- interface.
 
+:- import_module char.
 :- import_module io.
 :- import_module list.
 
@@ -43,13 +44,14 @@
 
 :- pred update_message(screen::in, message_update::in, io::di, io::uo) is det.
 
+:- pred get_char(char::out, io::di, io::uo) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
 :- import_module bool.
-:- import_module char.
 :- import_module int.
 :- import_module list.
 :- import_module string.
@@ -167,6 +169,16 @@ update_message(Screen, MessageUpdate, !IO) :-
         panel.erase(Panel, !IO),
         panel.attr_set(Panel, fg_bg(red, black) + bold, !IO),
         my_addstr(Panel, String, !IO)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+get_char(Char, !IO) :-
+    curs.get_wch(C, !IO),
+    ( char.from_int(C, Char0) ->
+        Char = Char0
+    ;
+        get_char(Char, !IO)
     ).
 
 %-----------------------------------------------------------------------------%

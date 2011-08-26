@@ -14,6 +14,7 @@
 
 :- import_module char.
 :- import_module list.
+:- import_module maybe.
 :- import_module string.
 
 :- import_module callout.
@@ -23,6 +24,7 @@
 :- import_module index_view.
 :- import_module pager.
 :- import_module screen.
+:- import_module text_entry.
 
 %-----------------------------------------------------------------------------%
 
@@ -37,11 +39,9 @@ main(!IO) :-
     setlocale(!IO),
     io.command_line_arguments(Args, !IO),
     Terms = Args,
-    run_notmuch(["search", "--format=json" | Terms], parse_threads_list,
-        Threads, !IO),
     curs.start(!IO),
     create_screen(Screen, !IO),
-    open_index(Screen, Threads, !IO),
+    search_and_open_index(Screen, Terms, !IO),
     curs.stop(!IO).
 
 :- pred setlocale(io::di, io::uo) is det.
@@ -57,10 +57,17 @@ main(!IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred open_index(screen::in, list(thread)::in, io::di, io::uo) is det.
+:- pred search_and_open_index(screen::in, list(string)::in, io::di, io::uo)
+    is det.
 
-open_index(Screen, Threads, !IO) :-
+search_and_open_index(Screen, Terms, !IO) :-
+    update_message(Screen, set_info("Searching..."), !IO),
+    panel.update_panels(!IO),
+    run_notmuch(["search", "--format=json" | Terms], parse_threads_list,
+        Threads, !IO),
     setup_index_view(Threads, IndexInfo, !IO),
+    string.format("Found %d threads.", [i(length(Threads))], Message),
+    update_message(Screen, set_info(Message), !IO),
     index_loop(Screen, IndexInfo, !IO).
 
 :- pred index_loop(screen::in, index_info::in, io::di, io::uo) is det.
@@ -73,11 +80,23 @@ index_loop(Screen, !.IndexInfo, !IO) :-
     index_view_input(Screen, Char, Action, !IndexInfo),
     (
         Action = continue,
+        update_message(Screen, clear_message, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = open_pager(ThreadId),
         open_pager(Screen, ThreadId, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
+    ;
+        Action = enter_limit,
+        text_entry(Screen, "Limit to messages matching: ", Return, !IO),
+        (
+            Return = yes(String),
+            search_and_open_index(Screen, [String], !IO)
+        ;
+            Return = no,
+            update_message(Screen, clear_message, !IO),
+            index_loop(Screen, !.IndexInfo, !IO)
+        )
     ;
         Action = quit
     ).
@@ -111,16 +130,6 @@ pager_loop(Screen, !.PagerInfo, !IO) :-
     ).
 
 %-----------------------------------------------------------------------------%
-
-:- pred get_char(char::out, io::di, io::uo) is det.
-
-get_char(Char, !IO) :-
-    curs.getch(C, !IO),
-    ( char.from_int(C, Char0) ->
-        Char = Char0
-    ;
-        get_char(Char, !IO)
-    ).
 
 :- pred draw_bar(screen::in, io::di, io::uo) is det.
 
