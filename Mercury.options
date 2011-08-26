@@ -1,5 +1,8 @@
 MCFLAGS-popen += --no-ansi-c
 
+# for wide-character functions
+CFLAGS-curs += -D_XOPEN_SOURCE_EXTENDED
+
 CFLAGS-screen += -D_XOPEN_SOURCE
 CFLAGS-time_util += -D_POSIX_SOURCE
 

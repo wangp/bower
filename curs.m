@@ -104,6 +104,8 @@
     %
 :- pred getch(int::out, io::di, io::uo) is det.
 
+:- pred get_wch(int::out, io::di, io::uo) is det.
+
     % Throw away any typeahead that has not yet been read by the program.
     %
 :- pred flushinp(io::di, io::uo) is det.
@@ -375,6 +377,7 @@ void free(void *ptr)
 
 #include <ncurses.h>
 #include <panel.h>
+#include <wchar.h>
 
         /*
         ** XXX We assume 64 available colour pairs and that the COLOR_s
@@ -611,6 +614,21 @@ session(P, !IO) :-
     [will_not_call_mercury, promise_pure],
 "
     CharCode = getch();
+    IO = IO0;
+").
+
+%-----------------------------------------------------------------------------%
+
+:- pragma foreign_proc("C",
+    get_wch(CharCode::out, IO0::di, IO::uo),
+    [will_not_call_mercury, promise_pure],
+"
+    wint_t ch;
+    if (get_wch(&ch) == OK) {
+        CharCode = ch;
+    } else {
+        CharCode = 0;
+    }
     IO = IO0;
 ").
 
