@@ -22,6 +22,7 @@
 
 :- import_module curs.
 :- import_module curs.panel.
+:- import_module maildir.
 :- import_module pager.
 :- import_module popen.
 :- import_module quote_arg.
@@ -180,6 +181,8 @@ read_file_as_string(Filename, Res, !IO) :-
         Res = error(Error)
     ).
 
+%-----------------------------------------------------------------------------%
+
 :- pred staging_screen(screen::in, string::in, pager_info::in,
     io::di, io::uo) is det.
 
@@ -190,6 +193,14 @@ staging_screen(Screen, Filename, !.PagerInfo, !IO) :-
     get_char(Char, !IO),
     ( Char = 'e' ->
         edit_then_stage(Screen, Filename, !IO)
+    ; Char = 'p' ->
+        postpone(Screen, Filename, Res, !IO),
+        (
+            Res = yes
+        ;
+            Res = no,
+            staging_screen(Screen, Filename, !.PagerInfo, !IO)
+        )
     ; Char = 'Y' ->
         call_send_mail(Screen, Filename, Res, !IO),
         (
@@ -214,8 +225,37 @@ draw_staging_bar(Screen, !IO) :-
     panel.erase(Panel, !IO),
     panel.attr_set(Panel, fg_bg(white, blue), !IO),
     my_addstr(Panel, "-- ", !IO),
-    Msg = "Compose: (e) edit, (Y) send, (A) abandon. ",
+    Msg = "Compose: (e) edit, (p) postpone, (Y) send, (A) abandon. ",
     my_addstr_fixed(Panel, Cols - 3, Msg, '-', !IO).
+
+%-----------------------------------------------------------------------------%
+
+:- pred postpone(screen::in, string::in, bool::out, io::di, io::uo) is det.
+
+postpone(Screen, Filename, Res, !IO) :-
+    popen("notmuch config get database.path", ResDbPath, !IO),
+    (
+        ResDbPath = ok(DbPath0),
+        DbPath = string.strip(DbPath0),
+        add_draft(DbPath, Filename, DraftRes, !IO),
+        (
+            DraftRes = ok,
+            update_message(Screen, set_info("Message postponed."), !IO),
+            Res = yes
+        ;
+            DraftRes = error(Error),
+            Msg = io.error_message(Error),
+            update_message(Screen, set_warning(Msg), !IO),
+            Res = no
+        )
+    ;
+        ResDbPath = error(Error),
+        Msg = "Unable to get database path: " ++ io.error_message(Error),
+        update_message(Screen, set_warning(Msg), !IO),
+        Res = no
+    ).
+
+%-----------------------------------------------------------------------------%
 
 :- pred call_send_mail(screen::in, string::in, bool::out, io::di, io::uo)
     is det.
