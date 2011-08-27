@@ -34,13 +34,14 @@
     %
 :- pred my_addstr(panel::in, string::in, io::di, io::uo) is det.
 
-    % my_addstr_fixed(Panel, NrCols, String, !IO)
+    % my_addstr_fixed(Panel, NrCols, String, PadChar, !IO)
     %
     % Like my_addstr, but truncate the string if it would exceed the given
     % number of columns.  Afterwards the cursor is placed NrCols after the
     % original position (or otherwise the right margin of the panel).
     %
-:- pred my_addstr_fixed(panel::in, int::in, string::in, io::di, io::uo) is det.
+:- pred my_addstr_fixed(panel::in, int::in, string::in, char::in,
+    io::di, io::uo) is det.
 
 :- pred update_message(screen::in, message_update::in, io::di, io::uo) is det.
 
@@ -94,7 +95,7 @@ my_addstr(Panel, String, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-my_addstr_fixed(Panel, NrCols, String, !IO) :-
+my_addstr_fixed(Panel, NrCols, String, PadChar, !IO) :-
     getyx(Panel, Y, X0, !IO),
     getmaxyx(Panel, _, MaxX, !IO),
     % XXX stops drawing one column early
@@ -113,17 +114,17 @@ my_addstr_fixed(Panel, NrCols, String, !IO) :-
 
         getyx(Panel, _, X1, !IO),
         N = (X0 + NrCols) - X1,
-        add_spaces(Panel, N, !IO)
+        add_padding(Panel, N, string.from_char(PadChar), !IO)
     ).
 
-:- pred add_spaces(panel::in, int::in, io::di, io::uo) is det.
+:- pred add_padding(panel::in, int::in, string::in, io::di, io::uo) is det.
 
-add_spaces(Panel, N, !IO) :-
+add_padding(Panel, N, PadChar, !IO) :-
     ( N =< 0 ->
         true
     ;
-        panel.addstr(Panel, " ", !IO),
-        add_spaces(Panel, N - 1, !IO)
+        panel.addstr(Panel, PadChar, !IO),
+        add_padding(Panel, N - 1, PadChar, !IO)
     ).
 
 :- pred count_loop(string::in, int::in, int::in, int::out) is det.

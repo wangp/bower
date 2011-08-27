@@ -18,6 +18,7 @@
 :- import_module string.
 
 :- import_module callout.
+:- import_module compose.
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module data.
@@ -98,6 +99,10 @@ index_loop(Screen, !.IndexInfo, !IO) :-
             index_loop(Screen, !.IndexInfo, !IO)
         )
     ;
+        Action = start_compose,
+        start_compose(Screen, !IO),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
         Action = quit
     ).
 
@@ -109,7 +114,7 @@ open_pager(Screen, thread_id(ThreadId), !IO) :-
     run_notmuch(["show", "--format=json", "thread:" ++ ThreadId],
         parse_messages_list, Messages : list(message), !IO),
     Cols = Screen ^ cols,
-    setup_pager(Cols, Messages, PagerInfo, !IO),
+    setup_pager(Cols, Messages, PagerInfo),
     pager_loop(Screen, PagerInfo, !IO).
 
 :- pred pager_loop(screen::in, pager_info::in, io::di, io::uo)

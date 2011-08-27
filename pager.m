@@ -14,8 +14,9 @@
 
 :- type pager_info.
 
-:- pred setup_pager(int::in, list(message)::in, pager_info::out,
-    io::di, io::uo) is det.
+:- pred setup_pager(int::in, list(message)::in, pager_info::out) is det.
+
+:- pred setup_pager_for_staging(int::in, string::in, pager_info::out) is det.
 
 :- type pager_action
     --->    continue
@@ -77,7 +78,7 @@ default_quote_level = quote_level(0).
 
 %-----------------------------------------------------------------------------%
 
-setup_pager(Cols, Messages, Info, !IO) :-
+setup_pager(Cols, Messages, Info) :-
     list.foldl(append_message(Cols), Messages, cord.init, LinesCord),
     Lines = list(LinesCord),
     NumLines = list.length(Lines),
@@ -235,6 +236,18 @@ skip_whitespace(String, I0, I) :-
 :- func blank_line = pager_line.
 
 blank_line = text(default_quote_level, "").
+
+%-----------------------------------------------------------------------------%
+
+setup_pager_for_staging(Cols, Text, Info) :-
+    Start = 0,
+    LastBreak = 0,
+    Cur = 0,
+    append_text(Cols, Text, Start, LastBreak, Cur, no, cord.init, LinesCord),
+    Lines = list(LinesCord),
+    NumLines = list.length(Lines),
+    Top = 0,
+    Info = pager_info(Lines, NumLines, Top).
 
 %-----------------------------------------------------------------------------%
 

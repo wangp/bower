@@ -21,6 +21,7 @@
     --->    continue
     ;       open_pager(thread_id)
     ;       enter_limit
+    ;       start_compose
     ;       quit.
 
 :- pred index_view_input(screen::in, char::in, action::out,
@@ -87,6 +88,7 @@
     ;       scroll_up
     ;       enter
     ;       enter_limit
+    ;       start_compose
     ;       quit.
 
 %-----------------------------------------------------------------------------%
@@ -175,6 +177,9 @@ index_view_input(Screen, Char, Action, !IndexInfo) :-
             Binding = enter_limit,
             Action = enter_limit
         ;
+            Binding = start_compose,
+            Action = start_compose
+        ;
             Binding = quit,
             Action = quit
         )
@@ -188,6 +193,7 @@ key_binding('j', scroll_down).
 key_binding('k', scroll_up).
 key_binding('\r', enter).
 key_binding('l', enter_limit).
+key_binding('m', start_compose).
 key_binding('q', quit).
 
 :- pred cursor_down(screen::in, index_info::in, index_info::out) is det.
@@ -294,7 +300,7 @@ draw_index_line(Panel, Line, IsCursor, !IO) :-
         my_addstr(Panel, "  ", !IO)
     ),
     cond_attr_set(Panel, fg(cyan) + Base, IsCursor, !IO),
-    my_addstr_fixed(Panel, 25, Authors, !IO),
+    my_addstr_fixed(Panel, 25, Authors, ' ', !IO),
     cond_attr_set(Panel, fg(green) + Base, IsCursor, !IO),
     my_addstr(Panel, format(" %-3d ", [i(Total)]), !IO),
     cond_attr_set(Panel, Base, IsCursor, !IO),

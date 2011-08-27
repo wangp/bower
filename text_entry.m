@@ -26,7 +26,8 @@
 %-----------------------------------------------------------------------------%
 
 text_entry(Screen, Prompt, Return, !IO) :-
-    text_entry(Screen, Prompt, [], [], Return, !IO).
+    text_entry(Screen, Prompt, [], [], Return, !IO),
+    update_message(Screen, clear_message, !IO).
 
 :- pred text_entry(screen::in, string::in, list(char)::in, list(char)::in,
     maybe(string)::out, io::di, io::uo) is det.
