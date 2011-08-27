@@ -31,14 +31,13 @@
 :- import_module string.
 
 :- import_module popen.
+:- import_module quote_arg.
 
 %-----------------------------------------------------------------------------%
 
 run_notmuch(Args, P, Result, !IO) :-
-    % XXX escape shell characters
-    Command = ["notmuch" | Args],
-    CommandString = string.join_list(" ", Command),
-    popen(CommandString, CommandResult, !IO),
+    args_to_quoted_command(["notmuch" | Args], Command),
+    popen(Command, CommandResult, !IO),
     (
         CommandResult = ok(String),
         parse_json(String, ParseResult),
