@@ -50,6 +50,8 @@
     %
 :- pred stop(io::di, io::uo) is det.
 
+:- pred def_prog_mode(io::di, io::uo) is det.
+
     % A wrapper predicate that handles calling start and stop.
     %
 :- pred session(pred(io, io)::(pred(di, uo) is det), io::di, io::uo) is det.
@@ -491,6 +493,16 @@ init_pair(FG_BG(COLOR_WHITE, COLOR_WHITE),      COLOR_WHITE, COLOR_WHITE);
     [will_not_call_mercury, promise_pure],
 "
     endwin();
+    IO = IO0;
+").
+
+%----------------------------------------------------------------------------%
+
+:- pragma foreign_proc("C",
+    def_prog_mode(IO0::di, IO::uo),
+    [will_not_call_mercury, promise_pure],
+"
+    def_prog_mode();
     IO = IO0;
 ").
 
