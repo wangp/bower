@@ -26,6 +26,7 @@
 :- import_module pager.
 :- import_module screen.
 :- import_module text_entry.
+:- import_module thread_pager.
 
 %-----------------------------------------------------------------------------%
 
@@ -87,6 +88,7 @@ index_loop(Screen, !.IndexInfo, !IO) :-
     ;
         Action = open_pager(ThreadId),
         open_pager(Screen, ThreadId, !IO),
+        % open_thread_pager(Screen, ThreadId, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = enter_limit,
@@ -106,6 +108,26 @@ index_loop(Screen, !.IndexInfo, !IO) :-
     ;
         Action = quit
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred open_thread_pager(screen::in, thread_id::in, io::di, io::uo) is det.
+
+open_thread_pager(Screen, thread_id(ThreadId), !IO) :-
+    run_notmuch(["show", "--format=json", "thread:" ++ ThreadId],
+        parse_messages_list, Messages : list(message), !IO),
+    Cols = Screen ^ cols,
+    setup_thread_pager(Cols, Messages, ThreadPagerInfo),
+    thread_pager_loop(Screen, ThreadPagerInfo, !IO).
+
+:- pred thread_pager_loop(screen::in, thread_pager_info::in, io::di, io::uo)
+    is det.
+
+thread_pager_loop(Screen, !.Info, !IO) :-
+    draw_thread_pager(Screen, !.Info, !IO),
+    draw_bar(Screen, !IO),
+    panel.update_panels(!IO),
+    get_char(_Char, !IO).
 
 %-----------------------------------------------------------------------------%
 
