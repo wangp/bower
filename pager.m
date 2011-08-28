@@ -52,12 +52,12 @@
 :- type pager_line
     --->    start_message_header(message, string, string)
     ;       header(string, string)
-    ;       text(quote_level, string)
+    ;       text(string)
+    ;       quoted_text(quote_level, string)
     ;       attachment(content)
     ;       message_separator.
 
-:- type quote_level
-    --->    quote_level(int).
+:- type quote_level == int.
 
 :- type binding
     --->    leave_pager
@@ -70,10 +70,6 @@
     ;       next_message
     ;       prev_message
     ;       skip_quoted_text.
-
-:- func default_quote_level = quote_level.
-
-default_quote_level = quote_level(0).
 
 :- instance scrollable.line(pager_line) where [
     pred(draw_line/4) is draw_pager_line
@@ -138,7 +134,7 @@ append_content(Cols, IsFirst, Content, !Lines) :-
         append_text(Cols, Text, Start, LastBreak, Cur, no, !Lines)
     ;
         MaybeText = no,
-        snoc(text(default_quote_level, "(not supported)"), !Lines)
+        snoc(text("(not supported)"), !Lines)
     ).
 
 :- pred append_text(int::in, string::in, int::in, int::in, int::in,
@@ -188,23 +184,26 @@ maybe_append_substring(String, Start, End, QuoteLevel, ContQuoteLevel,
             QuoteLevel = yes(ContQuoteLevel)
         ;
             QuoteLevel = no,
-            ContQuoteLevel = default_quote_level
+            ContQuoteLevel = 0
         )
     ).
 
 :- pred append_substring(string::in, int::in, int::in, maybe(quote_level)::in,
     quote_level::out, cord(pager_line)::in, cord(pager_line)::out) is det.
 
-append_substring(String, Start, End, QuoteLevel, ContQuoteLevel, !Lines) :-
+append_substring(String, Start, End, MaybeLevel, ContQuoteLevel, !Lines) :-
     string.between(String, Start, End, SubString),
     (
-        QuoteLevel = yes(Level)
+        MaybeLevel = yes(Level)
     ;
-        QuoteLevel = no,
-        LevelInt = detect_quote_level(SubString, 0),
-        Level = quote_level(LevelInt)
+        MaybeLevel = no,
+        Level = detect_quote_level(SubString, 0)
     ),
-    snoc(text(Level, SubString), !Lines),
+    ( Level = 0 ->
+        snoc(text(SubString), !Lines)
+    ;
+        snoc(quoted_text(Level, SubString), !Lines)
+    ),
     ContQuoteLevel = Level.
 
 :- func detect_quote_level(string, int) = int.
@@ -237,7 +236,7 @@ skip_whitespace(String, I0, I) :-
 
 :- func blank_line = pager_line.
 
-blank_line = text(default_quote_level, "").
+blank_line = text("").
 
 %-----------------------------------------------------------------------------%
 
@@ -392,8 +391,7 @@ skip_quoted_text(MessageUpdate, !Info) :-
 
 is_quoted_text_or_message_start(Line) :-
     (
-        Line = text(quote_level(Level), _),
-        Level > 0
+        Line = quoted_text(_, _)
     ;
         Line = start_message_header(_, _, _)
     ).
@@ -401,10 +399,7 @@ is_quoted_text_or_message_start(Line) :-
 :- pred is_unquoted_text(pager_line::in) is semidet.
 
 is_unquoted_text(Line) :-
-    not (
-        Line = text(quote_level(Level), _),
-        Level > 0
-    ).
+    Line \= quoted_text(_, _).
 
 %-----------------------------------------------------------------------------%
 
@@ -427,8 +422,13 @@ draw_pager_line(Panel, Line, !IO) :-
         panel.attr_set(Panel, normal, !IO),
         my_addstr(Panel, Value, !IO)
     ;
-        Line = text(QuoteLevel, Text),
-        Attr = quote_level_to_attr(QuoteLevel),
+        (
+            Line = text(Text),
+            Attr = normal
+        ;
+            Line = quoted_text(QuoteLevel, Text),
+            Attr = quote_level_to_attr(QuoteLevel)
+        ),
         panel.attr_set(Panel, Attr, !IO),
         my_addstr(Panel, Text, !IO)
     ;
@@ -454,10 +454,8 @@ draw_pager_line(Panel, Line, !IO) :-
 
 :- func quote_level_to_attr(quote_level) = attr.
 
-quote_level_to_attr(quote_level(QuoteLevel)) =
-    ( QuoteLevel = 0 ->
-        normal
-    ; int.odd(QuoteLevel) ->
+quote_level_to_attr(QuoteLevel) =
+    ( int.odd(QuoteLevel) ->
         fg_bg(blue, black) + bold
     ;
         fg_bg(green, black)
