@@ -7,6 +7,8 @@
 :- import_module io.
 :- import_module list.
 
+:- import_module curs.
+:- import_module curs.panel.
 :- import_module data.
 :- import_module screen.
 
@@ -25,7 +27,21 @@
 :- pred pager_input(screen::in, char::in, pager_action::out,
     message_update::out, pager_info::in, pager_info::out) is det.
 
+:- pred scroll(int::in, int::in, message_update::out,
+    pager_info::in, pager_info::out) is det.
+
+:- pred next_message(message_update::out, pager_info::in, pager_info::out)
+    is det.
+
+:- pred prev_message(message_update::out, pager_info::in, pager_info::out)
+    is det.
+
+:- pred get_top_message_id(pager_info::in, message_id::out) is semidet.
+
 :- pred draw_pager(screen::in, pager_info::in, io::di, io::uo) is det.
+
+:- pred draw_pager_lines(list(panel)::in, pager_info::in, io::di, io::uo)
+    is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -38,8 +54,6 @@
 :- import_module maybe.
 :- import_module string.
 
-:- import_module curs.
-:- import_module curs.panel.
 :- import_module scrollable.
 
 %-----------------------------------------------------------------------------%
@@ -317,9 +331,6 @@ key_binding('j', next_message).
 key_binding('k', prev_message).
 key_binding('S', skip_quoted_text).
 
-:- pred scroll(int::in, int::in, message_update::out,
-    pager_info::in, pager_info::out) is det.
-
 scroll(NumRows, Delta, MessageUpdate, !Info) :-
     !.Info = pager_info(Scrollable0),
     scroll(NumRows, Delta, HitLimit, Scrollable0, Scrollable),
@@ -336,9 +347,6 @@ scroll(NumRows, Delta, MessageUpdate, !Info) :-
         MessageUpdate = clear_message
     ).
 
-:- pred next_message(message_update::out, pager_info::in, pager_info::out)
-    is det.
-
 next_message(MessageUpdate, !Info) :-
     !.Info = pager_info(Scrollable0),
     Top0 = get_top(Scrollable0),
@@ -349,9 +357,6 @@ next_message(MessageUpdate, !Info) :-
     ;
         MessageUpdate = set_warning("Already at last message.")
     ).
-
-:- pred prev_message(message_update::out, pager_info::in, pager_info::out)
-    is det.
 
 prev_message(MessageUpdate, !Info) :-
     !.Info = pager_info(Scrollable0),
@@ -411,10 +416,34 @@ is_unquoted_text(Line) :-
 
 %-----------------------------------------------------------------------------%
 
+get_top_message_id(Info, MessageId) :-
+    % XXX inefficient; we could keep an array for binary search
+    Info = pager_info(Scrollable),
+    Top = get_top(Scrollable),
+    Lines0 = get_lines(Scrollable),
+    list.take(Top + 1, Lines0, Lines1),
+    list.reverse(Lines1, RevLines),
+    get_top_message_id_2(RevLines, MessageId).
+
+:- pred get_top_message_id_2(list(pager_line)::in, message_id::out)
+    is semidet.
+
+get_top_message_id_2([Line | Lines], MessageId) :-
+    ( Line = start_message_header(Message, _, _) ->
+        MessageId = Message ^ m_id
+    ;
+        get_top_message_id_2(Lines, MessageId)
+    ).
+
+%-----------------------------------------------------------------------------%
+
 draw_pager(Screen, Info, !IO) :-
     MainPanels = Screen ^ main_panels,
+    draw_pager_lines(MainPanels, Info, !IO).
+
+draw_pager_lines(Panels, Info, !IO) :-
     Info = pager_info(Scrollable),
-    scrollable.draw(MainPanels, Scrollable, !IO).
+    scrollable.draw(Panels, Scrollable, !IO).
 
 :- pred draw_pager_line(panel::in, pager_line::in, bool::in,
     io::di, io::uo) is det.

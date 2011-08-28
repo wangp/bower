@@ -24,9 +24,13 @@
 
 :- func get_lines(scrollable(T)) = list(T).
 
+:- func get_num_lines(scrollable(T)) = int.
+
 :- func get_top(scrollable(T)) = int.
 
 :- pred set_top(int::in, scrollable(T)::in, scrollable(T)::out) is det.
+
+:- pred set_cursor(int::in, scrollable(T)::in, scrollable(T)::out) is det.
 
 :- pred get_cursor_line(scrollable(T)::in, T::out) is semidet.
 
@@ -74,10 +78,15 @@ init_with_cursor(Lines, Cursor) = Scrollable :-
 
 get_lines(Scrollable) = Scrollable ^ s_lines.
 
+get_num_lines(Scrollable) = Scrollable ^ s_numlines.
+
 get_top(Scrollable) = Scrollable ^ s_top.
 
 set_top(Top, !Scrollable) :-
     !Scrollable ^ s_top := Top.
+
+set_cursor(Cursor, !Scrollable) :-
+    !Scrollable ^ s_cursor := yes(Cursor).
 
 get_cursor_line(Scrollable, Line) :-
     Lines = Scrollable ^ s_lines,

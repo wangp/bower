@@ -127,7 +127,15 @@ thread_pager_loop(Screen, !.Info, !IO) :-
     draw_thread_pager(Screen, !.Info, !IO),
     draw_bar(Screen, !IO),
     panel.update_panels(!IO),
-    get_char(_Char, !IO).
+    get_char(Char, !IO),
+    thread_pager_input(Screen, Char, Action, MessageUpdate, !Info),
+    update_message(Screen, MessageUpdate, !IO),
+    (
+        Action = continue,
+        thread_pager_loop(Screen, !.Info, !IO)
+    ;
+        Action = leave
+    ).
 
 %-----------------------------------------------------------------------------%
 
