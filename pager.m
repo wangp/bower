@@ -40,14 +40,13 @@
 
 :- import_module curs.
 :- import_module curs.panel.
+:- import_module scrollable.
 
 %-----------------------------------------------------------------------------%
 
 :- type pager_info
     --->    pager_info(
-                p_lines     :: list(pager_line),
-                p_numlines  :: int,
-                p_top       :: int
+                p_scrollable :: scrollable(pager_line)
             ).
 
 :- type pager_line
@@ -76,14 +75,17 @@
 
 default_quote_level = quote_level(0).
 
+:- instance scrollable.line(pager_line) where [
+    pred(draw_line/4) is draw_pager_line
+].
+
 %-----------------------------------------------------------------------------%
 
 setup_pager(Cols, Messages, Info) :-
     list.foldl(append_message(Cols), Messages, cord.init, LinesCord),
     Lines = list(LinesCord),
-    NumLines = list.length(Lines),
-    Top = 0,
-    Info = pager_info(Lines, NumLines, Top).
+    Scrollable = scrollable.init(Lines),
+    Info = pager_info(Scrollable).
 
 :- pred append_message(int::in, message::in,
     cord(pager_line)::in, cord(pager_line)::out) is det.
@@ -245,9 +247,8 @@ setup_pager_for_staging(Cols, Text, Info) :-
     Cur = 0,
     append_text(Cols, Text, Start, LastBreak, Cur, no, cord.init, LinesCord),
     Lines = list(LinesCord),
-    NumLines = list.length(Lines),
-    Top = 0,
-    Info = pager_info(Lines, NumLines, Top).
+    Scrollable = scrollable.init(Lines),
+    Info = pager_info(Scrollable).
 
 %-----------------------------------------------------------------------------%
 
@@ -319,60 +320,48 @@ key_binding('S', skip_quoted_text).
     pager_info::in, pager_info::out) is det.
 
 scroll(NumRows, Delta, MessageUpdate, !Info) :-
-    NumLines = !.Info ^ p_numlines,
-    Top0 = !.Info ^ p_top,
-    TopLimit = max(max(0, NumLines - NumRows), Top0),
-    Top = clamp(0, Top0 + Delta, TopLimit),
-    ( Top = Top0, Delta < 0 ->
-        MessageUpdate = set_warning("Top of message is shown.")
-    ; Top = Top0, Delta > 0 ->
-        MessageUpdate = set_warning("Bottom of message is shown.")
+    !.Info = pager_info(Scrollable0),
+    scroll(NumRows, Delta, HitLimit, Scrollable0, Scrollable),
+    !:Info = pager_info(Scrollable),
+    (
+        HitLimit = yes,
+        ( Delta < 0 ->
+            MessageUpdate = set_warning("Top of message is shown.")
+        ;
+            MessageUpdate = set_warning("Bottom of message is shown.")
+        )
     ;
+        HitLimit = no,
         MessageUpdate = clear_message
-    ),
-    !Info ^ p_top := Top.
+    ).
 
 :- pred next_message(message_update::out, pager_info::in, pager_info::out)
     is det.
 
 next_message(MessageUpdate, !Info) :-
-    Lines0 = !.Info ^ p_lines,
-    Top0 = !.Info ^ p_top,
-    (
-        list.drop(Top0 + 1, Lines0, Lines),
-        next_message_loop(Lines, Top0 + 1, Top)
-    ->
-        !Info ^ p_top := Top,
+    !.Info = pager_info(Scrollable0),
+    ( search_forward(is_message_start, yes, Scrollable0, Scrollable) ->
+        !:Info = pager_info(Scrollable),
         MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("Already at last message.")
-    ).
-
-:- pred next_message_loop(list(pager_line)::in, int::in, int::out) is semidet.
-
-next_message_loop([Line | Lines], Top0, Top) :-
-    ( Line = start_message_header(_, _, _) ->
-        Top = Top0
-    ;
-        next_message_loop(Lines, Top0 + 1, Top)
     ).
 
 :- pred prev_message(message_update::out, pager_info::in, pager_info::out)
     is det.
 
 prev_message(MessageUpdate, !Info) :-
-    Lines = !.Info ^ p_lines,
-    Top0 = !.Info ^ p_top,
-    (
-        list.take_upto(Top0, Lines, Lines1),
-        list.reverse(Lines1, RevLines),
-        prev_message_loop(RevLines, Top0 - 1, Top)
-    ->
-        !Info ^ p_top := Top,
+    !.Info = pager_info(Scrollable0),
+    ( search_reverse(is_message_start, Scrollable0, Scrollable) ->
+        !:Info = pager_info(Scrollable),
         MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("Already at first message.")
     ).
+
+:- pred is_message_start(pager_line::in) is semidet.
+
+is_message_start(start_message_header(_, _, _)).
 
 :- pred prev_message_loop(list(pager_line)::in, int::in, int::out) is semidet.
 
@@ -387,88 +376,42 @@ prev_message_loop([Line | Lines], Top0, Top) :-
     is det.
 
 skip_quoted_text(MessageUpdate, !Info) :-
-    Lines0 = !.Info ^ p_lines,
-    Top0 = !.Info ^ p_top,
+    !.Info = pager_info(Scrollable0),
     (
-        list.drop(Top0, Lines0, [FirstLine | RestLines0]),
-        ( is_quoted_text(FirstLine) = yes ->
-            RestLines1 = RestLines0,
-            Top1 = Top0 + 1
-        ;
-            search_quoted_line(yes, RestLines0, RestLines1, Top0 + 1, Top1)
-        ),
-        search_quoted_line(no, RestLines1, _, Top1, Top)
+        search_forward(is_quoted_text_or_message_start, yes,
+            Scrollable0, Scrollable1),
+        search_forward(is_unquoted_text, no, Scrollable1, Scrollable)
     ->
-        !Info ^ p_top := Top,
+        !:Info = pager_info(Scrollable),
         MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("No more quoted text.")
     ).
 
-:- pred search_quoted_line(bool::in,
-    list(pager_line)::in, list(pager_line)::out, int::in, int::out) is semidet.
+:- pred is_quoted_text_or_message_start(pager_line::in) is semidet.
 
-search_quoted_line(SearchQuotedOrNot, !Lines, Cur0, Cur) :-
-    !.Lines = [Line | TailLines],
-    % Stop at message boundaries.
-    ( Line = start_message_header(_, _, _) ->
-        Cur = Cur0
-    ; is_quoted_text(Line) = SearchQuotedOrNot ->
-        Cur = Cur0
-    ;
-        search_quoted_line(SearchQuotedOrNot, TailLines, !:Lines,
-            Cur0 + 1, Cur)
-    ).
-
-:- func is_quoted_text(pager_line) = bool.
-
-is_quoted_text(Line) = IsQuoted :-
+is_quoted_text_or_message_start(Line) :-
     (
-        ( Line = start_message_header(_, _, _)
-        ; Line = header(_, _)
-        ; Line = attachment(_)
-        ; Line = message_separator
-        ),
-        IsQuoted = no
-    ;
         Line = text(quote_level(Level), _),
-        IsQuoted = (Level > 0 -> yes ; no)
+        Level > 0
+    ;
+        Line = start_message_header(_, _, _)
     ).
 
-:- func clamp(int, int, int) = int.
+:- pred is_unquoted_text(pager_line::in) is semidet.
 
-clamp(Min, X, Max) =
-    ( X < Min -> Min
-    ; X > Max -> Max
-    ; X
+is_unquoted_text(Line) :-
+    not (
+        Line = text(quote_level(Level), _),
+        Level > 0
     ).
 
 %-----------------------------------------------------------------------------%
 
 draw_pager(Screen, Info, !IO) :-
     MainPanels = Screen ^ main_panels,
-    Info = pager_info(Lines0, _NumLines, Top),
-    ( list.drop(Top, Lines0, Lines1) ->
-        Lines = Lines1
-    ;
-        Lines = []
-    ),
-    draw_pager_lines(MainPanels, Lines, !IO).
-
-:- pred draw_pager_lines(list(panel)::in, list(pager_line)::in,
-    io::di, io::uo) is det.
-
-draw_pager_lines([], _, !IO).
-draw_pager_lines([Panel | Panels], Lines, !IO) :-
-    panel.erase(Panel, !IO),
-    (
-        Lines = [Line | RestLines],
-        draw_pager_line(Panel, Line, !IO)
-    ;
-        Lines = [],
-        RestLines = []
-    ),
-    draw_pager_lines(Panels, RestLines, !IO).
+    Info = pager_info(Scrollable),
+    scrollable.draw(MainPanels, Scrollable, !IO).
 
 :- pred draw_pager_line(panel::in, pager_line::in, io::di, io::uo) is det.
 
