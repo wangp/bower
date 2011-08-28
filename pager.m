@@ -341,7 +341,9 @@ scroll(NumRows, Delta, MessageUpdate, !Info) :-
 
 next_message(MessageUpdate, !Info) :-
     !.Info = pager_info(Scrollable0),
-    ( search_forward(is_message_start, yes, Scrollable0, Scrollable) ->
+    Top0 = get_top(Scrollable0),
+    ( search_forward(is_message_start, Scrollable0, Top0 + 1, Top) ->
+        set_top(Top, Scrollable0, Scrollable),
         !:Info = pager_info(Scrollable),
         MessageUpdate = clear_message
     ;
@@ -353,7 +355,9 @@ next_message(MessageUpdate, !Info) :-
 
 prev_message(MessageUpdate, !Info) :-
     !.Info = pager_info(Scrollable0),
-    ( search_reverse(is_message_start, Scrollable0, Scrollable) ->
+    Top0 = get_top(Scrollable0),
+    ( search_reverse(is_message_start, Scrollable0, Top0 - 1, Top) ->
+        set_top(Top, Scrollable0, Scrollable),
         !:Info = pager_info(Scrollable),
         MessageUpdate = clear_message
     ;
@@ -378,11 +382,13 @@ prev_message_loop([Line | Lines], Top0, Top) :-
 
 skip_quoted_text(MessageUpdate, !Info) :-
     !.Info = pager_info(Scrollable0),
+    Top0 = get_top(Scrollable0),
     (
-        search_forward(is_quoted_text_or_message_start, yes,
-            Scrollable0, Scrollable1),
-        search_forward(is_unquoted_text, no, Scrollable1, Scrollable)
+        search_forward(is_quoted_text_or_message_start, Scrollable0,
+            Top0 + 1, Top1),
+        search_forward(is_unquoted_text, Scrollable0, Top1, Top)
     ->
+        set_top(Top, Scrollable0, Scrollable),
         !:Info = pager_info(Scrollable),
         MessageUpdate = clear_message
     ;

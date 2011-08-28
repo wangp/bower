@@ -26,6 +26,8 @@
 
 :- func get_top(scrollable(T)) = int.
 
+:- pred set_top(int::in, scrollable(T)::in, scrollable(T)::out) is det.
+
 :- pred get_cursor_line(scrollable(T)::in, T::out) is semidet.
 
 :- pred scroll(int::in, int::in, bool::out,
@@ -34,11 +36,11 @@
 :- pred move_cursor(int::in, int::in, bool::out,
     scrollable(T)::in, scrollable(T)::out) is det.
 
-:- pred search_forward(pred(T)::in(pred(in) is semidet), bool::in,
-    scrollable(T)::in, scrollable(T)::out) is semidet.
+:- pred search_forward(pred(T)::in(pred(in) is semidet),
+    scrollable(T)::in, int::in, int::out) is semidet.
 
 :- pred search_reverse(pred(T)::in(pred(in) is semidet),
-    scrollable(T)::in, scrollable(T)::out) is semidet.
+    scrollable(T)::in, int::in, int::out) is semidet.
 
 :- pred draw(list(panel)::in, scrollable(T)::in, io::di, io::uo) is det
     <= scrollable.line(T).
@@ -73,6 +75,9 @@ init_with_cursor(Lines, Cursor) = Scrollable :-
 get_lines(Scrollable) = Scrollable ^ s_lines.
 
 get_top(Scrollable) = Scrollable ^ s_top.
+
+set_top(Top, !Scrollable) :-
+    !Scrollable ^ s_top := Top.
 
 get_cursor_line(Scrollable, Line) :-
     Lines = Scrollable ^ s_lines,
@@ -118,29 +123,18 @@ move_cursor(NumRows, Delta, HitLimit, !Scrollable) :-
         HitLimit = no
     ).
 
-search_forward(P, SkipInitial, !Scrollable) :-
-    !.Scrollable = scrollable(Lines0, _NumLines, Top0, _MaybeCursor0),
-    (
-        SkipInitial = yes,
-        Top1 = Top0 + 1
-    ;
-        SkipInitial = no,
-        Top1 = Top0
-    ),
-    list.drop(Top1, Lines0, Lines),
-    search_loop(P, Lines, Top1, Top),
-    % XXX cursor
-    !Scrollable ^ s_top := Top.
+search_forward(P, Scrollable, I0, I) :-
+    Scrollable = scrollable(Lines0, _NumLines, _Top, _MaybeCursor),
+    list.drop(I0, Lines0, Lines),
+    search_loop(P, Lines, I0, I).
 
-search_reverse(P, !Scrollable) :-
-    !.Scrollable = scrollable(Lines0, _NumLines, Top0, _MaybeCursor0),
-    list.take_upto(Top0, Lines0, Lines1),
+search_reverse(P, Scrollable, I0, I) :-
+    Scrollable = scrollable(Lines0, _NumLines, _Top, _MaybeCursor),
+    list.take_upto(I0, Lines0, Lines1),
     list.reverse(Lines1, RevLines),
-    search_loop(P, RevLines, 1, N),
-    Top = Top0 - N,
-    % XXX cursor
-    !Scrollable ^ s_top := Top.
-    
+    search_loop(P, RevLines, 0, N),
+    I = I0 - N.
+
 :- pred search_loop(pred(T)::in(pred(in) is semidet),
     list(T)::in, int::in, int::out) is semidet.
 
