@@ -103,7 +103,9 @@ append_message(Cols, Message, !Lines) :-
     ),
     snoc(message_separator, !Lines),
     snoc(message_separator, !Lines),
-    snoc(message_separator, !Lines).
+    snoc(message_separator, !Lines),
+    Replies = Message ^ m_replies,
+    list.foldl(append_message(Cols), Replies, !Lines).
 
 :- pred append_header(string::in, string::in,
     cord(pager_line)::in, cord(pager_line)::out) is det.

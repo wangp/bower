@@ -57,38 +57,18 @@ run_notmuch(Args, P, Result, !IO) :-
 
 parse_messages_list(JSON, Messages) :-
     ( JSON = array([List]) ->
-        parse_messages_list(List, cord.init, Cord),
-        Messages = list(Cord)
+        parse_inner_message_list(List, Messages)
     ; JSON = array([]) ->
         Messages = []
     ;
         notmuch_json_error
     ).
 
-:- pred parse_messages_list(json::in, cord(message)::in, cord(message)::out)
-    is det.
+:- pred parse_inner_message_list(json::in, list(message)::out) is det.
 
-parse_messages_list(JSON, !Messages) :-
-    ( JSON = array(List) ->
-        list.foldl(parse_messages_cons_list, List, !Messages)
-    ;
-        notmuch_json_error
-    ).
-
-:- pred parse_messages_cons_list(json::in,
-    cord(message)::in, cord(message)::out) is det.
-
-parse_messages_cons_list(JSON, !Messages) :-
-    ( JSON = array([]) ->
-        true
-    ; JSON = array([Head | Tail]) ->
-        ( Head = array(_) ->
-            parse_messages_cons_list(Head, !Messages)
-        ;
-            parse_message(Head, Message),
-            snoc(Message, !Messages)
-        ),
-        parse_messages_cons_list(array(Tail), !Messages)
+parse_inner_message_list(JSON, Messages) :-
+    ( JSON = array(Array) ->
+        list.map(parse_message, Array, Messages)
     ;
         notmuch_json_error
     ).
@@ -96,6 +76,16 @@ parse_messages_cons_list(JSON, !Messages) :-
 :- pred parse_message(json::in, message::out) is det.
 
 parse_message(JSON, Message) :-
+    ( JSON = array([JSON1, JSON2]) ->
+        parse_inner_message_list(JSON2, Replies),
+        parse_message_details(JSON1, Replies, Message)
+    ;
+        notmuch_json_error
+    ).
+
+:- pred parse_message_details(json::in, list(message)::in, message::out) is det.
+
+parse_message_details(JSON, Replies, Message) :-
     (
         JSON/"id" = string(Id),
         JSON/"headers" = Headers,
@@ -106,7 +96,7 @@ parse_message(JSON, Message) :-
         JSON/"body" = array(BodyList),
         list.foldl(parse_content, BodyList, cord.init, Body)
     ->
-        Message = message(message_id(Id), Subject, From, To, Date, Body)
+        Message = message(message_id(Id), Subject, From, To, Date, Body, Replies)
     ;
         notmuch_json_error
     ).

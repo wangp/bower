@@ -30,7 +30,8 @@
                 m_from      :: string,
                 m_to        :: string,
                 m_date      :: string,
-                m_body      :: cord(content)
+                m_body      :: cord(content),
+                m_replies   :: list(message)
             ).
 
 :- type message_id
