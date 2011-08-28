@@ -78,7 +78,8 @@ index_loop(Screen, !.IndexInfo, !IO) :-
     draw_bar(Screen, !IO),
     panel.update_panels(!IO),
     get_char(Char, !IO),
-    index_view_input(Screen, Char, Action, !IndexInfo),
+    index_view_input(Screen, Char, MessageUpdate, Action, !IndexInfo),
+    update_message(Screen, MessageUpdate, !IO),
     (
         Action = continue,
         update_message(Screen, clear_message, !IO),

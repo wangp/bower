@@ -24,8 +24,8 @@
     ;       start_compose
     ;       quit.
 
-:- pred index_view_input(screen::in, char::in, action::out,
-    index_info::in, index_info::out) is det.
+:- pred index_view_input(screen::in, char::in, message_update::out,
+    action::out, index_info::in, index_info::out) is det.
 
 :- pred draw_index_view(screen::in, index_info::in, io::di, io::uo) is det.
 
@@ -42,16 +42,14 @@
 
 :- import_module curs.
 :- import_module curs.panel.
+:- import_module scrollable.
 :- import_module time_util.
 
 %-----------------------------------------------------------------------------%
 
 :- type index_info
     --->    index_info(
-                i_lines     :: list(index_line),
-                i_numlines  :: int,
-                i_top       :: int,
-                i_cursor    :: int
+                i_scrollable    :: scrollable(index_line)
             ).
 
 :- type index_line
@@ -91,6 +89,10 @@
     ;       start_compose
     ;       quit.
 
+:- instance scrollable.line(index_line) where [
+    pred(draw_line/5) is draw_index_line
+].
+
 %-----------------------------------------------------------------------------%
 
 setup_index_view(Threads, Info, !IO) :-
@@ -98,10 +100,9 @@ setup_index_view(Threads, Info, !IO) :-
     Nowish = localtime(Time),
     list.foldl(add_thread(Nowish), Threads, cord.init, LinesCord),
     Lines = list(LinesCord),
-    NumLines = list.length(Lines),
-    Top = 0,
     Cursor = 0,
-    Info = index_info(Lines, NumLines, Top, Cursor).
+    Scrollable = scrollable.init_with_cursor(Lines, Cursor),
+    Info = index_info(Scrollable).
 
 :- pred add_thread(tm::in, thread::in,
     cord(index_line)::in, cord(index_line)::out) is det.
@@ -160,30 +161,35 @@ apply_tag(Tag, !Line) :-
 
 %-----------------------------------------------------------------------------%
 
-index_view_input(Screen, Char, Action, !IndexInfo) :-
+index_view_input(Screen, Char, MessageUpdate, Action, !IndexInfo) :-
     ( key_binding(Char, Binding) ->
         (
             Binding = scroll_down,
-            cursor_down(Screen, !IndexInfo),
+            move_cursor(Screen, 1, MessageUpdate, !IndexInfo),
             Action = continue
         ;
             Binding = scroll_up,
-            cursor_up(!IndexInfo),
+            move_cursor(Screen, -1, MessageUpdate, !IndexInfo),
             Action = continue
         ;
             Binding = enter,
-            enter(!.IndexInfo, Action)
+            enter(!.IndexInfo, Action),
+            MessageUpdate = no_change
         ;
             Binding = enter_limit,
+            MessageUpdate = no_change,
             Action = enter_limit
         ;
             Binding = start_compose,
+            MessageUpdate = no_change,
             Action = start_compose
         ;
             Binding = quit,
+            MessageUpdate = no_change,
             Action = quit
         )
     ;
+        MessageUpdate = no_change,
         Action = continue
     ).
 
@@ -196,29 +202,31 @@ key_binding('l', enter_limit).
 key_binding('m', start_compose).
 key_binding('q', quit).
 
-:- pred cursor_down(screen::in, index_info::in, index_info::out) is det.
+:- pred move_cursor(screen::in, int::in, message_update::out,
+    index_info::in, index_info::out) is det.
 
-cursor_down(Screen, !Info) :-
-    Rows = list.length(Screen ^ main_panels),
-    !.Info = index_info(Lines, NumLines, Top0, Cursor0),
-    Cursor = int.min(Cursor0 + 1, NumLines - 1),
-    Top = int.max(Cursor - Rows + 1, Top0),
-    !:Info = index_info(Lines, NumLines, Top, Cursor).
-
-:- pred cursor_up(index_info::in, index_info::out) is det.
-
-cursor_up(!Info) :-
-    !.Info = index_info(Lines, NumLines, Top0, Cursor0),
-    int.max(0, Cursor0 - 1, Cursor),
-    int.min(Cursor, Top0, Top),
-    !:Info = index_info(Lines, NumLines, Top, Cursor).
+move_cursor(Screen, Delta, MessageUpdate, !Info) :-
+    !.Info = index_info(Scrollable0),
+    NumRows = list.length(Screen ^ main_panels),
+    move_cursor(NumRows, Delta, HitLimit, Scrollable0, Scrollable),
+    !:Info = index_info(Scrollable),
+    (
+        HitLimit = no,
+        MessageUpdate = clear_message
+    ;
+        HitLimit = yes,
+        ( Delta > 0 ->
+            MessageUpdate = set_warning("You are on the last message.")
+        ;
+            MessageUpdate = set_warning("You are on the first message.")
+        )
+    ).
 
 :- pred enter(index_info::in, action::out) is det.
 
 enter(Info, Action) :-
-    IndexLines = Info ^ i_lines,
-    Cursor = Info ^ i_cursor,
-    ( list.index0(IndexLines, Cursor, CursorLine) ->
+    Info = index_info(Scrollable),
+    ( get_cursor_line(Scrollable, CursorLine) ->
         ThreadId = CursorLine ^ i_id,
         Action = open_pager(ThreadId)
     ;
@@ -229,37 +237,8 @@ enter(Info, Action) :-
 
 draw_index_view(Screen, Info, !IO) :-
     MainPanels = Screen ^ main_panels,
-    Info = index_info(Lines0, _NumLines, Top, Cursor),
-    ( list.drop(Top, Lines0, Lines1) ->
-        Lines = Lines1
-    ;
-        Lines = []
-    ),
-    draw_index_lines(MainPanels, Lines, Top, Cursor, !IO).
-
-:- pred draw_index_lines(list(panel)::in, list(index_line)::in,
-    int::in, int::in, io::di, io::uo) is det.
-
-draw_index_lines(Panels, IndexLines, Cur, Cursor, !IO) :-
-    (
-        Panels = []
-    ;
-        Panels = [Panel | RestPanels],
-        panel.erase(Panel, !IO),
-        (
-            IndexLines = [IndexLine | RestIndexLines],
-            ( Cur = Cursor ->
-                IsCursor = yes
-            ;
-                IsCursor = no
-            ),
-            draw_index_line(Panel, IndexLine, IsCursor, !IO)
-        ;
-            IndexLines = [],
-            RestIndexLines = []
-        ),
-        draw_index_lines(RestPanels, RestIndexLines, Cur + 1, Cursor, !IO)
-    ).
+    Info = index_info(Scrollable),
+    scrollable.draw(MainPanels, Scrollable, !IO).
 
 :- pred draw_index_line(panel::in, index_line::in, bool::in,
     io::di, io::uo) is det.
