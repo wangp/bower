@@ -26,10 +26,7 @@
 :- interface.
 
 :- import_module bool.
-:- import_module char.
-:- import_module int.
 :- import_module io.
-:- import_module string.
 
 %-----------------------------------------------------------------------------%
 
