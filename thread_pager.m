@@ -6,6 +6,7 @@
 :- import_module char.
 :- import_module io.
 :- import_module list.
+:- import_module time.
 
 :- import_module data.
 :- import_module screen.
@@ -14,7 +15,7 @@
 
 :- type thread_pager_info.
 
-:- pred setup_thread_pager(int::in, int::in, list(message)::in,
+:- pred setup_thread_pager(tm::in, int::in, int::in, list(message)::in,
     thread_pager_info::out, int::out) is det.
 
 :- type thread_pager_action
@@ -42,6 +43,7 @@
 :- import_module curs.panel.
 :- import_module pager.
 :- import_module scrollable.
+:- import_module time_util.
 
 %-----------------------------------------------------------------------------%
 
@@ -55,8 +57,12 @@
 
 :- type thread_line
     --->    thread_line(
+                tp_message  :: message,
+                tp_unread   :: unread,
+                tp_replied  :: replied,
+                tp_flagged  :: flagged,
                 tp_graphics :: list(graphic),
-                tp_message  :: message
+                tp_reldate  :: string
             ).
 
 :- type graphic
@@ -65,14 +71,27 @@
     ;       tee
     ;       ell.
 
+:- type unread
+    --->    unread
+    ;       read.
+
+:- type replied
+    --->    replied
+    ;       not_replied.
+
+:- type flagged
+    --->    flagged
+    ;       unflagged.
+
 :- instance scrollable.line(thread_line) where [
     pred(draw_line/5) is draw_thread_line
 ].
 
 %-----------------------------------------------------------------------------%
 
-setup_thread_pager(Rows, Cols, Messages, ThreadPagerInfo, NumThreadLines) :-
-    append_messages([], [], Messages, cord.init, ThreadCord),
+setup_thread_pager(Nowish, Rows, Cols, Messages, ThreadPagerInfo,
+        NumThreadLines) :-
+    append_messages(Nowish, [], [], Messages, cord.init, ThreadCord),
     ThreadLines = list(ThreadCord),
     Scrollable = scrollable.init_with_cursor(ThreadLines, 0),
     setup_pager(Cols, Messages, PagerInfo),
@@ -84,22 +103,26 @@ setup_thread_pager(Rows, Cols, Messages, ThreadPagerInfo, NumThreadLines) :-
     ThreadPagerInfo = thread_pager_info(Scrollable, NumThreadRows,
         PagerInfo, NumPagerRows).
 
-:- pred append_messages(list(graphic)::in, list(graphic)::in,
+:- func max_thread_lines = int.
+
+max_thread_lines = 8.
+
+:- pred append_messages(tm::in, list(graphic)::in, list(graphic)::in,
     list(message)::in, cord(thread_line)::in, cord(thread_line)::out) is det.
 
-append_messages(_Above, _Below, [], !Cord).
-append_messages(Above0, Below0, [Message | Messages], !Cord) :-
+append_messages(_Nowish, _Above, _Below, [], !Cord).
+append_messages(Nowish, Above0, Below0, [Message | Messages], !Cord) :-
     (
         Messages = [],
-        Line = thread_line(Above0 ++ [ell], Message),
+        make_thread_line(Nowish, Message, Above0 ++ [ell], Line),
         snoc(Line, !Cord),
         MessagesCord = cord.empty,
         Below1 = Below0
     ;
         Messages = [_ | _],
-        Line = thread_line(Above0 ++ [tee], Message),
+        make_thread_line(Nowish, Message, Above0 ++ [tee], Line),
         snoc(Line, !Cord),
-        append_messages(Above0, Below0, Messages, cord.init, MessagesCord),
+        append_messages(Nowish, Above0, Below0, Messages, cord.init, MessagesCord),
         ( get_first(MessagesCord, FollowingLine) ->
             Below1 = FollowingLine ^ tp_graphics
         ;
@@ -111,7 +134,7 @@ append_messages(Above0, Below0, [Message | Messages], !Cord) :-
     ;
         Above1 = Above0 ++ [blank]
     ),
-    append_messages(Above1, Below1, Message ^ m_replies, !Cord),
+    append_messages(Nowish, Above1, Below1, Message ^ m_replies, !Cord),
     !:Cord = !.Cord ++ MessagesCord.
 
 :- pred not_blank_at_column(list(graphic)::in, int::in) is semidet.
@@ -119,6 +142,32 @@ append_messages(Above0, Below0, [Message | Messages], !Cord) :-
 not_blank_at_column(Graphics, Col) :-
     list.index0(Graphics, Col, Graphic),
     Graphic \= blank.
+
+:- pred make_thread_line(tm::in, message::in, list(graphic)::in,
+    thread_line::out) is det.
+
+make_thread_line(Nowish, Message, Graphics, Line) :-
+    Timestamp = Message ^ m_timestamp,
+    Tags = Message ^ m_tags,
+    timestamp_to_tm(Timestamp, TM),
+    Shorter = no,
+    make_reldate(Nowish, TM, Shorter, RelDate),
+    Line0 = thread_line(Message, read, not_replied, unflagged, Graphics,
+        RelDate),
+    list.foldl(apply_tag, Tags, Line0, Line).
+
+:- pred apply_tag(string::in, thread_line::in, thread_line::out) is det.
+
+apply_tag(Tag, !Line) :-
+    ( Tag = "unread" ->
+        !Line ^ tp_unread := unread
+    ; Tag = "replied" ->
+        !Line ^ tp_replied := replied
+    ; Tag = "flagged" ->
+        !Line ^ tp_flagged := flagged
+    ;
+        true
+    ).
 
 %-----------------------------------------------------------------------------%
 
@@ -253,19 +302,44 @@ draw_sep(Cols, MaybeSepPanel, !IO) :-
     io::di, io::uo) is det.
 
 draw_thread_line(Panel, Line, IsCursor, !IO) :-
-    Graphics = Line ^ tp_graphics,
-    Message = Line ^ tp_message,
+    Line = thread_line(Message, Unread, Replied, Flagged, Graphics, RelDate),
     From = Message ^ m_from,
     (
         IsCursor = yes,
         panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
     ;
         IsCursor = no,
-        panel.attr_set(Panel, normal, !IO)
+        panel.attr_set(Panel, fg_bg(blue, black) + bold, !IO)
     ),
+    my_addstr_fixed(Panel, 13, RelDate, ' ', !IO),
+    cond_attr_set(Panel, normal, IsCursor, !IO),
+    (
+        Replied = replied,
+        my_addstr(Panel, "r", !IO)
+    ;
+        Replied = not_replied,
+        my_addstr(Panel, " ", !IO)
+    ),
+    (
+        Flagged = flagged,
+        cond_attr_set(Panel, fg_bg(red, black) + bold, IsCursor, !IO),
+        my_addstr(Panel, "! ", !IO)
+    ;
+        Flagged = unflagged,
+        my_addstr(Panel, "  ", !IO)
+    ),
+    cond_attr_set(Panel, fg_bg(magenta, black), IsCursor, !IO),
     list.foldl(draw_graphic(Panel), Graphics, !IO),
     my_addstr(Panel, "> ", !IO),
+    (
+        Unread = unread,
+        cond_attr_set(Panel, bold, IsCursor, !IO)
+    ;
+        Unread = read,
+        cond_attr_set(Panel, normal, IsCursor, !IO)
+    ),
     my_addstr(Panel, From, !IO).
+    % XXX should indicate changes of subject
 
 :- pred draw_graphic(panel::in, graphic::in, io::di, io::uo) is det.
 
@@ -278,6 +352,16 @@ graphic_to_char(blank) = " ".
 graphic_to_char(vert) = "│".
 graphic_to_char(tee) = "├".
 graphic_to_char(ell) = "└".
+
+:- pred cond_attr_set(panel::in, attr::in, bool::in, io::di, io::uo) is det.
+
+cond_attr_set(Panel, Attr, IsCursor, !IO) :-
+    (
+        IsCursor = no,
+        panel.attr_set(Panel, Attr, !IO)
+    ;
+        IsCursor = yes
+    ).
 
 :- pred split_panels(screen::in, thread_pager_info::in,
     list(panel)::out, maybe(panel)::out, list(panel)::out) is det.
@@ -296,10 +380,6 @@ split_panels(Screen, Info, ThreadPanels, MaybeSepPanel, PagerPanels) :-
         MaybeSepPanel = no,
         PagerPanels = []
     ).
-
-:- func max_thread_lines = int.
-
-max_thread_lines = 8.
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

@@ -17,6 +17,7 @@
 :- import_module list.
 :- import_module maybe.
 :- import_module string.
+:- import_module time.
 
 :- import_module callout.
 :- import_module compose.
@@ -116,9 +117,11 @@ index_loop(Screen, !.IndexInfo, !IO) :-
 open_thread_pager(Screen, thread_id(ThreadId), !IO) :-
     run_notmuch(["show", "--format=json", "thread:" ++ ThreadId],
         parse_messages_list, Messages : list(message), !IO),
+    time(Time, !IO),
+    Nowish = localtime(Time),
     Rows = Screen ^ rows,
     Cols = Screen ^ cols,
-    setup_thread_pager(Rows - 2, Cols, Messages, ThreadPagerInfo, Count),
+    setup_thread_pager(Nowish, Rows - 2, Cols, Messages, ThreadPagerInfo, Count),
     string.format("Showing message 1 of %d.", [i(Count)], Msg),
     update_message(Screen, set_info(Msg), !IO),
     thread_pager_loop(Screen, ThreadPagerInfo, !IO).
