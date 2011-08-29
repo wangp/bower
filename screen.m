@@ -96,7 +96,7 @@ my_addstr(Panel, String, !IO) :-
 %-----------------------------------------------------------------------------%
 
 my_addstr_fixed(Panel, NrCols, String, PadChar, !IO) :-
-    getyx(Panel, Y, X0, !IO),
+    getyx(Panel, _, X0, !IO),
     getmaxyx(Panel, _, MaxX, !IO),
     % XXX stops drawing one column early
     ( X0 >= MaxX - 1 ->
