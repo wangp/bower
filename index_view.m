@@ -37,6 +37,7 @@
 :- import_module bool.
 :- import_module cord.
 :- import_module int.
+:- import_module require.
 :- import_module string.
 :- import_module time.
 
@@ -84,6 +85,7 @@
 :- type binding
     --->    scroll_down
     ;       scroll_up
+    ;       skip_to_unread
     ;       enter
     ;       enter_limit
     ;       start_compose
@@ -145,6 +147,10 @@ index_view_input(Screen, Char, MessageUpdate, Action, !IndexInfo) :-
             move_cursor(Screen, -1, MessageUpdate, !IndexInfo),
             Action = continue
         ;
+            Binding = skip_to_unread,
+            skip_to_unread(Screen, MessageUpdate, !IndexInfo),
+            Action = continue
+        ;
             Binding = enter,
             enter(!.IndexInfo, Action),
             MessageUpdate = clear_message
@@ -170,6 +176,7 @@ index_view_input(Screen, Char, MessageUpdate, Action, !IndexInfo) :-
 
 key_binding('j', scroll_down).
 key_binding('k', scroll_up).
+key_binding('\t', skip_to_unread).
 key_binding('\r', enter).
 key_binding('l', enter_limit).
 key_binding('m', start_compose).
@@ -194,6 +201,36 @@ move_cursor(Screen, Delta, MessageUpdate, !Info) :-
             MessageUpdate = set_warning("You are on the first message.")
         )
     ).
+
+:- pred skip_to_unread(screen::in, message_update::out,
+    index_info::in, index_info::out) is det.
+
+skip_to_unread(Screen, MessageUpdate, !Info) :-
+    !.Info = index_info(Scrollable0),
+    NumRows = list.length(Screen ^ main_panels),
+    ( get_cursor(Scrollable0, Cursor0) ->
+        ( search_forward(is_unread_line, Scrollable0, Cursor0 + 1, Cursor) ->
+            set_cursor(Cursor, NumRows, Scrollable0, Scrollable),
+            MessageUpdate = clear_message
+        ;
+            search_forward(is_unread_line, Scrollable0, 0, Cursor),
+            Cursor < Cursor0
+        ->
+            set_cursor(Cursor, NumRows, Scrollable0, Scrollable),
+            MessageUpdate = set_info("Search wrapped to top.")
+        ;
+            Scrollable = Scrollable0,
+            MessageUpdate = set_warning("No unread messages.")
+        )
+    ;
+        unexpected($module, $pred, "no cursor")
+    ),
+    !:Info = index_info(Scrollable).
+
+:- pred is_unread_line(index_line::in) is semidet.
+
+is_unread_line(Line) :-
+    Line ^ i_unread = unread.
 
 :- pred enter(index_info::in, action::out) is det.
 

@@ -85,7 +85,6 @@ index_loop(Screen, !.IndexInfo, !IO) :-
     update_message(Screen, MessageUpdate, !IO),
     (
         Action = continue,
-        update_message(Screen, clear_message, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = open_pager(ThreadId),
