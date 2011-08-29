@@ -31,7 +31,6 @@
 
 :- import_module pair.
 :- import_module string.
-:- import_module unit.
 
 %-----------------------------------------------------------------------------%
 
