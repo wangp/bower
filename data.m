@@ -26,10 +26,12 @@
 :- type message
     --->    message(
                 m_id        :: message_id,
+                m_timestamp :: int,
                 m_subject   :: string,
                 m_from      :: string,
                 m_to        :: string,
                 m_date      :: string,
+                m_tags      :: list(string),
                 m_body      :: cord(content),
                 m_replies   :: list(message)
             ).
