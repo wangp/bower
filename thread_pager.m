@@ -152,6 +152,9 @@ thread_pager_input(Char, Action, MessageUpdate, !Info) :-
         Delta = int.max(0, NumPagerRows - 1),
         scroll(-Delta, MessageUpdate, !Info),
         Action = continue
+    ; Char = 'S' ->
+        skip_quoted_text(MessageUpdate, !Info),
+        Action = continue
     ;
         ( Char = 'i'
         ; Char = 'q'
@@ -189,6 +192,15 @@ scroll(Delta, MessageUpdate, !Info) :-
     PagerInfo0 = !.Info ^ tp_pager,
     NumPagerRows = !.Info ^ tp_num_pager_rows,
     pager.scroll(NumPagerRows, Delta, MessageUpdate, PagerInfo0, PagerInfo),
+    !Info ^ tp_pager := PagerInfo,
+    sync_thread_to_pager(!Info).
+
+:- pred skip_quoted_text(message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+skip_quoted_text(MessageUpdate, !Info) :-
+    PagerInfo0 = !.Info ^ tp_pager,
+    pager.skip_quoted_text(MessageUpdate, PagerInfo0, PagerInfo),
     !Info ^ tp_pager := PagerInfo,
     sync_thread_to_pager(!Info).
 

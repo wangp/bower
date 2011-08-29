@@ -36,6 +36,9 @@
 :- pred prev_message(message_update::out, pager_info::in, pager_info::out)
     is det.
 
+:- pred skip_quoted_text(message_update::out, pager_info::in, pager_info::out)
+    is det.
+
 :- pred get_top_message_id(pager_info::in, message_id::out) is semidet.
 
 :- pred draw_pager(screen::in, pager_info::in, io::di, io::uo) is det.
@@ -381,9 +384,6 @@ prev_message_loop([Line | Lines], Top0, Top) :-
     ;
         prev_message_loop(Lines, Top0 - 1, Top)
     ).
-
-:- pred skip_quoted_text(message_update::out, pager_info::in, pager_info::out)
-    is det.
 
 skip_quoted_text(MessageUpdate, !Info) :-
     !.Info = pager_info(Scrollable0),
