@@ -13,6 +13,7 @@
 :- implementation.
 
 :- import_module char.
+:- import_module int.
 :- import_module list.
 :- import_module maybe.
 :- import_module string.
@@ -87,8 +88,7 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = open_pager(ThreadId),
-        open_pager(Screen, ThreadId, !IO),
-        % open_thread_pager(Screen, ThreadId, !IO),
+        open_thread_pager(Screen, ThreadId, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = enter_limit,
@@ -116,8 +116,9 @@ index_loop(Screen, !.IndexInfo, !IO) :-
 open_thread_pager(Screen, thread_id(ThreadId), !IO) :-
     run_notmuch(["show", "--format=json", "thread:" ++ ThreadId],
         parse_messages_list, Messages : list(message), !IO),
+    Rows = Screen ^ rows,
     Cols = Screen ^ cols,
-    setup_thread_pager(Cols, Messages, ThreadPagerInfo),
+    setup_thread_pager(Rows - 2, Cols, Messages, ThreadPagerInfo),
     thread_pager_loop(Screen, ThreadPagerInfo, !IO).
 
 :- pred thread_pager_loop(screen::in, thread_pager_info::in, io::di, io::uo)
@@ -128,7 +129,7 @@ thread_pager_loop(Screen, !.Info, !IO) :-
     draw_bar(Screen, !IO),
     panel.update_panels(!IO),
     get_char(Char, !IO),
-    thread_pager_input(Screen, Char, Action, MessageUpdate, !Info),
+    thread_pager_input(Char, Action, MessageUpdate, !Info),
     update_message(Screen, MessageUpdate, !IO),
     (
         Action = continue,

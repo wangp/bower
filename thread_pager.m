@@ -14,14 +14,14 @@
 
 :- type thread_pager_info.
 
-:- pred setup_thread_pager(int::in, list(message)::in, thread_pager_info::out)
-    is det.
+:- pred setup_thread_pager(int::in, int::in, list(message)::in,
+    thread_pager_info::out) is det.
 
 :- type thread_pager_action
     --->    continue
     ;       leave.
 
-:- pred thread_pager_input(screen::in, char::in, thread_pager_action::out,
+:- pred thread_pager_input(char::in, thread_pager_action::out,
     message_update::out, thread_pager_info::in, thread_pager_info::out) is det.
 
 :- pred draw_thread_pager(screen::in, thread_pager_info::in, io::di, io::uo)
@@ -47,8 +47,10 @@
 
 :- type thread_pager_info
     --->    thread_pager_info(
-                tp_scrollable   :: scrollable(thread_line),
-                tp_pager        :: pager_info
+                tp_scrollable       :: scrollable(thread_line),
+                tp_num_thread_rows  :: int,
+                tp_pager            :: pager_info,
+                tp_num_pager_rows   :: int
             ).
 
 :- type thread_line
@@ -69,12 +71,18 @@
 
 %-----------------------------------------------------------------------------%
 
-setup_thread_pager(Cols, Messages, ThreadPagerInfo) :-
+setup_thread_pager(Rows, Cols, Messages, ThreadPagerInfo) :-
     append_messages([], [], Messages, cord.init, ThreadCord),
     ThreadLines = list(ThreadCord),
     Scrollable = scrollable.init_with_cursor(ThreadLines, 0),
     setup_pager(Cols, Messages, PagerInfo),
-    ThreadPagerInfo = thread_pager_info(Scrollable, PagerInfo).
+
+    NumThreadLines = get_num_lines(Scrollable),
+    NumThreadRows = int.min(max_thread_lines, NumThreadLines),
+    SepLine = 1,
+    NumPagerRows = int.max(0, Rows - NumThreadRows - SepLine),
+    ThreadPagerInfo = thread_pager_info(Scrollable, NumThreadRows,
+        PagerInfo, NumPagerRows).
 
 :- pred append_messages(list(graphic)::in, list(graphic)::in,
     list(message)::in, cord(thread_line)::in, cord(thread_line)::out) is det.
@@ -114,25 +122,36 @@ not_blank_at_column(Graphics, Col) :-
 
 %-----------------------------------------------------------------------------%
 
-thread_pager_input(_Screen, Char, Action, MessageUpdate, !Info) :-
+thread_pager_input(Char, Action, MessageUpdate, !Info) :-
+    NumPagerRows = !.Info ^ tp_num_pager_rows,
     ( Char = 'j' ->
         next_message(MessageUpdate, !Info),
         Action = continue
     ; Char = 'k' ->
         prev_message(MessageUpdate, !Info),
         Action = continue
-%     ; Char = '\r' ->
-%         scroll(Screen, 1, MessageUpdate, !Info),
-%         Action = continue
-%     ; Char = ('\\') ->
-%         scroll(Screen, -1, MessageUpdate, !Info),
-%         Action = continue
-%     ; Char = ']' ->
-%         scroll(Screen, 10, MessageUpdate, !Info),
-%         Action = continue
-%     ; Char = '[' ->
-%         scroll(Screen, -10, MessageUpdate, !Info),
-%         Action = continue
+    ; Char = '\r' ->
+        scroll(1, MessageUpdate, !Info),
+        Action = continue
+    ; Char = ('\\') ->
+        scroll(-1, MessageUpdate, !Info),
+        Action = continue
+    ; Char = ']' ->
+        Delta = int.min(15, NumPagerRows - 1),
+        scroll(Delta, MessageUpdate, !Info),
+        Action = continue
+    ; Char = '[' ->
+        Delta = int.min(15, NumPagerRows - 1),
+        scroll(-Delta, MessageUpdate, !Info),
+        Action = continue
+    ; Char = ' ' ->
+        Delta = int.max(0, NumPagerRows - 1),
+        scroll(Delta, MessageUpdate, !Info),
+        Action = continue
+    ; Char = 'b' ->
+        Delta = int.max(0, NumPagerRows - 1),
+        scroll(-Delta, MessageUpdate, !Info),
+        Action = continue
     ;
         ( Char = 'i'
         ; Char = 'q'
@@ -149,32 +168,46 @@ thread_pager_input(_Screen, Char, Action, MessageUpdate, !Info) :-
     thread_pager_info::in, thread_pager_info::out) is det.
 
 next_message(MessageUpdate, !Info) :-
-    !.Info = thread_pager_info(Scrollable0, PagerInfo0),
-    next_message(MessageUpdate, PagerInfo0, PagerInfo),
-    sync_thread_to_pager(PagerInfo, Scrollable0, Scrollable),
-    !:Info = thread_pager_info(Scrollable, PagerInfo).
+    PagerInfo0 = !.Info ^ tp_pager,
+    pager.next_message(MessageUpdate, PagerInfo0, PagerInfo),
+    !Info ^ tp_pager := PagerInfo,
+    sync_thread_to_pager(!Info).
 
 :- pred prev_message(message_update::out,
     thread_pager_info::in, thread_pager_info::out) is det.
 
 prev_message(MessageUpdate, !Info) :-
-    !.Info = thread_pager_info(Scrollable0, PagerInfo0),
-    prev_message(MessageUpdate, PagerInfo0, PagerInfo),
-    sync_thread_to_pager(PagerInfo, Scrollable0, Scrollable),
-    !:Info = thread_pager_info(Scrollable, PagerInfo).
+    PagerInfo0 = !.Info ^ tp_pager,
+    pager.prev_message(MessageUpdate, PagerInfo0, PagerInfo),
+    !Info ^ tp_pager := PagerInfo,
+    sync_thread_to_pager(!Info).
 
-:- pred sync_thread_to_pager(pager_info::in,
-    scrollable(thread_line)::in, scrollable(thread_line)::out) is det.
+:- pred scroll(int::in, message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
 
-sync_thread_to_pager(PagerInfo, Scrollable0, Scrollable) :-
+scroll(Delta, MessageUpdate, !Info) :-
+    PagerInfo0 = !.Info ^ tp_pager,
+    NumPagerRows = !.Info ^ tp_num_pager_rows,
+    pager.scroll(NumPagerRows, Delta, MessageUpdate, PagerInfo0, PagerInfo),
+    !Info ^ tp_pager := PagerInfo,
+    sync_thread_to_pager(!Info).
+
+:- pred sync_thread_to_pager(thread_pager_info::in, thread_pager_info::out)
+    is det.
+
+sync_thread_to_pager(!Info) :-
+    PagerInfo = !.Info ^ tp_pager,
+    Scrollable0 = !.Info ^ tp_scrollable,
+    NumThreadRows = !.Info ^ tp_num_thread_rows,
     (
         % XXX inefficient
         get_top_message_id(PagerInfo, MessageId),
         search_forward(is_message(MessageId), Scrollable0, 0, Cursor)
     ->
-        set_cursor(Cursor, Scrollable0, Scrollable)
+        set_cursor(Cursor, NumThreadRows, Scrollable0, Scrollable),
+        !Info ^ tp_scrollable := Scrollable
     ;
-        Scrollable = Scrollable0
+        true
     ).
 
 :- pred is_message(message_id::in, thread_line::in) is semidet.
@@ -184,10 +217,10 @@ is_message(MessageId, Line) :-
 
 %-----------------------------------------------------------------------------%
 
-draw_thread_pager(Screen, ThreadPagerInfo, !IO) :-
-    ThreadPagerInfo = thread_pager_info(Scrollable, PagerInfo),
-    split_panels(Screen, Scrollable, ThreadPanels, SepPanel, PagerPanels),
-    % XXX should adjust top to ensure cursor in view
+draw_thread_pager(Screen, Info, !IO) :-
+    Scrollable = Info ^ tp_scrollable,
+    PagerInfo = Info ^ tp_pager,
+    split_panels(Screen, Info, ThreadPanels, SepPanel, PagerPanels),
     scrollable.draw(ThreadPanels, Scrollable, !IO),
     draw_sep(Screen ^ cols, SepPanel, !IO),
     draw_pager_lines(PagerPanels, PagerInfo, !IO).
@@ -234,20 +267,21 @@ graphic_to_char(vert) = "│".
 graphic_to_char(tee) = "├".
 graphic_to_char(ell) = "└".
 
-:- pred split_panels(screen::in, scrollable(thread_line)::in,
+:- pred split_panels(screen::in, thread_pager_info::in,
     list(panel)::out, maybe(panel)::out, list(panel)::out) is det.
 
-split_panels(Screen, Scrollable, ThreadPanels, SepPanel, PagerPanels) :-
-    MainPanels = Screen ^ main_panels,
-    NumThreadLines = get_num_lines(Scrollable),
-    VisibleThreadLines = int.min(max_thread_lines, NumThreadLines),
-    list.split_upto(VisibleThreadLines, MainPanels, ThreadPanels, RestPanels),
+split_panels(Screen, Info, ThreadPanels, MaybeSepPanel, PagerPanels) :-
+    NumThreadRows = Info ^ tp_num_thread_rows,
+    NumPagerRows = Info ^ tp_num_pager_rows,
+    Panels0 = Screen ^ main_panels,
+    list.split_upto(NumThreadRows, Panels0, ThreadPanels, Panels1),
     (
-        RestPanels = [SepPanel0 | PagerPanels],
-        SepPanel = yes(SepPanel0)
+        Panels1 = [SepPanel | Panels2],
+        MaybeSepPanel = yes(SepPanel),
+        list.take_upto(NumPagerRows, Panels2, PagerPanels)
     ;
-        RestPanels = [],
-        SepPanel = no,
+        Panels1 = [],
+        MaybeSepPanel = no,
         PagerPanels = []
     ).
 

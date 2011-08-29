@@ -174,7 +174,7 @@ index_view_input(Screen, Char, MessageUpdate, Action, !IndexInfo) :-
         ;
             Binding = enter,
             enter(!.IndexInfo, Action),
-            MessageUpdate = no_change
+            MessageUpdate = clear_message
         ;
             Binding = enter_limit,
             MessageUpdate = no_change,
