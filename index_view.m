@@ -109,40 +109,13 @@ setup_index_view(Threads, Info, !IO) :-
 
 add_thread(Nowish, Thread, !Lines) :-
     Thread = thread(Id, Timestamp, Authors, Subject, Tags, _Matched, Total),
-    make_date_column(Nowish, Timestamp, Date),
+    timestamp_to_tm(Timestamp, TM),
+    Shorter = yes,
+    make_reldate(Nowish, TM, Shorter, Date),
     Line0 = index_line(Id, old, read, not_replied, unflagged, Date, Authors,
         Subject, Total),
     list.foldl(apply_tag, Tags, Line0, Line),
     snoc(Line, !Lines).
-
-:- pred make_date_column(tm::in, int::in, string::out) is det.
-
-make_date_column(Nowish, Timestamp, String) :-
-    NowYear = 1900 + Nowish ^ tm_year,
-    NowMonth = 1 + Nowish ^ tm_mon,
-    NowDay = Nowish ^ tm_mday,
-
-    timestamp_to_tm(Timestamp, TM),
-    Year = 1900 + TM ^ tm_year,
-    Month = 1 + TM ^ tm_mon,
-    Day = TM ^ tm_mday,
-    Hour = TM ^ tm_hour,
-    Min = TM ^ tm_min,
-
-    (
-        Year = NowYear,
-        Month = NowMonth,
-        Day = NowDay
-    ->
-        String = string.format("%02d:%02d     ", [i(Hour), i(Min)])
-    ;
-        Year = NowYear,
-        month_short_name(Month, MonthName)
-    ->
-        String = string.format("%s %02d    ", [s(MonthName), i(Day)])
-    ;
-        String = string.format("%04d-%02d-%02d", [i(Year), i(Month), i(Day)])
-    ).
 
 :- pred apply_tag(string::in, index_line::in, index_line::out) is det.
 
@@ -253,8 +226,7 @@ draw_index_line(Panel, Line, IsCursor, !IO) :-
         IsCursor = no,
         panel.attr_set(Panel, fg(blue) + bold, !IO)
     ),
-    my_addstr(Panel, Date, !IO),
-    my_addstr(Panel, " ", !IO),
+    my_addstr_fixed(Panel, 11, Date, ' ', !IO),
     (
         Unread = unread,
         Base = bold
