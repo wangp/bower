@@ -118,7 +118,9 @@ open_thread_pager(Screen, thread_id(ThreadId), !IO) :-
         parse_messages_list, Messages : list(message), !IO),
     Rows = Screen ^ rows,
     Cols = Screen ^ cols,
-    setup_thread_pager(Rows - 2, Cols, Messages, ThreadPagerInfo),
+    setup_thread_pager(Rows - 2, Cols, Messages, ThreadPagerInfo, Count),
+    string.format("Showing message 1 of %d.", [i(Count)], Msg),
+    update_message(Screen, set_info(Msg), !IO),
     thread_pager_loop(Screen, ThreadPagerInfo, !IO).
 
 :- pred thread_pager_loop(screen::in, thread_pager_info::in, io::di, io::uo)

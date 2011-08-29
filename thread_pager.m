@@ -15,7 +15,7 @@
 :- type thread_pager_info.
 
 :- pred setup_thread_pager(int::in, int::in, list(message)::in,
-    thread_pager_info::out) is det.
+    thread_pager_info::out, int::out) is det.
 
 :- type thread_pager_action
     --->    continue
@@ -71,7 +71,7 @@
 
 %-----------------------------------------------------------------------------%
 
-setup_thread_pager(Rows, Cols, Messages, ThreadPagerInfo) :-
+setup_thread_pager(Rows, Cols, Messages, ThreadPagerInfo, NumThreadLines) :-
     append_messages([], [], Messages, cord.init, ThreadCord),
     ThreadLines = list(ThreadCord),
     Scrollable = scrollable.init_with_cursor(ThreadLines, 0),
