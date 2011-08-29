@@ -250,11 +250,11 @@ draw_index_line(Panel, Line, IsCursor, !IO) :-
         Flagged = unflagged,
         my_addstr(Panel, "  ", !IO)
     ),
-    cond_attr_set(Panel, fg(cyan) + Base, IsCursor, !IO),
+    cond_attr_set(Panel, Base, IsCursor, !IO),
     my_addstr_fixed(Panel, 25, Authors, ' ', !IO),
     cond_attr_set(Panel, fg(green) + Base, IsCursor, !IO),
     my_addstr(Panel, format(" %-3d ", [i(Total)]), !IO),
-    cond_attr_set(Panel, Base, IsCursor, !IO),
+    cond_attr_set(Panel, normal, IsCursor, !IO),
     my_addstr(Panel, Subject, !IO).
 
 :- pred cond_attr_set(panel::in, attr::in, bool::in, io::di, io::uo) is det.
