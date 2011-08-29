@@ -211,7 +211,7 @@ maybe_append_substring(String, Start, End, QuoteLevel, ContQuoteLevel,
     quote_level::out, cord(pager_line)::in, cord(pager_line)::out) is det.
 
 append_substring(String, Start, End, MaybeLevel, ContQuoteLevel, !Lines) :-
-    string.between(String, Start, End, SubString),
+    string.unsafe_between(String, Start, End, SubString),
     (
         MaybeLevel = yes(Level)
     ;
