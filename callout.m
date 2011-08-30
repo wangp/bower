@@ -87,13 +87,13 @@ parse_message(JSON, Message) :-
 
 parse_message_details(JSON, Replies, Message) :-
     (
-        JSON/"id" = string(Id),
+        JSON/"id" = unesc_string(Id),
         JSON/"timestamp" = int(Timestamp),
         JSON/"headers" = Headers,
-        Headers/"Subject" = string(Subject),
-        Headers/"From" = string(From),
-        Headers/"To" = string(To),
-        Headers/"Date" = string(Date),
+        Headers/"Subject" = unesc_string(Subject),
+        Headers/"From" = unesc_string(From),
+        Headers/"To" = unesc_string(To),
+        Headers/"Date" = unesc_string(Date),
         JSON/"tags" = array(TagsList),
         list.map(parse_tag, TagsList, Tags),
         JSON/"body" = array(BodyList),
@@ -110,14 +110,14 @@ parse_message_details(JSON, Replies, Message) :-
 parse_content(JSON, !Contents) :-
     (
         JSON/"id" = int(Id),
-        JSON/"content-type" = string(ContentType)
+        JSON/"content-type" = unesc_string(ContentType)
     ->
-        ( JSON/"filename" = string(Filename) ->
+        ( JSON/"filename" = unesc_string(Filename) ->
             MaybeFilename = yes(Filename)
         ;
             MaybeFilename = no
         ),
-        ( JSON/"content" = string(ContentString) ->
+        ( JSON/"content" = unesc_string(ContentString) ->
             Content = content(Id, ContentType, yes(ContentString),
                 MaybeFilename),
             snoc(Content, !Contents)
@@ -146,10 +146,10 @@ parse_threads_list(Json, Threads) :-
 
 parse_thread(Json, Thread) :-
     (
-        Json/"thread" = string(Id),
+        Json/"thread" = unesc_string(Id),
         Json/"timestamp" = int(Timestamp),
-        Json/"authors" = string(Authors),
-        Json/"subject" = string(Subject),
+        Json/"authors" = unesc_string(Authors),
+        Json/"subject" = unesc_string(Subject),
         Json/"tags" = array(TagsList),
         Json/"matched" = int(Matched),
         Json/"total" = int(Total),
@@ -164,7 +164,7 @@ parse_thread(Json, Thread) :-
 :- pred parse_tag(json::in, string::out) is semidet.
 
 parse_tag(Json, Tag) :-
-    Json = string(Tag).
+    Json = unesc_string(Tag).
 
 %-----------------------------------------------------------------------------%
 
@@ -172,6 +172,10 @@ parse_tag(Json, Tag) :-
 
 map(Map) / Key = Value :-
     map.search(Map, Key, Value).
+
+:- func unesc_string(string::out) = (json::in) is semidet.
+
+unesc_string(unescape(EscString)) = string(EscString).
 
 :- pred notmuch_json_error is erroneous.
 

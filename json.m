@@ -12,17 +12,21 @@
 
 :- type json
     --->    int(int)            % number (could also be float)
-    ;       string(string)
+    ;       string(esc_string)
     ;       bool(bool)
     ;       array(list(json))   % array
     ;       map(json_map)       % object
     ;       null.
+
+:- type esc_string.
 
 :- type json_map == map(key, json).
 
 :- type key == string.
 
 :- pred parse_json(string::in, parse_result(json)::out) is det.
+
+:- func unescape(esc_string) = string.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -31,6 +35,9 @@
 
 :- import_module pair.
 :- import_module string.
+
+:- type esc_string
+    --->    esc_string(string).
 
 %-----------------------------------------------------------------------------%
 
@@ -83,19 +90,15 @@ parse_map(Src, Map, !PS) :-
     is semidet.
 
 parse_key_value(Src, Key - Value, !PS) :-
-    parse_string(Src, Key, !PS),
+    parse_string(Src, EscKey, !PS),
+    Key = unescape(EscKey),
     punct(":", Src, _, !PS),
     parse_json(Src, Value, !PS).
 
-:- pred parse_string(src::in, string::out, ps::in, ps::out) is semidet.
+:- pred parse_string(src::in, esc_string::out, ps::in, ps::out) is semidet.
 
-parse_string(Src, !:String, !PS) :-
-    string_literal('"', Src, !:String, !PS),
-    % XXX do backslash unescaping properly
-    string.replace_all(!.String, "\\n", "\n", !:String),
-    string.replace_all(!.String, "\\t", "\t", !:String),
-    string.replace_all(!.String, "\\""", "\"", !:String),
-    string.replace_all(!.String, "\\\\", "\\", !:String).
+parse_string(Src, esc_string(EscString), !PS) :-
+    string_literal('"', Src, EscString, !PS).
 
 :- pred parse_int(src::in, int::out, ps::in, ps::out) is semidet.
 
@@ -105,6 +108,30 @@ parse_int(Src, Int, !PS) :-
 :- func id_chars = string.
 
 id_chars = "abcdefghijklmnopqrstuvwxyz".
+
+unescape(esc_string(S0)) = S :-
+    ( contains_backslash(S0) ->
+        some [!S] (
+            !:S = S0,
+            % XXX do backslash unescaping properly
+            string.replace_all(!.S, "\\n", "\n", !:S),
+            string.replace_all(!.S, "\\t", "\t", !:S),
+            string.replace_all(!.S, "\\""", "\"", !:S),
+            string.replace_all(!.S, "\\\\", "\\", !:S),
+            S = !.S
+        )
+    ;
+        S = S0
+    ).
+
+:- pred contains_backslash(string::in) is semidet.
+
+:- pragma foreign_proc("C",
+    contains_backslash(Str::in),
+    [will_not_call_mercury, promise_pure, thread_safe],
+"
+    SUCCESS_INDICATOR = (strchr(Str, '\\\\') != NULL);
+").
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
