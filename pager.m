@@ -379,15 +379,6 @@ prev_message(MessageUpdate, !Info) :-
 
 is_message_start(start_message_header(_, _, _)).
 
-:- pred prev_message_loop(list(pager_line)::in, int::in, int::out) is semidet.
-
-prev_message_loop([Line | Lines], Top0, Top) :-
-    ( Line = start_message_header(_, _, _) ->
-        Top = Top0
-    ;
-        prev_message_loop(Lines, Top0 - 1, Top)
-    ).
-
 skip_quoted_text(MessageUpdate, !Info) :-
     !.Info = pager_info(Scrollable0),
     Top0 = get_top(Scrollable0),
