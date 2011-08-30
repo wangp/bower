@@ -100,8 +100,9 @@ setup_thread_pager(Nowish, Rows, Cols, Messages, ThreadPagerInfo,
     NumThreadRows = int.min(max_thread_lines, NumThreadLines),
     SepLine = 1,
     NumPagerRows = int.max(0, Rows - NumThreadRows - SepLine),
-    ThreadPagerInfo = thread_pager_info(Scrollable, NumThreadRows,
-        PagerInfo, NumPagerRows).
+    ThreadPagerInfo1 = thread_pager_info(Scrollable, NumThreadRows,
+        PagerInfo, NumPagerRows),
+    skip_to_unread(_MessageUpdate, ThreadPagerInfo1, ThreadPagerInfo).
 
 :- func max_thread_lines = int.
 
@@ -204,6 +205,9 @@ thread_pager_input(Char, Action, MessageUpdate, !Info) :-
     ; Char = 'S' ->
         skip_quoted_text(MessageUpdate, !Info),
         Action = continue
+    ; Char = '\t' ->
+        skip_to_unread(MessageUpdate, !Info),
+        Action = continue
     ;
         ( Char = 'i'
         ; Char = 'q'
@@ -263,7 +267,7 @@ sync_thread_to_pager(!Info) :-
     (
         % XXX inefficient
         get_top_message_id(PagerInfo, MessageId),
-        search_forward(is_message(MessageId), Scrollable0, 0, Cursor)
+        search_forward(is_message(MessageId), Scrollable0, 0, Cursor, _)
     ->
         set_cursor(Cursor, NumThreadRows, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
@@ -271,10 +275,36 @@ sync_thread_to_pager(!Info) :-
         true
     ).
 
+:- pred skip_to_unread(message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+skip_to_unread(MessageUpdate, !Info) :-
+    !.Info = thread_pager_info(Scrollable0, NumThreadRows, PagerInfo0,
+        NumPagerRows),
+    (
+        get_cursor(Scrollable0, Cursor0),
+        search_forward(is_unread_line, Scrollable0, Cursor0 + 1, Cursor,
+            ThreadLine)
+    ->
+        set_cursor(Cursor, NumThreadRows, Scrollable0, Scrollable),
+        MessageId = ThreadLine ^ tp_message ^ m_id,
+        skip_to_message(MessageId, PagerInfo0, PagerInfo),
+        !:Info = thread_pager_info(Scrollable, NumThreadRows, PagerInfo,
+            NumPagerRows),
+        MessageUpdate = clear_message
+    ;
+        MessageUpdate = set_warning("No more unread messages.")
+    ).
+
 :- pred is_message(message_id::in, thread_line::in) is semidet.
 
 is_message(MessageId, Line) :-
     Line ^ tp_message ^ m_id = MessageId.
+
+:- pred is_unread_line(thread_line::in) is semidet.
+
+is_unread_line(Line) :-
+    Line ^ tp_unread = unread.
 
 %-----------------------------------------------------------------------------%
 

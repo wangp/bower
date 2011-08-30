@@ -209,11 +209,13 @@ skip_to_unread(Screen, MessageUpdate, !Info) :-
     !.Info = index_info(Scrollable0),
     NumRows = list.length(Screen ^ main_panels),
     ( get_cursor(Scrollable0, Cursor0) ->
-        ( search_forward(is_unread_line, Scrollable0, Cursor0 + 1, Cursor) ->
+        (
+            search_forward(is_unread_line, Scrollable0, Cursor0 + 1, Cursor, _)
+        ->
             set_cursor(Cursor, NumRows, Scrollable0, Scrollable),
             MessageUpdate = clear_message
         ;
-            search_forward(is_unread_line, Scrollable0, 0, Cursor),
+            search_forward(is_unread_line, Scrollable0, 0, Cursor, _),
             Cursor < Cursor0
         ->
             set_cursor(Cursor, NumRows, Scrollable0, Scrollable),

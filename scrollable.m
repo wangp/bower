@@ -44,7 +44,7 @@
     scrollable(T)::in, scrollable(T)::out) is det.
 
 :- pred search_forward(pred(T)::in(pred(in) is semidet),
-    scrollable(T)::in, int::in, int::out) is semidet.
+    scrollable(T)::in, int::in, int::out, T::out) is semidet.
 
 :- pred search_reverse(pred(T)::in(pred(in) is semidet),
     scrollable(T)::in, int::in, int::out) is semidet.
@@ -147,26 +147,27 @@ move_cursor(NumRows, Delta, HitLimit, !Scrollable) :-
         HitLimit = no
     ).
 
-search_forward(P, Scrollable, I0, I) :-
+search_forward(P, Scrollable, I0, I, MatchLine) :-
     Scrollable = scrollable(Lines0, _NumLines, _Top, _MaybeCursor),
     list.drop(I0, Lines0, Lines),
-    search_loop(P, Lines, I0, I).
+    search_loop(P, Lines, I0, I, MatchLine).
 
 search_reverse(P, Scrollable, I0, I) :-
     Scrollable = scrollable(Lines0, _NumLines, _Top, _MaybeCursor),
     list.take_upto(I0, Lines0, Lines1),
     list.reverse(Lines1, RevLines),
-    search_loop(P, RevLines, 0, N),
+    search_loop(P, RevLines, 0, N, _),
     I = I0 - N.
 
 :- pred search_loop(pred(T)::in(pred(in) is semidet),
-    list(T)::in, int::in, int::out) is semidet.
+    list(T)::in, int::in, int::out, T::out) is semidet.
 
-search_loop(P, [X | Xs], N0, N) :-
+search_loop(P, [X | Xs], N0, N, MatchX) :-
     ( P(X) ->
-        N = N0
+        N = N0,
+        MatchX = X
     ;
-        search_loop(P, Xs, N0 + 1, N)
+        search_loop(P, Xs, N0 + 1, N, MatchX)
     ).
 
 draw(RowPanels, Scrollable, !IO) :-

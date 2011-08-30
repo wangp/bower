@@ -41,6 +41,9 @@
 
 :- pred get_top_message_id(pager_info::in, message_id::out) is semidet.
 
+:- pred skip_to_message(message_id::in, pager_info::in, pager_info::out)
+    is det.
+
 :- pred draw_pager(screen::in, pager_info::in, io::di, io::uo) is det.
 
 :- pred draw_pager_lines(list(panel)::in, pager_info::in, io::di, io::uo)
@@ -353,7 +356,7 @@ scroll(NumRows, Delta, MessageUpdate, !Info) :-
 next_message(MessageUpdate, !Info) :-
     !.Info = pager_info(Scrollable0),
     Top0 = get_top(Scrollable0),
-    ( search_forward(is_message_start, Scrollable0, Top0 + 1, Top) ->
+    ( search_forward(is_message_start, Scrollable0, Top0 + 1, Top, _) ->
         set_top(Top, Scrollable0, Scrollable),
         !:Info = pager_info(Scrollable),
         MessageUpdate = clear_message
@@ -390,8 +393,8 @@ skip_quoted_text(MessageUpdate, !Info) :-
     Top0 = get_top(Scrollable0),
     (
         search_forward(is_quoted_text_or_message_start, Scrollable0,
-            Top0 + 1, Top1),
-        search_forward(is_unquoted_text, Scrollable0, Top1, Top)
+            Top0 + 1, Top1, _),
+        search_forward(is_unquoted_text, Scrollable0, Top1, Top, _)
     ->
         set_top(Top, Scrollable0, Scrollable),
         !:Info = pager_info(Scrollable),
@@ -434,6 +437,22 @@ get_top_message_id_2([Line | Lines], MessageId) :-
     ;
         get_top_message_id_2(Lines, MessageId)
     ).
+
+%-----------------------------------------------------------------------------%
+
+skip_to_message(MessageId, !Info) :-
+    !.Info = pager_info(Scrollable0),
+    ( search_forward(is_message_start(MessageId), Scrollable0, 0, Top, _) ->
+        set_top(Top, Scrollable0, Scrollable),
+        !:Info = pager_info(Scrollable)
+    ;
+        true
+    ).
+
+:- pred is_message_start(message_id::in, pager_line::in) is semidet.
+
+is_message_start(MessageId, start_message_header(Message, _, _)) :-
+    Message ^ m_id = MessageId.
 
 %-----------------------------------------------------------------------------%
 
