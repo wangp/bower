@@ -321,7 +321,11 @@
 
 :- implementation.
 
-:- type attr == int.
+    % Using the foreign type prevents problems with type ambiguity when
+    % compiling with intermodule optimisation.
+    %
+% :- type attr == int.
+:- pragma foreign_type("C", attr, "int").
 
 :- type colour == int.
 
