@@ -634,7 +634,7 @@ session(P, !IO) :-
 
 :- pragma foreign_proc("C",
     get_wch(CharCode::out, IO0::di, IO::uo),
-    [will_not_call_mercury, promise_pure],
+    [will_not_call_mercury, promise_pure, may_not_duplicate],
 "
     wint_t ch;
     if (get_wch(&ch) == OK) {
