@@ -14,10 +14,10 @@
 
 :- implementation.
 
-:- import_module assoc_list.
 :- import_module bool.
 :- import_module int.
 :- import_module list.
+:- import_module map.
 :- import_module maybe.
 :- import_module pair.
 :- import_module string.
@@ -30,6 +30,18 @@
 :- import_module quote_arg.
 :- import_module text_entry.
 
+:- type headers
+    --->    headers(
+                % Technically, header fields.
+                h_from          :: string,
+                h_to            :: string,
+                h_cc            :: string,
+                h_bcc           :: string,
+                h_subject       :: string,
+                h_reply_to      :: string,
+                h_rest          :: map(string, string)
+            ).
+
 %-----------------------------------------------------------------------------%
 
 start_compose(Screen, !IO) :-
@@ -40,14 +52,10 @@ start_compose(Screen, !IO) :-
         text_entry(Screen, "Subject: ", MaybeSubject, !IO),
         (
             MaybeSubject = yes(Subject),
-            Headers = [
-                "From" - From,
-                "To" - To,
-                "Cc" - "",
-                "Bcc" - "",
-                "Subject" - Subject,
-                "Reply-To" - ""
-            ],
+            Cc = "",
+            Bcc = "",
+            ReplyTo = "",
+            Headers = headers(From, To, Cc, Bcc, Subject, ReplyTo, map.init),
             Body = "",
             create_edit_stage(Screen, Headers, Body, !IO)
         ;
@@ -78,11 +86,10 @@ get_from(From, !IO) :-
         From = ""
     ).
 
-:- pred create_edit_stage(screen::in, assoc_list(string, string)::in,
-    string::in, io::di, io::uo) is det.
+:- pred create_edit_stage(screen::in, headers::in, string::in, io::di, io::uo)
+    is det.
 
 create_edit_stage(Screen, Headers0, Body0, !IO) :-
-    % XXX ensure standard headers exist in template
     create_temp_message_file(Headers0, Body0, ResFilename, !IO),
     (
         ResFilename = ok(Filename),
@@ -150,8 +157,8 @@ call_editor(Screen, Filename, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred staging_screen(screen::in, assoc_list(string, string)::in, string::in,
-    pager_info::in, io::di, io::uo) is det.
+:- pred staging_screen(screen::in, headers::in, string::in, pager_info::in,
+    io::di, io::uo) is det.
 
 staging_screen(Screen, Headers, Body, !.PagerInfo, !IO) :-
     draw_pager(Screen, !.PagerInfo, !IO),
@@ -197,8 +204,8 @@ draw_staging_bar(Screen, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred postpone(screen::in, assoc_list(string, string)::in, string::in,
-    bool::out, io::di, io::uo) is det.
+:- pred postpone(screen::in, headers::in, string::in, bool::out,
+    io::di, io::uo) is det.
 
 postpone(Screen, Headers, Body, Res, !IO) :-
     popen("notmuch config get database.path", ResDbPath, !IO),
@@ -235,11 +242,10 @@ postpone(Screen, Headers, Body, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred send_mail(screen::in, assoc_list(string, string)::in,
-    string::in, bool::out, io::di, io::uo) is det.
+:- pred send_mail(screen::in, headers::in, string::in, bool::out,
+    io::di, io::uo) is det.
 
 send_mail(Screen, Headers, Body, Res, !IO) :-
-    % XXX set Date, Message-ID headers
     create_temp_message_file(Headers, Body, ResFilename, !IO),
     (
         ResFilename = ok(Filename),
@@ -280,15 +286,23 @@ call_send_mail(Screen, Filename, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred create_temp_message_file(assoc_list(string, string)::in, string::in,
-    io.res(string)::out, io::di, io::uo) is det.
+:- pred create_temp_message_file(headers::in, string::in, io.res(string)::out,
+    io::di, io::uo) is det.
 
 create_temp_message_file(Headers, Body, Res, !IO) :-
     io.make_temp(Filename, !IO),
     io.open_output(Filename, ResOpen, !IO),
     (
         ResOpen = ok(Stream),
-        list.foldl(write_header(Stream), Headers, !IO),
+        Headers = headers(From, To, Cc, Bcc, Subject, ReplyTo, Rest),
+        % XXX add Date, MessageID
+        write_header(Stream, "From", From, !IO),
+        write_header(Stream, "To", To, !IO),
+        write_header(Stream, "Cc", Cc, !IO),
+        write_header(Stream, "Bcc", Bcc, !IO),
+        write_header(Stream, "Subject", Subject, !IO),
+        write_header(Stream, "Reply-To", ReplyTo, !IO),
+        map.foldl(write_header(Stream), Rest, !IO),
         io.nl(Stream, !IO),
         io.write_string(Stream, Body, !IO),
         io.close_output(Stream, !IO),
@@ -299,30 +313,30 @@ create_temp_message_file(Headers, Body, Res, !IO) :-
         Res = error(io.make_io_error(Message))
     ).
 
-:- pred write_header(io.output_stream::in, pair(string, string)::in,
+:- pred write_header(io.output_stream::in, string::in, string::in,
     io::di, io::uo) is det.
 
-write_header(Stream, Header - Value, !IO) :-
+write_header(Stream, Header, Value, !IO) :-
     io.write_string(Stream, Header, !IO),
     io.write_string(Stream, ": ", !IO),
     io.write_string(Stream, Value, !IO),
     io.nl(Stream, !IO).
 
-:- pred parse_message_file(string::in,
-    io.res(pair(assoc_list(string, string), string))::out,
+:- pred parse_message_file(string::in, io.res(pair(headers, string))::out,
     io::di, io::uo) is det.
 
 parse_message_file(Filename, Res, !IO) :-
     io.open_input(Filename, ResOpen, !IO),
     (
         ResOpen = ok(Stream),
-        read_headers(Stream, ResHeaders, MaybeBodyLine, [], RevHeaders, !IO),
+        Headers0 = headers("", "", "", "", "", "", map.init),
+        read_headers(Stream, ResHeaders, MaybeBodyLine, Headers0, Headers,
+            !IO),
         (
             ResHeaders = ok,
             read_file_as_string(Stream, ResBody, !IO),
             (
                 ResBody = ok(Body0),
-                list.reverse(RevHeaders, Headers),
                 (
                     MaybeBodyLine = yes(BodyLine),
                     Body = BodyLine ++ Body0
@@ -347,10 +361,9 @@ parse_message_file(Filename, Res, !IO) :-
 
     % XXX implement proper parser
 :- pred read_headers(io.input_stream::in, io.res::out, maybe(string)::out,
-    assoc_list(string, string)::in, assoc_list(string, string)::out,
-    io::di, io::uo) is det.
+    headers::in, headers::out, io::di, io::uo) is det.
 
-read_headers(Stream, Res, MaybeBodyLine, !AccHeaders, !IO) :-
+read_headers(Stream, Res, MaybeBodyLine, !Headers, !IO) :-
     io.read_line_as_string(Stream, ResRead, !IO),
     (
         ResRead = ok(Line),
@@ -363,12 +376,14 @@ read_headers(Stream, Res, MaybeBodyLine, !AccHeaders, !IO) :-
             string.between(Line, Colon + 1, End, Value0),
             Name = string.strip(Name0),
             Value = string.strip(Value0),
-            ( exclude_header(Name) ->
+            ( read_standard_header(Name, Value, !Headers) ->
                 true
             ;
-                !:AccHeaders = [Name - Value | !.AccHeaders]
+                Rest0 = !.Headers ^ h_rest,
+                map.set(Name, Value, Rest0, Rest),
+                !Headers ^ h_rest := Rest
             ),
-            read_headers(Stream, Res, MaybeBodyLine, !AccHeaders, !IO)
+            read_headers(Stream, Res, MaybeBodyLine, !Headers, !IO)
         ;
             Res = ok,
             MaybeBodyLine = yes(Line)
@@ -383,11 +398,30 @@ read_headers(Stream, Res, MaybeBodyLine, !AccHeaders, !IO) :-
         MaybeBodyLine = no
     ).
 
-:- pred exclude_header(string::in) is semidet.
+:- pred read_standard_header(string::in, string::in,
+    headers::in, headers::out) is semidet.
 
-exclude_header(Name) :-
-    ( strcase_equal(Name, "Date")
-    ; strcase_equal(Name, "Message-ID")
+read_standard_header(Name, Value, !Headers) :-
+    ( strcase_equal(Name, "From") ->
+        !Headers ^ h_from := Value
+    ; strcase_equal(Name, "To") ->
+        !Headers ^ h_to := Value
+    ; strcase_equal(Name, "Cc") ->
+        !Headers ^ h_cc := Value
+    ; strcase_equal(Name, "Bcc") ->
+        !Headers ^ h_bcc := Value
+    ; strcase_equal(Name, "Subject") ->
+        !Headers ^ h_subject := Value
+    ; strcase_equal(Name, "Reply-To") ->
+        !Headers ^ h_reply_to := Value
+    ; strcase_equal(Name, "Date") ->
+        % Ignore it.
+        true
+    ; strcase_equal(Name, "Message-ID") ->
+        % Ignore it.
+        true
+    ;
+        fail
     ).
 
 :- pred strcase_equal(string::in, string::in) is semidet.
