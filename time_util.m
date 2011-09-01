@@ -10,6 +10,8 @@
 
 :- pred timestamp_to_tm(int::in, tm::out) is det.
 
+:- pred time_to_int(time_t::in, int::out) is det.
+
 :- pred get_timezone(time_t::in, int::out) is det.
 
 :- pred month_short_name(int, string).
@@ -73,6 +75,13 @@ timestamp_to_tm(Timestamp, TM) :-
     Yd  = tm.tm_yday;
     Wd  = tm.tm_wday;
     IsDst = tm.tm_isdst;
+").
+
+:- pragma foreign_proc("C",
+    time_to_int(Time::in, Int::out),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io],
+"
+    Int = Time;
 ").
 
 :- pragma foreign_proc("C",
