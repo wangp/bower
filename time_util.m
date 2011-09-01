@@ -10,6 +10,8 @@
 
 :- pred timestamp_to_tm(int::in, tm::out) is det.
 
+:- pred get_timezone(time_t::in, int::out) is det.
+
 :- pred month_short_name(int, string).
 :- mode month_short_name(in, out) is semidet.
 :- mode month_short_name(out, in) is semidet.
@@ -71,6 +73,19 @@ timestamp_to_tm(Timestamp, TM) :-
     Yd  = tm.tm_yday;
     Wd  = tm.tm_wday;
     IsDst = tm.tm_isdst;
+").
+
+:- pragma foreign_proc("C",
+    get_timezone(Time::in, Offset::out),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
+"
+    time_t t;
+    struct tm tm;
+
+    t = Time;
+    localtime_r(&t, &tm);
+    Offset = tm.tm_gmtoff; /* GNU extension */
 ").
 
 month_short_name(1, "Jan").
