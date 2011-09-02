@@ -20,6 +20,7 @@
 
 :- type thread_pager_action
     --->    continue
+    ;       start_reply(message_id)
     ;       leave.
 
 :- pred thread_pager_input(char::in, thread_pager_action::out,
@@ -208,6 +209,8 @@ thread_pager_input(Char, Action, MessageUpdate, !Info) :-
     ; Char = '\t' ->
         skip_to_unread(MessageUpdate, !Info),
         Action = continue
+    ; Char = 'r' ->
+        reply(!.Info, Action, MessageUpdate)
     ;
         ( Char = 'i'
         ; Char = 'q'
@@ -305,6 +308,19 @@ is_message(MessageId, Line) :-
 
 is_unread_line(Line) :-
     Line ^ tp_unread = unread.
+
+:- pred reply(thread_pager_info::in, thread_pager_action::out,
+    message_update::out) is det.
+
+reply(Info, Action, MessageUpdate) :-
+    PagerInfo = Info ^ tp_pager,
+    ( get_top_message_id(PagerInfo, MessageId) ->
+        MessageUpdate = clear_message,
+        Action = start_reply(MessageId)
+    ;
+        MessageUpdate = set_warning("Nothing to reply to."),
+        Action = continue
+    ).
 
 %-----------------------------------------------------------------------------%
 
