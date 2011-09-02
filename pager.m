@@ -110,9 +110,21 @@ append_message(Cols, Message, !Lines) :-
     Subject = Message ^ m_subject,
     StartMessage = start_message_header(Message, "Subject", Subject),
     snoc(StartMessage, !Lines),
+    append_header("Date", Message ^ m_date, !Lines),
     append_header("From", Message ^ m_from, !Lines),
     append_header("To", Message ^ m_to, !Lines),
-    append_header("Date", Message ^ m_date, !Lines),
+    Cc = Message ^ m_cc,
+    ( Cc = "" ->
+        true
+    ;
+        append_header("Cc", Cc, !Lines)
+    ),
+    ReplyTo = Message ^ m_reply_to,
+    ( ReplyTo = "" ->
+        true
+    ;
+        append_header("Reply-To", ReplyTo, !Lines)
+    ),
     snoc(blank_line, !Lines),
     Body = Message ^ m_body,
     ( cord.head_tail(Body, FirstPart, RestParts) ->

@@ -90,17 +90,27 @@ parse_message_details(JSON, Replies, Message) :-
         JSON/"id" = unesc_string(Id),
         JSON/"timestamp" = int(Timestamp),
         JSON/"headers" = Headers,
-        Headers/"Subject" = unesc_string(Subject),
-        Headers/"From" = unesc_string(From),
-        Headers/"To" = unesc_string(To),
         Headers/"Date" = unesc_string(Date),
+        Headers/"From" = unesc_string(From),
+        Headers/"Subject" = unesc_string(Subject),
+        Headers/"To" = unesc_string(To),
         JSON/"tags" = array(TagsList),
         list.map(parse_tag, TagsList, Tags),
         JSON/"body" = array(BodyList),
         list.foldl(parse_content, BodyList, cord.init, Body)
     ->
-        Message = message(message_id(Id), Timestamp, Subject, From, To, Date,
-            Tags, Body, Replies)
+        ( Headers/"Cc" = unesc_string(Cc0) ->
+            Cc = Cc0
+        ;
+            Cc = ""
+        ),
+        ( Headers/"Reply-To" = unesc_string(ReplyTo0) ->
+            ReplyTo = ReplyTo0
+        ;
+            ReplyTo = ""
+        ),
+        Message = message(message_id(Id), Timestamp, Date, From, Subject,
+            To, Cc, ReplyTo, Tags, Body, Replies)
     ;
         notmuch_json_error
     ).
