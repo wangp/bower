@@ -20,7 +20,8 @@
 
 :- type thread_pager_action
     --->    continue
-    ;       start_reply(message_id)
+    ;       start_normal_reply(message)
+    ;       start_list_reply(message)
     ;       leave.
 
 :- pred thread_pager_input(char::in, thread_pager_action::out,
@@ -210,7 +211,9 @@ thread_pager_input(Char, Action, MessageUpdate, !Info) :-
         skip_to_unread(MessageUpdate, !Info),
         Action = continue
     ; Char = 'r' ->
-        reply(!.Info, Action, MessageUpdate)
+        reply(!.Info, no, Action, MessageUpdate)
+    ; Char = 'L' ->
+        reply(!.Info, yes, Action, MessageUpdate)
     ;
         ( Char = 'i'
         ; Char = 'q'
@@ -269,7 +272,8 @@ sync_thread_to_pager(!Info) :-
     NumThreadRows = !.Info ^ tp_num_thread_rows,
     (
         % XXX inefficient
-        get_top_message_id(PagerInfo, MessageId),
+        get_top_message(PagerInfo, Message),
+        MessageId = Message ^ m_id,
         search_forward(is_message(MessageId), Scrollable0, 0, Cursor, _)
     ->
         set_cursor(Cursor, NumThreadRows, Scrollable0, Scrollable),
@@ -309,14 +313,20 @@ is_message(MessageId, Line) :-
 is_unread_line(Line) :-
     Line ^ tp_unread = unread.
 
-:- pred reply(thread_pager_info::in, thread_pager_action::out,
+:- pred reply(thread_pager_info::in, bool::in, thread_pager_action::out,
     message_update::out) is det.
 
-reply(Info, Action, MessageUpdate) :-
+reply(Info, ListReply, Action, MessageUpdate) :-
     PagerInfo = Info ^ tp_pager,
-    ( get_top_message_id(PagerInfo, MessageId) ->
+    ( get_top_message(PagerInfo, Message) ->
         MessageUpdate = clear_message,
-        Action = start_reply(MessageId)
+        (
+            ListReply = no,
+            Action = start_normal_reply(Message)
+        ;
+            ListReply = yes,
+            Action = start_list_reply(Message)
+        )
     ;
         MessageUpdate = set_warning("Nothing to reply to."),
         Action = continue

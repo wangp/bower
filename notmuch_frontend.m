@@ -139,8 +139,14 @@ thread_pager_loop(Screen, !.Info, !IO) :-
         Action = continue,
         thread_pager_loop(Screen, !.Info, !IO)
     ;
-        Action = start_reply(MessageId),
-        start_reply(Screen, MessageId, !IO),
+        (
+            Action = start_normal_reply(Message),
+            ReplyKind = normal_reply
+        ;
+            Action = start_list_reply(Message),
+            ReplyKind = list_reply
+        ),
+        start_reply(Screen, Message, ReplyKind, !IO),
         thread_pager_loop(Screen, !.Info, !IO)
     ;
         Action = leave

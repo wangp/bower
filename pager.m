@@ -39,7 +39,7 @@
 :- pred skip_quoted_text(message_update::out, pager_info::in, pager_info::out)
     is det.
 
-:- pred get_top_message_id(pager_info::in, message_id::out) is semidet.
+:- pred get_top_message(pager_info::in, message::out) is semidet.
 
 :- pred skip_to_message(message_id::in, pager_info::in, pager_info::out)
     is det.
@@ -422,23 +422,22 @@ is_unquoted_text(Line) :-
 
 %-----------------------------------------------------------------------------%
 
-get_top_message_id(Info, MessageId) :-
+get_top_message(Info, Message) :-
     % XXX inefficient; we could keep an array for binary search
     Info = pager_info(Scrollable),
     Top = get_top(Scrollable),
     Lines0 = get_lines(Scrollable),
     list.take(Top + 1, Lines0, Lines1),
     list.reverse(Lines1, RevLines),
-    get_top_message_id_2(RevLines, MessageId).
+    get_top_message_2(RevLines, Message).
 
-:- pred get_top_message_id_2(list(pager_line)::in, message_id::out)
-    is semidet.
+:- pred get_top_message_2(list(pager_line)::in, message::out) is semidet.
 
-get_top_message_id_2([Line | Lines], MessageId) :-
-    ( Line = start_message_header(Message, _, _) ->
-        MessageId = Message ^ m_id
+get_top_message_2([Line | Lines], Message) :-
+    ( Line = start_message_header(Message0, _, _) ->
+        Message = Message0
     ;
-        get_top_message_id_2(Lines, MessageId)
+        get_top_message_2(Lines, Message)
     ).
 
 %-----------------------------------------------------------------------------%

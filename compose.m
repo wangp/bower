@@ -8,9 +8,14 @@
 :- import_module data.
 :- import_module screen.
 
+:- type reply_kind
+    --->    normal_reply
+    ;       list_reply.
+
 :- pred start_compose(screen::in, io::di, io::uo) is det.
 
-:- pred start_reply(screen::in, message_id::in, io::di, io::uo) is det.
+:- pred start_reply(screen::in, message::in, reply_kind::in,
+    io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -100,19 +105,44 @@ get_from(From, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-start_reply(Screen, message_id(MessageId), !IO) :-
+start_reply(Screen, Message, ReplyKind, !IO) :-
+    Message ^ m_id = message_id(MessageId),
     Args = ["notmuch", "reply", "id:" ++ MessageId],
     args_to_quoted_command(Args, Command),
     popen(Command, CommandResult, !IO),
     (
         CommandResult = ok(String),
-        read_headers_from_string(String, 0, init_headers, Headers, Body),
+        read_headers_from_string(String, 0, init_headers, Headers0, Body),
+        (
+            ReplyKind = normal_reply,
+            Headers = Headers0
+        ;
+            ReplyKind = list_reply,
+            OrigFrom = Message ^ m_from,
+            set_headers_for_list_reply(OrigFrom, Headers0, Headers)
+        ),
         create_edit_stage(Screen, Headers, Body, !IO)
     ;
         CommandResult = error(Error),
         string.append_list(["Error running notmuch: ",
             io.error_message(Error)], Warning),
         update_message(Screen, set_warning(Warning), !IO)
+    ).
+
+:- pred set_headers_for_list_reply(string::in, headers::in, headers::out)
+    is det.
+
+set_headers_for_list_reply(OrigFrom, !Headers) :-
+    To0 = !.Headers ^ h_to,
+    string.split_at_string(", ", To0) = ToList0,
+    (
+        ToList0 = [_, _ | _],
+        list.delete_first(ToList0, OrigFrom, ToList)
+    ->
+        string.join_list(", ", ToList) = To,
+        !Headers ^ h_to := To
+    ;
+        true
     ).
 
 %-----------------------------------------------------------------------------%
