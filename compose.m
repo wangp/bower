@@ -9,7 +9,8 @@
 :- import_module screen.
 
 :- type reply_kind
-    --->    normal_reply
+    --->    direct_reply
+    ;       group_reply
     ;       list_reply.
 
 :- pred start_compose(screen::in, io::di, io::uo) is det.
@@ -114,7 +115,15 @@ start_reply(Screen, Message, ReplyKind, !IO) :-
         CommandResult = ok(String),
         read_headers_from_string(String, 0, init_headers, Headers0, Body),
         (
-            ReplyKind = normal_reply,
+            ReplyKind = direct_reply,
+            OrigFrom = Message ^ m_from,
+            OrigReplyTo = Message ^ m_reply_to,
+            set_headers_for_direct_reply(OrigFrom, OrigReplyTo,
+                Headers0, Headers)
+        ;
+            ReplyKind = group_reply,
+            % notmuch reply seems to act roughly like the Mutt group reply
+            % function.
             Headers = Headers0
         ;
             ReplyKind = list_reply,
@@ -127,6 +136,18 @@ start_reply(Screen, Message, ReplyKind, !IO) :-
         string.append_list(["Error running notmuch: ",
             io.error_message(Error)], Warning),
         update_message(Screen, set_warning(Warning), !IO)
+    ).
+
+:- pred set_headers_for_direct_reply(string::in, string::in,
+    headers::in, headers::out) is det.
+
+set_headers_for_direct_reply(OrigFrom, OrigReplyTo, !Headers) :-
+    ( OrigReplyTo \= "" ->
+        !Headers ^ h_to := OrigReplyTo
+    ; OrigFrom \= "" ->
+        !Headers ^ h_to := OrigFrom
+    ;
+        true
     ).
 
 :- pred set_headers_for_list_reply(string::in, headers::in, headers::out)

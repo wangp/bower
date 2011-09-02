@@ -139,13 +139,7 @@ thread_pager_loop(Screen, !.Info, !IO) :-
         Action = continue,
         thread_pager_loop(Screen, !.Info, !IO)
     ;
-        (
-            Action = start_normal_reply(Message),
-            ReplyKind = normal_reply
-        ;
-            Action = start_list_reply(Message),
-            ReplyKind = list_reply
-        ),
+        Action = start_reply(Message, ReplyKind),
         start_reply(Screen, Message, ReplyKind, !IO),
         thread_pager_loop(Screen, !.Info, !IO)
     ;

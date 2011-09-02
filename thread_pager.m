@@ -8,6 +8,7 @@
 :- import_module list.
 :- import_module time.
 
+:- import_module compose.
 :- import_module data.
 :- import_module screen.
 
@@ -20,8 +21,7 @@
 
 :- type thread_pager_action
     --->    continue
-    ;       start_normal_reply(message)
-    ;       start_list_reply(message)
+    ;       start_reply(message, reply_kind)
     ;       leave.
 
 :- pred thread_pager_input(char::in, thread_pager_action::out,
@@ -211,9 +211,11 @@ thread_pager_input(Char, Action, MessageUpdate, !Info) :-
         skip_to_unread(MessageUpdate, !Info),
         Action = continue
     ; Char = 'r' ->
-        reply(!.Info, no, Action, MessageUpdate)
+        reply(!.Info, direct_reply, Action, MessageUpdate)
+    ; Char = 'g' ->
+        reply(!.Info, group_reply, Action, MessageUpdate)
     ; Char = 'L' ->
-        reply(!.Info, yes, Action, MessageUpdate)
+        reply(!.Info, list_reply, Action, MessageUpdate)
     ;
         ( Char = 'i'
         ; Char = 'q'
@@ -313,20 +315,14 @@ is_message(MessageId, Line) :-
 is_unread_line(Line) :-
     Line ^ tp_unread = unread.
 
-:- pred reply(thread_pager_info::in, bool::in, thread_pager_action::out,
+:- pred reply(thread_pager_info::in, reply_kind::in, thread_pager_action::out,
     message_update::out) is det.
 
-reply(Info, ListReply, Action, MessageUpdate) :-
+reply(Info, ReplyKind, Action, MessageUpdate) :-
     PagerInfo = Info ^ tp_pager,
     ( get_top_message(PagerInfo, Message) ->
         MessageUpdate = clear_message,
-        (
-            ListReply = no,
-            Action = start_normal_reply(Message)
-        ;
-            ListReply = yes,
-            Action = start_list_reply(Message)
-        )
+        Action = start_reply(Message, ReplyKind)
     ;
         MessageUpdate = set_warning("Nothing to reply to."),
         Action = continue
