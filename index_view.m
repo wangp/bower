@@ -22,6 +22,7 @@
     ;       open_pager(thread_id)
     ;       enter_limit
     ;       start_compose
+    ;       start_recall
     ;       quit.
 
 :- pred index_view_input(screen::in, char::in, message_update::out,
@@ -89,6 +90,7 @@
     ;       enter
     ;       enter_limit
     ;       start_compose
+    ;       start_recall
     ;       quit.
 
 :- instance scrollable.line(index_line) where [
@@ -163,6 +165,10 @@ index_view_input(Screen, Char, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = start_compose
         ;
+            Binding = start_recall,
+            MessageUpdate = no_change,
+            Action = start_recall
+        ;
             Binding = quit,
             MessageUpdate = no_change,
             Action = quit
@@ -180,6 +186,7 @@ key_binding('\t', skip_to_unread).
 key_binding('\r', enter).
 key_binding('l', enter_limit).
 key_binding('m', start_compose).
+key_binding('R', start_recall).
 key_binding('q', quit).
 
 :- pred move_cursor(screen::in, int::in, message_update::out,

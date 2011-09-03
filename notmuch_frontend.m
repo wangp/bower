@@ -26,6 +26,7 @@
 :- import_module data.
 :- import_module index_view.
 :- import_module pager.
+:- import_module recall.
 :- import_module screen.
 :- import_module text_entry.
 :- import_module thread_pager.
@@ -115,6 +116,16 @@ index_loop(Screen, !.IndexInfo, !IO) :-
     ;
         Action = start_compose,
         start_compose(Screen, !IO),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
+        Action = start_recall,
+        select_recall(Screen, MaybeFileName, !IO),
+        (
+            MaybeFileName = yes(FileName),
+            continue_postponed(Screen, FileName, !IO)
+        ;
+            MaybeFileName = no
+        ),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = quit

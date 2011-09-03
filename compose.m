@@ -18,6 +18,8 @@
 :- pred start_reply(screen::in, message::in, reply_kind::in,
     io::di, io::uo) is det.
 
+:- pred continue_postponed(screen::in, string::in, io::di, io::uo) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -190,6 +192,21 @@ set_headers_for_list_reply(OrigFrom, !Headers) :-
         !Headers ^ h_to := To
     ;
         true
+    ).
+
+%-----------------------------------------------------------------------------%
+
+continue_postponed(Screen, Filename, !IO) :-
+    parse_message_file(Filename, ResParse, !IO),
+    (
+        ResParse = ok(Headers - Body),
+        Cols = Screen ^ cols,
+        setup_pager_for_staging(Cols, Body, PagerInfo),
+        staging_screen(Screen, Headers, Body, PagerInfo, !IO)
+    ;
+        ResParse = error(Error),
+        io.error_message(Error, Msg),
+        update_message(Screen, set_warning(Msg), !IO)
     ).
 
 %-----------------------------------------------------------------------------%
