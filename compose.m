@@ -334,37 +334,28 @@ draw_staging_bar(Screen, !IO) :-
     io::di, io::uo) is det.
 
 postpone(Screen, Headers, Body, Res, !IO) :-
-    get_notmuch_config("database.path", ResDbPath, !IO),
+    % XXX write the message to the draft file directly
+    Sending = no,
+    WriteReferences = yes,
+    create_temp_message_file(Headers, Body, Sending, WriteReferences,
+        ResFilename, !IO),
     (
-        ResDbPath = ok(DbPath),
-        % XXX write the message to the draft file directly
-        Sending = no,
-        WriteReferences = yes,
-        create_temp_message_file(Headers, Body, Sending, WriteReferences,
-            ResFilename, !IO),
+        ResFilename = ok(Filename),
+        add_draft(Filename, DraftRes, !IO),
+        io.remove_file(Filename, _, !IO),
         (
-            ResFilename = ok(Filename),
-            add_draft(DbPath, Filename, DraftRes, !IO),
-            io.remove_file(Filename, _, !IO),
-            (
-                DraftRes = ok,
-                update_message(Screen, set_info("Message postponed."), !IO),
-                Res = yes
-            ;
-                DraftRes = error(Error),
-                Msg = io.error_message(Error),
-                update_message(Screen, set_warning(Msg), !IO),
-                Res = no
-            )
+            DraftRes = ok,
+            update_message(Screen, set_info("Message postponed."), !IO),
+            Res = yes
         ;
-            ResFilename = error(Error),
-            update_message(Screen, set_warning(io.error_message(Error)), !IO),
+            DraftRes = error(Error),
+            Msg = io.error_message(Error),
+            update_message(Screen, set_warning(Msg), !IO),
             Res = no
         )
     ;
-        ResDbPath = error(Error),
-        Msg = "Unable to get database path: " ++ io.error_message(Error),
-        update_message(Screen, set_warning(Msg), !IO),
+        ResFilename = error(Error),
+        update_message(Screen, set_warning(io.error_message(Error)), !IO),
         Res = no
     ).
 

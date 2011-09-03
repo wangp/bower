@@ -7,7 +7,7 @@
 
 :- pred generate_unique_name(string::out, io::di, io::uo) is det.
 
-:- pred add_draft(string::in, string::in, io.res::out, io::di, io::uo) is det.
+:- pred add_draft(string::in, io.res::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -19,6 +19,7 @@
 :- import_module string.
 :- import_module time.
 
+:- import_module callout.
 :- import_module quote_arg.
 :- import_module sys_util.
 :- import_module time_util.
@@ -43,7 +44,19 @@ generate_unique_name(Name, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-add_draft(DbPath, FileName, Res, !IO) :-
+add_draft(FileName, Res, !IO) :-
+    get_notmuch_config("database.path", ResDbPath, !IO),
+    (
+        ResDbPath = ok(DbPath),
+        add_draft_2(DbPath, FileName, Res, !IO)
+    ;
+        ResDbPath = error(Error),
+        Res = error(Error)
+    ).
+
+:- pred add_draft_2(string::in, string::in, io.res::out, io::di, io::uo) is det.
+
+add_draft_2(DbPath, FileName, Res, !IO) :-
     generate_unique_name(UniqueName, !IO),
     TmpFileName = DbPath ++ "/Drafts/tmp/" ++ UniqueName,
     NewFileName = DbPath ++ "/Drafts/new/" ++ UniqueName,
