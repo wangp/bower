@@ -54,7 +54,9 @@
                 h_cc            :: string,
                 h_bcc           :: string,
                 h_subject       :: string,
-                h_reply_to      :: string,
+                h_replyto       :: string,
+                h_references    :: string,
+                h_inreplyto     :: string,
                 h_rest          :: map(string, string)
             ).
 
@@ -73,7 +75,10 @@ start_compose(Screen, !IO) :-
             Cc = "",
             Bcc = "",
             ReplyTo = "",
-            Headers = headers(From, To, Cc, Bcc, Subject, ReplyTo, map.init),
+            References = "",
+            InReplyTo = "",
+            Headers = headers(From, To, Cc, Bcc, Subject, ReplyTo, References,
+                InReplyTo, map.init),
             Body = "",
             create_edit_stage(Screen, Headers, Body, !IO)
         ;
@@ -195,7 +200,9 @@ set_headers_for_list_reply(OrigFrom, !Headers) :-
 
 create_edit_stage(Screen, Headers0, Body0, !IO) :-
     Sending = no,
-    create_temp_message_file(Headers0, Body0, Sending, ResFilename, !IO),
+    WriteReferences = no,
+    create_temp_message_file(Headers0, Body0, Sending, WriteReferences,
+        ResFilename, !IO),
     (
         ResFilename = ok(Filename),
         call_editor(Screen, Filename, ResEdit, !IO),
@@ -203,8 +210,9 @@ create_edit_stage(Screen, Headers0, Body0, !IO) :-
             ResEdit = yes,
             parse_message_file(Filename, ResParse, !IO),
             (
-                ResParse = ok(Headers - Body),
+                ResParse = ok(Headers1 - Body),
                 io.remove_file(Filename, _, !IO),
+                update_references(Headers0, Headers1, Headers),
                 Cols = Screen ^ cols,
                 setup_pager_for_staging(Cols, Body, PagerInfo),
                 staging_screen(Screen, Headers, Body, PagerInfo, !IO)
@@ -258,6 +266,20 @@ call_editor(Screen, Filename, Res, !IO) :-
             io.error_message(Error)], Warning),
         update_message(Screen, set_warning(Warning), !IO),
         Res = no
+    ).
+
+:- pred update_references(headers::in, headers::in, headers::out) is det.
+
+update_references(Headers0, !Headers) :-
+    % If user doesn't touch the In-Reply-To field then copy the References
+    % field.  Otherwise leave References as-is (likely blank).
+    InReplyTo0 = Headers0 ^ h_inreplyto,
+    InReplyTo1 = !.Headers ^ h_inreplyto,
+    ( InReplyTo0 = InReplyTo1 ->
+        References0 = Headers0 ^ h_references,
+        !Headers ^ h_references := References0
+    ;
+        true
     ).
 
 %-----------------------------------------------------------------------------%
@@ -319,7 +341,9 @@ postpone(Screen, Headers, Body, Res, !IO) :-
         DbPath = string.strip(DbPath0),
         % XXX write the message to the draft file directly
         Sending = no,
-        create_temp_message_file(Headers, Body, Sending, ResFilename, !IO),
+        WriteReferences = yes,
+        create_temp_message_file(Headers, Body, Sending, WriteReferences,
+            ResFilename, !IO),
         (
             ResFilename = ok(Filename),
             add_draft(DbPath, Filename, DraftRes, !IO),
@@ -353,7 +377,9 @@ postpone(Screen, Headers, Body, Res, !IO) :-
 
 send_mail(Screen, Headers, Body, Res, !IO) :-
     Sending = yes,
-    create_temp_message_file(Headers, Body, Sending, ResFilename, !IO),
+    WriteReferences = yes,
+    create_temp_message_file(Headers, Body, Sending, WriteReferences,
+        ResFilename, !IO),
     (
         ResFilename = ok(Filename),
         call_send_mail(Screen, Filename, Res, !IO),
@@ -393,30 +419,40 @@ call_send_mail(Screen, Filename, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred create_temp_message_file(headers::in, string::in, bool::in,
+:- pred create_temp_message_file(headers::in, string::in, bool::in, bool::in,
     io.res(string)::out, io::di, io::uo) is det.
 
-create_temp_message_file(Headers, Body, Sending, Res, !IO) :-
+create_temp_message_file(Headers, Body, Sending, WriteReferences, Res, !IO) :-
     io.make_temp(Filename, !IO),
     io.open_output(Filename, ResOpen, !IO),
     (
         ResOpen = ok(Stream),
-        Headers = headers(From, To, Cc, Bcc, Subject, ReplyTo, Rest),
+        Headers = headers(From, To, Cc, Bcc, Subject, ReplyTo, References,
+            InReplyTo, Rest),
         (
             Sending = yes,
             generate_date_msg_id(Date, MessageId, !IO),
             write_header(Stream, "Date", Date, !IO),
-            write_header(Stream, "Message-ID", MessageId, !IO)
+            write_header(Stream, "Message-ID", MessageId, !IO),
+            Write = write_header_opt(Stream)
         ;
-            Sending = no
+            Sending = no,
+            Write = write_header(Stream)
         ),
-        write_header(Stream, "From", From, !IO),
-        write_header(Stream, "To", To, !IO),
-        write_header(Stream, "Cc", Cc, !IO),
-        write_header(Stream, "Bcc", Bcc, !IO),
-        write_header(Stream, "Subject", Subject, !IO),
-        write_header(Stream, "Reply-To", ReplyTo, !IO),
-        map.foldl(write_header(Stream), Rest, !IO),
+        Write("From", From, !IO),
+        Write("To", To, !IO),
+        Write("Cc", Cc, !IO),
+        Write("Bcc", Bcc, !IO),
+        Write("Subject", Subject, !IO),
+        Write("Reply-To", ReplyTo, !IO),
+        (
+            WriteReferences = yes,
+            Write("References", References, !IO)
+        ;
+            WriteReferences = no
+        ),
+        Write("In-Reply-To", InReplyTo, !IO),
+        map.foldl(Write, Rest, !IO),
         io.nl(Stream, !IO),
         io.write_string(Stream, Body, !IO),
         io.close_output(Stream, !IO),
@@ -479,6 +515,16 @@ write_header(Stream, Header, Value, !IO) :-
     io.write_string(Stream, Value, !IO),
     io.nl(Stream, !IO).
 
+:- pred write_header_opt(io.output_stream::in, string::in, string::in,
+    io::di, io::uo) is det.
+
+write_header_opt(Stream, Name, Value, !IO) :-
+    ( Value = "" ->
+        true
+    ;
+        write_header(Stream, Name, Value, !IO)
+    ).
+
 :- pred parse_message_file(string::in, io.res(pair(headers, string))::out,
     io::di, io::uo) is det.
 
@@ -517,7 +563,7 @@ parse_message_file(Filename, Res, !IO) :-
 
 :- func init_headers = headers.
 
-init_headers = headers("", "", "", "", "", "", map.init).
+init_headers = headers("", "", "", "", "", "", "", "", map.init).
 
     % XXX implement proper parser
 :- pred read_headers_from_stream(io.input_stream::in, io.res::out,
@@ -609,7 +655,11 @@ add_standard_header(Name, Value, !Headers) :-
     ; strcase_equal(Name, "Subject") ->
         !Headers ^ h_subject := Value
     ; strcase_equal(Name, "Reply-To") ->
-        !Headers ^ h_reply_to := Value
+        !Headers ^ h_replyto := Value
+    ; strcase_equal(Name, "References") ->
+        !Headers ^ h_references := Value
+    ; strcase_equal(Name, "In-Reply-To") ->
+        !Headers ^ h_inreplyto := Value
     ; strcase_equal(Name, "Date") ->
         % Ignore it.
         true
