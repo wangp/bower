@@ -71,6 +71,10 @@
     %
 :- pred clear(io::di, io::uo) is det.
 
+    % Touch the entire screen so it will be repainted.
+    %
+:- pred redrawwin_stdscr(io::di, io::uo) is det.
+
     % Output a character (with the given attributes) and advance the cursor.
     % Note that char codes are passed rather than plain chars.
     %
@@ -551,6 +555,16 @@ session(P, !IO) :-
     [will_not_call_mercury, promise_pure],
 "
     clear();
+    IO = IO0;
+").
+
+%-----------------------------------------------------------------------------%
+
+:- pragma foreign_proc("C",
+    redrawwin_stdscr(IO0::di, IO::uo),
+    [will_not_call_mercury, promise_pure],
+"
+    redrawwin(stdscr);
     IO = IO0;
 ").
 
