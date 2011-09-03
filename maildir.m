@@ -45,8 +45,8 @@ generate_unique_name(Name, !IO) :-
 
 add_draft(DbPath, FileName, Res, !IO) :-
     generate_unique_name(UniqueName, !IO),
-    TmpFileName = DbPath ++ "/.Drafts/tmp/" ++ UniqueName,
-    NewFileName = DbPath ++ "/.Drafts/new/" ++ UniqueName,
+    TmpFileName = DbPath ++ "/Drafts/tmp/" ++ UniqueName,
+    NewFileName = DbPath ++ "/Drafts/new/" ++ UniqueName,
     % Copy FileName to tmp first.
     args_to_quoted_command(["cp", "-n", FileName, TmpFileName], CopyCommand),
     io.call_system(CopyCommand, CopyRes, !IO),
