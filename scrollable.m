@@ -156,7 +156,7 @@ search_reverse(P, Scrollable, I0, I) :-
     Scrollable = scrollable(Lines0, _NumLines, _Top, _MaybeCursor),
     list.take_upto(I0, Lines0, Lines1),
     list.reverse(Lines1, RevLines),
-    search_loop(P, RevLines, 0, N, _),
+    search_loop(P, RevLines, 1, N, _),
     I = I0 - N.
 
 :- pred search_loop(pred(T)::in(pred(in) is semidet),
