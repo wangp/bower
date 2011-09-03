@@ -11,6 +11,9 @@
 
 %-----------------------------------------------------------------------------%
 
+:- pred get_notmuch_config(string::in, io.res(string)::out, io::di, io::uo)
+    is det.
+
 :- pred run_notmuch(list(string)::in, pred(json, T)::in(pred(in, out) is det),
     T::out, io::di, io::uo) is det.
 
@@ -32,6 +35,19 @@
 
 :- import_module popen.
 :- import_module quote_arg.
+
+%-----------------------------------------------------------------------------%
+
+get_notmuch_config(Key, Res, !IO) :-
+    popen("notmuch config get " ++ Key, Res0, !IO),
+    (
+        Res0 = ok(Value0),
+        Value = string.strip(Value0),
+        Res = ok(Value)
+    ;
+        Res0 = error(_),
+        Res = Res0
+    ).
 
 %-----------------------------------------------------------------------------%
 

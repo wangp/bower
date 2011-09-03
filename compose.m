@@ -34,6 +34,7 @@
 :- import_module string.
 :- import_module time.
 
+:- import_module callout.
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module maildir.
@@ -91,14 +92,12 @@ start_compose(Screen, !IO) :-
 :- pred get_from(string::out, io::di, io::uo) is det.
 
 get_from(From, !IO) :-
-    popen("notmuch config get user.name", ResName, !IO),
+    get_notmuch_config("user.name", ResName, !IO),
     (
-        ResName = ok(Name0),
-        Name = string.strip(Name0),
-        popen("notmuch config get user.primary_email", ResEmail, !IO),
+        ResName = ok(Name),
+        get_notmuch_config("user.primary_email", ResEmail, !IO),
         (
-            ResEmail = ok(Email0),
-            Email = string.strip(Email0),
+            ResEmail = ok(Email),
             From = string.append_list([Name, " <", Email, ">"])
         ;
             ResEmail = error(_),
@@ -335,10 +334,9 @@ draw_staging_bar(Screen, !IO) :-
     io::di, io::uo) is det.
 
 postpone(Screen, Headers, Body, Res, !IO) :-
-    popen("notmuch config get database.path", ResDbPath, !IO),
+    get_notmuch_config("database.path", ResDbPath, !IO),
     (
-        ResDbPath = ok(DbPath0),
-        DbPath = string.strip(DbPath0),
+        ResDbPath = ok(DbPath),
         % XXX write the message to the draft file directly
         Sending = no,
         WriteReferences = yes,
