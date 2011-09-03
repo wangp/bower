@@ -122,9 +122,7 @@ start_reply(Screen, Message, ReplyKind, !IO) :-
                 Headers0, Headers)
         ;
             ReplyKind = group_reply,
-            % notmuch reply seems to act roughly like the Mutt group reply
-            % function.
-            Headers = Headers0
+            set_headers_for_group_reply(Headers0, Headers)
         ;
             ReplyKind = list_reply,
             OrigFrom = Message ^ m_from,
@@ -146,6 +144,30 @@ set_headers_for_direct_reply(OrigFrom, OrigReplyTo, !Headers) :-
         !Headers ^ h_to := OrigReplyTo
     ; OrigFrom \= "" ->
         !Headers ^ h_to := OrigFrom
+    ;
+        true
+    ),
+    !Headers ^ h_cc := "".
+
+:- pred set_headers_for_group_reply(headers::in, headers::out) is det.
+
+set_headers_for_group_reply(!Headers) :-
+    % Move all but the first To address down to Cc.  This acts more like the
+    % behaviour I am used to from Mutt.
+
+    To0 = !.Headers ^ h_to,
+    Cc0 = !.Headers ^ h_cc,
+    string.split_at_string(", ", To0) = ToList0,
+    ( Cc0 = "" ->
+        CcList0 = []
+    ;
+        CcList0 = string.split_at_string(", ", Cc0)
+    ),
+    ( ToList0 = [To | ToList1] ->
+        CcList = ToList1 ++ CcList0,
+        Cc = string.join_list(", ", CcList),
+        !Headers ^ h_to := To,
+        !Headers ^ h_cc := Cc
     ;
         true
     ).
