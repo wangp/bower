@@ -176,7 +176,13 @@ update_message(Screen, MessageUpdate, !IO) :-
 
 get_char(Char, !IO) :-
     curs.get_wch(C, !IO),
-    ( char.from_int(C, Char0) ->
+    ( C = 12 ->
+        % Redraw the whole screen with ^L.
+        % I have a feeling this is not really correct.
+        curs.redrawwin_stdscr(!IO),
+        panel.update_panels(!IO),
+        get_char(Char, !IO)
+    ; char.from_int(C, Char0) ->
         Char = Char0
     ;
         get_char(Char, !IO)
