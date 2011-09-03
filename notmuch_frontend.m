@@ -45,7 +45,13 @@ main(!IO) :-
     Terms = Args,
     curs.start(!IO),
     create_screen(Screen, !IO),
-    search_and_open_index(Screen, Terms, !IO),
+    (
+        Terms = [],
+        open_index(Screen, [], !IO)
+    ;
+        Terms = [_ | _],
+        search_and_open_index(Screen, Terms, !IO)
+    ),
     curs.stop(!IO).
 
 :- pred setlocale(io::di, io::uo) is det.
@@ -69,9 +75,14 @@ search_and_open_index(Screen, Terms, !IO) :-
     panel.update_panels(!IO),
     run_notmuch(["search", "--format=json" | Terms], parse_threads_list,
         Threads, !IO),
-    setup_index_view(Threads, IndexInfo, !IO),
     string.format("Found %d threads.", [i(length(Threads))], Message),
     update_message(Screen, set_info(Message), !IO),
+    open_index(Screen, Threads, !IO).
+
+:- pred open_index(screen::in, list(thread)::in, io::di, io::uo) is det.
+
+open_index(Screen, Threads, !IO) :-
+    setup_index_view(Threads, IndexInfo, !IO),
     index_loop(Screen, IndexInfo, !IO).
 
 :- pred index_loop(screen::in, index_info::in, io::di, io::uo) is det.
