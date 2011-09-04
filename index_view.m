@@ -273,14 +273,16 @@ draw_index_line(Panel, Line, IsCursor, !IO) :-
         panel.attr_set(Panel, fg(blue) + bold, !IO)
     ),
     my_addstr_fixed(Panel, 11, Date, ' ', !IO),
+    cond_attr_set(Panel, normal, IsCursor, !IO),
     (
         Unread = unread,
-        Base = bold
+        Base = bold,
+        my_addstr(Panel, "n", !IO)
     ;
         Unread = read,
-        Base = normal
+        Base = normal,
+        my_addstr(Panel, " ", !IO)
     ),
-    cond_attr_set(Panel, Base, IsCursor, !IO),
     (
         Replied = replied,
         my_addstr(Panel, "r", !IO)

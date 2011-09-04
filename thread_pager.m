@@ -370,7 +370,13 @@ draw_thread_line(Panel, Line, IsCursor, !IO) :-
         my_addstr(Panel, "r", !IO)
     ;
         Replied = not_replied,
-        my_addstr(Panel, " ", !IO)
+        (
+            Unread = unread,
+            my_addstr(Panel, "n", !IO)
+        ;
+            Unread = read,
+            my_addstr(Panel, " ", !IO)
+        )
     ),
     (
         Flagged = flagged,
