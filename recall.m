@@ -18,10 +18,13 @@
 :- import_module bool.
 :- import_module int.
 :- import_module list.
+:- import_module pair.
+:- import_module string.
 
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module maildir.
+:- import_module message_file.
 :- import_module scrollable.
 
 %-----------------------------------------------------------------------------%
@@ -33,7 +36,9 @@
 
 :- type recall_line
     --->    recall_line(
-                r_filename      :: string
+                r_filename      :: string,
+                r_to            :: string,
+                r_subject       :: string
             ).
 
 :- instance scrollable.line(recall_line) where [
@@ -51,9 +56,10 @@ select_recall(Screen, MaybeFileName, !IO) :-
     ;
         ResFind = ok(FileNames),
         FileNames = [_ | _],
-        list.map(make_recall_line, FileNames, Lines),
+        list.map_foldl(make_recall_line, FileNames, Lines, !IO),
         Scrollable = scrollable.init_with_cursor(Lines, 0),
         Info = recall_info(Scrollable),
+        update_message(Screen, clear_message, !IO),
         recall_screen_loop(Screen, MaybeFileName, Info, _Info, !IO)
     ;
         ResFind = error(Error),
@@ -62,10 +68,21 @@ select_recall(Screen, MaybeFileName, !IO) :-
         MaybeFileName = no
     ).
 
-:- pred make_recall_line(string::in, recall_line::out) is det.
+:- pred make_recall_line(string::in, recall_line::out, io::di, io::uo) is det.
 
-make_recall_line(FileName, Line) :-
-    Line = recall_line(FileName).
+make_recall_line(FileName, Line, !IO) :-
+    parse_message_file(FileName, Res, !IO),
+    (
+        Res = ok(Headers - _Body),
+        To = Headers ^ h_to,
+        Subject = Headers ^ h_subject
+    ;
+        Res = error(_),
+        % XXX what to do?
+        To = "(error)",
+        Subject = "(" ++ FileName ++ ")"
+    ),
+    Line = recall_line(FileName, To, Subject).
 
 %-----------------------------------------------------------------------------%
 
@@ -135,15 +152,32 @@ draw_recall(Screen, Info, !IO) :-
     io::di, io::uo) is det.
 
 draw_recall_line(Panel, Line, IsCursor, !IO) :-
-    Line = recall_line(FileName),
+    Line = recall_line(_FileName, To, Subject),
     (
         IsCursor = yes,
         panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
     ;
-        IsCursor = no,
-        panel.attr_set(Panel, normal, !IO)
+        IsCursor = no
     ),
-    my_addstr(Panel, FileName, !IO).
+    FieldAttr = fg_bg(red, black) + bold,
+    cond_attr_set(Panel, FieldAttr, IsCursor, !IO),
+    my_addstr(Panel, "To: ", !IO),
+    cond_attr_set(Panel, normal, IsCursor, !IO),
+    my_addstr_fixed(Panel, 35, To, ' ', !IO),
+    cond_attr_set(Panel, FieldAttr, IsCursor, !IO),
+    my_addstr(Panel, " Subject: ", !IO),
+    cond_attr_set(Panel, normal, IsCursor, !IO),
+    my_addstr(Panel, Subject, !IO).
+
+:- pred cond_attr_set(panel::in, attr::in, bool::in, io::di, io::uo) is det.
+
+cond_attr_set(Panel, Attr, IsCursor, !IO) :-
+    (
+        IsCursor = no,
+        panel.attr_set(Panel, Attr, !IO)
+    ;
+        IsCursor = yes
+    ).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
