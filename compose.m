@@ -70,7 +70,8 @@ start_compose(Screen, !IO) :-
             Headers = headers(From, To, Cc, Bcc, Subject, ReplyTo, References,
                 InReplyTo, map.init),
             Body = "",
-            create_edit_stage(Screen, Headers, Body, !IO)
+            MaybeOldDraft = no,
+            create_edit_stage(Screen, Headers, Body, MaybeOldDraft, !IO)
         ;
             MaybeSubject = no
         )
@@ -121,7 +122,8 @@ start_reply(Screen, Message, ReplyKind, !IO) :-
             OrigFrom = Message ^ m_from,
             set_headers_for_list_reply(OrigFrom, Headers0, Headers)
         ),
-        create_edit_stage(Screen, Headers, Body, !IO)
+        MaybeOldDraft = no,
+        create_edit_stage(Screen, Headers, Body, MaybeOldDraft, !IO)
     ;
         CommandResult = error(Error),
         string.append_list(["Error running notmuch: ",
@@ -189,7 +191,7 @@ continue_postponed(Screen, Filename, !IO) :-
         ResParse = ok(Headers - Body),
         Cols = Screen ^ cols,
         setup_pager_for_staging(Cols, Body, PagerInfo),
-        staging_screen(Screen, Headers, Body, PagerInfo, !IO)
+        staging_screen(Screen, Headers, Body, yes(Filename), PagerInfo, !IO)
     ;
         ResParse = error(Error),
         io.error_message(Error, Msg),
@@ -198,10 +200,10 @@ continue_postponed(Screen, Filename, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred create_edit_stage(screen::in, headers::in, string::in, io::di, io::uo)
-    is det.
+:- pred create_edit_stage(screen::in, headers::in, string::in,
+    maybe(string)::in, io::di, io::uo) is det.
 
-create_edit_stage(Screen, Headers0, Body0, !IO) :-
+create_edit_stage(Screen, Headers0, Body0, MaybeOldDraft, !IO) :-
     Sending = no,
     WriteReferences = no,
     create_temp_message_file(Headers0, Body0, Sending, WriteReferences,
@@ -218,7 +220,8 @@ create_edit_stage(Screen, Headers0, Body0, !IO) :-
                 update_references(Headers0, Headers1, Headers),
                 Cols = Screen ^ cols,
                 setup_pager_for_staging(Cols, Body, PagerInfo),
-                staging_screen(Screen, Headers, Body, PagerInfo, !IO)
+                staging_screen(Screen, Headers, Body, MaybeOldDraft,
+                    PagerInfo, !IO)
             ;
                 ResParse = error(Error),
                 io.error_message(Error, Msg),
@@ -287,38 +290,49 @@ update_references(Headers0, !Headers) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred staging_screen(screen::in, headers::in, string::in, pager_info::in,
-    io::di, io::uo) is det.
+:- pred staging_screen(screen::in, headers::in, string::in,
+    maybe(string)::in, pager_info::in, io::di, io::uo) is det.
 
-staging_screen(Screen, Headers, Body, !.PagerInfo, !IO) :-
+staging_screen(Screen, Headers, Body, MaybeOldDraft, !.PagerInfo, !IO) :-
     draw_pager(Screen, !.PagerInfo, !IO),
     draw_staging_bar(Screen, !IO),
     panel.update_panels(!IO),
     get_char(Char, !IO),
     ( Char = 'e' ->
-        create_edit_stage(Screen, Headers, Body, !IO)
+        create_edit_stage(Screen, Headers, Body, MaybeOldDraft, !IO)
     ; Char = 'p' ->
         postpone(Screen, Headers, Body, Res, !IO),
         (
-            Res = yes
+            Res = yes,
+            maybe_remove_draft(MaybeOldDraft, !IO)
         ;
             Res = no,
-            staging_screen(Screen, Headers, Body, !.PagerInfo, !IO)
+            staging_screen(Screen, Headers, Body, MaybeOldDraft, !.PagerInfo,
+                !IO)
         )
     ; Char = 'Y' ->
         send_mail(Screen, Headers, Body, Res, !IO),
         (
-            Res = yes
+            Res = yes,
+            maybe_remove_draft(MaybeOldDraft, !IO)
         ;
             Res = no,
-            staging_screen(Screen, Headers, Body, !.PagerInfo, !IO)
+            staging_screen(Screen, Headers, Body, MaybeOldDraft, !.PagerInfo,
+                !IO)
         )
     ; Char = 'A' ->
-        update_message(Screen, set_info("Mail not sent."), !IO)
+        (
+            MaybeOldDraft = yes(_),
+            maybe_remove_draft(MaybeOldDraft, !IO),
+            update_message(Screen, set_info("Postponed message deleted."), !IO)
+        ;
+            MaybeOldDraft = no,
+            update_message(Screen, set_info("Mail not sent."), !IO)
+        )
     ;
         pager_input(Screen, Char, _Action, MessageUpdate, !PagerInfo),
         update_message(Screen, MessageUpdate, !IO),
-        staging_screen(Screen, Headers, Body, !.PagerInfo, !IO)
+        staging_screen(Screen, Headers, Body, MaybeOldDraft, !.PagerInfo, !IO)
     ).
 
 :- pred draw_staging_bar(screen::in, io::di, io::uo) is det.
@@ -362,6 +376,12 @@ postpone(Screen, Headers, Body, Res, !IO) :-
         update_message(Screen, set_warning(io.error_message(Error)), !IO),
         Res = no
     ).
+
+:- pred maybe_remove_draft(maybe(string)::in, io::di, io::uo) is det.
+
+maybe_remove_draft(no, !IO).
+maybe_remove_draft(yes(FileName), !IO) :-
+    io.remove_file(FileName, _, !IO).
 
 %-----------------------------------------------------------------------------%
 
