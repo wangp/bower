@@ -32,8 +32,8 @@
 
 :- pred get_cursor(scrollable(T)::in, int::out) is semidet.
 
-:- pred set_cursor(int::in, int::in, scrollable(T)::in, scrollable(T)::out)
-    is det.
+:- pred set_cursor_centred(int::in, int::in,
+    scrollable(T)::in, scrollable(T)::out) is det.
 
 :- pred get_cursor_line(scrollable(T)::in, T::out) is semidet.
 
@@ -91,15 +91,8 @@ set_top(Top, !Scrollable) :-
 get_cursor(Scrollable, Cursor) :-
     Scrollable ^ s_cursor = yes(Cursor).
 
-set_cursor(Cursor, NumRows, !Scrollable) :-
-    Top0 = !.Scrollable ^ s_top,
-    ( Cursor < Top0 ->
-        Top = Cursor
-    ; Cursor > Top0 + NumRows - 1 ->
-        Top = Cursor - NumRows + 1
-    ;
-        Top = Top0
-    ),
+set_cursor_centred(Cursor, NumRows, !Scrollable) :-
+    Top = max(0, Cursor - NumRows//2),
     !Scrollable ^ s_top := Top,
     !Scrollable ^ s_cursor := yes(Cursor).
 
@@ -134,9 +127,9 @@ move_cursor(NumRows, Delta, HitLimit, !Scrollable) :-
         ;
             HitLimit = no,
             ( Cursor < Top0 ->
-                Top = Cursor
+                Top = max(Cursor - NumRows + 1, 0)
             ; Top0 + NumRows - 1 < Cursor ->
-                Top = Cursor - NumRows + 1
+                Top = Cursor
             ;
                 Top = Top0
             ),

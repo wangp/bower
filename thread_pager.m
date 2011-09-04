@@ -278,7 +278,7 @@ sync_thread_to_pager(!Info) :-
         MessageId = Message ^ m_id,
         search_forward(is_message(MessageId), Scrollable0, 0, Cursor, _)
     ->
-        set_cursor(Cursor, NumThreadRows, Scrollable0, Scrollable),
+        set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
     ;
         true
@@ -295,7 +295,7 @@ skip_to_unread(MessageUpdate, !Info) :-
         search_forward(is_unread_line, Scrollable0, Cursor0 + 1, Cursor,
             ThreadLine)
     ->
-        set_cursor(Cursor, NumThreadRows, Scrollable0, Scrollable),
+        set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
         MessageId = ThreadLine ^ tp_message ^ m_id,
         skip_to_message(MessageId, PagerInfo0, PagerInfo),
         !:Info = thread_pager_info(Scrollable, NumThreadRows, PagerInfo,

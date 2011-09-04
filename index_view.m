@@ -219,13 +219,13 @@ skip_to_unread(Screen, MessageUpdate, !Info) :-
         (
             search_forward(is_unread_line, Scrollable0, Cursor0 + 1, Cursor, _)
         ->
-            set_cursor(Cursor, NumRows, Scrollable0, Scrollable),
+            set_cursor_centred(Cursor, NumRows, Scrollable0, Scrollable),
             MessageUpdate = clear_message
         ;
             search_forward(is_unread_line, Scrollable0, 0, Cursor, _),
             Cursor < Cursor0
         ->
-            set_cursor(Cursor, NumRows, Scrollable0, Scrollable),
+            set_cursor_centred(Cursor, NumRows, Scrollable0, Scrollable),
             MessageUpdate = set_info("Search wrapped to top.")
         ;
             Scrollable = Scrollable0,
