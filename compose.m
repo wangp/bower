@@ -189,9 +189,7 @@ continue_postponed(Screen, Filename, !IO) :-
     parse_message_file(Filename, ResParse, !IO),
     (
         ResParse = ok(Headers - Body),
-        Cols = Screen ^ cols,
-        setup_pager_for_staging(Cols, Body, PagerInfo),
-        staging_screen(Screen, Headers, Body, yes(Filename), PagerInfo, !IO)
+        create_edit_stage(Screen, Headers, Body, yes(Filename), !IO)
     ;
         ResParse = error(Error),
         io.error_message(Error, Msg),
