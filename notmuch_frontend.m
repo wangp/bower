@@ -135,8 +135,8 @@ index_loop(Screen, !.IndexInfo, !IO) :-
 
 :- pred open_thread_pager(screen::in, thread_id::in, io::di, io::uo) is det.
 
-open_thread_pager(Screen, thread_id(ThreadId), !IO) :-
-    run_notmuch(["show", "--format=json", "thread:" ++ ThreadId],
+open_thread_pager(Screen, ThreadId, !IO) :-
+    run_notmuch(["show", "--format=json", thread_id_to_search_term(ThreadId)],
         parse_messages_list, Messages : list(message), !IO),
     time(Time, !IO),
     Nowish = localtime(Time),
@@ -172,8 +172,8 @@ thread_pager_loop(Screen, !.Info, !IO) :-
 
 :- pred open_pager(screen::in, thread_id::in, io::di, io::uo) is det.
 
-open_pager(Screen, thread_id(ThreadId), !IO) :-
-    run_notmuch(["show", "--format=json", "thread:" ++ ThreadId],
+open_pager(Screen, ThreadId, !IO) :-
+    run_notmuch(["show", "--format=json", thread_id_to_search_term(ThreadId)],
         parse_messages_list, Messages : list(message), !IO),
     Cols = Screen ^ cols,
     setup_pager(Cols, Messages, PagerInfo),

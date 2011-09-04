@@ -101,8 +101,8 @@ get_from(From, !IO) :-
 %-----------------------------------------------------------------------------%
 
 start_reply(Screen, Message, ReplyKind, !IO) :-
-    Message ^ m_id = message_id(MessageId),
-    Args = ["notmuch", "reply", "id:" ++ MessageId],
+    Message ^ m_id = MessageId,
+    Args = ["notmuch", "reply", message_id_to_search_term(MessageId)],
     args_to_quoted_command(Args, Command),
     popen(Command, CommandResult, !IO),
     (

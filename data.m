@@ -49,12 +49,26 @@
                 c_filename  :: maybe(string)
             ).
 
+%-----------------------------------------------------------------------------%
+
+:- func thread_id_to_search_term(thread_id) = string.
+
+:- func message_id_to_search_term(message_id) = string.
+
 :- pred snoc(T::in, cord(T)::in, cord(T)::out) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
+
+:- import_module string.
+
+%-----------------------------------------------------------------------------%
+
+thread_id_to_search_term(thread_id(Id)) = "thread:" ++ Id.
+
+message_id_to_search_term(message_id(Id)) = "id:" ++ Id.
 
 snoc(X, C, snoc(C, X)).
 
