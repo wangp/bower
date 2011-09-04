@@ -62,16 +62,17 @@ add_draft(FileName, Res, !IO) :-
 
 add_draft_2(DbPath, FileName, Res, !IO) :-
     generate_unique_name(UniqueName, !IO),
+    InfoFlags = ":2,D",
     TmpFileName = DbPath / drafts_dir / "tmp" / UniqueName,
-    NewFileName = DbPath / drafts_dir / "new" / UniqueName,
+    CurFileName = DbPath / drafts_dir / "cur" / UniqueName ++ InfoFlags,
     % Copy FileName to tmp first.
     args_to_quoted_command(["cp", "-n", FileName, TmpFileName], CopyCommand),
     io.call_system(CopyCommand, CopyRes, !IO),
     (
         CopyRes = ok(CopyStatus),
         ( CopyStatus = 0 ->
-            % Link from tmp to new.
-            args_to_quoted_command( ["cp", "-l", TmpFileName, NewFileName],
+            % Link from tmp to cur.
+            args_to_quoted_command( ["cp", "-l", TmpFileName, CurFileName],
                 LinkCommand),
             io.call_system(LinkCommand, LinkRes, !IO),
             (
@@ -107,7 +108,7 @@ find_drafts(Res, !IO) :-
     get_notmuch_config("database.path", ResDbPath, !IO),
     (
         ResDbPath = ok(DbPath),
-        DirName = DbPath / drafts_dir / "new",
+        DirName = DbPath / drafts_dir / "cur",
         dir.foldl2(find_drafts_2, DirName, [], ResFold, !IO),
         (
             ResFold = ok(FileNames),
