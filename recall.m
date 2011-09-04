@@ -100,6 +100,7 @@ recall_screen_loop(Screen, MaybeFileName, !Info, !IO) :-
         move_cursor(Screen, -1, !Info, !IO),
         recall_screen_loop(Screen, MaybeFileName, !Info, !IO)
     ; Char = 'q' ->
+        update_message(Screen, clear_message, !IO),
         MaybeFileName = no
     ; Char = '\r' ->
         enter(!.Info, MaybeFileName)
