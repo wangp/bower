@@ -1,7 +1,7 @@
 MAIN_TARGET = notmuch_frontend
 
-MCFLAGS-compose += --no-ansi-c
 MCFLAGS-maildir += --no-ansi-c
+MCFLAGS-message_file += --no-ansi-c
 MCFLAGS-popen += --no-ansi-c
 
 # for wide-character functions
