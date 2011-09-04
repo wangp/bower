@@ -22,7 +22,8 @@
 :- type thread_pager_action
     --->    continue
     ;       start_reply(message, reply_kind)
-    ;       leave.
+    ;       leave(list(message_id)).
+            % The list of messages which need to be tagged as read.
 
 :- pred thread_pager_input(char::in, thread_pager_action::out,
     message_update::out, thread_pager_info::in, thread_pager_info::out) is det.
@@ -75,7 +76,8 @@
 
 :- type unread
     --->    unread
-    ;       read.
+    ;       read
+    ;       newly_read.
 
 :- type replied
     --->    replied
@@ -210,19 +212,20 @@ thread_pager_input(Char, Action, MessageUpdate, !Info) :-
     ; Char = '\t' ->
         skip_to_unread(MessageUpdate, !Info),
         Action = continue
+    ;
+        ( Char = 'i'
+        ; Char = 'q'
+        )
+    ->
+        get_newly_read_messages(!.Info, ReadMessageIds),
+        Action = leave(ReadMessageIds),
+        MessageUpdate = clear_message
     ; Char = 'r' ->
         reply(!.Info, direct_reply, Action, MessageUpdate)
     ; Char = 'g' ->
         reply(!.Info, group_reply, Action, MessageUpdate)
     ; Char = 'L' ->
         reply(!.Info, list_reply, Action, MessageUpdate)
-    ;
-        ( Char = 'i'
-        ; Char = 'q'
-        )
-    ->
-        Action = leave,
-        MessageUpdate = clear_message
     ;
         Action = continue,
         MessageUpdate = no_change
@@ -278,7 +281,8 @@ sync_thread_to_pager(!Info) :-
         MessageId = Message ^ m_id,
         search_forward(is_message(MessageId), Scrollable0, 0, Cursor, _)
     ->
-        set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
+        maybe_mark_old_line_read(Cursor, Scrollable0, Scrollable1),
+        set_cursor_centred(Cursor, NumThreadRows, Scrollable1, Scrollable),
         !Info ^ tp_scrollable := Scrollable
     ;
         true
@@ -295,7 +299,8 @@ skip_to_unread(MessageUpdate, !Info) :-
         search_forward(is_unread_line, Scrollable0, Cursor0 + 1, Cursor,
             ThreadLine)
     ->
-        set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
+        maybe_mark_old_line_read(Cursor, Scrollable0, Scrollable1),
+        set_cursor_centred(Cursor, NumThreadRows, Scrollable1, Scrollable),
         MessageId = ThreadLine ^ tp_message ^ m_id,
         skip_to_message(MessageId, PagerInfo0, PagerInfo),
         !:Info = thread_pager_info(Scrollable, NumThreadRows, PagerInfo,
@@ -314,6 +319,38 @@ is_message(MessageId, Line) :-
 
 is_unread_line(Line) :-
     Line ^ tp_unread = unread.
+
+:- pred maybe_mark_old_line_read(int::in, scrollable(thread_line)::in,
+    scrollable(thread_line)::out) is det.
+
+maybe_mark_old_line_read(NewCursor, Scrollable0, Scrollable) :-
+    (
+        get_cursor_line(Scrollable0, OldCursor, OldLine0),
+        NewCursor \= OldCursor,
+        OldLine0 ^ tp_unread = unread
+    ->
+        OldLine = (OldLine0 ^ tp_unread := newly_read),
+        set_cursor_line(OldLine, Scrollable0, Scrollable)
+    ;
+        Scrollable = Scrollable0
+    ).
+
+:- pred get_newly_read_messages(thread_pager_info::in, list(message_id)::out)
+    is det.
+
+get_newly_read_messages(Info, MessageIds) :-
+    Scrollable0 = Info ^ tp_scrollable,
+    maybe_mark_old_line_read(-1, Scrollable0, Scrollable),
+    Lines = get_lines(Scrollable),
+    list.filter_map(is_newly_read, Lines, MessageIds).
+
+:- pred is_newly_read(thread_line::in, message_id::out) is semidet.
+
+is_newly_read(Line, MessageId) :-
+    Line ^ tp_unread = newly_read,
+    MessageId = Line ^ tp_message ^ m_id.
+
+%-----------------------------------------------------------------------------%
 
 :- pred reply(thread_pager_info::in, reply_kind::in, thread_pager_action::out,
     message_update::out) is det.
@@ -374,7 +411,9 @@ draw_thread_line(Panel, Line, IsCursor, !IO) :-
             Unread = unread,
             my_addstr(Panel, "n", !IO)
         ;
-            Unread = read,
+            ( Unread = newly_read
+            ; Unread = read
+            ),
             my_addstr(Panel, " ", !IO)
         )
     ),
@@ -393,7 +432,9 @@ draw_thread_line(Panel, Line, IsCursor, !IO) :-
         Unread = unread,
         cond_attr_set(Panel, bold, IsCursor, !IO)
     ;
-        Unread = read,
+        ( Unread = read
+        ; Unread = newly_read
+        ),
         cond_attr_set(Panel, normal, IsCursor, !IO)
     ),
     my_addstr(Panel, From, !IO).

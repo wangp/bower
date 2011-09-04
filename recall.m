@@ -133,7 +133,7 @@ move_cursor(Screen, Delta, !Info, !IO) :-
 
 enter(Info, MaybeFileName) :-
     Scrollable = Info ^ r_scrollable,
-    ( get_cursor_line(Scrollable, CursorLine) ->
+    ( get_cursor_line(Scrollable, _, CursorLine) ->
         FileName = CursorLine ^ r_filename,
         MaybeFileName = yes(FileName)
     ;

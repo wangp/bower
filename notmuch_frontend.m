@@ -165,8 +165,52 @@ thread_pager_loop(Screen, !.Info, !IO) :-
         start_reply(Screen, Message, ReplyKind, !IO),
         thread_pager_loop(Screen, !.Info, !IO)
     ;
-        Action = leave
+        Action = leave(ReadMessageIds),
+        tag_as_read(Screen, ReadMessageIds, !IO)
     ).
+
+:- pred tag_as_read(screen::in, list(message_id)::in, io::di, io::uo) is det.
+
+tag_as_read(Screen, MessageIds, !IO) :-
+    tag_messages("-unread", MessageIds, Res, !IO),
+    (
+        Res = ok,
+        update_message(Screen, clear_message, !IO)
+    ;
+        Res = error(Error),
+        Msg = io.error_message(Error),
+        update_message(Screen, set_warning(Msg), !IO)
+    ).
+
+:- pred tag_messages(string::in, list(message_id)::in, io.res::out,
+    io::di, io::uo) is det.
+
+tag_messages(TagUpdate, MessageIds, Res, !IO) :-
+    (
+        MessageIds = [],
+        Res = ok
+    ;
+        MessageIds = [_ | _],
+        IdStrings = list.map(message_id_to_search_term, MessageIds),
+        Args = ["notmuch", "tag", TagUpdate, "--" | IdStrings],
+        args_to_quoted_command(Args, Command),
+        io.call_system(Command, CallRes, !IO),
+        (
+            CallRes = ok(ExitStatus),
+            ( ExitStatus = 0 ->
+                Res = ok
+            ;
+                string.format("notmuch tag returned exit status %d",
+                    [i(ExitStatus)], Msg),
+                Res = error(io.make_io_error(Msg))
+            )
+        ;
+            CallRes = error(Error),
+            Res = error(Error)
+        )
+    ).
+
+:- import_module quote_arg.
 
 %-----------------------------------------------------------------------------%
 

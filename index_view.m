@@ -245,7 +245,7 @@ is_unread_line(Line) :-
 
 enter(Info, Action) :-
     Info = index_info(Scrollable),
-    ( get_cursor_line(Scrollable, CursorLine) ->
+    ( get_cursor_line(Scrollable, _, CursorLine) ->
         ThreadId = CursorLine ^ i_id,
         Action = open_pager(ThreadId)
     ;

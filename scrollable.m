@@ -35,7 +35,9 @@
 :- pred set_cursor_centred(int::in, int::in,
     scrollable(T)::in, scrollable(T)::out) is det.
 
-:- pred get_cursor_line(scrollable(T)::in, T::out) is semidet.
+:- pred get_cursor_line(scrollable(T)::in, int::out, T::out) is semidet.
+
+:- pred set_cursor_line(T::in, scrollable(T)::in, scrollable(T)::out) is det.
 
 :- pred scroll(int::in, int::in, bool::out,
     scrollable(T)::in, scrollable(T)::out) is det.
@@ -59,6 +61,7 @@
 
 :- import_module int.
 :- import_module maybe.
+:- import_module require.
 
 :- type scrollable(T)
     --->    scrollable(
@@ -96,11 +99,22 @@ set_cursor_centred(Cursor, NumRows, !Scrollable) :-
     !Scrollable ^ s_top := Top,
     !Scrollable ^ s_cursor := yes(Cursor).
 
-get_cursor_line(Scrollable, Line) :-
+get_cursor_line(Scrollable, Cursor, Line) :-
     Lines = Scrollable ^ s_lines,
     MaybeCursor = Scrollable ^ s_cursor,
     MaybeCursor = yes(Cursor),
     list.index0(Lines, Cursor, Line).
+
+set_cursor_line(Line, !Scrollable) :-
+    (
+        !.Scrollable ^ s_lines = Lines0,
+        !.Scrollable ^ s_cursor = yes(Cursor),
+        list.replace_nth(Lines0, Cursor + 1, Line, Lines)
+    ->
+        !Scrollable ^ s_lines := Lines
+    ;
+        unexpected($module, $pred, "failed")
+    ).
 
 scroll(NumRows, Delta, HitLimit, !Scrollable) :-
     !.Scrollable = scrollable(Lines, NumLines, Top0, MaybeCursor0),
