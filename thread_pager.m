@@ -6,6 +6,8 @@
 :- import_module char.
 :- import_module io.
 :- import_module list.
+:- import_module map.
+:- import_module set.
 :- import_module time.
 
 :- import_module compose.
@@ -23,11 +25,11 @@
     --->    continue
     ;       start_reply(message, reply_kind)
     ;       leave(
-                tag_read    :: list(message_id),
-                % The list of messages which need to be tagged as read.
-                tag_unread  :: list(message_id)
-                % The list of messages which need to be tagged as unread.
+                map(set(tag_delta), list(message_id))
+                % Group messages by the tag changes to be applied.
             ).
+
+:- type tag_delta == string. % +tag or -tag
 
 :- pred thread_pager_input(char::in, thread_pager_action::out,
     message_update::out, thread_pager_info::in, thread_pager_info::out) is det.
@@ -44,6 +46,7 @@
 :- import_module cord.
 :- import_module int.
 :- import_module maybe.
+:- import_module pair.
 :- import_module require.
 
 :- import_module curs.
@@ -65,10 +68,9 @@
 :- type thread_line
     --->    thread_line(
                 tp_message      :: message,
-                tp_orig_unread  :: unread,
-                tp_unread       :: unread,
+                tp_unread       :: pair(unread),
                 tp_replied      :: replied,
-                tp_flagged      :: flagged,
+                tp_flagged      :: pair(flagged),
                 tp_graphics     :: list(graphic),
                 tp_reldate      :: string
             ).
@@ -161,20 +163,19 @@ make_thread_line(Nowish, Message, Graphics, Line) :-
     timestamp_to_tm(Timestamp, TM),
     Shorter = no,
     make_reldate(Nowish, TM, Shorter, RelDate),
-    Line0 = thread_line(Message, read, read, not_replied, unflagged, Graphics,
-        RelDate),
+    Line0 = thread_line(Message, read - read, not_replied,
+        unflagged - unflagged, Graphics, RelDate),
     list.foldl(apply_tag, Tags, Line0, Line).
 
 :- pred apply_tag(string::in, thread_line::in, thread_line::out) is det.
 
 apply_tag(Tag, !Line) :-
     ( Tag = "unread" ->
-        !Line ^ tp_orig_unread := unread,
-        !Line ^ tp_unread := unread
+        !Line ^ tp_unread := unread - unread
     ; Tag = "replied" ->
         !Line ^ tp_replied := replied
     ; Tag = "flagged" ->
-        !Line ^ tp_flagged := flagged
+        !Line ^ tp_flagged := flagged - flagged
     ;
         true
     ).
@@ -229,13 +230,17 @@ thread_pager_input(Char, Action, MessageUpdate, !Info) :-
         toggle_unread(!Info),
         next_message(MessageUpdate, !Info),
         Action = continue
+    ; Char = 'F' ->
+        toggle_flagged(!Info),
+        MessageUpdate = clear_message,
+        Action = continue
     ;
         ( Char = 'i'
         ; Char = 'q'
         )
     ->
-        get_changed_status_messages(!.Info, ReadMessages, UnreadMessages),
-        Action = leave(ReadMessages, UnreadMessages),
+        get_tag_delta_groups(!.Info, TagGroups),
+        Action = leave(TagGroups),
         MessageUpdate = clear_message
     ; Char = 'r' ->
         reply(!.Info, direct_reply, Action, MessageUpdate)
@@ -333,27 +338,7 @@ is_message(MessageId, Line) :-
 :- pred is_unread_line(thread_line::in) is semidet.
 
 is_unread_line(Line) :-
-    Line ^ tp_unread = unread.
-
-:- pred toggle_unread(thread_pager_info::in, thread_pager_info::out) is det.
-
-toggle_unread(!Info) :-
-    Scrollable0 = !.Info ^ tp_scrollable,
-    ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
-        Unread0 = Line0 ^ tp_unread,
-        (
-            Unread0 = unread,
-            Unread = read
-        ;
-            Unread0 = read,
-            Unread = unread
-        ),
-        Line = Line0 ^ tp_unread := Unread,
-        set_cursor_line(Line, Scrollable0, Scrollable),
-        !Info ^ tp_scrollable := Scrollable
-    ;
-        true
-    ).
+    Line ^ tp_unread = _ - unread.
 
 :- pred set_current_line_read(thread_pager_info::in, thread_pager_info::out)
     is det.
@@ -361,40 +346,119 @@ toggle_unread(!Info) :-
 set_current_line_read(!Info) :-
     Scrollable0 = !.Info ^ tp_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
-        Line = Line0 ^ tp_unread := read,
+        Line0 ^ tp_unread = OrigUnread - _,
+        Line = Line0 ^ tp_unread := OrigUnread - read,
         set_cursor_line(Line, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
     ;
         true
     ).
 
-:- pred get_changed_status_messages(thread_pager_info::in,
-    list(message_id)::out, list(message_id)::out) is det.
+:- pred toggle_unread(thread_pager_info::in, thread_pager_info::out) is det.
 
-get_changed_status_messages(Info, ReadMessages, UnreadMessages) :-
+toggle_unread(!Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
+        Line0 ^ tp_unread = OrigUnread - Unread0,
+        (
+            Unread0 = unread,
+            Unread = read
+        ;
+            Unread0 = read,
+            Unread = unread
+        ),
+        Line = Line0 ^ tp_unread := OrigUnread - Unread,
+        set_cursor_line(Line, Scrollable0, Scrollable),
+        !Info ^ tp_scrollable := Scrollable
+    ;
+        true
+    ).
+
+:- pred toggle_flagged(thread_pager_info::in, thread_pager_info::out) is det.
+
+toggle_flagged(!Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
+        Line0 ^ tp_flagged = OrigFlag - Flag0,
+        (
+            Flag0 = flagged,
+            Flag = unflagged
+        ;
+            Flag0 = unflagged,
+            Flag = flagged
+        ),
+        Line = Line0 ^ tp_flagged := OrigFlag - Flag,
+        set_cursor_line(Line, Scrollable0, Scrollable),
+        !Info ^ tp_scrollable := Scrollable
+    ;
+        true
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred get_tag_delta_groups(thread_pager_info::in,
+    map(set(tag_delta), list(message_id))::out) is det.
+
+get_tag_delta_groups(Info, TagGroups) :-
     Scrollable = Info ^ tp_scrollable,
     Lines = get_lines(Scrollable),
-    list.foldl2(get_changed_status_messages_2, Lines,
-        [], ReadMessages, [], UnreadMessages).
+    list.foldl(get_changed_status_messages_2, Lines, map.init, TagGroups).
 
 :- pred get_changed_status_messages_2(thread_line::in,
-    list(message_id)::in, list(message_id)::out,
-    list(message_id)::in, list(message_id)::out) is det.
+    map(set(tag_delta), list(message_id))::in,
+    map(set(tag_delta), list(message_id))::out) is det.
 
-get_changed_status_messages_2(Line, !ReadMessages, !UnreadMessages) :-
-    Line ^ tp_orig_unread = OrigStatus,
-    Line ^ tp_unread = NewStatus,
-    ( OrigStatus \= NewStatus ->
+get_changed_status_messages_2(Line, !TagGroups) :-
+    TagSet = get_tag_delta_set(Line),
+    ( set.non_empty(TagSet) ->
         MessageId = Line ^ tp_message ^ m_id,
-        (
-            NewStatus = read,
-            list.cons(MessageId, !ReadMessages)
+        ( map.search(!.TagGroups, TagSet, Messages0) ->
+            map.det_update(TagSet, [MessageId | Messages0], !TagGroups)
         ;
-            NewStatus = unread,
-            list.cons(MessageId, !UnreadMessages)
+            map.det_insert(TagSet, [MessageId], !TagGroups)
         )
     ;
         true
+    ).
+
+:- func get_tag_delta_set(thread_line) = set(tag_delta).
+
+get_tag_delta_set(Line) = TagSet :-
+    Line ^ tp_unread = Unread0 - Unread,
+    Line ^ tp_flagged = Flag0 - Flag,
+    some [!TagSet] (
+        !:TagSet = set.init,
+        (
+            Unread = read,
+            Unread0 = unread,
+            set.insert("-unread", !TagSet)
+        ;
+            Unread = unread,
+            Unread0 = read,
+            set.insert("+unread", !TagSet)
+        ;
+            Unread = read,
+            Unread0 = read
+        ;
+            Unread = unread,
+            Unread0 = unread
+        ),
+        (
+            Flag = flagged,
+            Flag0 = unflagged,
+            set.insert("+flagged", !TagSet)
+        ;
+            Flag = unflagged,
+            Flag0 = flagged,
+            set.insert("-flagged", !TagSet)
+        ;
+            Flag = unflagged,
+            Flag0 = unflagged
+        ;
+            Flag = flagged,
+            Flag0 = flagged
+        ),
+        TagSet = !.TagSet
     ).
 
 %-----------------------------------------------------------------------------%
@@ -438,8 +502,10 @@ draw_sep(Cols, MaybeSepPanel, !IO) :-
     io::di, io::uo) is det.
 
 draw_thread_line(Panel, Line, IsCursor, !IO) :-
-    Line = thread_line(Message, _OrigUnread, Unread, Replied, Flagged,
-        Graphics, RelDate),
+    Line = thread_line(Message, UnreadPair, Replied, FlaggedPair, Graphics,
+        RelDate),
+    UnreadPair = _ - Unread,
+    FlaggedPair = _ - Flagged,
     From = Message ^ m_from,
     (
         IsCursor = yes,

@@ -12,10 +12,13 @@
 
 :- implementation.
 
+:- import_module bool.
 :- import_module char.
 :- import_module int.
 :- import_module list.
+:- import_module map.
 :- import_module maybe.
+:- import_module set.
 :- import_module string.
 :- import_module time.
 
@@ -26,6 +29,7 @@
 :- import_module data.
 :- import_module index_view.
 :- import_module pager.
+:- import_module quote_arg.
 :- import_module recall.
 :- import_module screen.
 :- import_module text_entry.
@@ -165,37 +169,42 @@ thread_pager_loop(Screen, !.Info, !IO) :-
         start_reply(Screen, Message, ReplyKind, !IO),
         thread_pager_loop(Screen, !.Info, !IO)
     ;
-        Action = leave(ReadMessages, UnreadMessages),
-        tag_as_read_unread(Screen, ReadMessages, UnreadMessages, !IO)
+        Action = leave(TagGroups),
+        map.foldl2(apply_tag_delta, TagGroups, yes, Res, !IO),
+        (
+            Res = yes,
+            update_message(Screen, clear_message, !IO)
+        ;
+            Res = no,
+            Msg = "Encountered problems while applying tags.",
+            update_message(Screen, set_warning(Msg), !IO)
+        )
     ).
 
-:- pred tag_as_read_unread(screen::in,
-    list(message_id)::in, list(message_id)::in, io::di, io::uo) is det.
+:- pred apply_tag_delta(set(tag_delta)::in, list(message_id)::in,
+    bool::in, bool::out, io::di, io::uo) is det.
 
-tag_as_read_unread(Screen, ReadMessages, UnreadMessages, !IO) :-
-    tag_messages("-unread", ReadMessages, ResA, !IO),
-    tag_messages("+unread", UnreadMessages, ResB, !IO),
-    ( ResA = error(Error) ->
-        Msg = io.error_message(Error),
-        update_message(Screen, set_warning(Msg), !IO)
-    ; ResB = error(Error) ->
-        Msg = io.error_message(Error),
-        update_message(Screen, set_warning(Msg), !IO)
+apply_tag_delta(TagDeltaSet, MessageIds, !AccRes, !IO) :-
+    set.to_sorted_list(TagDeltaSet, TagDeltas),
+    tag_messages(TagDeltas, MessageIds, Res, !IO),
+    (
+        Res = ok
     ;
-        update_message(Screen, clear_message, !IO)
+        Res = error(_),
+        !:AccRes = no
     ).
 
-:- pred tag_messages(string::in, list(message_id)::in, io.res::out,
+:- pred tag_messages(list(tag_delta)::in, list(message_id)::in, io.res::out,
     io::di, io::uo) is det.
 
-tag_messages(TagUpdate, MessageIds, Res, !IO) :-
+tag_messages(TagDeltas, MessageIds, Res, !IO) :-
     (
         MessageIds = [],
         Res = ok
     ;
         MessageIds = [_ | _],
         IdStrings = list.map(message_id_to_search_term, MessageIds),
-        Args = ["notmuch", "tag", TagUpdate, "--" | IdStrings],
+        Args = ["notmuch", "tag"] ++ TagDeltas ++ ["--" | IdStrings],
         args_to_quoted_command(Args, Command),
         io.call_system(Command, CallRes, !IO),
         (
@@ -212,8 +221,6 @@ tag_messages(TagUpdate, MessageIds, Res, !IO) :-
             Res = error(Error)
         )
     ).
-
-:- import_module quote_arg.
 
 %-----------------------------------------------------------------------------%
 
