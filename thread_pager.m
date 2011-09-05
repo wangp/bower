@@ -22,8 +22,12 @@
 :- type thread_pager_action
     --->    continue
     ;       start_reply(message, reply_kind)
-    ;       leave(list(message_id)).
-            % The list of messages which need to be tagged as read.
+    ;       leave(
+                tag_read    :: list(message_id),
+                % The list of messages which need to be tagged as read.
+                tag_unread  :: list(message_id)
+                % The list of messages which need to be tagged as unread.
+            ).
 
 :- pred thread_pager_input(char::in, thread_pager_action::out,
     message_update::out, thread_pager_info::in, thread_pager_info::out) is det.
@@ -60,12 +64,13 @@
 
 :- type thread_line
     --->    thread_line(
-                tp_message  :: message,
-                tp_unread   :: unread,
-                tp_replied  :: replied,
-                tp_flagged  :: flagged,
-                tp_graphics :: list(graphic),
-                tp_reldate  :: string
+                tp_message      :: message,
+                tp_orig_unread  :: unread,
+                tp_unread       :: unread,
+                tp_replied      :: replied,
+                tp_flagged      :: flagged,
+                tp_graphics     :: list(graphic),
+                tp_reldate      :: string
             ).
 
 :- type graphic
@@ -76,8 +81,7 @@
 
 :- type unread
     --->    unread
-    ;       read
-    ;       newly_read.
+    ;       read.
 
 :- type replied
     --->    replied
@@ -157,7 +161,7 @@ make_thread_line(Nowish, Message, Graphics, Line) :-
     timestamp_to_tm(Timestamp, TM),
     Shorter = no,
     make_reldate(Nowish, TM, Shorter, RelDate),
-    Line0 = thread_line(Message, read, not_replied, unflagged, Graphics,
+    Line0 = thread_line(Message, read, read, not_replied, unflagged, Graphics,
         RelDate),
     list.foldl(apply_tag, Tags, Line0, Line).
 
@@ -165,6 +169,7 @@ make_thread_line(Nowish, Message, Graphics, Line) :-
 
 apply_tag(Tag, !Line) :-
     ( Tag = "unread" ->
+        !Line ^ tp_orig_unread := unread,
         !Line ^ tp_unread := unread
     ; Tag = "replied" ->
         !Line ^ tp_replied := replied
@@ -181,7 +186,15 @@ thread_pager_input(Char, Action, MessageUpdate, !Info) :-
     ( Char = 'j' ->
         next_message(MessageUpdate, !Info),
         Action = continue
+    ; Char = 'J' ->
+        set_current_line_read(!Info),
+        next_message(MessageUpdate, !Info),
+        Action = continue
     ; Char = 'k' ->
+        prev_message(MessageUpdate, !Info),
+        Action = continue
+    ; Char = 'K' ->
+        set_current_line_read(!Info),
         prev_message(MessageUpdate, !Info),
         Action = continue
     ; Char = '\r' ->
@@ -212,13 +225,17 @@ thread_pager_input(Char, Action, MessageUpdate, !Info) :-
     ; Char = '\t' ->
         skip_to_unread(MessageUpdate, !Info),
         Action = continue
+    ; Char = 'N' ->
+        toggle_unread(!Info),
+        next_message(MessageUpdate, !Info),
+        Action = continue
     ;
         ( Char = 'i'
         ; Char = 'q'
         )
     ->
-        get_newly_read_messages(!.Info, ReadMessageIds),
-        Action = leave(ReadMessageIds),
+        get_changed_status_messages(!.Info, ReadMessages, UnreadMessages),
+        Action = leave(ReadMessages, UnreadMessages),
         MessageUpdate = clear_message
     ; Char = 'r' ->
         reply(!.Info, direct_reply, Action, MessageUpdate)
@@ -281,8 +298,7 @@ sync_thread_to_pager(!Info) :-
         MessageId = Message ^ m_id,
         search_forward(is_message(MessageId), Scrollable0, 0, Cursor, _)
     ->
-        maybe_mark_old_line_read(Cursor, Scrollable0, Scrollable1),
-        set_cursor_centred(Cursor, NumThreadRows, Scrollable1, Scrollable),
+        set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
     ;
         true
@@ -299,8 +315,7 @@ skip_to_unread(MessageUpdate, !Info) :-
         search_forward(is_unread_line, Scrollable0, Cursor0 + 1, Cursor,
             ThreadLine)
     ->
-        maybe_mark_old_line_read(Cursor, Scrollable0, Scrollable1),
-        set_cursor_centred(Cursor, NumThreadRows, Scrollable1, Scrollable),
+        set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
         MessageId = ThreadLine ^ tp_message ^ m_id,
         skip_to_message(MessageId, PagerInfo0, PagerInfo),
         !:Info = thread_pager_info(Scrollable, NumThreadRows, PagerInfo,
@@ -320,35 +335,67 @@ is_message(MessageId, Line) :-
 is_unread_line(Line) :-
     Line ^ tp_unread = unread.
 
-:- pred maybe_mark_old_line_read(int::in, scrollable(thread_line)::in,
-    scrollable(thread_line)::out) is det.
+:- pred toggle_unread(thread_pager_info::in, thread_pager_info::out) is det.
 
-maybe_mark_old_line_read(NewCursor, Scrollable0, Scrollable) :-
-    (
-        get_cursor_line(Scrollable0, OldCursor, OldLine0),
-        NewCursor \= OldCursor,
-        OldLine0 ^ tp_unread = unread
-    ->
-        OldLine = (OldLine0 ^ tp_unread := newly_read),
-        set_cursor_line(OldLine, Scrollable0, Scrollable)
+toggle_unread(!Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
+        Unread0 = Line0 ^ tp_unread,
+        (
+            Unread0 = unread,
+            Unread = read
+        ;
+            Unread0 = read,
+            Unread = unread
+        ),
+        Line = Line0 ^ tp_unread := Unread,
+        set_cursor_line(Line, Scrollable0, Scrollable),
+        !Info ^ tp_scrollable := Scrollable
     ;
-        Scrollable = Scrollable0
+        true
     ).
 
-:- pred get_newly_read_messages(thread_pager_info::in, list(message_id)::out)
+:- pred set_current_line_read(thread_pager_info::in, thread_pager_info::out)
     is det.
 
-get_newly_read_messages(Info, MessageIds) :-
-    Scrollable0 = Info ^ tp_scrollable,
-    maybe_mark_old_line_read(-1, Scrollable0, Scrollable),
+set_current_line_read(!Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
+        Line = Line0 ^ tp_unread := read,
+        set_cursor_line(Line, Scrollable0, Scrollable),
+        !Info ^ tp_scrollable := Scrollable
+    ;
+        true
+    ).
+
+:- pred get_changed_status_messages(thread_pager_info::in,
+    list(message_id)::out, list(message_id)::out) is det.
+
+get_changed_status_messages(Info, ReadMessages, UnreadMessages) :-
+    Scrollable = Info ^ tp_scrollable,
     Lines = get_lines(Scrollable),
-    list.filter_map(is_newly_read, Lines, MessageIds).
+    list.foldl2(get_changed_status_messages_2, Lines,
+        [], ReadMessages, [], UnreadMessages).
 
-:- pred is_newly_read(thread_line::in, message_id::out) is semidet.
+:- pred get_changed_status_messages_2(thread_line::in,
+    list(message_id)::in, list(message_id)::out,
+    list(message_id)::in, list(message_id)::out) is det.
 
-is_newly_read(Line, MessageId) :-
-    Line ^ tp_unread = newly_read,
-    MessageId = Line ^ tp_message ^ m_id.
+get_changed_status_messages_2(Line, !ReadMessages, !UnreadMessages) :-
+    Line ^ tp_orig_unread = OrigStatus,
+    Line ^ tp_unread = NewStatus,
+    ( OrigStatus \= NewStatus ->
+        MessageId = Line ^ tp_message ^ m_id,
+        (
+            NewStatus = read,
+            list.cons(MessageId, !ReadMessages)
+        ;
+            NewStatus = unread,
+            list.cons(MessageId, !UnreadMessages)
+        )
+    ;
+        true
+    ).
 
 %-----------------------------------------------------------------------------%
 
@@ -391,7 +438,8 @@ draw_sep(Cols, MaybeSepPanel, !IO) :-
     io::di, io::uo) is det.
 
 draw_thread_line(Panel, Line, IsCursor, !IO) :-
-    Line = thread_line(Message, Unread, Replied, Flagged, Graphics, RelDate),
+    Line = thread_line(Message, _OrigUnread, Unread, Replied, Flagged,
+        Graphics, RelDate),
     From = Message ^ m_from,
     (
         IsCursor = yes,
@@ -403,19 +451,18 @@ draw_thread_line(Panel, Line, IsCursor, !IO) :-
     my_addstr_fixed(Panel, 13, RelDate, ' ', !IO),
     cond_attr_set(Panel, normal, IsCursor, !IO),
     (
+        Unread = unread,
+        my_addstr(Panel, "n", !IO)
+    ;
+        Unread = read,
+        my_addstr(Panel, " ", !IO)
+    ),
+    (
         Replied = replied,
         my_addstr(Panel, "r", !IO)
     ;
         Replied = not_replied,
-        (
-            Unread = unread,
-            my_addstr(Panel, "n", !IO)
-        ;
-            ( Unread = newly_read
-            ; Unread = read
-            ),
-            my_addstr(Panel, " ", !IO)
-        )
+        my_addstr(Panel, " ", !IO)
     ),
     (
         Flagged = flagged,
@@ -432,9 +479,7 @@ draw_thread_line(Panel, Line, IsCursor, !IO) :-
         Unread = unread,
         cond_attr_set(Panel, bold, IsCursor, !IO)
     ;
-        ( Unread = read
-        ; Unread = newly_read
-        ),
+        Unread = read,
         cond_attr_set(Panel, normal, IsCursor, !IO)
     ),
     my_addstr(Panel, From, !IO).

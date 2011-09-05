@@ -165,21 +165,24 @@ thread_pager_loop(Screen, !.Info, !IO) :-
         start_reply(Screen, Message, ReplyKind, !IO),
         thread_pager_loop(Screen, !.Info, !IO)
     ;
-        Action = leave(ReadMessageIds),
-        tag_as_read(Screen, ReadMessageIds, !IO)
+        Action = leave(ReadMessages, UnreadMessages),
+        tag_as_read_unread(Screen, ReadMessages, UnreadMessages, !IO)
     ).
 
-:- pred tag_as_read(screen::in, list(message_id)::in, io::di, io::uo) is det.
+:- pred tag_as_read_unread(screen::in,
+    list(message_id)::in, list(message_id)::in, io::di, io::uo) is det.
 
-tag_as_read(Screen, MessageIds, !IO) :-
-    tag_messages("-unread", MessageIds, Res, !IO),
-    (
-        Res = ok,
-        update_message(Screen, clear_message, !IO)
-    ;
-        Res = error(Error),
+tag_as_read_unread(Screen, ReadMessages, UnreadMessages, !IO) :-
+    tag_messages("-unread", ReadMessages, ResA, !IO),
+    tag_messages("+unread", UnreadMessages, ResB, !IO),
+    ( ResA = error(Error) ->
         Msg = io.error_message(Error),
         update_message(Screen, set_warning(Msg), !IO)
+    ; ResB = error(Error) ->
+        Msg = io.error_message(Error),
+        update_message(Screen, set_warning(Msg), !IO)
+    ;
+        update_message(Screen, clear_message, !IO)
     ).
 
 :- pred tag_messages(string::in, list(message_id)::in, io.res::out,
