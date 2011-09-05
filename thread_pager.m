@@ -112,7 +112,14 @@ setup_thread_pager(Nowish, Rows, Cols, Messages, ThreadPagerInfo,
     NumPagerRows = int.max(0, Rows - NumThreadRows - SepLine),
     ThreadPagerInfo1 = thread_pager_info(Scrollable, NumThreadRows,
         PagerInfo, NumPagerRows),
-    skip_to_unread(_MessageUpdate, ThreadPagerInfo1, ThreadPagerInfo).
+    (
+        get_cursor_line(Scrollable, _, FirstLine),
+        is_unread_line(FirstLine)
+    ->
+        ThreadPagerInfo = ThreadPagerInfo1
+    ;
+        skip_to_unread(_MessageUpdate, ThreadPagerInfo1, ThreadPagerInfo)
+    ).
 
 :- func max_thread_lines = int.
 
