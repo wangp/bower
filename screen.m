@@ -148,7 +148,7 @@ count_loop(String, RemCols, !Index) :-
     wcwidth(C::in, Width::out),
     [will_not_call_mercury, promise_pure, thread_safe],
 "
-    Width = wcwidth(C);
+    Width = (C < 256) ? 1 : wcwidth(C);
 ").
 
 %-----------------------------------------------------------------------------%
