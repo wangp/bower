@@ -6,6 +6,7 @@
 :- import_module bool.
 :- import_module io.
 :- import_module list.
+:- import_module version_array.
 
 :- import_module curs.
 :- import_module curs.panel.
@@ -22,7 +23,7 @@
 
 :- func init_with_cursor(list(T), int) = scrollable(T).
 
-:- func get_lines(scrollable(T)) = list(T).
+:- func get_lines(scrollable(T)) = version_array(T).
 
 :- func get_num_lines(scrollable(T)) = int.
 
@@ -62,29 +63,30 @@
 :- import_module int.
 :- import_module maybe.
 :- import_module require.
+:- import_module version_array.
 
 :- type scrollable(T)
     --->    scrollable(
-                s_lines     :: list(T),
-                s_numlines  :: int,
+                s_lines     :: version_array(T),
                 s_top       :: int,
                 s_cursor    :: maybe(int)
             ).
 
 %-----------------------------------------------------------------------------%
 
-init(Lines) = scrollable(Lines, NumLines, Top, no) :-
-    list.length(Lines, NumLines),
-    Top = 0.
+init(Lines) = Scrollable :-
+    LinesArray = version_array.from_list(Lines),
+    Top = 0,
+    Scrollable = scrollable(LinesArray, Top, no).
 
 init_with_cursor(Lines, Cursor) = Scrollable :-
-    list.length(Lines, NumLines),
+    LinesArray = version_array.from_list(Lines),
     Top = 0,
-    Scrollable = scrollable(Lines, NumLines, Top, yes(Cursor)).
+    Scrollable = scrollable(LinesArray, Top, yes(Cursor)).
 
 get_lines(Scrollable) = Scrollable ^ s_lines.
 
-get_num_lines(Scrollable) = Scrollable ^ s_numlines.
+get_num_lines(Scrollable) = size(Scrollable ^ s_lines).
 
 get_top(Scrollable) = Scrollable ^ s_top.
 
@@ -103,21 +105,22 @@ get_cursor_line(Scrollable, Cursor, Line) :-
     Lines = Scrollable ^ s_lines,
     MaybeCursor = Scrollable ^ s_cursor,
     MaybeCursor = yes(Cursor),
-    list.index0(Lines, Cursor, Line).
+    Line = version_array.lookup(Lines, Cursor).
 
 set_cursor_line(Line, !Scrollable) :-
     (
         !.Scrollable ^ s_lines = Lines0,
-        !.Scrollable ^ s_cursor = yes(Cursor),
-        list.replace_nth(Lines0, Cursor + 1, Line, Lines)
+        !.Scrollable ^ s_cursor = yes(Cursor)
     ->
+        version_array.set(Cursor, Line, Lines0, Lines),
         !Scrollable ^ s_lines := Lines
     ;
         unexpected($module, $pred, "failed")
     ).
 
 scroll(NumRows, Delta, HitLimit, !Scrollable) :-
-    !.Scrollable = scrollable(Lines, NumLines, Top0, MaybeCursor0),
+    !.Scrollable = scrollable(Lines, Top0, MaybeCursor0),
+    NumLines = version_array.size(Lines),
     TopLimit = max(max(0, NumLines - NumRows), Top0),
     Top = clamp(0, Top0 + Delta, TopLimit),
     ( Top = Top0, Delta < 0 ->
@@ -129,10 +132,11 @@ scroll(NumRows, Delta, HitLimit, !Scrollable) :-
     ),
     % XXX cursor
     MaybeCursor = MaybeCursor0,
-    !:Scrollable = scrollable(Lines, NumLines, Top, MaybeCursor).
+    !:Scrollable = scrollable(Lines, Top, MaybeCursor).
 
 move_cursor(NumRows, Delta, HitLimit, !Scrollable) :-
-    !.Scrollable = scrollable(Lines, NumLines, Top0, MaybeCursor0),
+    !.Scrollable = scrollable(Lines, Top0, MaybeCursor0),
+    NumLines = version_array.size(Lines),
     (
         MaybeCursor0 = yes(Cursor0),
         Cursor = clamp(0, Cursor0 + Delta, NumLines - 1),
@@ -147,7 +151,7 @@ move_cursor(NumRows, Delta, HitLimit, !Scrollable) :-
             ;
                 Top = Top0
             ),
-            !:Scrollable = scrollable(Lines, NumLines, Top, yes(Cursor))
+            !:Scrollable = scrollable(Lines, Top, yes(Cursor))
         )
     ;
         MaybeCursor0 = no,
@@ -155,60 +159,72 @@ move_cursor(NumRows, Delta, HitLimit, !Scrollable) :-
     ).
 
 search_forward(P, Scrollable, I0, I, MatchLine) :-
-    Scrollable = scrollable(Lines0, _NumLines, _Top, _MaybeCursor),
-    list.drop(I0, Lines0, Lines),
-    search_loop(P, Lines, I0, I, MatchLine).
+    Scrollable = scrollable(Lines, _Top, _MaybeCursor),
+    Size = version_array.size(Lines),
+    search_forward_2(P, Lines, Size, I0, I, MatchLine).
+
+:- pred search_forward_2(pred(T)::in(pred(in) is semidet),
+    version_array(T)::in, int::in, int::in, int::out, T::out) is semidet.
+
+search_forward_2(P, Array, Size, N0, N, MatchX) :-
+    ( N0 < Size ->
+        X = version_array.lookup(Array, N0),
+        ( P(X) ->
+            N = N0,
+            MatchX = X
+        ;
+            search_forward_2(P, Array, Size, N0 + 1, N, MatchX)
+        )
+    ;
+        fail
+    ).
 
 search_reverse(P, Scrollable, I0, I) :-
-    Scrollable = scrollable(Lines0, _NumLines, _Top, _MaybeCursor),
-    list.take_upto(I0, Lines0, Lines1),
-    list.reverse(Lines1, RevLines),
-    search_loop(P, RevLines, 1, N, _),
-    I = I0 - N.
+    Scrollable = scrollable(Lines, _Top, _MaybeCursor),
+    search_reverse_2(P, Lines, I0 - 1, I, _).
 
-:- pred search_loop(pred(T)::in(pred(in) is semidet),
-    list(T)::in, int::in, int::out, T::out) is semidet.
+:- pred search_reverse_2(pred(T)::in(pred(in) is semidet),
+    version_array(T)::in, int::in, int::out, T::out) is semidet.
 
-search_loop(P, [X | Xs], N0, N, MatchX) :-
-    ( P(X) ->
-        N = N0,
-        MatchX = X
+search_reverse_2(P, Array, N0, N, MatchX) :-
+    ( N0 >= 0 ->
+        X = version_array.lookup(Array, N0),
+        ( P(X) ->
+            N = N0,
+            MatchX = X
+        ;
+            search_reverse_2(P, Array, N0 - 1, N, MatchX)
+        )
     ;
-        search_loop(P, Xs, N0 + 1, N, MatchX)
+        fail
     ).
 
 draw(RowPanels, Scrollable, !IO) :-
-    Scrollable = scrollable(Lines0, _NumLines, Top, MaybeCursor),
-    ( list.drop(Top, Lines0, Lines1) ->
-        Lines = Lines1
-    ;
-        Lines = []
-    ),
+    Scrollable = scrollable(Lines, Top, MaybeCursor),
     (
-        MaybeCursor = yes(Cursor),
-        N = Cursor - Top
+        MaybeCursor = yes(Cursor)
     ;
         MaybeCursor = no,
-        N = -1
+        Cursor = -1
     ),
-    draw_lines(RowPanels, Lines, N, !IO).
+    draw_lines(RowPanels, Lines, Top, Cursor, !IO).
 
-:- pred draw_lines(list(panel)::in, list(T)::in, int::in,
+:- pred draw_lines(list(panel)::in, version_array(T)::in, int::in, int::in,
     io::di, io::uo) is det
     <= scrollable.line(T).
 
-draw_lines([], _, _, !IO).
-draw_lines([Panel | Panels], Lines, N, !IO) :-
+draw_lines([], _, _, _, !IO).
+draw_lines([Panel | Panels], Lines, I, Cursor, !IO) :-
     panel.erase(Panel, !IO),
-    (
-        Lines = [Line | RestLines],
-        IsCursor = (N = 0 -> yes ; no),
+    Size = version_array.size(Lines),
+    ( I < Size ->
+        Line = version_array.lookup(Lines, I),
+        IsCursor = (I = Cursor -> yes ; no),
         draw_line(Panel, Line, IsCursor, !IO)
     ;
-        Lines = [],
-        RestLines = []
+        true
     ),
-    draw_lines(Panels, RestLines, N - 1, !IO).
+    draw_lines(Panels, Lines, I + 1, Cursor, !IO).
 
 :- func clamp(int, int, int) = int.
 

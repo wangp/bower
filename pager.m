@@ -59,6 +59,7 @@
 :- import_module int.
 :- import_module maybe.
 :- import_module string.
+:- import_module version_array.
 
 :- import_module scrollable.
 
@@ -423,21 +424,25 @@ is_unquoted_text(Line) :-
 %-----------------------------------------------------------------------------%
 
 get_top_message(Info, Message) :-
-    % XXX inefficient; we could keep an array for binary search
+    % XXX we could keep an array for binary search
     Info = pager_info(Scrollable),
     Top = get_top(Scrollable),
-    Lines0 = get_lines(Scrollable),
-    list.take(Top + 1, Lines0, Lines1),
-    list.reverse(Lines1, RevLines),
-    get_top_message_2(RevLines, Message).
+    Lines = get_lines(Scrollable),
+    get_top_message_2(Lines, Top, Message).
 
-:- pred get_top_message_2(list(pager_line)::in, message::out) is semidet.
+:- pred get_top_message_2(version_array(pager_line)::in, int::in, message::out)
+    is semidet.
 
-get_top_message_2([Line | Lines], Message) :-
-    ( Line = start_message_header(Message0, _, _) ->
-        Message = Message0
+get_top_message_2(Lines, I, Message) :-
+    ( I >= 0 ->
+        Line = version_array.lookup(Lines, I),
+        ( Line = start_message_header(Message0, _, _) ->
+            Message = Message0
+        ;
+            get_top_message_2(Lines, I - 1, Message)
+        )
     ;
-        get_top_message_2(Lines, Message)
+        fail
     ).
 
 %-----------------------------------------------------------------------------%

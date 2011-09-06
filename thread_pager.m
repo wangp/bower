@@ -48,6 +48,7 @@
 :- import_module maybe.
 :- import_module pair.
 :- import_module require.
+:- import_module version_array.
 
 :- import_module curs.
 :- import_module curs.panel.
@@ -409,7 +410,8 @@ toggle_flagged(!Info) :-
 get_tag_delta_groups(Info, TagGroups) :-
     Scrollable = Info ^ tp_scrollable,
     Lines = get_lines(Scrollable),
-    list.foldl(get_changed_status_messages_2, Lines, map.init, TagGroups).
+    version_array.foldl(get_changed_status_messages_2, Lines,
+        map.init, TagGroups).
 
 :- pred get_changed_status_messages_2(thread_line::in,
     map(set(tag_delta), list(message_id))::in,
