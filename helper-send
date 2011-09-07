@@ -7,6 +7,6 @@ fi
 
 if which notmuch-deliver
 then
-    notmuch-deliver -f -t sent Sent < "$1"
+    notmuch-deliver -f -t sent -r unread Sent < "$1"
     exit $?
 fi
