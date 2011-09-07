@@ -6,6 +6,7 @@
 :- import_module char.
 :- import_module io.
 :- import_module list.
+:- import_module time.
 
 :- import_module data.
 :- import_module screen.
@@ -16,6 +17,9 @@
 
 :- pred setup_index_view(list(thread)::in, index_info::out, io::di, io::uo)
     is det.
+
+:- pred replace_index_cursor_line(tm::in, thread::in,
+    index_info::in, index_info::out) is det.
 
 :- type action
     --->    continue
@@ -40,7 +44,6 @@
 :- import_module int.
 :- import_module require.
 :- import_module string.
-:- import_module time.
 
 :- import_module curs.
 :- import_module curs.panel.
@@ -112,14 +115,19 @@ setup_index_view(Threads, Info, !IO) :-
     cord(index_line)::in, cord(index_line)::out) is det.
 
 add_thread(Nowish, Thread, !Lines) :-
+    thread_to_index_line(Nowish, Thread, Line),
+    snoc(Line, !Lines).
+
+:- pred thread_to_index_line(tm::in, thread::in, index_line::out) is det.
+
+thread_to_index_line(Nowish, Thread, Line) :-
     Thread = thread(Id, Timestamp, Authors, Subject, Tags, _Matched, Total),
     timestamp_to_tm(Timestamp, TM),
     Shorter = yes,
     make_reldate(Nowish, TM, Shorter, Date),
     Line0 = index_line(Id, old, read, not_replied, unflagged, Date, Authors,
         Subject, Total),
-    list.foldl(apply_tag, Tags, Line0, Line),
-    snoc(Line, !Lines).
+    list.foldl(apply_tag, Tags, Line0, Line).
 
 :- pred apply_tag(string::in, index_line::in, index_line::out) is det.
 
@@ -135,6 +143,14 @@ apply_tag(Tag, !Line) :-
     ;
         true
     ).
+
+%-----------------------------------------------------------------------------%
+
+replace_index_cursor_line(Nowish, Thread, !Info) :-
+    !.Info = index_info(Scrollable0),
+    thread_to_index_line(Nowish, Thread, Line),
+    set_cursor_line(Line, Scrollable0, Scrollable),
+    !:Info = index_info(Scrollable).
 
 %-----------------------------------------------------------------------------%
 

@@ -104,7 +104,13 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = open_pager(ThreadId),
-        open_thread_pager(Screen, ThreadId, !IO),
+        open_thread_pager(Screen, ThreadId, NeedRefresh, !IO),
+        (
+            NeedRefresh = yes,
+            refresh_index_line(Screen, ThreadId, !IndexInfo, !IO)
+        ;
+            NeedRefresh = no
+        ),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = enter_limit,
@@ -135,11 +141,31 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         Action = quit
     ).
 
+:- pred refresh_index_line(screen::in, thread_id::in,
+    index_info::in, index_info::out, io::di, io::uo) is det.
+
+refresh_index_line(Screen, ThreadId, !IndexInfo, !IO) :-
+    Term = thread_id_to_search_term(ThreadId),
+    run_notmuch(["search", "--format=json", Term],
+        parse_threads_list, Threads, !IO),
+    (
+        Threads = [Thread],
+        time(Time, !IO),
+        Nowish = localtime(Time),
+        replace_index_cursor_line(Nowish, Thread, !IndexInfo)
+    ;
+        ( Threads = []
+        ; Threads = [_, _ | _]
+        ),
+        update_message(Screen, set_warning("Error refreshing index."), !IO)
+    ).
+
 %-----------------------------------------------------------------------------%
 
-:- pred open_thread_pager(screen::in, thread_id::in, io::di, io::uo) is det.
+:- pred open_thread_pager(screen::in, thread_id::in, bool::out, io::di, io::uo)
+    is det.
 
-open_thread_pager(Screen, ThreadId, !IO) :-
+open_thread_pager(Screen, ThreadId, NeedRefresh, !IO) :-
     run_notmuch(["show", "--format=json", thread_id_to_search_term(ThreadId)],
         parse_messages_list, Messages : list(message), !IO),
     time(Time, !IO),
@@ -149,12 +175,13 @@ open_thread_pager(Screen, ThreadId, !IO) :-
     setup_thread_pager(Nowish, Rows - 2, Cols, Messages, ThreadPagerInfo, Count),
     string.format("Showing message 1 of %d.", [i(Count)], Msg),
     update_message(Screen, set_info(Msg), !IO),
-    thread_pager_loop(Screen, ThreadPagerInfo, !IO).
+    thread_pager_loop(Screen, NeedRefresh, ThreadPagerInfo, _, !IO).
 
-:- pred thread_pager_loop(screen::in, thread_pager_info::in, io::di, io::uo)
-    is det.
+:- pred thread_pager_loop(screen::in, bool::out,
+    thread_pager_info::in, thread_pager_info::out,
+    io::di, io::uo) is det.
 
-thread_pager_loop(Screen, !.Info, !IO) :-
+thread_pager_loop(Screen, NeedRefresh, !Info, !IO) :-
     draw_thread_pager(Screen, !.Info, !IO),
     draw_bar(Screen, !IO),
     panel.update_panels(!IO),
@@ -163,21 +190,26 @@ thread_pager_loop(Screen, !.Info, !IO) :-
     update_message(Screen, MessageUpdate, !IO),
     (
         Action = continue,
-        thread_pager_loop(Screen, !.Info, !IO)
+        thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
     ;
         Action = start_reply(Message, ReplyKind),
         start_reply(Screen, Message, ReplyKind, !IO),
-        thread_pager_loop(Screen, !.Info, !IO)
+        thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
     ;
         Action = leave(TagGroups),
-        map.foldl2(apply_tag_delta, TagGroups, yes, Res, !IO),
-        (
-            Res = yes,
-            update_message(Screen, clear_message, !IO)
+        ( map.is_empty(TagGroups) ->
+            NeedRefresh = no
         ;
-            Res = no,
-            Msg = "Encountered problems while applying tags.",
-            update_message(Screen, set_warning(Msg), !IO)
+            map.foldl2(apply_tag_delta, TagGroups, yes, Res, !IO),
+            (
+                Res = yes,
+                update_message(Screen, clear_message, !IO)
+            ;
+                Res = no,
+                Msg = "Encountered problems while applying tags.",
+                update_message(Screen, set_warning(Msg), !IO)
+            ),
+            NeedRefresh = yes
         )
     ).
 
