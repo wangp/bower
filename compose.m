@@ -312,6 +312,7 @@ staging_screen(Screen, Headers, Body, MaybeOldDraft, !.PagerInfo, !IO) :-
         send_mail(Screen, Headers, Body, Res, !IO),
         (
             Res = yes,
+            tag_replied_message(Screen, Headers, !IO),
             maybe_remove_draft(MaybeOldDraft, !IO)
         ;
             Res = no,
@@ -426,6 +427,40 @@ call_send_mail(Screen, Filename, Res, !IO) :-
         Msg = "helper-send: " ++ io.error_message(Error),
         update_message(Screen, set_warning(Msg), !IO),
         Res = no
+    ).
+
+:- pred tag_replied_message(screen::in, headers::in, io::di, io::uo) is det.
+
+tag_replied_message(Screen, Headers, !IO) :-
+    InReplyTo0 = Headers ^ h_inreplyto,
+    (
+        string.index(InReplyTo0, 0, '<'),
+        Length = string.count_codepoints(InReplyTo0),
+        string.codepoint_offset(InReplyTo0, Length - 1, LastPos),
+        string.index(InReplyTo0, LastPos, '>')
+    ->
+        string.between(InReplyTo0, 1, LastPos, Id),
+        MessageId = message_id(Id),
+        Args = ["notmuch", "tag", "+replied", "--",
+            message_id_to_search_term(MessageId)],
+        args_to_quoted_command(Args, Command),
+        io.call_system(Command, CommandResult, !IO),
+        (
+            CommandResult = ok(ExitStatus),
+            ( ExitStatus = 0 ->
+                true
+            ;
+                Msg = string.format("notmuch tag returned with exit status %d",
+                    [i(ExitStatus)]),
+                update_message(Screen, set_warning(Msg), !IO)
+            )
+        ;
+            CommandResult = error(Error),
+            Msg = "notmuch: " ++ io.error_message(Error),
+            update_message(Screen, set_warning(Msg), !IO)
+        )
+    ;
+        true
     ).
 
 %-----------------------------------------------------------------------------%
