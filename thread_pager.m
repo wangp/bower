@@ -234,6 +234,10 @@ thread_pager_input(Char, Action, MessageUpdate, !Info) :-
     ; Char = '\t' ->
         skip_to_unread(MessageUpdate, !Info),
         Action = continue
+    ; Char = '\x12\' -> % ^R
+        mark_all_read(!Info),
+        MessageUpdate = clear_message,
+        Action = continue
     ; Char = 'N' ->
         toggle_unread(!Info),
         next_message(MessageUpdate, !Info),
@@ -354,13 +358,25 @@ is_unread_line(Line) :-
 set_current_line_read(!Info) :-
     Scrollable0 = !.Info ^ tp_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
-        Line0 ^ tp_unread = OrigUnread - _,
-        Line = Line0 ^ tp_unread := OrigUnread - read,
+        set_line_read(Line0, Line),
         set_cursor_line(Line, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
     ;
         true
     ).
+
+:- pred mark_all_read(thread_pager_info::in, thread_pager_info::out) is det.
+
+mark_all_read(!Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    scrollable.map_lines(set_line_read, Scrollable0, Scrollable),
+    !Info ^ tp_scrollable := Scrollable.
+
+:- pred set_line_read(thread_line::in, thread_line::out) is det.
+
+set_line_read(Line0, Line) :-
+    Line0 ^ tp_unread = OrigUnread - _,
+    Line = Line0 ^ tp_unread := OrigUnread - read.
 
 :- pred toggle_unread(thread_pager_info::in, thread_pager_info::out) is det.
 

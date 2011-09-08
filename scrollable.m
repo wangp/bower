@@ -40,6 +40,9 @@
 
 :- pred set_cursor_line(T::in, scrollable(T)::in, scrollable(T)::out) is det.
 
+:- pred map_lines(pred(T, T)::in(pred(in, out) is det),
+    scrollable(T)::in, scrollable(T)::out) is det.
+
 :- pred scroll(int::in, int::in, bool::out,
     scrollable(T)::in, scrollable(T)::out) is det.
 
@@ -117,6 +120,12 @@ set_cursor_line(Line, !Scrollable) :-
     ;
         unexpected($module, $pred, "failed")
     ).
+
+map_lines(P, !Scrollable) :-
+    !.Scrollable ^ s_lines = Array0,
+    List0 = version_array.to_list(Array0),
+    list.map(P, List0, List),
+    !Scrollable ^ s_lines := version_array.from_list(List).
 
 scroll(NumRows, Delta, HitLimit, !Scrollable) :-
     !.Scrollable = scrollable(Lines, Top0, MaybeCursor0),
