@@ -48,6 +48,7 @@
 :- import_module maybe.
 :- import_module pair.
 :- import_module require.
+:- import_module string.
 :- import_module version_array.
 
 :- import_module curs.
@@ -73,7 +74,8 @@
                 tp_replied      :: replied,
                 tp_flagged      :: pair(flagged),
                 tp_graphics     :: list(graphic),
-                tp_reldate      :: string
+                tp_reldate      :: string,
+                tp_subject      :: maybe(string)
             ).
 
 :- type graphic
@@ -102,7 +104,7 @@
 
 setup_thread_pager(Nowish, Rows, Cols, Messages, ThreadPagerInfo,
         NumThreadLines) :-
-    append_messages(Nowish, [], [], Messages, cord.init, ThreadCord),
+    append_messages(Nowish, [], [], Messages, "", cord.init, ThreadCord),
     ThreadLines = list(ThreadCord),
     Scrollable = scrollable.init_with_cursor(ThreadLines, 0),
     setup_pager(Cols, Messages, PagerInfo),
@@ -127,21 +129,25 @@ setup_thread_pager(Nowish, Rows, Cols, Messages, ThreadPagerInfo,
 max_thread_lines = 8.
 
 :- pred append_messages(tm::in, list(graphic)::in, list(graphic)::in,
-    list(message)::in, cord(thread_line)::in, cord(thread_line)::out) is det.
+    list(message)::in, string::in,
+    cord(thread_line)::in, cord(thread_line)::out) is det.
 
-append_messages(_Nowish, _Above, _Below, [], !Cord).
-append_messages(Nowish, Above0, Below0, [Message | Messages], !Cord) :-
+append_messages(_Nowish, _Above, _Below, [], _PrevSubject, !Cord).
+append_messages(Nowish, Above0, Below0, [Message | Messages], PrevSubject,
+        !Cord) :-
     (
         Messages = [],
-        make_thread_line(Nowish, Message, Above0 ++ [ell], Line),
+        make_thread_line(Nowish, Message, Above0 ++ [ell], PrevSubject, Line),
         snoc(Line, !Cord),
         MessagesCord = cord.empty,
         Below1 = Below0
     ;
         Messages = [_ | _],
-        make_thread_line(Nowish, Message, Above0 ++ [tee], Line),
+        make_thread_line(Nowish, Message, Above0 ++ [tee], PrevSubject, Line),
         snoc(Line, !Cord),
-        append_messages(Nowish, Above0, Below0, Messages, cord.init, MessagesCord),
+        get_last_subject(Message, LastSubject),
+        append_messages(Nowish, Above0, Below0, Messages, LastSubject,
+            cord.init, MessagesCord),
         ( get_first(MessagesCord, FollowingLine) ->
             Below1 = FollowingLine ^ tp_graphics
         ;
@@ -153,8 +159,20 @@ append_messages(Nowish, Above0, Below0, [Message | Messages], !Cord) :-
     ;
         Above1 = Above0 ++ [blank]
     ),
-    append_messages(Nowish, Above1, Below1, Message ^ m_replies, !Cord),
+    Replies = Message ^ m_replies,
+    Subject = Message ^ m_subject,
+    append_messages(Nowish, Above1, Below1, Replies, Subject, !Cord),
     !:Cord = !.Cord ++ MessagesCord.
+
+:- pred get_last_subject(message::in, string::out) is det.
+
+get_last_subject(Message, LastSubject) :-
+    Replies = Message ^ m_replies,
+    ( list.last(Replies, LastReply) ->
+        get_last_subject(LastReply, LastSubject)
+    ;
+        LastSubject = Message ^ m_subject
+    ).
 
 :- pred not_blank_at_column(list(graphic)::in, int::in) is semidet.
 
@@ -162,17 +180,23 @@ not_blank_at_column(Graphics, Col) :-
     list.index0(Graphics, Col, Graphic),
     Graphic \= blank.
 
-:- pred make_thread_line(tm::in, message::in, list(graphic)::in,
+:- pred make_thread_line(tm::in, message::in, list(graphic)::in, string::in,
     thread_line::out) is det.
 
-make_thread_line(Nowish, Message, Graphics, Line) :-
+make_thread_line(Nowish, Message, Graphics, PrevSubject, Line) :-
     Timestamp = Message ^ m_timestamp,
     Tags = Message ^ m_tags,
+    Subject = Message ^ m_subject,
     timestamp_to_tm(Timestamp, TM),
     Shorter = no,
     make_reldate(Nowish, TM, Shorter, RelDate),
+    ( canonicalise_subject(Subject) = canonicalise_subject(PrevSubject) ->
+        MaybeSubject = no
+    ;
+        MaybeSubject = yes(Subject)
+    ),
     Line0 = thread_line(Message, read - read, not_replied,
-        unflagged - unflagged, Graphics, RelDate),
+        unflagged - unflagged, Graphics, RelDate, MaybeSubject),
     list.foldl(apply_tag, Tags, Line0, Line).
 
 :- pred apply_tag(string::in, thread_line::in, thread_line::out) is det.
@@ -187,6 +211,23 @@ apply_tag(Tag, !Line) :-
     ;
         true
     ).
+
+:- func canonicalise_subject(string) = list(string).
+
+canonicalise_subject(S) = Words :-
+    list.negated_filter(is_reply_marker, string.words(S), Words).
+
+:- pred is_reply_marker(string::in) is semidet.
+
+is_reply_marker("Re:").
+is_reply_marker("RE:").
+is_reply_marker("R:").
+is_reply_marker("Aw:").
+is_reply_marker("AW:").
+is_reply_marker("Vs:").
+is_reply_marker("VS:").
+is_reply_marker("Sv:").
+is_reply_marker("SV:").
 
 %-----------------------------------------------------------------------------%
 
@@ -528,7 +569,7 @@ draw_sep(Cols, MaybeSepPanel, !IO) :-
 
 draw_thread_line(Panel, Line, IsCursor, !IO) :-
     Line = thread_line(Message, UnreadPair, Replied, FlaggedPair, Graphics,
-        RelDate),
+        RelDate, MaybeSubject),
     UnreadPair = _ - Unread,
     FlaggedPair = _ - Flagged,
     From = Message ^ m_from,
@@ -573,8 +614,15 @@ draw_thread_line(Panel, Line, IsCursor, !IO) :-
         Unread = read,
         cond_attr_set(Panel, normal, IsCursor, !IO)
     ),
-    my_addstr(Panel, From, !IO).
-    % XXX should indicate changes of subject
+    my_addstr(Panel, From, !IO),
+    (
+        MaybeSubject = yes(Subject),
+        my_addstr(Panel, " ", !IO),
+        cond_attr_set(Panel, fg_bg(green, black), IsCursor, !IO),
+        my_addstr(Panel, Subject, !IO)
+    ;
+        MaybeSubject = no
+    ).
 
 :- pred draw_graphic(panel::in, graphic::in, io::di, io::uo) is det.
 
