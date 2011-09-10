@@ -287,6 +287,9 @@ thread_pager_input(Char, Action, MessageUpdate, !Info) :-
         toggle_flagged(!Info),
         MessageUpdate = clear_message,
         Action = continue
+    ; Char = 'v' ->
+        highlight_attachment(MessageUpdate, !Info),
+        Action = continue
     ;
         ( Char = 'i'
         ; Char = 'q'
@@ -458,6 +461,17 @@ toggle_flagged(!Info) :-
     ;
         true
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred highlight_attachment(message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+highlight_attachment(MessageUpdate, !Info) :-
+    Pager0 = !.Info ^ tp_pager,
+    NumRows = !.Info ^ tp_num_pager_rows,
+    highlight_attachment(NumRows, MessageUpdate, Pager0, Pager),
+    !Info ^ tp_pager := Pager.
 
 %-----------------------------------------------------------------------------%
 

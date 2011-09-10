@@ -44,6 +44,9 @@
 :- pred skip_to_message(message_id::in, pager_info::in, pager_info::out)
     is det.
 
+:- pred highlight_attachment(int::in, message_update::out,
+    pager_info::in, pager_info::out) is det.
+
 :- pred draw_pager(screen::in, pager_info::in, io::di, io::uo) is det.
 
 :- pred draw_pager_lines(list(panel)::in, pager_info::in, io::di, io::uo)
@@ -463,6 +466,37 @@ is_message_start(MessageId, start_message_header(Message, _, _)) :-
 
 %-----------------------------------------------------------------------------%
 
+highlight_attachment(NumRows, MessageUpdate, !Info) :-
+    !.Info = pager_info(Scrollable0),
+    Top = get_top(Scrollable0),
+    Bot = Top + NumRows,
+    (
+        get_cursor(Scrollable0, Cur0),
+        Cur0 >= Top,
+        Cur0 < Bot
+    ->
+        Start = Cur0 + 1
+    ;
+        Start = Top
+    ),
+    ( search_forward_limit(is_attachment, Scrollable0, Start, Bot, Cur, _) ->
+        set_cursor(Cur, Scrollable0, Scrollable),
+        !:Info = pager_info(Scrollable),
+        MessageUpdate = clear_message
+    ; search_forward_limit(is_attachment, Scrollable0, Top, Bot, Cur, _) ->
+        set_cursor(Cur, Scrollable0, Scrollable),
+        !:Info = pager_info(Scrollable),
+        MessageUpdate = clear_message
+    ;
+        MessageUpdate = set_warning("No attachment visible.")
+    ).
+
+:- pred is_attachment(pager_line::in) is semidet.
+
+is_attachment(attachment(_)).
+
+%-----------------------------------------------------------------------------%
+
 draw_pager(Screen, Info, !IO) :-
     MainPanels = Screen ^ main_panels,
     draw_pager_lines(MainPanels, Info, !IO).
@@ -474,7 +508,7 @@ draw_pager_lines(Panels, Info, !IO) :-
 :- pred draw_pager_line(panel::in, pager_line::in, bool::in,
     io::di, io::uo) is det.
 
-draw_pager_line(Panel, Line, _IsCursor, !IO) :-
+draw_pager_line(Panel, Line, IsCursor, !IO) :-
     (
         ( Line = start_message_header(_Message, Header, Value)
         ; Line = header(Header, Value)
@@ -499,7 +533,14 @@ draw_pager_line(Panel, Line, _IsCursor, !IO) :-
         Line = attachment(Content),
         Content ^ c_type = ContentType,
         Content ^ c_filename = MaybeFilename,
-        panel.attr_set(Panel, fg_bg(magenta, black) + bold, !IO),
+        (
+            IsCursor = yes,
+            Attr = fg_bg(magenta, black) + reverse
+        ;
+            IsCursor = no,
+            Attr = fg_bg(magenta, black) + bold
+        ),
+        panel.attr_set(Panel, Attr, !IO),
         my_addstr(Panel, "[-- ", !IO),
         my_addstr(Panel, ContentType, !IO),
         (

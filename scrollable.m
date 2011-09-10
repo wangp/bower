@@ -33,6 +33,8 @@
 
 :- pred get_cursor(scrollable(T)::in, int::out) is semidet.
 
+:- pred set_cursor(int::in, scrollable(T)::in, scrollable(T)::out) is det.
+
 :- pred set_cursor_centred(int::in, int::in,
     scrollable(T)::in, scrollable(T)::out) is det.
 
@@ -51,6 +53,9 @@
 
 :- pred search_forward(pred(T)::in(pred(in) is semidet),
     scrollable(T)::in, int::in, int::out, T::out) is semidet.
+
+:- pred search_forward_limit(pred(T)::in(pred(in) is semidet),
+    scrollable(T)::in, int::in, int::in, int::out, T::out) is semidet.
 
 :- pred search_reverse(pred(T)::in(pred(in) is semidet),
     scrollable(T)::in, int::in, int::out) is semidet.
@@ -98,6 +103,9 @@ set_top(Top, !Scrollable) :-
 
 get_cursor(Scrollable, Cursor) :-
     Scrollable ^ s_cursor = yes(Cursor).
+
+set_cursor(Cursor, !Scrollable) :-
+    !Scrollable ^ s_cursor := yes(Cursor).
 
 set_cursor_centred(Cursor, NumRows, !Scrollable) :-
     Top = max(0, Cursor - NumRows//2),
@@ -168,21 +176,24 @@ move_cursor(NumRows, Delta, HitLimit, !Scrollable) :-
     ).
 
 search_forward(P, Scrollable, I0, I, MatchLine) :-
+    search_forward_limit(P, Scrollable, I0, int.max_int, I, MatchLine).
+
+search_forward_limit(P, Scrollable, I0, Limit, I, MatchLine) :-
     Scrollable = scrollable(Lines, _Top, _MaybeCursor),
     Size = version_array.size(Lines),
-    search_forward_2(P, Lines, Size, I0, I, MatchLine).
+    search_forward_2(P, Lines, int.min(Limit, Size), I0, I, MatchLine).
 
 :- pred search_forward_2(pred(T)::in(pred(in) is semidet),
     version_array(T)::in, int::in, int::in, int::out, T::out) is semidet.
 
-search_forward_2(P, Array, Size, N0, N, MatchX) :-
-    ( N0 < Size ->
+search_forward_2(P, Array, Limit, N0, N, MatchX) :-
+    ( N0 < Limit ->
         X = version_array.lookup(Array, N0),
         ( P(X) ->
             N = N0,
             MatchX = X
         ;
-            search_forward_2(P, Array, Size, N0 + 1, N, MatchX)
+            search_forward_2(P, Array, Limit, N0 + 1, N, MatchX)
         )
     ;
         fail
