@@ -47,6 +47,8 @@
 :- pred highlight_attachment(int::in, message_update::out,
     pager_info::in, pager_info::out) is det.
 
+:- pred get_highlighted_attachment(pager_info::in, content::out) is semidet.
+
 :- pred draw_pager(screen::in, pager_info::in, io::di, io::uo) is det.
 
 :- pred draw_pager_lines(list(panel)::in, pager_info::in, io::di, io::uo)
@@ -154,7 +156,7 @@ append_header(Header, Value, !Lines) :-
     cord(pager_line)::in, cord(pager_line)::out) is det.
 
 append_content(Cols, IsFirst, Content, !Lines) :-
-    Content = content(_Id, Type, MaybeText, _MaybeFilename),
+    Content = content(_MsgId, _Part, Type, MaybeText, _MaybeFilename),
     (
         IsFirst = yes,
         Type = "text/plain"
@@ -494,6 +496,11 @@ highlight_attachment(NumRows, MessageUpdate, !Info) :-
 :- pred is_attachment(pager_line::in) is semidet.
 
 is_attachment(attachment(_)).
+
+get_highlighted_attachment(Info, Content) :-
+    Info = pager_info(Scrollable),
+    get_cursor_line(Scrollable, _, Line),
+    Line = attachment(Content).
 
 %-----------------------------------------------------------------------------%
 

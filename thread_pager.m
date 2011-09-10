@@ -24,6 +24,7 @@
 :- type thread_pager_action
     --->    continue
     ;       start_reply(message, reply_kind)
+    ;       prompt_save_attachment(content)
     ;       leave(
                 map(set(tag_delta), list(message_id))
                 % Group messages by the tag changes to be applied.
@@ -290,6 +291,8 @@ thread_pager_input(Char, Action, MessageUpdate, !Info) :-
     ; Char = 'v' ->
         highlight_attachment(MessageUpdate, !Info),
         Action = continue
+    ; Char = 's' ->
+        save_attachment(Action, MessageUpdate, !Info)
     ;
         ( Char = 'i'
         ; Char = 'q'
@@ -472,6 +475,19 @@ highlight_attachment(MessageUpdate, !Info) :-
     NumRows = !.Info ^ tp_num_pager_rows,
     highlight_attachment(NumRows, MessageUpdate, Pager0, Pager),
     !Info ^ tp_pager := Pager.
+
+:- pred save_attachment(thread_pager_action::out, message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+save_attachment(Action, MessageUpdate, !Info) :-
+    Pager = !.Info ^ tp_pager,
+    ( get_highlighted_attachment(Pager, Content) ->
+        Action = prompt_save_attachment(Content),
+        MessageUpdate = clear_message
+    ;
+        Action = continue,
+        MessageUpdate = set_warning("No attachment selected.")
+    ).
 
 %-----------------------------------------------------------------------------%
 

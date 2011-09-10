@@ -7,6 +7,9 @@
 
 :- pred args_to_quoted_command(list(string)::in, string::out) is det.
 
+:- pred args_to_quoted_command_with_redirect(list(string)::in, string::in,
+    string::out) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -18,6 +21,11 @@
 args_to_quoted_command(Args, Command) :-
     QuotedArgs = list.map(quote_arg, Args),
     Command = string.join_list(" ", QuotedArgs).
+
+args_to_quoted_command_with_redirect(Args, RedirectOutput, Command) :-
+    QuotedArgs = list.map(quote_arg, Args),
+    QuotedOutput = quote_arg(RedirectOutput),
+    Command = string.join_list(" ", QuotedArgs ++ [">", QuotedOutput]).
 
 :- func quote_arg(string) = string.
 

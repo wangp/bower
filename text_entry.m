@@ -11,6 +11,9 @@
 :- pred text_entry(screen::in, string::in, maybe(string)::out,
     io::di, io::uo) is det.
 
+:- pred text_entry_initial(screen::in, string::in, string::in,
+    maybe(string)::out, io::di, io::uo) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -26,7 +29,12 @@
 %-----------------------------------------------------------------------------%
 
 text_entry(Screen, Prompt, Return, !IO) :-
-    text_entry(Screen, Prompt, [], [], Return, !IO),
+    text_entry_initial(Screen, Prompt, "", Return, !IO).
+
+text_entry_initial(Screen, Prompt, Initial, Return, !IO) :-
+    string.to_char_list(Initial, Before0),
+    list.reverse(Before0, Before),
+    text_entry(Screen, Prompt, Before, [], Return, !IO),
     update_message(Screen, clear_message, !IO).
 
 :- pred text_entry(screen::in, string::in, list(char)::in, list(char)::in,

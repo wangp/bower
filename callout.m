@@ -104,6 +104,7 @@ parse_message(JSON, Message) :-
 parse_message_details(JSON, Replies, Message) :-
     (
         JSON/"id" = unesc_string(Id),
+        MessageId = message_id(Id),
         JSON/"timestamp" = int(Timestamp),
         JSON/"headers" = Headers,
         Headers/"Date" = unesc_string(Date),
@@ -113,7 +114,7 @@ parse_message_details(JSON, Replies, Message) :-
         JSON/"tags" = array(TagsList),
         list.map(parse_tag, TagsList, Tags),
         JSON/"body" = array(BodyList),
-        list.foldl(parse_content, BodyList, cord.init, Body)
+        list.foldl(parse_content(MessageId), BodyList, cord.init, Body)
     ->
         ( Headers/"Cc" = unesc_string(Cc0) ->
             Cc = Cc0
@@ -125,17 +126,18 @@ parse_message_details(JSON, Replies, Message) :-
         ;
             ReplyTo = ""
         ),
-        Message = message(message_id(Id), Timestamp, Date, From, Subject,
+        Message = message(MessageId, Timestamp, Date, From, Subject,
             To, Cc, ReplyTo, Tags, Body, Replies)
     ;
         notmuch_json_error
     ).
 
-:- pred parse_content(json::in, cord(content)::in, cord(content)::out) is det.
+:- pred parse_content(message_id::in, json::in,
+    cord(content)::in, cord(content)::out) is det.
 
-parse_content(JSON, !Contents) :-
+parse_content(MessageId, JSON, !Contents) :-
     (
-        JSON/"id" = int(Id),
+        JSON/"id" = int(Part),
         JSON/"content-type" = unesc_string(ContentType)
     ->
         ( JSON/"filename" = unesc_string(Filename) ->
@@ -144,15 +146,15 @@ parse_content(JSON, !Contents) :-
             MaybeFilename = no
         ),
         ( JSON/"content" = unesc_string(ContentString) ->
-            Content = content(Id, ContentType, yes(ContentString),
+            Content = content(MessageId, Part, ContentType, yes(ContentString),
                 MaybeFilename),
             snoc(Content, !Contents)
         ; JSON/"content" = array(SubParts) ->
-            list.foldl(parse_content, SubParts, !Contents)
+            list.foldl(parse_content(MessageId), SubParts, !Contents)
         ;
             % "content" is unavailable for non-text parts.
             % We can those by running notmuch show --part=N id:NNN
-            Content = content(Id, ContentType, no, MaybeFilename),
+            Content = content(MessageId, Part, ContentType, no, MaybeFilename),
             snoc(Content, !Contents)
         )
     ;

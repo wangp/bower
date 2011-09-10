@@ -196,6 +196,10 @@ thread_pager_loop(Screen, NeedRefresh, !Info, !IO) :-
         start_reply(Screen, Message, ReplyKind, !IO),
         thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
     ;
+        Action = prompt_save_attachment(Content),
+        prompt_save_attachment(Screen, Content, !IO),
+        thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
+    ;
         Action = leave(TagGroups),
         ( map.is_empty(TagGroups) ->
             NeedRefresh = no
@@ -252,6 +256,74 @@ tag_messages(TagDeltas, MessageIds, Res, !IO) :-
             CallRes = error(Error),
             Res = error(Error)
         )
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred prompt_save_attachment(screen::in, content::in, io::di, io::uo)
+    is det.
+
+prompt_save_attachment(Screen, Content, !IO) :-
+    MessageId = Content ^ c_msgid,
+    Part = Content ^ c_part,
+    MaybeInitial = Content ^ c_filename,
+    (
+        MaybeInitial = yes(Initial)
+    ;
+        MaybeInitial = no,
+        MessageId = message_id(IdStr),
+        Initial = string.format("%s.part_%d", [s(IdStr), i(Part)])
+    ),
+    text_entry_initial(Screen, "Save to file: ", Initial, Return, !IO),
+    (
+        Return = yes(FileName),
+        FileName \= ""
+    ->
+        FollowSymLinks = no,
+        io.file_type(FollowSymLinks, FileName, ResType, !IO),
+        (
+            ResType = ok(_),
+            % XXX prompt to overwrite
+            Error = FileName ++ " already exists.",
+            MessageUpdate = set_warning(Error)
+        ;
+            ResType = error(_),
+            % This assumes the file doesn't exist.
+            do_save_attachment(MessageId, Part, FileName, Res, !IO),
+            (
+                Res = ok,
+                MessageUpdate = set_info("Attachment saved.")
+            ;
+                Res = error(Error),
+                ErrorMessage = io.error_message(Error),
+                MessageUpdate = set_warning(ErrorMessage)
+            )
+        )
+    ;
+        MessageUpdate = clear_message
+    ),
+    update_message(Screen, MessageUpdate, !IO).
+
+:- pred do_save_attachment(message_id::in, int::in, string::in,
+    io.res::out, io::di, io::uo) is det.
+
+do_save_attachment(MessageId, Part, FileName, Res, !IO) :-
+    Args = ["notmuch", "show", "--format=raw", "--part=" ++ from_int(Part),
+        message_id_to_search_term(MessageId)],
+    args_to_quoted_command_with_redirect(Args, FileName, Command),
+    io.call_system(Command, CallRes, !IO),
+    (
+        CallRes = ok(ExitStatus),
+        ( ExitStatus = 0 ->
+            Res = ok
+        ;
+            string.format("notmuch show returned exit status %d",
+                [i(ExitStatus)], Msg),
+            Res = error(io.make_io_error(Msg))
+        )
+    ;
+        CallRes = error(Error),
+        Res = error(Error)
     ).
 
 %-----------------------------------------------------------------------------%

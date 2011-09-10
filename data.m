@@ -43,7 +43,8 @@
 
 :- type content
     --->    content(
-                c_id        :: int,
+                c_msgid     :: message_id,
+                c_part      :: int,
                 c_type      :: string,
                 c_content   :: maybe(string),
                 c_filename  :: maybe(string)
