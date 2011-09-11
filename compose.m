@@ -48,6 +48,14 @@
 :- import_module sys_util.
 :- import_module time_util.
 
+:- type header_type
+    --->    from
+    ;       to
+    ;       cc
+    ;       bcc
+    ;       subject
+    ;       replyto.
+
 %-----------------------------------------------------------------------------%
 
 :- mutable(msgid_counter, int, 0, ground, [untrailed, attach_to_io_state]).
@@ -292,12 +300,33 @@ update_references(Headers0, !Headers) :-
     maybe(string)::in, pager_info::in, io::di, io::uo) is det.
 
 staging_screen(Screen, Headers, Body, MaybeOldDraft, !.PagerInfo, !IO) :-
-    draw_pager(Screen, !.PagerInfo, !IO),
+    split_panels(Screen, HeaderPanels, MaybeSepPanel, PagerPanels),
+    draw_header_lines(HeaderPanels, Headers, !IO),
+    draw_sep_bar(Screen, MaybeSepPanel, !IO),
+    draw_pager_lines(PagerPanels, !.PagerInfo, !IO),
     draw_staging_bar(Screen, !IO),
     panel.update_panels(!IO),
     get_char(Char, !IO),
     ( Char = 'e' ->
         create_edit_stage(Screen, Headers, Body, MaybeOldDraft, !IO)
+    ; Char = 'f' ->
+        edit_header(Screen, from, Headers, Headers1, !IO),
+        staging_screen(Screen, Headers1, Body, MaybeOldDraft, !.PagerInfo, !IO)
+    ; Char = 't' ->
+        edit_header(Screen, to, Headers, Headers1, !IO),
+        staging_screen(Screen, Headers1, Body, MaybeOldDraft, !.PagerInfo, !IO)
+    ; Char = 'c' ->
+        edit_header(Screen, cc, Headers, Headers1, !IO),
+        staging_screen(Screen, Headers1, Body, MaybeOldDraft, !.PagerInfo, !IO)
+    ; Char = 'b' ->
+        edit_header(Screen, bcc, Headers, Headers1, !IO),
+        staging_screen(Screen, Headers1, Body, MaybeOldDraft, !.PagerInfo, !IO)
+    ; Char = 's' ->
+        edit_header(Screen, subject, Headers, Headers1, !IO),
+        staging_screen(Screen, Headers1, Body, MaybeOldDraft, !.PagerInfo, !IO)
+    ; Char = 'r' ->
+        edit_header(Screen, replyto, Headers, Headers1, !IO),
+        staging_screen(Screen, Headers1, Body, MaybeOldDraft, !.PagerInfo, !IO)
     ; Char = 'p' ->
         postpone(Screen, Headers, Body, Res, !IO),
         (
@@ -333,6 +362,86 @@ staging_screen(Screen, Headers, Body, MaybeOldDraft, !.PagerInfo, !IO) :-
         update_message(Screen, MessageUpdate, !IO),
         staging_screen(Screen, Headers, Body, MaybeOldDraft, !.PagerInfo, !IO)
     ).
+
+:- pred edit_header(screen::in, header_type::in, headers::in, headers::out,
+    io::di, io::uo) is det.
+
+edit_header(Screen, HeaderType, !Headers, !IO) :-
+    get_header(HeaderType, !.Headers, Prompt, Initial),
+    text_entry_initial(Screen, Prompt, Initial, Return, !IO),
+    (
+        Return = yes(Final),
+        set_header(HeaderType, Final, !Headers)
+    ;
+        Return = no
+    ).
+
+:- pred get_header(header_type::in, headers::in, string::out, string::out)
+    is det.
+
+get_header(from,    H, "From: ",     H ^ h_from).
+get_header(to,      H, "To: ",       H ^ h_to).
+get_header(cc,      H, "Cc: ",       H ^ h_cc).
+get_header(bcc,     H, "Bcc: ",      H ^ h_bcc).
+get_header(subject, H, "Subject: ",  H ^ h_subject).
+get_header(replyto, H, "Reply-To: ", H ^ h_replyto).
+
+:- pred set_header(header_type::in, string::in, headers::in, headers::out)
+    is det.
+
+set_header(from,    Value, H, H ^ h_from := Value).
+set_header(to,      Value, H, H ^ h_to := Value).
+set_header(cc,      Value, H, H ^ h_cc := Value).
+set_header(bcc,     Value, H, H ^ h_bcc := Value).
+set_header(subject, Value, H, H ^ h_subject := Value).
+set_header(replyto, Value, H, H ^ h_replyto := Value).
+
+:- pred split_panels(screen::in, list(panel)::out, maybe(panel)::out,
+    list(panel)::out) is det.
+
+split_panels(Screen, StagingPanels, MaybeSepPanel, PagerPanels) :-
+    Panels0 = Screen ^ main_panels,
+    list.split_upto(6, Panels0, StagingPanels, Panels1),
+    (
+        Panels1 = [SepPanel | PagerPanels],
+        MaybeSepPanel = yes(SepPanel)
+    ;
+        Panels1 = [],
+        MaybeSepPanel = no,
+        PagerPanels = []
+    ).
+
+:- pred draw_header_lines(list(panel)::in, headers::in, io::di, io::uo) is det.
+
+draw_header_lines(!.Panels, Headers, !IO) :-
+    draw_header_line(!Panels, "    From", Headers ^ h_from, !IO),
+    draw_header_line(!Panels, "      To", Headers ^ h_to, !IO),
+    draw_header_line(!Panels, "      Cc", Headers ^ h_cc, !IO),
+    draw_header_line(!Panels, "     Bcc", Headers ^ h_bcc, !IO),
+    draw_header_line(!Panels, " Subject", Headers ^ h_subject, !IO),
+    draw_header_line(!Panels, "Reply-To", Headers ^ h_replyto, !IO),
+    !.Panels = _.
+
+:- pred draw_header_line(list(panel)::in, list(panel)::out,
+    string::in, string::in, io::di, io::uo) is det.
+
+draw_header_line([], [], _, _, !IO).
+draw_header_line([Panel | Panels], Panels, FieldName, Value, !IO) :-
+    panel.erase(Panel, !IO),
+    panel.attr_set(Panel, fg_bg(red, black) + bold, !IO),
+    my_addstr(Panel, FieldName, !IO),
+    my_addstr(Panel, ": ", !IO),
+    panel.attr_set(Panel, normal, !IO),
+    my_addstr(Panel, Value, !IO).
+
+:- pred draw_sep_bar(screen::in, maybe(panel)::in, io::di, io::uo) is det.
+
+draw_sep_bar(_, no, !IO).
+draw_sep_bar(Screen, yes(Panel), !IO) :-
+    Cols = Screen ^ cols,
+    panel.erase(Panel, !IO),
+    panel.attr_set(Panel, fg_bg(white, blue), !IO),
+    hline(Panel, char.to_int('-'), Cols, !IO).
 
 :- pred draw_staging_bar(screen::in, io::di, io::uo) is det.
 
