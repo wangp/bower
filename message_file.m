@@ -4,26 +4,11 @@
 :- interface.
 
 :- import_module io.
-:- import_module map.
 :- import_module pair.
 
+:- import_module data.
+
 %-----------------------------------------------------------------------------%
-
-:- type headers
-    --->    headers(
-                % Technically, header fields.
-                h_from          :: string,
-                h_to            :: string,
-                h_cc            :: string,
-                h_bcc           :: string,
-                h_subject       :: string,
-                h_replyto       :: string,
-                h_references    :: string,
-                h_inreplyto     :: string,
-                h_rest          :: map(string, string)
-            ).
-
-:- func init_headers = headers.
 
 :- pred parse_message_file(string::in, io.res(pair(headers, string))::out,
     io::di, io::uo) is det.
@@ -37,12 +22,11 @@
 :- implementation.
 
 :- import_module int.
+:- import_module map.
 :- import_module maybe.
 :- import_module string.
 
 %-----------------------------------------------------------------------------%
-
-init_headers = headers("", "", "", "", "", "", "", "", map.init).
 
 parse_message_file(Filename, Res, !IO) :-
     io.open_input(Filename, ResOpen, !IO),

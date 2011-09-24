@@ -106,30 +106,43 @@ parse_message_details(JSON, Replies, Message) :-
         JSON/"id" = unesc_string(Id),
         MessageId = message_id(Id),
         JSON/"timestamp" = int(Timestamp),
-        JSON/"headers" = Headers,
-        Headers/"Date" = unesc_string(Date),
-        Headers/"From" = unesc_string(From),
-        Headers/"Subject" = unesc_string(Subject),
-        Headers/"To" = unesc_string(To),
+        JSON/"headers" = map(HeaderMap),
+        map.foldl(parse_header, HeaderMap, init_headers, Headers),
         JSON/"tags" = array(TagsList),
         list.map(parse_tag, TagsList, Tags),
         JSON/"body" = array(BodyList),
         list.foldl(parse_content(MessageId), BodyList, cord.init, Body)
     ->
-        ( Headers/"Cc" = unesc_string(Cc0) ->
-            Cc = Cc0
-        ;
-            Cc = ""
-        ),
-        ( Headers/"Reply-To" = unesc_string(ReplyTo0) ->
-            ReplyTo = ReplyTo0
-        ;
-            ReplyTo = ""
-        ),
-        Message = message(MessageId, Timestamp, Date, From, Subject,
-            To, Cc, ReplyTo, Tags, Body, Replies)
+        Message = message(MessageId, Timestamp, Headers, Tags, Body, Replies)
     ;
         notmuch_json_error
+    ).
+
+:- pred parse_header(key::in, json::in, headers::in, headers::out) is semidet.
+
+parse_header(Key, unesc_string(Value), !Headers) :-
+    ( Key = "Date" ->
+        !Headers ^ h_date := Value
+    ; Key = "From" ->
+        !Headers ^ h_from := Value
+    ; Key = "To" ->
+        !Headers ^ h_to := Value
+    ; Key = "Cc" ->
+        !Headers ^ h_cc := Value
+    ; Key = "Bcc" ->
+        !Headers ^ h_bcc := Value
+    ; Key = "Subject" ->
+        !Headers ^ h_subject := Value
+    ; Key = "Reply-To" ->
+        !Headers ^ h_replyto := Value
+    ; Key = "References" ->
+        !Headers ^ h_references := Value
+    ; Key = "In-Reply-To" ->
+        !Headers ^ h_inreplyto := Value
+    ;
+        Rest0 = !.Headers ^ h_rest,
+        map.insert(Key, Value, Rest0, Rest),
+        !Headers ^ h_rest := Rest
     ).
 
 :- pred parse_content(message_id::in, json::in,

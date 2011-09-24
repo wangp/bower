@@ -5,6 +5,7 @@
 
 :- import_module cord.
 :- import_module list.
+:- import_module map.
 :- import_module maybe.
 
 %-----------------------------------------------------------------------------%
@@ -27,12 +28,7 @@
     --->    message(
                 m_id        :: message_id,
                 m_timestamp :: int,
-                m_date      :: string,
-                m_from      :: string,
-                m_subject   :: string,
-                m_to        :: string,
-                m_cc        :: string,
-                m_reply_to  :: string,
+                m_headers   :: headers,
                 m_tags      :: list(string),
                 m_body      :: cord(content),
                 m_replies   :: list(message)
@@ -40,6 +36,21 @@
 
 :- type message_id
     --->    message_id(string).
+
+:- type headers
+    --->    headers(
+                % Technically, header fields.
+                h_date          :: string,
+                h_from          :: string,
+                h_to            :: string,
+                h_cc            :: string,
+                h_bcc           :: string,
+                h_subject       :: string,
+                h_replyto       :: string,
+                h_references    :: string,
+                h_inreplyto     :: string,
+                h_rest          :: map(string, string)
+            ).
 
 :- type content
     --->    content(
@@ -56,6 +67,8 @@
 
 :- func message_id_to_search_term(message_id) = string.
 
+:- func init_headers = headers.
+
 :- pred snoc(T::in, cord(T)::in, cord(T)::out) is det.
 
 %-----------------------------------------------------------------------------%
@@ -63,6 +76,7 @@
 
 :- implementation.
 
+:- import_module map.
 :- import_module string.
 
 %-----------------------------------------------------------------------------%
@@ -70,6 +84,8 @@
 thread_id_to_search_term(thread_id(Id)) = "thread:" ++ Id.
 
 message_id_to_search_term(message_id(Id)) = "id:" ++ Id.
+
+init_headers = headers("", "", "", "", "", "", "", "", "", map.init).
 
 snoc(X, C, snoc(C, X)).
 

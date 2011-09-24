@@ -23,6 +23,7 @@
 
 :- import_module curs.
 :- import_module curs.panel.
+:- import_module data.
 :- import_module maildir.
 :- import_module message_file.
 :- import_module scrollable.

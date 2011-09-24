@@ -161,7 +161,7 @@ append_messages(Nowish, Above0, Below0, [Message | Messages], PrevSubject,
         Above1 = Above0 ++ [blank]
     ),
     Replies = Message ^ m_replies,
-    Subject = Message ^ m_subject,
+    Subject = Message ^ m_headers ^ h_subject,
     append_messages(Nowish, Above1, Below1, Replies, Subject, !Cord),
     !:Cord = !.Cord ++ MessagesCord.
 
@@ -172,7 +172,7 @@ get_last_subject(Message, LastSubject) :-
     ( list.last(Replies, LastReply) ->
         get_last_subject(LastReply, LastSubject)
     ;
-        LastSubject = Message ^ m_subject
+        LastSubject = Message ^ m_headers ^ h_subject
     ).
 
 :- pred not_blank_at_column(list(graphic)::in, int::in) is semidet.
@@ -187,7 +187,7 @@ not_blank_at_column(Graphics, Col) :-
 make_thread_line(Nowish, Message, Graphics, PrevSubject, Line) :-
     Timestamp = Message ^ m_timestamp,
     Tags = Message ^ m_tags,
-    Subject = Message ^ m_subject,
+    Subject = Message ^ m_headers ^ h_subject,
     timestamp_to_tm(Timestamp, TM),
     Shorter = no,
     make_reldate(Nowish, TM, Shorter, RelDate),
@@ -602,7 +602,7 @@ draw_thread_line(Panel, Line, IsCursor, !IO) :-
         RelDate, MaybeSubject),
     UnreadPair = _ - Unread,
     FlaggedPair = _ - Flagged,
-    From = Message ^ m_from,
+    From = Message ^ m_headers ^ h_from,
     (
         IsCursor = yes,
         panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)

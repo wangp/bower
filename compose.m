@@ -70,13 +70,13 @@ start_compose(Screen, !IO) :-
         text_entry(Screen, "Subject: ", MaybeSubject, !IO),
         (
             MaybeSubject = yes(Subject),
-            Cc = "",
-            Bcc = "",
-            ReplyTo = "",
-            References = "",
-            InReplyTo = "",
-            Headers = headers(From, To, Cc, Bcc, Subject, ReplyTo, References,
-                InReplyTo, map.init),
+            some [!Headers] (
+                !:Headers = init_headers,
+                !Headers ^ h_from := From,
+                !Headers ^ h_to := To,
+                !Headers ^ h_subject := Subject,
+                Headers = !.Headers
+            ),
             Body = "",
             MaybeOldDraft = no,
             create_edit_stage(Screen, Headers, Body, MaybeOldDraft, !IO)
@@ -118,8 +118,8 @@ start_reply(Screen, Message, ReplyKind, !IO) :-
         read_headers_from_string(String, 0, init_headers, Headers0, Body),
         (
             ReplyKind = direct_reply,
-            OrigFrom = Message ^ m_from,
-            OrigReplyTo = Message ^ m_reply_to,
+            OrigFrom = Message ^ m_headers ^ h_from,
+            OrigReplyTo = Message ^ m_headers ^ h_replyto,
             set_headers_for_direct_reply(OrigFrom, OrigReplyTo,
                 Headers0, Headers)
         ;
@@ -127,7 +127,7 @@ start_reply(Screen, Message, ReplyKind, !IO) :-
             set_headers_for_group_reply(Headers0, Headers)
         ;
             ReplyKind = list_reply,
-            OrigFrom = Message ^ m_from,
+            OrigFrom = Message ^ m_headers ^ h_from,
             set_headers_for_list_reply(OrigFrom, Headers0, Headers)
         ),
         MaybeOldDraft = no,
@@ -582,8 +582,8 @@ create_temp_message_file(Headers, Body, Sending, WriteReferences, Res, !IO) :-
     io.open_output(Filename, ResOpen, !IO),
     (
         ResOpen = ok(Stream),
-        Headers = headers(From, To, Cc, Bcc, Subject, ReplyTo, References,
-            InReplyTo, Rest),
+        Headers = headers(_Date, From, To, Cc, Bcc, Subject, ReplyTo,
+            References, InReplyTo, Rest),
         (
             Sending = yes,
             generate_date_msg_id(Date, MessageId, !IO),

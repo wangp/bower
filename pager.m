@@ -113,19 +113,20 @@ setup_pager(Cols, Messages, Info) :-
     cord(pager_line)::in, cord(pager_line)::out) is det.
 
 append_message(Cols, Message, !Lines) :-
-    Subject = Message ^ m_subject,
+    Headers = Message ^ m_headers,
+    Subject = Headers ^ h_subject,
     StartMessage = start_message_header(Message, "Subject", Subject),
     snoc(StartMessage, !Lines),
-    append_header("Date", Message ^ m_date, !Lines),
-    append_header("From", Message ^ m_from, !Lines),
-    append_header("To", Message ^ m_to, !Lines),
-    Cc = Message ^ m_cc,
+    append_header("Date", Headers ^ h_date, !Lines),
+    append_header("From", Headers ^ h_from, !Lines),
+    append_header("To", Headers ^ h_to, !Lines),
+    Cc = Headers ^ h_cc,
     ( Cc = "" ->
         true
     ;
         append_header("Cc", Cc, !Lines)
     ),
-    ReplyTo = Message ^ m_reply_to,
+    ReplyTo = Headers ^ h_replyto,
     ( ReplyTo = "" ->
         true
     ;
