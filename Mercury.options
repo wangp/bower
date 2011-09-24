@@ -1,6 +1,5 @@
 MAIN_TARGET = notmuch_frontend
 
-MCFLAGS-maildir += --no-ansi-c
 MCFLAGS-message_file += --no-ansi-c
 MCFLAGS-popen += --no-ansi-c
 

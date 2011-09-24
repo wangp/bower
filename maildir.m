@@ -6,8 +6,6 @@
 :- import_module io.
 :- import_module list.
 
-:- pred generate_unique_name(string::out, io::di, io::uo) is det.
-
 :- pred add_draft(string::in, io.res::out, io::di, io::uo) is det.
 
 :- pred find_drafts(io.res(list(string))::out, io::di, io::uo) is det.
@@ -17,84 +15,34 @@
 
 :- implementation.
 
-:- import_module bool.
-:- import_module dir.
-:- import_module int.
 :- import_module string.
-:- import_module time.
 
 :- import_module callout.
 :- import_module quote_arg.
-:- import_module sys_util.
-:- import_module time_util.
-
-:- mutable(counter, int, -1, ground, [untrailed, attach_to_io_state]).
-
-%-----------------------------------------------------------------------------%
-
-generate_unique_name(Name, !IO) :-
-    time(Time0, !IO),
-    time_to_int(Time0, Time),
-    get_pid(Pid, !IO),
-    get_hostname(Host, !IO),
-    get_counter(Counter0, !IO),
-    ( Counter0 < 0 ->
-        Counter = (Time * Pid) mod 10000
-    ;
-        Counter = Counter0 + 1
-    ),
-    set_counter(Counter, !IO),
-    string.format("%d.%d_%d.%s", [i(Time), i(Pid), i(Counter), s(Host)], Name).
 
 %-----------------------------------------------------------------------------%
 
 add_draft(FileName, Res, !IO) :-
-    get_notmuch_config("database.path", ResDbPath, !IO),
+    Args = [
+        "notmuch-deliver",
+        "-t", "draft",
+        "-r", "inbox",
+        "-r", "unread",
+        "-f", drafts_dir
+    ],
+    args_to_quoted_command(Args, redirect_input(FileName), no, Command),
+    io.call_system(Command, CallRes, !IO),
     (
-        ResDbPath = ok(DbPath),
-        add_draft_2(DbPath, FileName, Res, !IO)
-    ;
-        ResDbPath = error(Error),
-        Res = error(Error)
-    ).
-
-:- pred add_draft_2(string::in, string::in, io.res::out, io::di, io::uo) is det.
-
-add_draft_2(DbPath, FileName, Res, !IO) :-
-    generate_unique_name(UniqueName, !IO),
-    InfoFlags = ":2,D",
-    TmpFileName = DbPath / drafts_dir / "tmp" / UniqueName,
-    CurFileName = DbPath / drafts_dir / "cur" / UniqueName ++ InfoFlags,
-    % Copy FileName to tmp first.
-    args_to_quoted_command(["cp", "-n", FileName, TmpFileName], CopyCommand),
-    io.call_system(CopyCommand, CopyRes, !IO),
-    (
-        CopyRes = ok(CopyStatus),
-        ( CopyStatus = 0 ->
-            % Link from tmp to cur.
-            args_to_quoted_command( ["cp", "-l", TmpFileName, CurFileName],
-                LinkCommand),
-            io.call_system(LinkCommand, LinkRes, !IO),
-            (
-                LinkRes = ok(LinkStatus),
-                ( LinkStatus = 0 ->
-                    Res = ok
-                ;
-                    Msg = string.format("cp returned exit status %d",
-                        [i(LinkStatus)]),
-                    Res = error(io.make_io_error(Msg))
-                )
-            ;
-                LinkRes = error(Error),
-                Res = error(Error)
-            ),
-            io.remove_file(TmpFileName, _, !IO)
+        CallRes = ok(ExitStatus),
+        ( ExitStatus = 0 ->
+            Res = ok
         ;
-            Msg = string.format("cp returned exit status %d", [i(CopyStatus)]),
+            Msg = string.format("notmuch-deliver returned with exit status %d",
+                [i(ExitStatus)]),
             Res = error(io.make_io_error(Msg))
         )
     ;
-        CopyRes = error(Error),
+        CallRes = error(Error),
         Res = error(Error)
     ).
 
