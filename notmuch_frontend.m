@@ -167,7 +167,9 @@ refresh_index_line(Screen, ThreadId, !IndexInfo, !IO) :-
 
 open_thread_pager(Screen, ThreadId, NeedRefresh, !IO) :-
     run_notmuch(["show", "--format=json", thread_id_to_search_term(ThreadId)],
-        parse_messages_list, Messages : list(message), !IO),
+        parse_messages_list, Messages0 : list(message), !IO),
+    list.filter_map(filter_unwanted_messages, Messages0, Messages),
+
     time(Time, !IO),
     Nowish = localtime(Time),
     Rows = Screen ^ rows,
@@ -176,6 +178,17 @@ open_thread_pager(Screen, ThreadId, NeedRefresh, !IO) :-
     string.format("Showing message 1 of %d.", [i(Count)], Msg),
     update_message(Screen, set_info(Msg), !IO),
     thread_pager_loop(Screen, NeedRefresh, ThreadPagerInfo, _, !IO).
+
+:- pred filter_unwanted_messages(message::in, message::out) is semidet.
+
+filter_unwanted_messages(!Message) :-
+    Tags = !.Message ^ m_tags,
+    not list.contains(Tags, "draft"),
+    not list.contains(Tags, "deleted"),
+
+    Replies0 = !.Message ^ m_replies,
+    list.filter_map(filter_unwanted_messages, Replies0, Replies),
+    !Message ^ m_replies := Replies.
 
 :- pred thread_pager_loop(screen::in, bool::out,
     thread_pager_info::in, thread_pager_info::out,
