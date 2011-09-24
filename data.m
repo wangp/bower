@@ -30,7 +30,7 @@
                 m_timestamp :: int,
                 m_headers   :: headers,
                 m_tags      :: list(string),
-                m_body      :: cord(content),
+                m_body      :: cord(part),
                 m_replies   :: list(message)
             ).
 
@@ -52,13 +52,13 @@
                 h_rest          :: map(string, string)
             ).
 
-:- type content
-    --->    content(
-                c_msgid     :: message_id,
-                c_part      :: int,
-                c_type      :: string,
-                c_content   :: maybe(string),
-                c_filename  :: maybe(string)
+:- type part
+    --->    part(
+                pt_msgid        :: message_id,
+                pt_part         :: int,
+                pt_type         :: string,
+                pt_content      :: maybe(string),
+                pt_filename     :: maybe(string)
             ).
 
 %-----------------------------------------------------------------------------%

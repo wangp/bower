@@ -24,7 +24,7 @@
 :- type thread_pager_action
     --->    continue
     ;       start_reply(message, reply_kind)
-    ;       prompt_save_attachment(content)
+    ;       prompt_save_attachment(part)
     ;       leave(
                 map(set(tag_delta), list(message_id))
                 % Group messages by the tag changes to be applied.

@@ -273,19 +273,19 @@ tag_messages(TagDeltas, MessageIds, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred prompt_save_attachment(screen::in, content::in, io::di, io::uo)
+:- pred prompt_save_attachment(screen::in, part::in, io::di, io::uo)
     is det.
 
-prompt_save_attachment(Screen, Content, !IO) :-
-    MessageId = Content ^ c_msgid,
-    Part = Content ^ c_part,
-    MaybeInitial = Content ^ c_filename,
+prompt_save_attachment(Screen, Part, !IO) :-
+    MessageId = Part ^ pt_msgid,
+    PartId = Part ^ pt_part,
+    MaybeInitial = Part ^ pt_filename,
     (
         MaybeInitial = yes(Initial)
     ;
         MaybeInitial = no,
         MessageId = message_id(IdStr),
-        Initial = string.format("%s.part_%d", [s(IdStr), i(Part)])
+        Initial = string.format("%s.part_%d", [s(IdStr), i(PartId)])
     ),
     text_entry_initial(Screen, "Save to file: ", Initial, Return, !IO),
     (
@@ -302,7 +302,7 @@ prompt_save_attachment(Screen, Content, !IO) :-
         ;
             ResType = error(_),
             % This assumes the file doesn't exist.
-            do_save_attachment(MessageId, Part, FileName, Res, !IO),
+            do_save_attachment(MessageId, PartId, FileName, Res, !IO),
             (
                 Res = ok,
                 MessageUpdate = set_info("Attachment saved.")

@@ -47,7 +47,7 @@
 :- pred highlight_attachment(int::in, message_update::out,
     pager_info::in, pager_info::out) is det.
 
-:- pred get_highlighted_attachment(pager_info::in, content::out) is semidet.
+:- pred get_highlighted_attachment(pager_info::in, part::out) is semidet.
 
 :- pred draw_pager(screen::in, pager_info::in, io::di, io::uo) is det.
 
@@ -80,7 +80,7 @@
     ;       header(string, string)
     ;       text(string)
     ;       quoted_text(quote_level, string)
-    ;       attachment(content)
+    ;       attachment(part)
     ;       message_separator.
 
 :- type quote_level == int.
@@ -135,8 +135,8 @@ append_message(Cols, Message, !Lines) :-
     snoc(blank_line, !Lines),
     Body = Message ^ m_body,
     ( cord.head_tail(Body, FirstPart, RestParts) ->
-        append_content(Cols, yes, FirstPart, !Lines),
-        cord.foldl_pred(append_content(Cols, no), RestParts, !Lines)
+        append_part(Cols, yes, FirstPart, !Lines),
+        cord.foldl_pred(append_part(Cols, no), RestParts, !Lines)
     ;
         true
     ),
@@ -153,11 +153,11 @@ append_header(Header, Value, !Lines) :-
     Line = header(Header, Value),
     snoc(Line, !Lines).
 
-:- pred append_content(int::in, bool::in, content::in,
+:- pred append_part(int::in, bool::in, part::in,
     cord(pager_line)::in, cord(pager_line)::out) is det.
 
-append_content(Cols, IsFirst, Content, !Lines) :-
-    Content = content(_MsgId, _Part, Type, MaybeText, _MaybeFilename),
+append_part(Cols, IsFirst, Part, !Lines) :-
+    Part = part(_MsgId, _Part, Type, MaybeText, _MaybeFilename),
     (
         IsFirst = yes,
         Type = "text/plain"
@@ -165,7 +165,7 @@ append_content(Cols, IsFirst, Content, !Lines) :-
         true
     ;
         snoc(blank_line, !Lines),
-        snoc(attachment(Content), !Lines)
+        snoc(attachment(Part), !Lines)
     ),
     (
         MaybeText = yes(Text),
@@ -538,9 +538,9 @@ draw_pager_line(Panel, Line, IsCursor, !IO) :-
         panel.attr_set(Panel, Attr, !IO),
         my_addstr(Panel, Text, !IO)
     ;
-        Line = attachment(Content),
-        Content ^ c_type = ContentType,
-        Content ^ c_filename = MaybeFilename,
+        Line = attachment(Part),
+        Part ^ pt_type = ContentType,
+        Part ^ pt_filename = MaybeFilename,
         (
             IsCursor = yes,
             Attr = fg_bg(magenta, black) + reverse

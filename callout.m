@@ -118,7 +118,7 @@ parse_message_details(JSON, Replies, Message) :-
         JSON/"tags" = array(TagsList),
         list.map(parse_tag, TagsList, Tags),
         JSON/"body" = array(BodyList),
-        list.foldl(parse_content(MessageId), BodyList, cord.init, Body)
+        list.foldl(parse_part(MessageId), BodyList, cord.init, Body)
     ->
         Message = message(MessageId, Timestamp, Headers, Tags, Body, Replies)
     ;
@@ -152,12 +152,12 @@ parse_header(Key, unesc_string(Value), !Headers) :-
         !Headers ^ h_rest := Rest
     ).
 
-:- pred parse_content(message_id::in, json::in,
-    cord(content)::in, cord(content)::out) is det.
+:- pred parse_part(message_id::in, json::in,
+    cord(part)::in, cord(part)::out) is det.
 
-parse_content(MessageId, JSON, !Contents) :-
+parse_part(MessageId, JSON, !Parts) :-
     (
-        JSON/"id" = int(Part),
+        JSON/"id" = int(PartId),
         JSON/"content-type" = unesc_string(ContentType)
     ->
         ( JSON/"filename" = unesc_string(Filename) ->
@@ -166,16 +166,16 @@ parse_content(MessageId, JSON, !Contents) :-
             MaybeFilename = no
         ),
         ( JSON/"content" = unesc_string(ContentString) ->
-            Content = content(MessageId, Part, ContentType, yes(ContentString),
+            Part = part(MessageId, PartId, ContentType, yes(ContentString),
                 MaybeFilename),
-            snoc(Content, !Contents)
+            snoc(Part, !Parts)
         ; JSON/"content" = array(SubParts) ->
-            list.foldl(parse_content(MessageId), SubParts, !Contents)
+            list.foldl(parse_part(MessageId), SubParts, !Parts)
         ;
             % "content" is unavailable for non-text parts.
             % We can those by running notmuch show --part=N id:NNN
-            Content = content(MessageId, Part, ContentType, no, MaybeFilename),
-            snoc(Content, !Contents)
+            Part = part(MessageId, PartId, ContentType, no, MaybeFilename),
+            snoc(Part, !Parts)
         )
     ;
         notmuch_json_error
