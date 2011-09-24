@@ -8,6 +8,8 @@
 
 :- import_module data.
 
+:- pred add_sent(string::in, io.res::out, io::di, io::uo) is det.
+
 :- pred add_draft(string::in, io.res::out, io::di, io::uo) is det.
 
 :- pred find_drafts(list(message_id)::out, io::di, io::uo) is det.
@@ -24,14 +26,22 @@
 
 %-----------------------------------------------------------------------------%
 
+add_sent(FileName, Res, !IO) :-
+    call_notmuch_deliver(FileName, "Sent",
+        ["--tag=sent", "--remove-tag=unread"],
+        Res, !IO).
+
 add_draft(FileName, Res, !IO) :-
-    Args = [
-        "notmuch-deliver",
-        "-t", "draft",
-        "-r", "inbox",
-        "-r", "unread",
-        "-f", drafts_dir
-    ],
+    call_notmuch_deliver(FileName, "Drafts",
+        ["--tag=draft", "--remove-tag=inbox", "--remove-tag=unread"],
+        Res, !IO).
+
+:- pred call_notmuch_deliver(string::in, string::in, list(string)::in,
+    io.res::out, io::di, io::uo) is det.
+
+call_notmuch_deliver(FileName, Folder, TagOps, Res, !IO) :-
+    % XXX do we need -f?
+    Args = ["notmuch-deliver", Folder] ++ TagOps,
     args_to_quoted_command(Args, redirect_input(FileName), no, Command),
     io.call_system(Command, CallRes, !IO),
     (
@@ -47,10 +57,6 @@ add_draft(FileName, Res, !IO) :-
         CallRes = error(Error),
         Res = error(Error)
     ).
-
-:- func drafts_dir = string.
-
-drafts_dir = "Drafts".
 
 %-----------------------------------------------------------------------------%
 

@@ -1,12 +1,3 @@
 #!/bin/sh -e
 
-if ! /usr/bin/msmtp -t < "$1"
-then
-    exit $?
-fi
-
-if which notmuch-deliver
-then
-    notmuch-deliver -f -t sent -r unread Sent < "$1"
-    exit $?
-fi
+/usr/bin/msmtp -t < "$1"

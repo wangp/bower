@@ -554,8 +554,17 @@ call_send_mail(Screen, Filename, Res, !IO) :-
     (
         ResSend = ok(ExitStatus),
         ( ExitStatus = 0 ->
-            update_message(Screen, set_info("Mail sent."), !IO),
-            Res = yes
+            add_sent(Filename, ResAdd, !IO),
+            (
+                ResAdd = ok,
+                update_message(Screen, set_info("Mail sent."), !IO),
+                Res = yes
+            ;
+                ResAdd = error(Error),
+                Msg = "Mail sent, but " ++ io.error_message(Error),
+                update_message(Screen, set_warning(Msg), !IO),
+                Res = no
+            )
         ;
             Msg = string.format("helper-send returned with exit status %d",
                 [i(ExitStatus)]),
