@@ -9,7 +9,7 @@
 :- import_module data.
 :- import_module screen.
 
-:- pred select_recall(screen::in, maybe(message_id)::out, io::di, io::uo)
+:- pred select_recall(screen::in, maybe(message)::out, io::di, io::uo)
     is det.
 
 %-----------------------------------------------------------------------------%
@@ -37,7 +37,7 @@
 
 :- type recall_line
     --->    recall_line(
-                r_message_id    :: message_id,
+                r_message       :: message,
                 r_to            :: string,
                 r_subject       :: string
             ).
@@ -74,11 +74,11 @@ make_recall_line(MessageId, Line, !IO) :-
     Headers = Message ^ m_headers,
     To = Headers ^ h_to,
     Subject = Headers ^ h_subject,
-    Line = recall_line(MessageId, To, Subject).
+    Line = recall_line(Message, To, Subject).
 
 %-----------------------------------------------------------------------------%
 
-:- pred recall_screen_loop(screen::in, maybe(message_id)::out,
+:- pred recall_screen_loop(screen::in, maybe(message)::out,
     recall_info::in, recall_info::out, io::di, io::uo) is det.
 
 recall_screen_loop(Screen, MaybeSelected, !Info, !IO) :-
@@ -121,13 +121,13 @@ move_cursor(Screen, Delta, !Info, !IO) :-
     ),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred enter(recall_info::in, maybe(message_id)::out) is det.
+:- pred enter(recall_info::in, maybe(message)::out) is det.
 
 enter(Info, MaybeSelected) :-
     Scrollable = Info ^ r_scrollable,
     ( get_cursor_line(Scrollable, _, CursorLine) ->
-        MessageId = CursorLine ^ r_message_id,
-        MaybeSelected = yes(MessageId)
+        Message = CursorLine ^ r_message,
+        MaybeSelected = yes(Message)
     ;
         MaybeSelected = no
     ).

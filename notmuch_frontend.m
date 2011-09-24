@@ -131,8 +131,8 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         Action = start_recall,
         select_recall(Screen, MaybeSelected, !IO),
         (
-            MaybeSelected = yes(MessageId),
-            continue_postponed(Screen, MessageId, !IO)
+            MaybeSelected = yes(Message),
+            continue_postponed(Screen, Message, !IO)
         ;
             MaybeSelected = no
         ),

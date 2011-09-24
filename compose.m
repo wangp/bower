@@ -18,7 +18,7 @@
 :- pred start_reply(screen::in, message::in, reply_kind::in,
     io::di, io::uo) is det.
 
-:- pred continue_postponed(screen::in, message_id::in, io::di, io::uo) is det.
+:- pred continue_postponed(screen::in, message::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -27,11 +27,13 @@
 
 :- import_module bool.
 :- import_module char.
+:- import_module cord.
 :- import_module int.
 :- import_module list.
 :- import_module map.
 :- import_module maybe.
 :- import_module pair.
+:- import_module random.
 :- import_module require.
 :- import_module string.
 :- import_module time.
@@ -193,20 +195,26 @@ set_headers_for_list_reply(OrigFrom, !Headers) :-
 
 %-----------------------------------------------------------------------------%
 
-continue_postponed(Screen, MessageId, !IO) :-
-    args_to_quoted_command([
-        "notmuch", "show", "--format=raw", message_id_to_search_term(MessageId)
-    ], Command),
-    popen(Command, CallRes, !IO),
-    (
-        CallRes = ok(String),
-        read_headers_from_string(String, 0, init_headers, Headers, Body),
-        create_edit_stage(Screen, Headers, Body, yes(MessageId), !IO)
+continue_postponed(Screen, Message, !IO) :-
+    MessageId = Message ^ m_id,
+    Headers = Message ^ m_headers,
+    Body = Message ^ m_body,
+    ( first_text_content(cord.list(Body), Content) ->
+        BodyContent = Content
     ;
-        CallRes = error(Error),
-        string.append_list(["Error running notmuch: ",
-            io.error_message(Error)], Warning),
-        update_message(Screen, set_warning(Warning), !IO)
+        BodyContent = ""
+    ),
+    create_edit_stage(Screen, Headers, BodyContent, yes(MessageId), !IO).
+
+:- pred first_text_content(list(part)::in, string::out) is semidet.
+
+first_text_content([Part | Parts], Content) :-
+    MaybeContent = Part ^ pt_content,
+    (
+        MaybeContent = yes(Content)
+    ;
+        MaybeContent = no,
+        first_text_content(Parts, Content)
     ).
 
 %-----------------------------------------------------------------------------%
@@ -215,10 +223,7 @@ continue_postponed(Screen, MessageId, !IO) :-
     maybe(message_id)::in, io::di, io::uo) is det.
 
 create_edit_stage(Screen, Headers0, Body0, MaybeOldDraft, !IO) :-
-    Sending = no,
-    WriteReferences = no,
-    create_temp_message_file(Headers0, Body0, Sending, WriteReferences,
-        ResFilename, !IO),
+    create_temp_message_file(Headers0, Body0, prepare_edit, ResFilename, !IO),
     (
         ResFilename = ok(Filename),
         call_editor(Screen, Filename, ResEdit, !IO),
@@ -466,10 +471,8 @@ draw_staging_bar(Screen, !IO) :-
 
 postpone(Screen, Headers, Body, Res, !IO) :-
     % XXX write the message to the draft file directly
-    Sending = no,
-    WriteReferences = yes,
-    create_temp_message_file(Headers, Body, Sending, WriteReferences,
-        ResFilename, !IO),
+    create_temp_message_file(Headers, Body, prepare_postpone, ResFilename,
+        !IO),
     (
         ResFilename = ok(Filename),
         add_draft(Filename, DraftRes, !IO),
@@ -505,10 +508,7 @@ maybe_remove_draft(yes(MessageId), !IO) :-
     io::di, io::uo) is det.
 
 send_mail(Screen, Headers, Body, Res, !IO) :-
-    Sending = yes,
-    WriteReferences = yes,
-    create_temp_message_file(Headers, Body, Sending, WriteReferences,
-        ResFilename, !IO),
+    create_temp_message_file(Headers, Body, prepare_send, ResFilename, !IO),
     (
         ResFilename = ok(Filename),
         call_send_mail(Screen, Filename, Res, !IO),
@@ -582,24 +582,34 @@ tag_replied_message(Screen, Headers, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred create_temp_message_file(headers::in, string::in, bool::in, bool::in,
+:- type prepare_temp
+    --->    prepare_send
+    ;       prepare_edit
+    ;       prepare_postpone.
+
+:- pred create_temp_message_file(headers::in, string::in, prepare_temp::in,
     io.res(string)::out, io::di, io::uo) is det.
 
-create_temp_message_file(Headers, Body, Sending, WriteReferences, Res, !IO) :-
+create_temp_message_file(Headers, Body, Prepare, Res, !IO) :-
     io.make_temp(Filename, !IO),
     io.open_output(Filename, ResOpen, !IO),
     (
         ResOpen = ok(Stream),
         Headers = headers(_Date, From, To, Cc, Bcc, Subject, ReplyTo,
             References, InReplyTo, Rest),
+        % XXX detect charset
+        Charset = "UTF-8",
+        generate_boundary(Boundary, !IO),
         (
-            Sending = yes,
+            Prepare = prepare_send,
             generate_date_msg_id(Date, MessageId, !IO),
             write_header(Stream, "Date", Date, !IO),
             write_header(Stream, "Message-ID", MessageId, !IO),
             Write = write_header_opt(Stream)
         ;
-            Sending = no,
+            ( Prepare = prepare_edit
+            ; Prepare = prepare_postpone
+            ),
             Write = write_header(Stream)
         ),
         Write("From", From, !IO),
@@ -608,16 +618,41 @@ create_temp_message_file(Headers, Body, Sending, WriteReferences, Res, !IO) :-
         Write("Bcc", Bcc, !IO),
         Write("Subject", Subject, !IO),
         Write("Reply-To", ReplyTo, !IO),
-        (
-            WriteReferences = yes,
-            Write("References", References, !IO)
-        ;
-            WriteReferences = no
-        ),
         Write("In-Reply-To", InReplyTo, !IO),
+        (
+            ( Prepare = prepare_send
+            ; Prepare = prepare_postpone
+            ),
+            Write("References", References, !IO),
+            Write("MIME-Version", "1.0", !IO),
+            Write("Content-Type",
+                "multipart/mixed; boundary=""" ++ Boundary ++ """", !IO),
+            Write("Content-Disposition", "inline", !IO)
+        ;
+            Prepare = prepare_edit
+        ),
         map.foldl(Write, Rest, !IO),
         io.nl(Stream, !IO),
+        (
+            ( Prepare = prepare_send
+            ; Prepare = prepare_postpone
+            ),
+            write_part_boundary(Stream, Boundary, [
+                "Content-Type: text/plain; charset=", Charset, "\n",
+                "Content-Disposition: inline\n"
+            ], !IO)
+        ;
+            Prepare = prepare_edit
+        ),
         io.write_string(Stream, Body, !IO),
+        (
+            ( Prepare = prepare_send
+            ; Prepare = prepare_postpone
+            ),
+            write_final_boundary(Stream, Boundary, !IO)
+        ;
+            Prepare = prepare_edit
+        ),
         io.close_output(Stream, !IO),
         Res = ok(Filename)
     ;
@@ -687,6 +722,49 @@ write_header_opt(Stream, Name, Value, !IO) :-
     ;
         write_header(Stream, Name, Value, !IO)
     ).
+
+:- pred write_part_boundary(io.output_stream::in, string::in,
+    list(string)::in, io::di, io::uo) is det.
+
+write_part_boundary(Stream, Boundary, Fields, !IO) :-
+    io.write_string(Stream, "\n--", !IO),
+    io.write_string(Stream, Boundary, !IO),
+    io.nl(Stream, !IO),
+    list.foldl(io.write_string(Stream), Fields, !IO),
+    io.nl(Stream, !IO).
+
+:- pred write_final_boundary(io.output_stream::in, string::in, io::di, io::uo)
+    is det.
+
+write_final_boundary(Stream, Boundary, !IO) :-
+    io.write_string(Stream, "\n--", !IO),
+    io.write_string(Stream, Boundary, !IO),
+    io.write_string(Stream, "--\n", !IO).
+
+%-----------------------------------------------------------------------------%
+
+:- pred generate_boundary(string::out, io::di, io::uo) is det.
+
+generate_boundary(Boundary, !IO) :-
+    % This emulates the boundaries generated by Mutt.
+    time(Time, !IO),
+    time_to_int(Time, Seed),
+    random.init(Seed, RS),
+    Len = 16,
+    list.map_foldl(generate_boundary_char, 1 .. Len, Chars, RS, _RS),
+    string.from_char_list(Chars, Boundary).
+
+:- pred generate_boundary_char(int::in, char::out,
+    random.supply::mdi, random.supply::muo) is det.
+
+generate_boundary_char(_, Char, !RS) :-
+    random.random(0, 64, Index, !RS),
+    string.unsafe_index(base64_chars, Index, Char).
+
+:- func base64_chars = string.
+
+base64_chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
