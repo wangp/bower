@@ -131,9 +131,8 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         Action = start_recall,
         select_recall(Screen, MaybeSelected, !IO),
         (
-            MaybeSelected = yes(_MessageId)
-            % XXX temporarily disabled
-            % continue_postponed(Screen, FileName, !IO)
+            MaybeSelected = yes(MessageId),
+            continue_postponed(Screen, MessageId, !IO)
         ;
             MaybeSelected = no
         ),

@@ -18,7 +18,7 @@
 :- pred start_reply(screen::in, message::in, reply_kind::in,
     io::di, io::uo) is det.
 
-:- pred continue_postponed(screen::in, string::in, io::di, io::uo) is det.
+:- pred continue_postponed(screen::in, message_id::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -193,21 +193,26 @@ set_headers_for_list_reply(OrigFrom, !Headers) :-
 
 %-----------------------------------------------------------------------------%
 
-continue_postponed(Screen, Filename, !IO) :-
-    parse_message_file(Filename, ResParse, !IO),
+continue_postponed(Screen, MessageId, !IO) :-
+    args_to_quoted_command([
+        "notmuch", "show", "--format=raw", message_id_to_search_term(MessageId)
+    ], Command),
+    popen(Command, CallRes, !IO),
     (
-        ResParse = ok(Headers - Body),
-        create_edit_stage(Screen, Headers, Body, yes(Filename), !IO)
+        CallRes = ok(String),
+        read_headers_from_string(String, 0, init_headers, Headers, Body),
+        create_edit_stage(Screen, Headers, Body, yes(MessageId), !IO)
     ;
-        ResParse = error(Error),
-        io.error_message(Error, Msg),
-        update_message(Screen, set_warning(Msg), !IO)
+        CallRes = error(Error),
+        string.append_list(["Error running notmuch: ",
+            io.error_message(Error)], Warning),
+        update_message(Screen, set_warning(Warning), !IO)
     ).
 
 %-----------------------------------------------------------------------------%
 
 :- pred create_edit_stage(screen::in, headers::in, string::in,
-    maybe(string)::in, io::di, io::uo) is det.
+    maybe(message_id)::in, io::di, io::uo) is det.
 
 create_edit_stage(Screen, Headers0, Body0, MaybeOldDraft, !IO) :-
     Sending = no,
@@ -297,7 +302,7 @@ update_references(Headers0, !Headers) :-
 %-----------------------------------------------------------------------------%
 
 :- pred staging_screen(screen::in, headers::in, string::in,
-    maybe(string)::in, pager_info::in, io::di, io::uo) is det.
+    maybe(message_id)::in, pager_info::in, io::di, io::uo) is det.
 
 staging_screen(Screen, Headers, Body, MaybeOldDraft, !.PagerInfo, !IO) :-
     split_panels(Screen, HeaderPanels, MaybeSepPanel, PagerPanels),
@@ -485,11 +490,14 @@ postpone(Screen, Headers, Body, Res, !IO) :-
         Res = no
     ).
 
-:- pred maybe_remove_draft(maybe(string)::in, io::di, io::uo) is det.
+:- pred maybe_remove_draft(maybe(message_id)::in, io::di, io::uo) is det.
 
 maybe_remove_draft(no, !IO).
-maybe_remove_draft(yes(FileName), !IO) :-
-    io.remove_file(FileName, _, !IO).
+maybe_remove_draft(yes(MessageId), !IO) :-
+    args_to_quoted_command([
+        "notmuch", "tag", "+deleted", message_id_to_search_term(MessageId)
+    ], Command),
+    io.call_system(Command, _, !IO).
 
 %-----------------------------------------------------------------------------%
 
