@@ -5,10 +5,18 @@
 
 :- import_module list.
 
+:- type redirect_input
+    --->    no
+    ;       redirect_input(string).
+
+:- type redirect_output
+    --->    no
+    ;       redirect_output(string).
+
 :- pred args_to_quoted_command(list(string)::in, string::out) is det.
 
-:- pred args_to_quoted_command_with_redirect(list(string)::in, string::in,
-    string::out) is det.
+:- pred args_to_quoted_command(list(string)::in,
+    redirect_input::in, redirect_output::in, string::out) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -19,13 +27,28 @@
 :- import_module string.
 
 args_to_quoted_command(Args, Command) :-
-    QuotedArgs = list.map(quote_arg, Args),
-    Command = string.join_list(" ", QuotedArgs).
+    args_to_quoted_command(Args, no, no, Command).
 
-args_to_quoted_command_with_redirect(Args, RedirectOutput, Command) :-
-    QuotedArgs = list.map(quote_arg, Args),
-    QuotedOutput = quote_arg(RedirectOutput),
-    Command = string.join_list(" ", QuotedArgs ++ [">", QuotedOutput]).
+args_to_quoted_command(Args, MaybeRedirectInput, MaybeRedirectOutput,
+        Command) :-
+    QuotedArgs0 = list.map(quote_arg, Args),
+    (
+        MaybeRedirectInput = redirect_input(RedirectInput),
+        QuotedInput = quote_arg(RedirectInput),
+        QuotedArgs1 = QuotedArgs0 ++ ["<", QuotedInput]
+    ;
+        MaybeRedirectInput = no,
+        QuotedArgs1 = QuotedArgs0
+    ),
+    (
+        MaybeRedirectOutput = redirect_output(RedirectOutput),
+        QuotedOutput = quote_arg(RedirectOutput),
+        QuotedArgs = QuotedArgs1 ++ [">", QuotedOutput]
+    ;
+        MaybeRedirectOutput = no,
+        QuotedArgs = QuotedArgs1
+    ),
+    Command = string.join_list(" ", QuotedArgs).
 
 :- func quote_arg(string) = string.
 
