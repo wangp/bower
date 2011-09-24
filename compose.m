@@ -520,10 +520,7 @@ postpone(Screen, Headers, Body, Res, !IO) :-
 
 maybe_remove_draft(no, !IO).
 maybe_remove_draft(yes(MessageId), !IO) :-
-    args_to_quoted_command([
-        "notmuch", "tag", "+deleted", message_id_to_search_term(MessageId)
-    ], Command),
-    io.call_system(Command, _, !IO).
+    tag_messages(["+deleted"], [MessageId], _Res, !IO).
 
 %-----------------------------------------------------------------------------%
 
@@ -590,22 +587,12 @@ tag_replied_message(Screen, Headers, !IO) :-
     ->
         string.between(InReplyTo0, 1, LastPos, Id),
         MessageId = message_id(Id),
-        Args = ["notmuch", "tag", "+replied", "--",
-            message_id_to_search_term(MessageId)],
-        args_to_quoted_command(Args, Command),
-        io.call_system(Command, CommandResult, !IO),
+        tag_messages(["+replied"], [MessageId], TagRes, !IO),
         (
-            CommandResult = ok(ExitStatus),
-            ( ExitStatus = 0 ->
-                true
-            ;
-                Msg = string.format("notmuch tag returned with exit status %d",
-                    [i(ExitStatus)]),
-                update_message(Screen, set_warning(Msg), !IO)
-            )
+            TagRes = ok
         ;
-            CommandResult = error(Error),
-            Msg = "notmuch: " ++ io.error_message(Error),
+            TagRes = error(Error),
+            Msg = io.error_message(Error),
             update_message(Screen, set_warning(Msg), !IO)
         )
     ;

@@ -12,6 +12,7 @@
 
 :- import_module compose.
 :- import_module data.
+:- import_module maildir.
 :- import_module screen.
 
 %-----------------------------------------------------------------------------%
@@ -29,8 +30,6 @@
                 map(set(tag_delta), list(message_id))
                 % Group messages by the tag changes to be applied.
             ).
-
-:- type tag_delta == string. % +tag or -tag
 
 :- pred thread_pager_input(char::in, thread_pager_action::out,
     message_update::out, thread_pager_info::in, thread_pager_info::out) is det.

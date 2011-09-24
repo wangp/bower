@@ -28,6 +28,7 @@
 :- import_module curs.panel.
 :- import_module data.
 :- import_module index_view.
+:- import_module maildir.
 :- import_module pager.
 :- import_module quote_arg.
 :- import_module recall.
@@ -241,34 +242,6 @@ apply_tag_delta(TagDeltaSet, MessageIds, !AccRes, !IO) :-
     ;
         Res = error(_),
         !:AccRes = no
-    ).
-
-:- pred tag_messages(list(tag_delta)::in, list(message_id)::in, io.res::out,
-    io::di, io::uo) is det.
-
-tag_messages(TagDeltas, MessageIds, Res, !IO) :-
-    (
-        MessageIds = [],
-        Res = ok
-    ;
-        MessageIds = [_ | _],
-        IdStrings = list.map(message_id_to_search_term, MessageIds),
-        Args = ["notmuch", "tag"] ++ TagDeltas ++ ["--" | IdStrings],
-        args_to_quoted_command(Args, Command),
-        io.call_system(Command, CallRes, !IO),
-        (
-            CallRes = ok(ExitStatus),
-            ( ExitStatus = 0 ->
-                Res = ok
-            ;
-                string.format("notmuch tag returned exit status %d",
-                    [i(ExitStatus)], Msg),
-                Res = error(io.make_io_error(Msg))
-            )
-        ;
-            CallRes = error(Error),
-            Res = error(Error)
-        )
     ).
 
 %-----------------------------------------------------------------------------%
