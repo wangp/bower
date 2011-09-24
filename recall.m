@@ -6,9 +6,11 @@
 :- import_module io.
 :- import_module maybe.
 
+:- import_module data.
 :- import_module screen.
 
-:- pred select_recall(screen::in, maybe(string)::out, io::di, io::uo) is det.
+:- pred select_recall(screen::in, maybe(message_id)::out, io::di, io::uo)
+    is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -18,14 +20,12 @@
 :- import_module bool.
 :- import_module int.
 :- import_module list.
-:- import_module pair.
-:- import_module string.
 
+:- import_module callout.
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module data.
 :- import_module maildir.
-:- import_module message_file.
 :- import_module scrollable.
 
 %-----------------------------------------------------------------------------%
@@ -37,7 +37,7 @@
 
 :- type recall_line
     --->    recall_line(
-                r_filename      :: string,
+                r_message_id    :: message_id,
                 r_to            :: string,
                 r_subject       :: string
             ).
@@ -48,65 +48,56 @@
 
 %-----------------------------------------------------------------------------%
 
-select_recall(Screen, MaybeFileName, !IO) :-
-    find_drafts(ResFind, !IO),
+select_recall(Screen, MaybeSelected, !IO) :-
+    find_drafts(Ids, !IO),
     (
-        ResFind = ok([]),
+        Ids = [],
         update_message(Screen, set_warning("No postponed messages."), !IO),
-        MaybeFileName = no
+        MaybeSelected = no
     ;
-        ResFind = ok(FileNames),
-        FileNames = [_ | _],
-        list.map_foldl(make_recall_line, FileNames, Lines, !IO),
+        Ids = [_ | _],
+        list.map_foldl(make_recall_line, Ids, Lines, !IO),
         Scrollable = scrollable.init_with_cursor(Lines, 0),
         Info = recall_info(Scrollable),
         update_message(Screen, clear_message, !IO),
-        recall_screen_loop(Screen, MaybeFileName, Info, _Info, !IO)
-    ;
-        ResFind = error(Error),
-        Msg = io.error_message(Error),
-        update_message(Screen, set_warning(Msg), !IO),
-        MaybeFileName = no
+        recall_screen_loop(Screen, MaybeSelected, Info, _Info, !IO)
     ).
 
-:- pred make_recall_line(string::in, recall_line::out, io::di, io::uo) is det.
+:- pred make_recall_line(message_id::in, recall_line::out, io::di, io::uo)
+    is det.
 
-make_recall_line(FileName, Line, !IO) :-
-    parse_message_file(FileName, Res, !IO),
-    (
-        Res = ok(Headers - _Body),
-        To = Headers ^ h_to,
-        Subject = Headers ^ h_subject
-    ;
-        Res = error(_),
-        % XXX what to do?
-        To = "(error)",
-        Subject = "(" ++ FileName ++ ")"
-    ),
-    Line = recall_line(FileName, To, Subject).
+make_recall_line(MessageId, Line, !IO) :-
+    run_notmuch([
+        "show", "--format=json", "--part=0",
+        message_id_to_search_term(MessageId)
+    ], parse_top_message, Message, !IO),
+    Headers = Message ^ m_headers,
+    To = Headers ^ h_to,
+    Subject = Headers ^ h_subject,
+    Line = recall_line(MessageId, To, Subject).
 
 %-----------------------------------------------------------------------------%
 
-:- pred recall_screen_loop(screen::in, maybe(string)::out,
+:- pred recall_screen_loop(screen::in, maybe(message_id)::out,
     recall_info::in, recall_info::out, io::di, io::uo) is det.
 
-recall_screen_loop(Screen, MaybeFileName, !Info, !IO) :-
+recall_screen_loop(Screen, MaybeSelected, !Info, !IO) :-
     draw_recall(Screen, !.Info, !IO),
     panel.update_panels(!IO),
     get_char(Char, !IO),
     ( Char = 'j' ->
         move_cursor(Screen, 1, !Info, !IO),
-        recall_screen_loop(Screen, MaybeFileName, !Info, !IO)
+        recall_screen_loop(Screen, MaybeSelected, !Info, !IO)
     ; Char = 'k' ->
         move_cursor(Screen, -1, !Info, !IO),
-        recall_screen_loop(Screen, MaybeFileName, !Info, !IO)
+        recall_screen_loop(Screen, MaybeSelected, !Info, !IO)
     ; Char = 'q' ->
         update_message(Screen, clear_message, !IO),
-        MaybeFileName = no
+        MaybeSelected = no
     ; Char = '\r' ->
-        enter(!.Info, MaybeFileName)
+        enter(!.Info, MaybeSelected)
     ;
-        recall_screen_loop(Screen, MaybeFileName, !Info, !IO)
+        recall_screen_loop(Screen, MaybeSelected, !Info, !IO)
     ).
 
 :- pred move_cursor(screen::in, int::in, recall_info::in, recall_info::out,
@@ -130,15 +121,15 @@ move_cursor(Screen, Delta, !Info, !IO) :-
     ),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred enter(recall_info::in, maybe(string)::out) is det.
+:- pred enter(recall_info::in, maybe(message_id)::out) is det.
 
-enter(Info, MaybeFileName) :-
+enter(Info, MaybeSelected) :-
     Scrollable = Info ^ r_scrollable,
     ( get_cursor_line(Scrollable, _, CursorLine) ->
-        FileName = CursorLine ^ r_filename,
-        MaybeFileName = yes(FileName)
+        MessageId = CursorLine ^ r_message_id,
+        MaybeSelected = yes(MessageId)
     ;
-        MaybeFileName = no
+        MaybeSelected = no
     ).
 
 %-----------------------------------------------------------------------------%

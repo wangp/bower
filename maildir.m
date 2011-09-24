@@ -6,9 +6,11 @@
 :- import_module io.
 :- import_module list.
 
+:- import_module data.
+
 :- pred add_draft(string::in, io.res::out, io::di, io::uo) is det.
 
-:- pred find_drafts(io.res(list(string))::out, io::di, io::uo) is det.
+:- pred find_drafts(list(message_id)::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -52,35 +54,11 @@ drafts_dir = "Drafts".
 
 %-----------------------------------------------------------------------------%
 
-find_drafts(Res, !IO) :-
-    get_notmuch_config("database.path", ResDbPath, !IO),
-    (
-        ResDbPath = ok(DbPath),
-        DirName = DbPath / drafts_dir / "cur",
-        dir.foldl2(find_drafts_2, DirName, [], ResFold, !IO),
-        (
-            ResFold = ok(FileNames),
-            Res = ok(FileNames)
-        ;
-            ResFold = error(_, Error),
-            Res = error(Error)
-        )
-    ;
-        ResDbPath = error(Error),
-        Res = error(Error)
-    ).
-
-:- pred find_drafts_2(string::in, string::in, io.file_type::in, bool::out,
-    list(string)::in, list(string)::out, io::di, io::uo) is det.
-
-find_drafts_2(DirName, BaseName, FileType, Continue, !FileNames, !IO) :-
-    ( FileType = regular_file ->
-        FileName = DirName / BaseName,
-        !:FileNames = [FileName | !.FileNames]
-    ;
-        true
-    ),
-    Continue = yes.
+find_drafts(MessageIds, !IO) :-
+    run_notmuch([
+        "search", "--format=json", "--output=messages",
+        "tag:draft", "-tag:deleted"
+    ], parse_message_id_list, MessageIds, !IO).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

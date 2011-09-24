@@ -19,7 +19,11 @@
 
 :- pred parse_messages_list(json::in, list(message)::out) is det.
 
+:- pred parse_top_message(json::in, message::out) is det.
+
 :- pred parse_threads_list(json::in, list(thread)::out) is det.
+
+:- pred parse_message_id_list(json::in, list(message_id)::out) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -79,6 +83,9 @@ parse_messages_list(JSON, Messages) :-
     ;
         notmuch_json_error
     ).
+
+parse_top_message(JSON, Message) :-
+    parse_message_details(JSON, [], Message).
 
 :- pred parse_inner_message_list(json::in, list(message)::out) is det.
 
@@ -206,6 +213,22 @@ parse_thread(Json, Thread) :-
 
 parse_tag(Json, Tag) :-
     Json = unesc_string(Tag).
+
+%-----------------------------------------------------------------------------%
+
+parse_message_id_list(JSON, MessageId) :-
+    (
+        JSON = array(List),
+        list.map(parse_message_id, List, MessageId0)
+    ->
+        MessageId = MessageId0
+    ;
+        notmuch_json_error
+    ).
+
+:- pred parse_message_id(json::in, message_id::out) is semidet.
+
+parse_message_id(unesc_string(Id), message_id(Id)).
 
 %-----------------------------------------------------------------------------%
 

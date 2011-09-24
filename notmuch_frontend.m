@@ -129,12 +129,13 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = start_recall,
-        select_recall(Screen, MaybeFileName, !IO),
+        select_recall(Screen, MaybeSelected, !IO),
         (
-            MaybeFileName = yes(FileName),
-            continue_postponed(Screen, FileName, !IO)
+            MaybeSelected = yes(_MessageId)
+            % XXX temporarily disabled
+            % continue_postponed(Screen, FileName, !IO)
         ;
-            MaybeFileName = no
+            MaybeSelected = no
         ),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
