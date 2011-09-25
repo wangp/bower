@@ -44,6 +44,7 @@
 :- import_module curs.panel.
 :- import_module maildir.
 :- import_module message_file.
+:- import_module mime_type.
 :- import_module pager.
 :- import_module popen.
 :- import_module quote_arg.
@@ -72,10 +73,15 @@
 
 :- type attachment
     --->    old_attachment(part)
-    ;       new_attachment(
-                att_type        :: string,
-                att_content     :: string,
-                att_filename    :: string
+    ;       new_text_attachment(
+                txt_type        :: string,
+                txt_content     :: string,
+                txt_filename    :: string
+            )
+    ;       new_binary_attachment(
+                bin_type        :: string,
+                bin_base64      :: string,
+                bin_filename    :: string
             ).
 
 :- instance scrollable.line(attachment) where [
@@ -527,6 +533,44 @@ add_attachment(Screen, NumRows, !AttachInfo, !IO) :-
     attach_info::in, attach_info::out, io::di, io::uo) is det.
 
 do_attach_file(FileName, NumRows, MessageUpdate, !AttachInfo, !IO) :-
+    lookup_mime_type(FileName, ResMimeType, !IO),
+    (
+        ResMimeType = ok(MimeType),
+        ( dir.basename(FileName, BaseName0) ->
+            BaseName = BaseName0
+        ;
+            BaseName = FileName
+        ),
+        MimeType = mime_type(Type, Charset),
+        ( Charset = "binary" ->
+            do_attach_binary_file(FileName, BaseName, Type, NumRows,
+                MessageUpdate, !AttachInfo, !IO)
+        ; acceptable_charset(Charset) ->
+            do_attach_text_file(FileName, BaseName, Type, NumRows,
+                MessageUpdate, !AttachInfo, !IO)
+        ;
+            MessageUpdate = set_warning(
+                "Only ASCII and UTF-8 text files supported yet.")
+        )
+    ;
+        ResMimeType = error(Error),
+        Msg = io.error_message(Error),
+        MessageUpdate = set_warning(Msg)
+    ).
+
+:- pred acceptable_charset(string::in) is semidet.
+
+acceptable_charset(Charset) :-
+    ( strcase_equal(Charset, "us-ascii")
+    ; strcase_equal(Charset, "utf-8")
+    ).
+
+:- pred do_attach_text_file(string::in, string::in, string::in, int::in,
+    message_update::out, attach_info::in, attach_info::out, io::di, io::uo)
+    is det.
+
+do_attach_text_file(FileName, BaseName, Type, NumRows, MessageUpdate,
+        !AttachInfo, !IO) :-
     io.open_input(FileName, ResOpen, !IO),
     (
         ResOpen = ok(Input),
@@ -534,24 +578,9 @@ do_attach_file(FileName, NumRows, MessageUpdate, !AttachInfo, !IO) :-
         io.close_input(Input, !IO),
         (
             ResRead = ok(Content),
-            ( verify_utf8(Content) ->
-                ( dir.basename(FileName, BaseName0) ->
-                    BaseName = BaseName0
-                ;
-                    BaseName = FileName
-                ),
-                NewAttachment = new_attachment("text/plain", Content,
-                    BaseName),
-                scrollable.append_line(NewAttachment, !AttachInfo),
-                NumLines = get_num_lines(!.AttachInfo),
-                Cursor = NumLines - 1,
-                scrollable.set_cursor_centred(Cursor, NumRows, !AttachInfo),
-                MessageUpdate = clear_message
-            ;
-                % XXX handle binary and non UTF-8 files
-                MessageUpdate = set_warning(
-                    "only UTF-8 text file attachments are supported yet")
-            )
+            NewAttachment = new_text_attachment(Type, Content, BaseName),
+            append_attachment(NewAttachment, NumRows, !AttachInfo),
+            MessageUpdate = clear_message
         ;
             ResRead = error(_, Error),
             string.format("Error reading %s: %s",
@@ -564,6 +593,34 @@ do_attach_file(FileName, NumRows, MessageUpdate, !AttachInfo, !IO) :-
             [s(FileName), s(io.error_message(Error))], Msg),
         MessageUpdate = set_warning(Msg)
     ).
+
+:- pred do_attach_binary_file(string::in, string::in, string::in, int::in,
+    message_update::out, attach_info::in, attach_info::out, io::di, io::uo)
+    is det.
+
+do_attach_binary_file(FileName, BaseName, Type, NumRows, MessageUpdate,
+        !AttachInfo, !IO) :-
+    args_to_quoted_command(["base64", FileName], Command),
+    popen(Command, CallRes, !IO),
+    (
+        CallRes = ok(Content),
+        NewAttachment = new_binary_attachment(Type, Content, BaseName),
+        append_attachment(NewAttachment, NumRows, !AttachInfo),
+        MessageUpdate = clear_message
+    ;
+        CallRes = error(Error),
+        Msg = io.error_message(Error),
+        MessageUpdate = set_warning(Msg)
+    ).
+
+:- pred append_attachment(attachment::in, int::in,
+    attach_info::in, attach_info::out) is det.
+
+append_attachment(NewAttachment, NumRows, !AttachInfo) :-
+    scrollable.append_line(NewAttachment, !AttachInfo),
+    NumLines = get_num_lines(!.AttachInfo),
+    Cursor = NumLines - 1,
+    scrollable.set_cursor_centred(Cursor, NumRows, !AttachInfo).
 
 :- pred delete_attachment(screen::in, attach_info::in, attach_info::out,
     io::di, io::uo) is det.
@@ -633,7 +690,9 @@ draw_attachment_line(Panel, Attachment, IsCursor, !IO) :-
             Filename = "(no filename)"
         )
     ;
-        Attachment = new_attachment(Type, _, Filename)
+        Attachment = new_text_attachment(Type, _, Filename)
+    ;
+        Attachment = new_binary_attachment(Type, _, Filename)
     ),
     panel.erase(Panel, !IO),
     panel.move(Panel, 0, 13, !IO),
@@ -870,13 +929,13 @@ create_temp_message_file(Headers, Text, Attachments, Prepare, Res, !IO) :-
             write_mime_version(Stream, !IO),
             (
                 MIME = yes(mime_single_part),
-                write_content_type_plain_text(Stream, Charset, !IO)
+                write_content_type(Stream, "text/plain", yes(Charset), !IO)
             ;
                 MIME = yes(mime_multipart(BoundaryB)),
                 write_content_type_multipart_mixed(Stream, BoundaryB, !IO)
             ),
             write_content_disposition_inline(Stream, !IO),
-            write_content_transfer_encoding_8bit(Stream, !IO)
+            write_content_transfer_encoding(Stream, "8bit", !IO)
         ),
 
         % End header fields.
@@ -974,20 +1033,19 @@ write_header_opt(Stream, Name, Value, !IO) :-
 write_mime_version(Stream, !IO) :-
     io.write_string(Stream, "MIME-Version: 1.0\n", !IO).
 
-:- pred write_content_type_general(io.output_stream::in, string::in,
-    io::di, io::uo) is det.
+:- pred write_content_type(io.output_stream::in, string::in,
+    maybe(string)::in, io::di, io::uo) is det.
 
-write_content_type_general(Stream, Type, !IO) :-
+write_content_type(Stream, Type, MaybeCharset, !IO) :-
     io.write_string(Stream, "Content-Type: ", !IO),
     io.write_string(Stream, Type, !IO),
-    io.write_string(Stream, "\n", !IO).
-
-:- pred write_content_type_plain_text(io.output_stream::in, string::in,
-    io::di, io::uo) is det.
-
-write_content_type_plain_text(Stream, Charset, !IO) :-
-    io.write_string(Stream, "Content-Type: text/plain; charset=", !IO),
-    io.write_string(Stream, Charset, !IO),
+    (
+        MaybeCharset = yes(Charset),
+        io.write_string(Stream, "; charset=", !IO),
+        io.write_string(Stream, Charset, !IO)
+    ;
+        MaybeCharset = no
+    ),
     io.write_string(Stream, "\n", !IO).
 
 :- pred write_content_type_multipart_mixed(io.output_stream::in, string::in,
@@ -1020,11 +1078,13 @@ write_content_disposition_attachment(Stream, MaybeFileName, !IO) :-
     ),
     io.nl(Stream, !IO).
 
-:- pred write_content_transfer_encoding_8bit(io.output_stream::in,
-    io::di, io::uo) is det.
+:- pred write_content_transfer_encoding(io.output_stream::in,
+    string::in, io::di, io::uo) is det.
 
-write_content_transfer_encoding_8bit(Stream, !IO) :-
-    io.write_string(Stream, "Content-Transfer-Encoding: 8bit\n", !IO).
+write_content_transfer_encoding(Stream, CTE, !IO) :-
+    io.write_string(Stream, "Content-Transfer-Encoding: ", !IO),
+    io.write_string(Stream, CTE, !IO),
+    io.write_string(Stream, "\n", !IO).
 
 :- pred write_mime_part_boundary(io.output_stream::in, string::in,
     io::di, io::uo) is det.
@@ -1046,9 +1106,9 @@ write_mime_final_boundary(Stream, Boundary, !IO) :-
     io::di, io::uo) is det.
 
 write_mime_part_text(Stream, Charset, Text, !IO) :-
-    write_content_type_plain_text(Stream, Charset, !IO),
+    write_content_type(Stream, "text/plain", yes(Charset), !IO),
     write_content_disposition_inline(Stream, !IO),
-    write_content_transfer_encoding_8bit(Stream, !IO),
+    write_content_transfer_encoding(Stream, "8bit", !IO),
     io.nl(Stream, !IO),
     io.write_string(Stream, Text, !IO).
 
@@ -1061,30 +1121,53 @@ write_mime_part_attachment(Stream, Boundary, Attachment, !IO) :-
         Type = Part ^ pt_type,
         MaybeContent = Part ^ pt_content,
         (
-            MaybeContent = yes(Content)
+            MaybeContent = yes(Content),
+            CTE = "8bit"
         ;
             MaybeContent = no,
-            % XXX extract existing content with notmuch show --format=raw
-            sorry($module, $pred, "old non-text content")
+            CTE = "base64",
+            get_non_text_part_base64(Part, Content, !IO)
         ),
         MaybeFileName = Part ^ pt_filename
     ;
-        Attachment = new_attachment(Type, Content, FileName),
-        MaybeFileName = yes(FileName)
+        Attachment = new_text_attachment(Type, Content, FileName),
+        MaybeFileName = yes(FileName),
+        CTE = "8bit"
+    ;
+        Attachment = new_binary_attachment(Type, Content, FileName),
+        MaybeFileName = yes(FileName),
+        CTE = "base64"
     ),
 
     write_mime_part_boundary(Stream, Boundary, !IO),
-    ( strcase_equal(Type, "text/plain") ->
+    ( CTE = "base64" ->
+        write_content_type(Stream, Type, no, !IO)
+    ;
         % XXX detect charset
         Charset = "utf-8",
-        write_content_type_plain_text(Stream, Charset, !IO)
-    ;
-        write_content_type_general(Stream, Type, !IO)
+        write_content_type(Stream, Type, yes(Charset), !IO)
     ),
     write_content_disposition_attachment(Stream, MaybeFileName, !IO),
-    write_content_transfer_encoding_8bit(Stream, !IO),
+    write_content_transfer_encoding(Stream, CTE, !IO),
     io.nl(Stream, !IO),
     io.write_string(Stream, Content, !IO).
+
+:- pred get_non_text_part_base64(part::in, string::out, io::di, io::uo) is det.
+
+get_non_text_part_base64(Part, Content, !IO) :-
+    Part = part(MessageId, PartId, _, _, _),
+    args_to_quoted_command([
+        "notmuch", "show", "--format=raw", "--part=" ++ from_int(PartId),
+        message_id_to_search_term(MessageId)
+    ], Command),
+    popen(Command ++ " |base64", CallRes, !IO),
+    (
+        CallRes = ok(Content)
+    ;
+        CallRes = error(Error),
+        % XXX handle this gracefully
+        unexpected($module, $pred, io.error_message(Error))
+    ).
 
 %-----------------------------------------------------------------------------%
 
