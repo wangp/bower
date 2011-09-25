@@ -25,6 +25,8 @@
 
 :- func get_lines(scrollable(T)) = version_array(T).
 
+:- func get_lines_list(scrollable(T)) = list(T).
+
 :- func get_num_lines(scrollable(T)) = int.
 
 :- func get_top(scrollable(T)) = int.
@@ -60,6 +62,10 @@
 :- pred search_reverse(pred(T)::in(pred(in) is semidet),
     scrollable(T)::in, int::in, int::out) is semidet.
 
+:- pred append_line(T::in, scrollable(T)::in, scrollable(T)::out) is det.
+
+:- pred delete_cursor_line(scrollable(T)::in, scrollable(T)::out) is semidet.
+
 :- pred draw(list(panel)::in, scrollable(T)::in, io::di, io::uo) is det
     <= scrollable.line(T).
 
@@ -93,6 +99,8 @@ init_with_cursor(Lines, Cursor) = Scrollable :-
     Scrollable = scrollable(LinesArray, Top, yes(Cursor)).
 
 get_lines(Scrollable) = Scrollable ^ s_lines.
+
+get_lines_list(Scrollable) = version_array.to_list(get_lines(Scrollable)).
 
 get_num_lines(Scrollable) = size(Scrollable ^ s_lines).
 
@@ -218,6 +226,31 @@ search_reverse_2(P, Array, N0, N, MatchX) :-
     ;
         fail
     ).
+
+append_line(NewLine, Scrollable0, Scrollable) :-
+    Scrollable0 = scrollable(Array0, Top, MaybeCursor),
+    List0 = version_array.to_list(Array0),
+    List = List0 ++ [NewLine],
+    Array = version_array.from_list(List),
+    Scrollable = scrollable(Array, Top, MaybeCursor).
+
+delete_cursor_line(Scrollable0, Scrollable) :-
+    Scrollable0 = scrollable(Array0, Top0, yes(Cursor0)),
+    List0 = version_array.to_list(Array0),
+    list.split_list(Cursor0, List0, Start, [_ | End]),
+    (
+        End = [],
+        Cursor = int.max(0, Cursor0 - 1),
+        Top = int.min(Top0, Cursor)
+    ;
+        End = [_ | _],
+        Cursor = Cursor0,
+        Top = Top0
+    ),
+    Array = version_array.from_list(Start ++ End),
+    Scrollable = scrollable(Array, Top, yes(Cursor)).
+
+%-----------------------------------------------------------------------------%
 
 draw(RowPanels, Scrollable, !IO) :-
     Scrollable = scrollable(Lines, Top, MaybeCursor),

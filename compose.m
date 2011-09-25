@@ -46,7 +46,9 @@
 :- import_module pager.
 :- import_module popen.
 :- import_module quote_arg.
+:- import_module scrollable.
 :- import_module text_entry.
+:- import_module string_util.
 :- import_module sys_util.
 :- import_module time_util.
 
@@ -62,9 +64,10 @@
     --->    staging_info(
                 si_headers      :: headers,
                 si_text         :: string,
-                si_attachments  :: list(attachment),
                 si_old_msgid    :: maybe(message_id)
             ).
+
+:- type attach_info == scrollable(attachment).
 
 :- type attachment
     --->    old_attachment(part)
@@ -73,6 +76,10 @@
                 att_content     :: string,
                 att_filename    :: string
             ).
+
+:- instance scrollable.line(attachment) where [
+    pred(draw_line/5) is draw_attachment_line
+].
 
 %-----------------------------------------------------------------------------%
 
@@ -95,10 +102,10 @@ start_compose(Screen, !IO) :-
                 !Headers ^ h_subject := Subject,
                 Headers = !.Headers
             ),
-            Body = "",
+            Text = "",
             Attachments = [],
             MaybeOldDraft = no,
-            create_edit_stage(Screen, Headers, Body, Attachments,
+            create_edit_stage(Screen, Headers, Text, Attachments,
                 MaybeOldDraft, !IO)
         ;
             MaybeSubject = no
@@ -135,7 +142,7 @@ start_reply(Screen, Message, ReplyKind, !IO) :-
     popen(Command, CommandResult, !IO),
     (
         CommandResult = ok(String),
-        read_headers_from_string(String, 0, init_headers, Headers0, Body),
+        read_headers_from_string(String, 0, init_headers, Headers0, Text),
         (
             ReplyKind = direct_reply,
             OrigFrom = Message ^ m_headers ^ h_from,
@@ -150,10 +157,9 @@ start_reply(Screen, Message, ReplyKind, !IO) :-
             OrigFrom = Message ^ m_headers ^ h_from,
             set_headers_for_list_reply(OrigFrom, Headers0, Headers)
         ),
-        % XXX attachments
         Attachments = [],
         MaybeOldDraft = no,
-        create_edit_stage(Screen, Headers, Body, Attachments, MaybeOldDraft,
+        create_edit_stage(Screen, Headers, Text, Attachments, MaybeOldDraft,
             !IO)
     ;
         CommandResult = error(Error),
@@ -272,8 +278,9 @@ to_old_attachment(Part, old_attachment(Part)).
 :- pred create_edit_stage(screen::in, headers::in, string::in,
     list(attachment)::in, maybe(message_id)::in, io::di, io::uo) is det.
 
-create_edit_stage(Screen, Headers0, Body0, Attachments, MaybeOldDraft, !IO) :-
-    create_temp_message_file(Headers0, Body0, prepare_edit, ResFilename, !IO),
+create_edit_stage(Screen, Headers0, Text0, Attachments, MaybeOldDraft, !IO) :-
+    create_temp_message_file(Headers0, Text0, Attachments, prepare_edit,
+        ResFilename, !IO),
     (
         ResFilename = ok(Filename),
         call_editor(Screen, Filename, ResEdit, !IO),
@@ -281,14 +288,14 @@ create_edit_stage(Screen, Headers0, Body0, Attachments, MaybeOldDraft, !IO) :-
             ResEdit = yes,
             parse_message_file(Filename, ResParse, !IO),
             (
-                ResParse = ok(Headers1 - Body),
+                ResParse = ok(Headers1 - Text),
                 io.remove_file(Filename, _, !IO),
                 update_references(Headers0, Headers1, Headers),
-                StagingInfo = staging_info(Headers, Body, Attachments,
-                    MaybeOldDraft),
+                StagingInfo = staging_info(Headers, Text, MaybeOldDraft),
+                AttachInfo = scrollable.init_with_cursor(Attachments, 0),
                 Cols = Screen ^ cols,
-                setup_pager_for_staging(Cols, Body, PagerInfo),
-                staging_screen(Screen, StagingInfo, PagerInfo, !IO)
+                setup_pager_for_staging(Cols, Text, PagerInfo),
+                staging_screen(Screen, StagingInfo, AttachInfo, PagerInfo, !IO)
             ;
                 ResParse = error(Error),
                 io.error_message(Error, Msg),
@@ -357,59 +364,79 @@ update_references(Headers0, !Headers) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred staging_screen(screen::in, staging_info::in, pager_info::in,
-    io::di, io::uo) is det.
+:- pred staging_screen(screen::in, staging_info::in, attach_info::in,
+    pager_info::in, io::di, io::uo) is det.
 
-staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO) :-
-    !.StagingInfo = staging_info(Headers, Body, Attachments, MaybeOldDraft),
-    split_panels(Screen, HeaderPanels, MaybeSepPanel, PagerPanels),
+staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO) :-
+    !.StagingInfo = staging_info(Headers, Text, MaybeOldDraft),
+    split_panels(Screen, HeaderPanels, AttachmentPanels, MaybeSepPanel,
+        PagerPanels),
     draw_header_lines(HeaderPanels, Headers, !IO),
+    scrollable.draw(AttachmentPanels, !.AttachInfo, !IO),
+    draw_attachments_label(AttachmentPanels, !IO),
     draw_sep_bar(Screen, MaybeSepPanel, !IO),
     draw_pager_lines(PagerPanels, !.PagerInfo, !IO),
     draw_staging_bar(Screen, !IO),
     panel.update_panels(!IO),
+    NumAttachmentRows = list.length(AttachmentPanels),
     get_char(Char, !IO),
     ( Char = 'e' ->
-        create_edit_stage(Screen, Headers, Body, Attachments, MaybeOldDraft,
+        Attachments = get_lines_list(!.AttachInfo),
+        create_edit_stage(Screen, Headers, Text, Attachments, MaybeOldDraft,
             !IO)
     ; Char = 'f' ->
         edit_header(Screen, from, !StagingInfo, !IO),
-        staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
+        staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
     ; Char = 't' ->
         edit_header(Screen, to, !StagingInfo, !IO),
-        staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
+        staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
     ; Char = 'c' ->
         edit_header(Screen, cc, !StagingInfo, !IO),
-        staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
+        staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
     ; Char = 'b' ->
         edit_header(Screen, bcc, !StagingInfo, !IO),
-        staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
+        staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
     ; Char = 's' ->
         edit_header(Screen, subject, !StagingInfo, !IO),
-        staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
+        staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
     ; Char = 'r' ->
         edit_header(Screen, replyto, !StagingInfo, !IO),
-        staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
+        staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
+    ; Char = 'j' ->
+        scroll_attachments(Screen, NumAttachmentRows, 1, !AttachInfo, !IO),
+        staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
+    ; Char = 'k' ->
+        scroll_attachments(Screen, NumAttachmentRows, -1, !AttachInfo, !IO),
+        staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
+    ; Char = 'a' ->
+        add_attachment(Screen, NumAttachmentRows, !AttachInfo, !IO),
+        staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
+    ; Char = 'd' ->
+        delete_attachment(Screen, !AttachInfo, !IO),
+        staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
     ; Char = 'p' ->
-        postpone(Screen, Headers, Body, Res, !IO),
+        Attachments = get_lines_list(!.AttachInfo),
+        postpone(Screen, Headers, Text, Attachments, Res, !IO),
         (
             Res = yes,
             maybe_remove_draft(!.StagingInfo, !IO)
         ;
             Res = no,
-            staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
+            staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
         )
     ; Char = 'Y' ->
-        send_mail(Screen, Headers, Body, Res, !IO),
+        Attachments = get_lines_list(!.AttachInfo),
+        send_mail(Screen, Headers, Text, Attachments, Res, !IO),
         (
             Res = yes,
             tag_replied_message(Screen, Headers, !IO),
             maybe_remove_draft(!.StagingInfo, !IO)
         ;
             Res = no,
-            staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
+            staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
         )
-    ; Char = 'A' ->
+    ; Char = 'Q' ->
+        % XXX prompt to abandon
         (
             MaybeOldDraft = yes(_),
             maybe_remove_draft(!.StagingInfo, !IO),
@@ -421,8 +448,10 @@ staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO) :-
     ;
         pager_input(Screen, Char, _Action, MessageUpdate, !PagerInfo),
         update_message(Screen, MessageUpdate, !IO),
-        staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
+        staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
     ).
+
+%-----------------------------------------------------------------------------%
 
 :- pred edit_header(screen::in, header_type::in,
     staging_info::in, staging_info::out, io::di, io::uo) is det.
@@ -459,17 +488,64 @@ set_header(bcc,     Value, H, H ^ h_bcc := Value).
 set_header(subject, Value, H, H ^ h_subject := Value).
 set_header(replyto, Value, H, H ^ h_replyto := Value).
 
-:- pred split_panels(screen::in, list(panel)::out, maybe(panel)::out,
-    list(panel)::out) is det.
+%-----------------------------------------------------------------------------%
 
-split_panels(Screen, StagingPanels, MaybeSepPanel, PagerPanels) :-
-    Panels0 = Screen ^ main_panels,
-    list.split_upto(6, Panels0, StagingPanels, Panels1),
+:- pred scroll_attachments(screen::in, int::in, int::in,
+    attach_info::in, attach_info::out, io::di, io::uo) is det.
+
+scroll_attachments(Screen, NumRows, Delta, !AttachInfo, !IO) :-
+    scrollable.move_cursor(NumRows, Delta, HitLimit, !AttachInfo),
     (
-        Panels1 = [SepPanel | PagerPanels],
+        HitLimit = yes,
+        ( Delta < 0 ->
+            MessageUpdate = set_warning("You are on the first entry.")
+        ;
+            MessageUpdate = set_warning("You are on the last entry.")
+        )
+    ;
+        HitLimit = no,
+        MessageUpdate = clear_message
+    ),
+    update_message(Screen, MessageUpdate, !IO).
+
+:- pred add_attachment(screen::in, int::in, attach_info::in, attach_info::out,
+    io::di, io::uo) is det.
+
+add_attachment(Screen, NumRows, !AttachInfo, !IO) :-
+    % XXX dummy attachment
+    NewAttachment = new_attachment("text/plain", "dummy", "dummy"),
+    scrollable.append_line(NewAttachment, !AttachInfo),
+    NumLines = get_num_lines(!.AttachInfo),
+    Cursor = NumLines - 1,
+    scrollable.set_cursor_centred(Cursor, NumRows, !AttachInfo),
+    update_message(Screen, clear_message, !IO).
+
+:- pred delete_attachment(screen::in, attach_info::in, attach_info::out,
+    io::di, io::uo) is det.
+
+delete_attachment(Screen, !AttachInfo, !IO) :-
+    ( scrollable.delete_cursor_line(!AttachInfo) ->
+        MessageUpdate = clear_message
+    ;
+        MessageUpdate = set_warning("There are no attachments to delete.")
+    ),
+    update_message(Screen, MessageUpdate, !IO).
+
+%-----------------------------------------------------------------------------%
+
+:- pred split_panels(screen::in, list(panel)::out, list(panel)::out,
+    maybe(panel)::out, list(panel)::out) is det.
+
+split_panels(Screen, HeaderPanels, AttachmentPanels, MaybeSepPanel,
+        PagerPanels) :-
+    Panels0 = Screen ^ main_panels,
+    list.split_upto(6, Panels0, HeaderPanels, Panels1),
+    list.split_upto(3, Panels1, AttachmentPanels, Panels2),
+    (
+        Panels2 = [SepPanel | PagerPanels],
         MaybeSepPanel = yes(SepPanel)
     ;
-        Panels1 = [],
+        Panels2 = [],
         MaybeSepPanel = no,
         PagerPanels = []
     ).
@@ -497,6 +573,45 @@ draw_header_line([Panel | Panels], Panels, FieldName, Value, !IO) :-
     panel.attr_set(Panel, normal, !IO),
     my_addstr(Panel, Value, !IO).
 
+:- pred draw_attachment_line(panel::in, attachment::in, bool::in,
+    io::di, io::uo) is det.
+
+draw_attachment_line(Panel, Attachment, IsCursor, !IO) :-
+    (
+        Attachment = old_attachment(Part),
+        Type = Part ^ pt_type,
+        MaybeFilename = Part ^ pt_filename,
+        (
+            MaybeFilename = yes(Filename)
+        ;
+            MaybeFilename = no,
+            Filename = "(no filename)"
+        )
+    ;
+        Attachment = new_attachment(Type, _, Filename)
+    ),
+    panel.erase(Panel, !IO),
+    panel.move(Panel, 0, 13, !IO),
+    (
+        IsCursor = yes,
+        panel.attr_set(Panel, reverse, !IO)
+    ;
+        IsCursor = no,
+        panel.attr_set(Panel, normal, !IO)
+    ),
+    my_addstr(Panel, Filename, !IO),
+    my_addstr(Panel, " (", !IO),
+    my_addstr(Panel, Type, !IO),
+    my_addstr(Panel, ")", !IO).
+
+:- pred draw_attachments_label(list(panel)::in, io::di, io::uo) is det.
+
+draw_attachments_label([], !IO).
+draw_attachments_label([Panel | _], !IO) :-
+    panel.move(Panel, 0, 0, !IO),
+    panel.attr_set(Panel, fg_bg(red, black) + bold, !IO),
+    my_addstr(Panel, "Attachments: ", !IO).
+
 :- pred draw_sep_bar(screen::in, maybe(panel)::in, io::di, io::uo) is det.
 
 draw_sep_bar(_, no, !IO).
@@ -504,6 +619,7 @@ draw_sep_bar(Screen, yes(Panel), !IO) :-
     Cols = Screen ^ cols,
     panel.erase(Panel, !IO),
     panel.attr_set(Panel, fg_bg(white, blue), !IO),
+    my_addstr(Panel, "-- (ftcbsr) edit fields; (a) attach, (d) detach", !IO),
     hline(Panel, char.to_int('-'), Cols, !IO).
 
 :- pred draw_staging_bar(screen::in, io::di, io::uo) is det.
@@ -514,18 +630,17 @@ draw_staging_bar(Screen, !IO) :-
     panel.erase(Panel, !IO),
     panel.attr_set(Panel, fg_bg(white, blue), !IO),
     my_addstr(Panel, "-- ", !IO),
-    Msg = "Compose: (e) edit, (p) postpone, (Y) send, (A) abandon. ",
+    Msg = "Compose: (e) edit, (p) postpone, (Y) send, (Q) abandon. ",
     my_addstr_fixed(Panel, Cols - 3, Msg, '-', !IO).
 
 %-----------------------------------------------------------------------------%
 
-:- pred postpone(screen::in, headers::in, string::in, bool::out,
-    io::di, io::uo) is det.
+:- pred postpone(screen::in, headers::in, string::in, list(attachment)::in,
+    bool::out, io::di, io::uo) is det.
 
-postpone(Screen, Headers, Body, Res, !IO) :-
-    % XXX write the message to the draft file directly
-    create_temp_message_file(Headers, Body, prepare_postpone, ResFilename,
-        !IO),
+postpone(Screen, Headers, Text, Attachments, Res, !IO) :-
+    create_temp_message_file(Headers, Text, Attachments, prepare_postpone,
+        ResFilename, !IO),
     (
         ResFilename = ok(Filename),
         add_draft(Filename, DraftRes, !IO),
@@ -559,11 +674,12 @@ maybe_remove_draft(StagingInfo, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred send_mail(screen::in, headers::in, string::in, bool::out,
-    io::di, io::uo) is det.
+:- pred send_mail(screen::in, headers::in, string::in, list(attachment)::in,
+    bool::out, io::di, io::uo) is det.
 
-send_mail(Screen, Headers, Body, Res, !IO) :-
-    create_temp_message_file(Headers, Body, prepare_send, ResFilename, !IO),
+send_mail(Screen, Headers, Text, Attachments, Res, !IO) :-
+    create_temp_message_file(Headers, Text, Attachments, prepare_send,
+        ResFilename, !IO),
     (
         ResFilename = ok(Filename),
         call_send_mail(Screen, Filename, Res, !IO),
@@ -641,19 +757,39 @@ tag_replied_message(Screen, Headers, !IO) :-
     ;       prepare_edit
     ;       prepare_postpone.
 
-:- pred create_temp_message_file(headers::in, string::in, prepare_temp::in,
-    io.res(string)::out, io::di, io::uo) is det.
+:- type mime
+    --->    mime_single_part
+    ;       mime_multipart(string). % boundary
 
-create_temp_message_file(Headers, Body, Prepare, Res, !IO) :-
+:- pred create_temp_message_file(headers::in, string::in, list(attachment)::in,
+    prepare_temp::in, io.res(string)::out, io::di, io::uo) is det.
+
+create_temp_message_file(Headers, Text, Attachments, Prepare, Res, !IO) :-
     io.make_temp(Filename, !IO),
     io.open_output(Filename, ResOpen, !IO),
     (
         ResOpen = ok(Stream),
         Headers = headers(_Date, From, To, Cc, Bcc, Subject, ReplyTo,
-            References, InReplyTo, Rest),
+            References, InReplyTo, RestHeaders),
         % XXX detect charset
-        Charset = "UTF-8",
-        generate_boundary(Boundary, !IO),
+        Charset = "utf-8",
+        (
+            ( Prepare = prepare_send
+            ; Prepare = prepare_postpone
+            )
+        ->
+            (
+                Attachments = [],
+                % This is only really necessary if the body is non-ASCII.
+                MIME = yes(mime_single_part)
+            ;
+                Attachments = [_ | _],
+                generate_boundary(BoundaryA, !IO),
+                MIME = yes(mime_multipart(BoundaryA))
+            )
+        ;
+            MIME = no
+        ),
         (
             Prepare = prepare_send,
             generate_date_msg_id(Date, MessageId, !IO),
@@ -677,36 +813,46 @@ create_temp_message_file(Headers, Body, Prepare, Res, !IO) :-
             ( Prepare = prepare_send
             ; Prepare = prepare_postpone
             ),
-            Write("References", References, !IO),
-            Write("MIME-Version", "1.0", !IO),
-            Write("Content-Type",
-                "multipart/mixed; boundary=""" ++ Boundary ++ """", !IO),
-            Write("Content-Disposition", "inline", !IO)
+            Write("References", References, !IO)
         ;
             Prepare = prepare_edit
         ),
-        map.foldl(Write, Rest, !IO),
+        map.foldl(Write, RestHeaders, !IO),
+        (
+            MIME = no
+        ;
+            MIME = yes(_),
+            write_mime_version(Stream, !IO),
+            (
+                MIME = yes(mime_single_part),
+                write_content_type_plain_text(Stream, Charset, !IO)
+            ;
+                MIME = yes(mime_multipart(BoundaryB)),
+                write_content_type_multipart_mixed(Stream, BoundaryB, !IO)
+            ),
+            write_content_disposition_inline(Stream, !IO),
+            write_content_transfer_encoding_8bit(Stream, !IO)
+        ),
+
+        % End header fields.
         io.nl(Stream, !IO),
+
+        % Begin body.
         (
-            ( Prepare = prepare_send
-            ; Prepare = prepare_postpone
-            ),
-            write_part_boundary(Stream, Boundary, [
-                "Content-Type: text/plain; charset=", Charset, "\n",
-                "Content-Disposition: inline\n"
-            ], !IO)
+            MIME = no,
+            io.write_string(Stream, Text, !IO)
         ;
-            Prepare = prepare_edit
-        ),
-        io.write_string(Stream, Body, !IO),
-        (
-            ( Prepare = prepare_send
-            ; Prepare = prepare_postpone
-            ),
-            write_final_boundary(Stream, Boundary, !IO)
+            MIME = yes(mime_single_part),
+            io.write_string(Stream, Text, !IO)
         ;
-            Prepare = prepare_edit
+            MIME = yes(mime_multipart(BoundaryC)),
+            write_mime_part_boundary(Stream, BoundaryC, !IO),
+            write_mime_part_text(Stream, Charset, Text, !IO),
+            list.foldl(write_mime_part_attachment(Stream, BoundaryC),
+                Attachments, !IO),
+            write_mime_final_boundary(Stream, BoundaryC, !IO)
         ),
+
         io.close_output(Stream, !IO),
         Res = ok(Filename)
     ;
@@ -764,6 +910,7 @@ generate_date_msg_id(Date, MessageId, !IO) :-
 write_header(Stream, Header, Value, !IO) :-
     io.write_string(Stream, Header, !IO),
     io.write_string(Stream, ": ", !IO),
+    % XXX quote if non-ASCII
     io.write_string(Stream, Value, !IO),
     io.nl(Stream, !IO).
 
@@ -777,23 +924,122 @@ write_header_opt(Stream, Name, Value, !IO) :-
         write_header(Stream, Name, Value, !IO)
     ).
 
-:- pred write_part_boundary(io.output_stream::in, string::in,
-    list(string)::in, io::di, io::uo) is det.
+:- pred write_mime_version(io.output_stream::in, io::di, io::uo) is det.
 
-write_part_boundary(Stream, Boundary, Fields, !IO) :-
-    io.write_string(Stream, "\n--", !IO),
+write_mime_version(Stream, !IO) :-
+    io.write_string(Stream, "MIME-Version: 1.0\n", !IO).
+
+:- pred write_content_type_general(io.output_stream::in, string::in,
+    io::di, io::uo) is det.
+
+write_content_type_general(Stream, Type, !IO) :-
+    io.write_string(Stream, "Content-Type: ", !IO),
+    io.write_string(Stream, Type, !IO),
+    io.write_string(Stream, "\n", !IO).
+
+:- pred write_content_type_plain_text(io.output_stream::in, string::in,
+    io::di, io::uo) is det.
+
+write_content_type_plain_text(Stream, Charset, !IO) :-
+    io.write_string(Stream, "Content-Type: text/plain; charset=", !IO),
+    io.write_string(Stream, Charset, !IO),
+    io.write_string(Stream, "\n", !IO).
+
+:- pred write_content_type_multipart_mixed(io.output_stream::in, string::in,
+    io::di, io::uo) is det.
+
+write_content_type_multipart_mixed(Stream, Boundary, !IO) :-
+    io.write_string(Stream, "Content-Type: multipart/mixed; boundary=""", !IO),
     io.write_string(Stream, Boundary, !IO),
-    io.nl(Stream, !IO),
-    list.foldl(io.write_string(Stream), Fields, !IO),
+    io.write_string(Stream, """\n", !IO).
+
+:- pred write_content_disposition_inline(io.output_stream::in,
+    io::di, io::uo) is det.
+
+write_content_disposition_inline(Stream, !IO) :-
+    io.write_string(Stream, "Content-Disposition: inline\n", !IO).
+
+:- pred write_content_disposition_attachment(io.output_stream::in,
+    maybe(string)::in, io::di, io::uo) is det.
+
+write_content_disposition_attachment(Stream, MaybeFileName, !IO) :-
+    io.write_string(Stream, "Content-Disposition: attachment", !IO),
+    (
+        MaybeFileName = yes(FileName),
+        % XXX quote if non-ASCII
+        io.write_string(Stream, "; filename=""", !IO),
+        io.write_string(Stream, FileName, !IO),
+        io.write_string(Stream, """", !IO)
+    ;
+        MaybeFileName = no
+    ),
     io.nl(Stream, !IO).
 
-:- pred write_final_boundary(io.output_stream::in, string::in, io::di, io::uo)
-    is det.
+:- pred write_content_transfer_encoding_8bit(io.output_stream::in,
+    io::di, io::uo) is det.
 
-write_final_boundary(Stream, Boundary, !IO) :-
+write_content_transfer_encoding_8bit(Stream, !IO) :-
+    io.write_string(Stream, "Content-Transfer-Encoding: 8bit\n", !IO).
+
+:- pred write_mime_part_boundary(io.output_stream::in, string::in,
+    io::di, io::uo) is det.
+
+write_mime_part_boundary(Stream, Boundary, !IO) :-
+    io.write_string(Stream, "\n--", !IO),
+    io.write_string(Stream, Boundary, !IO),
+    io.nl(Stream, !IO).
+
+:- pred write_mime_final_boundary(io.output_stream::in, string::in,
+    io::di, io::uo) is det.
+
+write_mime_final_boundary(Stream, Boundary, !IO) :-
     io.write_string(Stream, "\n--", !IO),
     io.write_string(Stream, Boundary, !IO),
     io.write_string(Stream, "--\n", !IO).
+
+:- pred write_mime_part_text(io.output_stream::in, string::in, string::in,
+    io::di, io::uo) is det.
+
+write_mime_part_text(Stream, Charset, Text, !IO) :-
+    write_content_type_plain_text(Stream, Charset, !IO),
+    write_content_disposition_inline(Stream, !IO),
+    write_content_transfer_encoding_8bit(Stream, !IO),
+    io.nl(Stream, !IO),
+    io.write_string(Stream, Text, !IO).
+
+:- pred write_mime_part_attachment(io.output_stream::in, string::in,
+    attachment::in, io::di, io::uo) is det.
+
+write_mime_part_attachment(Stream, Boundary, Attachment, !IO) :-
+    (
+        Attachment = old_attachment(Part),
+        Type = Part ^ pt_type,
+        MaybeContent = Part ^ pt_content,
+        (
+            MaybeContent = yes(Content)
+        ;
+            MaybeContent = no,
+            % XXX extract existing content with notmuch show --format=raw
+            sorry($module, $pred, "old non-text content")
+        ),
+        MaybeFileName = Part ^ pt_filename
+    ;
+        Attachment = new_attachment(Type, Content, FileName),
+        MaybeFileName = yes(FileName)
+    ),
+
+    write_mime_part_boundary(Stream, Boundary, !IO),
+    ( strcase_equal(Type, "text/plain") ->
+        % XXX detect charset
+        Charset = "utf-8",
+        write_content_type_plain_text(Stream, Charset, !IO)
+    ;
+        write_content_type_general(Stream, Type, !IO)
+    ),
+    write_content_disposition_attachment(Stream, MaybeFileName, !IO),
+    write_content_transfer_encoding_8bit(Stream, !IO),
+    io.nl(Stream, !IO),
+    io.write_string(Stream, Content, !IO).
 
 %-----------------------------------------------------------------------------%
 
