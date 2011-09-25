@@ -58,6 +58,22 @@
     ;       subject
     ;       replyto.
 
+:- type staging_info
+    --->    staging_info(
+                si_headers      :: headers,
+                si_text         :: string,
+                si_attachments  :: list(attachment),
+                si_old_msgid    :: maybe(message_id)
+            ).
+
+:- type attachment
+    --->    old_attachment(part)
+    ;       new_attachment(
+                att_type        :: string,
+                att_content     :: string,
+                att_filename    :: string
+            ).
+
 %-----------------------------------------------------------------------------%
 
 :- mutable(msgid_counter, int, 0, ground, [untrailed, attach_to_io_state]).
@@ -80,8 +96,10 @@ start_compose(Screen, !IO) :-
                 Headers = !.Headers
             ),
             Body = "",
+            Attachments = [],
             MaybeOldDraft = no,
-            create_edit_stage(Screen, Headers, Body, MaybeOldDraft, !IO)
+            create_edit_stage(Screen, Headers, Body, Attachments,
+                MaybeOldDraft, !IO)
         ;
             MaybeSubject = no
         )
@@ -132,8 +150,11 @@ start_reply(Screen, Message, ReplyKind, !IO) :-
             OrigFrom = Message ^ m_headers ^ h_from,
             set_headers_for_list_reply(OrigFrom, Headers0, Headers)
         ),
+        % XXX attachments
+        Attachments = [],
         MaybeOldDraft = no,
-        create_edit_stage(Screen, Headers, Body, MaybeOldDraft, !IO)
+        create_edit_stage(Screen, Headers, Body, Attachments, MaybeOldDraft,
+            !IO)
     ;
         CommandResult = error(Error),
         string.append_list(["Error running notmuch: ",
@@ -198,14 +219,12 @@ set_headers_for_list_reply(OrigFrom, !Headers) :-
 continue_postponed(Screen, Message, !IO) :-
     MessageId = Message ^ m_id,
     Headers0 = Message ^ m_headers,
-    Body = Message ^ m_body,
-    ( first_text_content(cord.list(Body), Content) ->
-        BodyContent = Content
-    ;
-        BodyContent = ""
-    ),
-    % XXX notmuch show --format=json does not return Reply-To, References
-    % and In-Reply-To header fields so we parse them from the raw output.
+    Body0 = cord.list(Message ^ m_body),
+    first_text_part(Body0, Text, AttachmentParts),
+    list.map(to_old_attachment, AttachmentParts, Attachments),
+
+    % XXX notmuch show --format=json does not return References and In-Reply-To
+    % so we parse them from the raw output.
     args_to_quoted_command([
         "notmuch", "show", "--format=raw", "--",
         message_id_to_search_term(MessageId)
@@ -221,7 +240,7 @@ continue_postponed(Screen, Message, !IO) :-
             !Headers ^ h_inreplyto := (HeadersB ^ h_inreplyto),
             Headers = !.Headers
         ),
-        create_edit_stage(Screen, Headers, BodyContent, yes(MessageId), !IO)
+        create_edit_stage(Screen, Headers, Text, Attachments, yes(MessageId), !IO)
     ;
         CallRes = error(Error),
         string.append_list(["Error running notmuch: ",
@@ -229,23 +248,31 @@ continue_postponed(Screen, Message, !IO) :-
         update_message(Screen, set_warning(Warning), !IO)
     ).
 
-:- pred first_text_content(list(part)::in, string::out) is semidet.
+:- pred first_text_part(list(part)::in, string::out, list(part)::out)
+    is det.
 
-first_text_content([Part | Parts], Content) :-
+first_text_part([], "", []).
+first_text_part([Part | Parts], Text, AttachmentParts) :-
     MaybeContent = Part ^ pt_content,
     (
-        MaybeContent = yes(Content)
+        MaybeContent = yes(Text),
+        AttachmentParts = Parts
     ;
         MaybeContent = no,
-        first_text_content(Parts, Content)
+        first_text_part(Parts, Text, AttachmentParts0),
+        AttachmentParts = [Part | AttachmentParts0]
     ).
+
+:- pred to_old_attachment(part::in, attachment::out) is det.
+
+to_old_attachment(Part, old_attachment(Part)).
 
 %-----------------------------------------------------------------------------%
 
 :- pred create_edit_stage(screen::in, headers::in, string::in,
-    maybe(message_id)::in, io::di, io::uo) is det.
+    list(attachment)::in, maybe(message_id)::in, io::di, io::uo) is det.
 
-create_edit_stage(Screen, Headers0, Body0, MaybeOldDraft, !IO) :-
+create_edit_stage(Screen, Headers0, Body0, Attachments, MaybeOldDraft, !IO) :-
     create_temp_message_file(Headers0, Body0, prepare_edit, ResFilename, !IO),
     (
         ResFilename = ok(Filename),
@@ -257,10 +284,11 @@ create_edit_stage(Screen, Headers0, Body0, MaybeOldDraft, !IO) :-
                 ResParse = ok(Headers1 - Body),
                 io.remove_file(Filename, _, !IO),
                 update_references(Headers0, Headers1, Headers),
+                StagingInfo = staging_info(Headers, Body, Attachments,
+                    MaybeOldDraft),
                 Cols = Screen ^ cols,
                 setup_pager_for_staging(Cols, Body, PagerInfo),
-                staging_screen(Screen, Headers, Body, MaybeOldDraft,
-                    PagerInfo, !IO)
+                staging_screen(Screen, StagingInfo, PagerInfo, !IO)
             ;
                 ResParse = error(Error),
                 io.error_message(Error, Msg),
@@ -329,10 +357,11 @@ update_references(Headers0, !Headers) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred staging_screen(screen::in, headers::in, string::in,
-    maybe(message_id)::in, pager_info::in, io::di, io::uo) is det.
+:- pred staging_screen(screen::in, staging_info::in, pager_info::in,
+    io::di, io::uo) is det.
 
-staging_screen(Screen, Headers, Body, MaybeOldDraft, !.PagerInfo, !IO) :-
+staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO) :-
+    !.StagingInfo = staging_info(Headers, Body, Attachments, MaybeOldDraft),
     split_panels(Screen, HeaderPanels, MaybeSepPanel, PagerPanels),
     draw_header_lines(HeaderPanels, Headers, !IO),
     draw_sep_bar(Screen, MaybeSepPanel, !IO),
@@ -341,50 +370,49 @@ staging_screen(Screen, Headers, Body, MaybeOldDraft, !.PagerInfo, !IO) :-
     panel.update_panels(!IO),
     get_char(Char, !IO),
     ( Char = 'e' ->
-        create_edit_stage(Screen, Headers, Body, MaybeOldDraft, !IO)
+        create_edit_stage(Screen, Headers, Body, Attachments, MaybeOldDraft,
+            !IO)
     ; Char = 'f' ->
-        edit_header(Screen, from, Headers, Headers1, !IO),
-        staging_screen(Screen, Headers1, Body, MaybeOldDraft, !.PagerInfo, !IO)
+        edit_header(Screen, from, !StagingInfo, !IO),
+        staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
     ; Char = 't' ->
-        edit_header(Screen, to, Headers, Headers1, !IO),
-        staging_screen(Screen, Headers1, Body, MaybeOldDraft, !.PagerInfo, !IO)
+        edit_header(Screen, to, !StagingInfo, !IO),
+        staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
     ; Char = 'c' ->
-        edit_header(Screen, cc, Headers, Headers1, !IO),
-        staging_screen(Screen, Headers1, Body, MaybeOldDraft, !.PagerInfo, !IO)
+        edit_header(Screen, cc, !StagingInfo, !IO),
+        staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
     ; Char = 'b' ->
-        edit_header(Screen, bcc, Headers, Headers1, !IO),
-        staging_screen(Screen, Headers1, Body, MaybeOldDraft, !.PagerInfo, !IO)
+        edit_header(Screen, bcc, !StagingInfo, !IO),
+        staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
     ; Char = 's' ->
-        edit_header(Screen, subject, Headers, Headers1, !IO),
-        staging_screen(Screen, Headers1, Body, MaybeOldDraft, !.PagerInfo, !IO)
+        edit_header(Screen, subject, !StagingInfo, !IO),
+        staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
     ; Char = 'r' ->
-        edit_header(Screen, replyto, Headers, Headers1, !IO),
-        staging_screen(Screen, Headers1, Body, MaybeOldDraft, !.PagerInfo, !IO)
+        edit_header(Screen, replyto, !StagingInfo, !IO),
+        staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
     ; Char = 'p' ->
         postpone(Screen, Headers, Body, Res, !IO),
         (
             Res = yes,
-            maybe_remove_draft(MaybeOldDraft, !IO)
+            maybe_remove_draft(!.StagingInfo, !IO)
         ;
             Res = no,
-            staging_screen(Screen, Headers, Body, MaybeOldDraft, !.PagerInfo,
-                !IO)
+            staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
         )
     ; Char = 'Y' ->
         send_mail(Screen, Headers, Body, Res, !IO),
         (
             Res = yes,
             tag_replied_message(Screen, Headers, !IO),
-            maybe_remove_draft(MaybeOldDraft, !IO)
+            maybe_remove_draft(!.StagingInfo, !IO)
         ;
             Res = no,
-            staging_screen(Screen, Headers, Body, MaybeOldDraft, !.PagerInfo,
-                !IO)
+            staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
         )
     ; Char = 'A' ->
         (
             MaybeOldDraft = yes(_),
-            maybe_remove_draft(MaybeOldDraft, !IO),
+            maybe_remove_draft(!.StagingInfo, !IO),
             update_message(Screen, set_info("Postponed message deleted."), !IO)
         ;
             MaybeOldDraft = no,
@@ -393,18 +421,20 @@ staging_screen(Screen, Headers, Body, MaybeOldDraft, !.PagerInfo, !IO) :-
     ;
         pager_input(Screen, Char, _Action, MessageUpdate, !PagerInfo),
         update_message(Screen, MessageUpdate, !IO),
-        staging_screen(Screen, Headers, Body, MaybeOldDraft, !.PagerInfo, !IO)
+        staging_screen(Screen, !.StagingInfo, !.PagerInfo, !IO)
     ).
 
-:- pred edit_header(screen::in, header_type::in, headers::in, headers::out,
-    io::di, io::uo) is det.
+:- pred edit_header(screen::in, header_type::in,
+    staging_info::in, staging_info::out, io::di, io::uo) is det.
 
-edit_header(Screen, HeaderType, !Headers, !IO) :-
-    get_header(HeaderType, !.Headers, Prompt, Initial),
+edit_header(Screen, HeaderType, !StagingInfo, !IO) :-
+    Headers0 = !.StagingInfo ^ si_headers,
+    get_header(HeaderType, Headers0, Prompt, Initial),
     text_entry_initial(Screen, Prompt, Initial, Return, !IO),
     (
         Return = yes(Final),
-        set_header(HeaderType, Final, !Headers)
+        set_header(HeaderType, Final, Headers0, Headers),
+        !StagingInfo ^ si_headers := Headers
     ;
         Return = no
     ).
@@ -516,11 +546,16 @@ postpone(Screen, Headers, Body, Res, !IO) :-
         Res = no
     ).
 
-:- pred maybe_remove_draft(maybe(message_id)::in, io::di, io::uo) is det.
+:- pred maybe_remove_draft(staging_info::in, io::di, io::uo) is det.
 
-maybe_remove_draft(no, !IO).
-maybe_remove_draft(yes(MessageId), !IO) :-
-    tag_messages(["+deleted"], [MessageId], _Res, !IO).
+maybe_remove_draft(StagingInfo, !IO) :-
+    MaybeOldDraft = StagingInfo ^ si_old_msgid,
+    (
+        MaybeOldDraft = yes(MessageId),
+        tag_messages(["+deleted"], [MessageId], _Res, !IO)
+    ;
+        MaybeOldDraft = no
+    ).
 
 %-----------------------------------------------------------------------------%
 
