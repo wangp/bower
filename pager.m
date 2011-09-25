@@ -67,6 +67,7 @@
 :- import_module version_array.
 
 :- import_module scrollable.
+:- import_module string_util.
 
 %-----------------------------------------------------------------------------%
 
@@ -160,7 +161,7 @@ append_part(Cols, IsFirst, Part, !Lines) :-
     Part = part(_MsgId, _Part, Type, MaybeText, _MaybeFilename),
     (
         IsFirst = yes,
-        Type = "text/plain"
+        strcase_equal(Type, "text/plain")
     ->
         true
     ;

@@ -1,7 +1,7 @@
 MAIN_TARGET = notmuch_frontend
 
-MCFLAGS-message_file += --no-ansi-c
 MCFLAGS-popen += --no-ansi-c
+MCFLAGS-string_util += --no-ansi-c
 
 # for wide-character functions
 CFLAGS-curs += -D_XOPEN_SOURCE_EXTENDED
