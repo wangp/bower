@@ -28,6 +28,7 @@
 :- import_module bool.
 :- import_module char.
 :- import_module cord.
+:- import_module dir.
 :- import_module int.
 :- import_module list.
 :- import_module map.
@@ -512,13 +513,57 @@ scroll_attachments(Screen, NumRows, Delta, !AttachInfo, !IO) :-
     io::di, io::uo) is det.
 
 add_attachment(Screen, NumRows, !AttachInfo, !IO) :-
-    % XXX dummy attachment
-    NewAttachment = new_attachment("text/plain", "dummy", "dummy"),
-    scrollable.append_line(NewAttachment, !AttachInfo),
-    NumLines = get_num_lines(!.AttachInfo),
-    Cursor = NumLines - 1,
-    scrollable.set_cursor_centred(Cursor, NumRows, !AttachInfo),
-    update_message(Screen, clear_message, !IO).
+    text_entry(Screen, "Attach file: ", Return, !IO),
+    (
+        Return = yes(FileName),
+        do_attach_file(FileName, NumRows, MessageUpdate, !AttachInfo, !IO)
+    ;
+        Return = no,
+        MessageUpdate = clear_message
+    ),
+    update_message(Screen, MessageUpdate, !IO).
+
+:- pred do_attach_file(string::in, int::in, message_update::out,
+    attach_info::in, attach_info::out, io::di, io::uo) is det.
+
+do_attach_file(FileName, NumRows, MessageUpdate, !AttachInfo, !IO) :-
+    io.open_input(FileName, ResOpen, !IO),
+    (
+        ResOpen = ok(Input),
+        io.read_file_as_string(Input, ResRead, !IO),
+        io.close_input(Input, !IO),
+        (
+            ResRead = ok(Content),
+            ( verify_utf8(Content) ->
+                ( dir.basename(FileName, BaseName0) ->
+                    BaseName = BaseName0
+                ;
+                    BaseName = FileName
+                ),
+                NewAttachment = new_attachment("text/plain", Content,
+                    BaseName),
+                scrollable.append_line(NewAttachment, !AttachInfo),
+                NumLines = get_num_lines(!.AttachInfo),
+                Cursor = NumLines - 1,
+                scrollable.set_cursor_centred(Cursor, NumRows, !AttachInfo),
+                MessageUpdate = clear_message
+            ;
+                % XXX handle binary and non UTF-8 files
+                MessageUpdate = set_warning(
+                    "only UTF-8 text file attachments are supported yet")
+            )
+        ;
+            ResRead = error(_, Error),
+            string.format("Error reading %s: %s",
+                [s(FileName), s(io.error_message(Error))], Msg),
+            MessageUpdate = set_warning(Msg)
+        )
+    ;
+        ResOpen = error(Error),
+        string.format("Error opening %s: %s",
+            [s(FileName), s(io.error_message(Error))], Msg),
+        MessageUpdate = set_warning(Msg)
+    ).
 
 :- pred delete_attachment(screen::in, attach_info::in, attach_info::out,
     io::di, io::uo) is det.
