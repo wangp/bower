@@ -197,14 +197,37 @@ set_headers_for_list_reply(OrigFrom, !Headers) :-
 
 continue_postponed(Screen, Message, !IO) :-
     MessageId = Message ^ m_id,
-    Headers = Message ^ m_headers,
+    Headers0 = Message ^ m_headers,
     Body = Message ^ m_body,
     ( first_text_content(cord.list(Body), Content) ->
         BodyContent = Content
     ;
         BodyContent = ""
     ),
-    create_edit_stage(Screen, Headers, BodyContent, yes(MessageId), !IO).
+    % XXX notmuch show --format=json does not return Reply-To, References
+    % and In-Reply-To header fields so we parse them from the raw output.
+    args_to_quoted_command([
+        "notmuch", "show", "--format=raw", "--",
+        message_id_to_search_term(MessageId)
+    ], Command),
+    popen(Command, CallRes, !IO),
+    (
+        CallRes = ok(String),
+        read_headers_from_string(String, 0, init_headers, HeadersB, _Body),
+        some [!Headers] (
+            !:Headers = Headers0,
+            !Headers ^ h_replyto := (HeadersB ^ h_replyto),
+            !Headers ^ h_references := (HeadersB ^ h_references),
+            !Headers ^ h_inreplyto := (HeadersB ^ h_inreplyto),
+            Headers = !.Headers
+        ),
+        create_edit_stage(Screen, Headers, BodyContent, yes(MessageId), !IO)
+    ;
+        CallRes = error(Error),
+        string.append_list(["Error running notmuch: ",
+            io.error_message(Error)], Warning),
+        update_message(Screen, set_warning(Warning), !IO)
+    ).
 
 :- pred first_text_content(list(part)::in, string::out) is semidet.
 
