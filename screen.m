@@ -45,6 +45,8 @@
 
 :- pred update_message(screen::in, message_update::in, io::di, io::uo) is det.
 
+:- pred draw_bar(screen::in, io::di, io::uo) is det.
+
 :- pred get_char(char::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
@@ -171,6 +173,15 @@ update_message(Screen, MessageUpdate, !IO) :-
         panel.attr_set(Panel, fg_bg(red, black) + bold, !IO),
         my_addstr(Panel, String, !IO)
     ).
+
+%-----------------------------------------------------------------------------%
+
+draw_bar(Screen, !IO) :-
+    Cols = Screen ^ cols,
+    Panel = Screen ^ bar_panel,
+    panel.erase(Panel, !IO),
+    panel.attr_set(Panel, fg_bg(white, blue), !IO),
+    hline(Panel, char.to_int('-'), Cols, !IO).
 
 %-----------------------------------------------------------------------------%
 

@@ -3,38 +3,15 @@
 :- module thread_pager.
 :- interface.
 
-:- import_module char.
+:- import_module bool.
 :- import_module io.
-:- import_module list.
-:- import_module map.
-:- import_module set.
-:- import_module time.
 
-:- import_module compose.
 :- import_module data.
-:- import_module maildir.
 :- import_module screen.
 
 %-----------------------------------------------------------------------------%
 
-:- type thread_pager_info.
-
-:- pred setup_thread_pager(tm::in, int::in, int::in, list(message)::in,
-    thread_pager_info::out, int::out) is det.
-
-:- type thread_pager_action
-    --->    continue
-    ;       start_reply(message, reply_kind)
-    ;       prompt_save_attachment(part)
-    ;       leave(
-                map(set(tag_delta), list(message_id))
-                % Group messages by the tag changes to be applied.
-            ).
-
-:- pred thread_pager_input(char::in, thread_pager_action::out,
-    message_update::out, thread_pager_info::in, thread_pager_info::out) is det.
-
-:- pred draw_thread_pager(screen::in, thread_pager_info::in, io::di, io::uo)
+:- pred open_thread_pager(screen::in, thread_id::in, bool::out, io::di, io::uo)
     is det.
 
 %-----------------------------------------------------------------------------%
@@ -42,19 +19,28 @@
 
 :- implementation.
 
-:- import_module bool.
+:- import_module char.
 :- import_module cord.
 :- import_module int.
+:- import_module list.
+:- import_module map.
 :- import_module maybe.
 :- import_module pair.
 :- import_module require.
+:- import_module set.
 :- import_module string.
+:- import_module time.
 :- import_module version_array.
 
+:- import_module callout.
+:- import_module compose.
 :- import_module curs.
 :- import_module curs.panel.
+:- import_module maildir.
 :- import_module pager.
+:- import_module quote_arg.
 :- import_module scrollable.
+:- import_module text_entry.
 :- import_module time_util.
 
 %-----------------------------------------------------------------------------%
@@ -96,11 +82,54 @@
     --->    flagged
     ;       unflagged.
 
+:- type thread_pager_action
+    --->    continue
+    ;       start_reply(message, reply_kind)
+    ;       prompt_save_attachment(part)
+    ;       leave(
+                map(set(tag_delta), list(message_id))
+                % Group messages by the tag changes to be applied.
+            ).
+
 :- instance scrollable.line(thread_line) where [
     pred(draw_line/5) is draw_thread_line
 ].
 
 %-----------------------------------------------------------------------------%
+
+open_thread_pager(Screen, ThreadId, NeedRefresh, !IO) :-
+    run_notmuch(["show", "--format=json", thread_id_to_search_term(ThreadId)],
+        parse_messages_list, Result, !IO),
+    (
+        Result = ok(Messages0),
+        list.filter_map(filter_unwanted_messages, Messages0, Messages)
+    ;
+        Result = error(Error),
+        unexpected($module, $pred, io.error_message(Error))
+    ),
+    time(Time, !IO),
+    Nowish = localtime(Time),
+    Rows = Screen ^ rows,
+    Cols = Screen ^ cols,
+    setup_thread_pager(Nowish, Rows - 2, Cols, Messages, ThreadPagerInfo,
+        Count),
+    string.format("Showing message 1 of %d.", [i(Count)], Msg),
+    update_message(Screen, set_info(Msg), !IO),
+    thread_pager_loop(Screen, NeedRefresh, ThreadPagerInfo, _, !IO).
+
+:- pred filter_unwanted_messages(message::in, message::out) is semidet.
+
+filter_unwanted_messages(!Message) :-
+    Tags = !.Message ^ m_tags,
+    not list.contains(Tags, "draft"),
+    not list.contains(Tags, "deleted"),
+
+    Replies0 = !.Message ^ m_replies,
+    list.filter_map(filter_unwanted_messages, Replies0, Replies),
+    !Message ^ m_replies := Replies.
+
+:- pred setup_thread_pager(tm::in, int::in, int::in, list(message)::in,
+    thread_pager_info::out, int::out) is det.
 
 setup_thread_pager(Nowish, Rows, Cols, Messages, ThreadPagerInfo,
         NumThreadLines) :-
@@ -230,6 +259,64 @@ is_reply_marker("Sv:").
 is_reply_marker("SV:").
 
 %-----------------------------------------------------------------------------%
+
+:- pred thread_pager_loop(screen::in, bool::out,
+    thread_pager_info::in, thread_pager_info::out,
+    io::di, io::uo) is det.
+
+thread_pager_loop(Screen, NeedRefresh, !Info, !IO) :-
+    draw_thread_pager(Screen, !.Info, !IO),
+    draw_bar(Screen, !IO),
+    panel.update_panels(!IO),
+    get_char(Char, !IO),
+    thread_pager_input(Char, Action, MessageUpdate, !Info),
+    update_message(Screen, MessageUpdate, !IO),
+    (
+        Action = continue,
+        thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
+    ;
+        Action = start_reply(Message, ReplyKind),
+        start_reply(Screen, Message, ReplyKind, !IO),
+        thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
+    ;
+        Action = prompt_save_attachment(Content),
+        prompt_save_attachment(Screen, Content, !IO),
+        thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
+    ;
+        Action = leave(TagGroups),
+        ( map.is_empty(TagGroups) ->
+            NeedRefresh = no
+        ;
+            map.foldl2(apply_tag_delta, TagGroups, yes, Res, !IO),
+            (
+                Res = yes,
+                update_message(Screen, clear_message, !IO)
+            ;
+                Res = no,
+                Msg = "Encountered problems while applying tags.",
+                update_message(Screen, set_warning(Msg), !IO)
+            ),
+            NeedRefresh = yes
+        )
+    ).
+
+:- pred apply_tag_delta(set(tag_delta)::in, list(message_id)::in,
+    bool::in, bool::out, io::di, io::uo) is det.
+
+apply_tag_delta(TagDeltaSet, MessageIds, !AccRes, !IO) :-
+    set.to_sorted_list(TagDeltaSet, TagDeltas),
+    tag_messages(TagDeltas, MessageIds, Res, !IO),
+    (
+        Res = ok
+    ;
+        Res = error(_),
+        !:AccRes = no
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred thread_pager_input(char::in, thread_pager_action::out,
+    message_update::out, thread_pager_info::in, thread_pager_info::out) is det.
 
 thread_pager_input(Char, Action, MessageUpdate, !Info) :-
     NumPagerRows = !.Info ^ tp_num_pager_rows,
@@ -488,6 +575,72 @@ save_attachment(Action, MessageUpdate, !Info) :-
         MessageUpdate = set_warning("No attachment selected.")
     ).
 
+:- pred prompt_save_attachment(screen::in, part::in, io::di, io::uo)
+    is det.
+
+prompt_save_attachment(Screen, Part, !IO) :-
+    MessageId = Part ^ pt_msgid,
+    PartId = Part ^ pt_part,
+    MaybeInitial = Part ^ pt_filename,
+    (
+        MaybeInitial = yes(Initial)
+    ;
+        MaybeInitial = no,
+        MessageId = message_id(IdStr),
+        Initial = string.format("%s.part_%d", [s(IdStr), i(PartId)])
+    ),
+    text_entry_initial(Screen, "Save to file: ", Initial, Return, !IO),
+    (
+        Return = yes(FileName),
+        FileName \= ""
+    ->
+        FollowSymLinks = no,
+        io.file_type(FollowSymLinks, FileName, ResType, !IO),
+        (
+            ResType = ok(_),
+            % XXX prompt to overwrite
+            Error = FileName ++ " already exists.",
+            MessageUpdate = set_warning(Error)
+        ;
+            ResType = error(_),
+            % This assumes the file doesn't exist.
+            do_save_attachment(MessageId, PartId, FileName, Res, !IO),
+            (
+                Res = ok,
+                MessageUpdate = set_info("Attachment saved.")
+            ;
+                Res = error(Error),
+                ErrorMessage = io.error_message(Error),
+                MessageUpdate = set_warning(ErrorMessage)
+            )
+        )
+    ;
+        MessageUpdate = clear_message
+    ),
+    update_message(Screen, MessageUpdate, !IO).
+
+:- pred do_save_attachment(message_id::in, int::in, string::in,
+    io.res::out, io::di, io::uo) is det.
+
+do_save_attachment(MessageId, Part, FileName, Res, !IO) :-
+    Args = ["notmuch", "show", "--format=raw", "--part=" ++ from_int(Part),
+        message_id_to_search_term(MessageId)],
+    args_to_quoted_command(Args, no, redirect_output(FileName), Command),
+    io.call_system(Command, CallRes, !IO),
+    (
+        CallRes = ok(ExitStatus),
+        ( ExitStatus = 0 ->
+            Res = ok
+        ;
+            string.format("notmuch show returned exit status %d",
+                [i(ExitStatus)], Msg),
+            Res = error(io.make_io_error(Msg))
+        )
+    ;
+        CallRes = error(Error),
+        Res = error(Error)
+    ).
+
 %-----------------------------------------------------------------------------%
 
 :- pred get_tag_delta_groups(thread_pager_info::in,
@@ -572,6 +725,9 @@ reply(Info, ReplyKind, Action, MessageUpdate) :-
     ).
 
 %-----------------------------------------------------------------------------%
+
+:- pred draw_thread_pager(screen::in, thread_pager_info::in, io::di, io::uo)
+    is det.
 
 draw_thread_pager(Screen, Info, !IO) :-
     Scrollable = Info ^ tp_scrollable,

@@ -3,51 +3,41 @@
 :- module index_view.
 :- interface.
 
-:- import_module char.
 :- import_module io.
 :- import_module list.
-:- import_module time.
 
 :- import_module data.
 :- import_module screen.
 
 %-----------------------------------------------------------------------------%
 
-:- type index_info.
-
-:- pred setup_index_view(list(thread)::in, index_info::out, io::di, io::uo)
+:- pred open_index_search_terms(screen::in, list(string)::in, io::di, io::uo)
     is det.
 
-:- pred replace_index_cursor_line(tm::in, thread::in,
-    index_info::in, index_info::out) is det.
-
-:- type action
-    --->    continue
-    ;       open_pager(thread_id)
-    ;       enter_limit
-    ;       start_compose
-    ;       start_recall
-    ;       quit.
-
-:- pred index_view_input(screen::in, char::in, message_update::out,
-    action::out, index_info::in, index_info::out) is det.
-
-:- pred draw_index_view(screen::in, index_info::in, io::di, io::uo) is det.
+:- pred open_index(screen::in, list(thread)::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
+:- import_module char.
 :- import_module bool.
 :- import_module cord.
+:- import_module maybe.
 :- import_module int.
 :- import_module require.
 :- import_module string.
+:- import_module time.
 
+:- import_module callout.
+:- import_module compose.
 :- import_module curs.
 :- import_module curs.panel.
+:- import_module recall.
 :- import_module scrollable.
+:- import_module text_entry.
+:- import_module thread_pager.
 :- import_module time_util.
 
 %-----------------------------------------------------------------------------%
@@ -96,11 +86,44 @@
     ;       start_recall
     ;       quit.
 
+:- type action
+    --->    continue
+    ;       open_pager(thread_id)
+    ;       enter_limit
+    ;       start_compose
+    ;       start_recall
+    ;       quit.
+
 :- instance scrollable.line(index_line) where [
     pred(draw_line/5) is draw_index_line
 ].
 
 %-----------------------------------------------------------------------------%
+
+open_index_search_terms(Screen, Terms, !IO) :-
+    update_message(Screen, set_info("Searching..."), !IO),
+    panel.update_panels(!IO),
+    run_notmuch(["search", "--format=json" | Terms], parse_threads_list,
+        Result, !IO),
+    (
+        Result = ok(Threads),
+        string.format("Found %d threads.", [i(length(Threads))], Message),
+        MessageUpdate = set_info(Message)
+    ;
+        Result = error(Error),
+        Message = "Error: " ++ io.error_message(Error),
+        MessageUpdate = set_warning(Message),
+        Threads = []
+    ),
+    update_message(Screen, MessageUpdate, !IO),
+    open_index(Screen, Threads, !IO).
+
+open_index(Screen, Threads, !IO) :-
+    setup_index_view(Threads, IndexInfo, !IO),
+    index_loop(Screen, IndexInfo, !IO).
+
+:- pred setup_index_view(list(thread)::in, index_info::out, io::di, io::uo)
+    is det.
 
 setup_index_view(Threads, Info, !IO) :-
     time(Time, !IO),
@@ -146,13 +169,61 @@ apply_tag(Tag, !Line) :-
 
 %-----------------------------------------------------------------------------%
 
-replace_index_cursor_line(Nowish, Thread, !Info) :-
-    !.Info = index_info(Scrollable0),
-    thread_to_index_line(Nowish, Thread, Line),
-    set_cursor_line(Line, Scrollable0, Scrollable),
-    !:Info = index_info(Scrollable).
+:- pred index_loop(screen::in, index_info::in, io::di, io::uo) is det.
+
+index_loop(Screen, !.IndexInfo, !IO) :-
+    draw_index_view(Screen, !.IndexInfo, !IO),
+    draw_bar(Screen, !IO),
+    panel.update_panels(!IO),
+    get_char(Char, !IO),
+    index_view_input(Screen, Char, MessageUpdate, Action, !IndexInfo),
+    update_message(Screen, MessageUpdate, !IO),
+    (
+        Action = continue,
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
+        Action = open_pager(ThreadId),
+        open_thread_pager(Screen, ThreadId, NeedRefresh, !IO),
+        (
+            NeedRefresh = yes,
+            refresh_index_line(Screen, ThreadId, !IndexInfo, !IO)
+        ;
+            NeedRefresh = no
+        ),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
+        Action = enter_limit,
+        text_entry(Screen, "Limit to messages matching: ", Return, !IO),
+        (
+            Return = yes(String),
+            open_index_search_terms(Screen, [String], !IO)
+        ;
+            Return = no,
+            update_message(Screen, clear_message, !IO),
+            index_loop(Screen, !.IndexInfo, !IO)
+        )
+    ;
+        Action = start_compose,
+        start_compose(Screen, !IO),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
+        Action = start_recall,
+        select_recall(Screen, MaybeSelected, !IO),
+        (
+            MaybeSelected = yes(Message),
+            continue_postponed(Screen, Message, !IO)
+        ;
+            MaybeSelected = no
+        ),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
+        Action = quit
+    ).
 
 %-----------------------------------------------------------------------------%
+
+:- pred index_view_input(screen::in, char::in, message_update::out,
+    action::out, index_info::in, index_info::out) is det.
 
 index_view_input(Screen, Char, MessageUpdate, Action, !IndexInfo) :-
     ( key_binding(Char, Binding) ->
@@ -269,6 +340,39 @@ enter(Info, Action) :-
     ).
 
 %-----------------------------------------------------------------------------%
+
+:- pred refresh_index_line(screen::in, thread_id::in,
+    index_info::in, index_info::out, io::di, io::uo) is det.
+
+refresh_index_line(Screen, ThreadId, !IndexInfo, !IO) :-
+    Term = thread_id_to_search_term(ThreadId),
+    run_notmuch(["search", "--format=json", Term],
+        parse_threads_list, Result, !IO),
+    (
+        Result = ok([Thread]),
+        time(Time, !IO),
+        Nowish = localtime(Time),
+        replace_index_cursor_line(Nowish, Thread, !IndexInfo)
+    ;
+        ( Result = ok([])
+        ; Result = ok([_, _ | _])
+        ; Result = error(_)
+        ),
+        update_message(Screen, set_warning("Error refreshing index."), !IO)
+    ).
+
+:- pred replace_index_cursor_line(tm::in, thread::in,
+    index_info::in, index_info::out) is det.
+
+replace_index_cursor_line(Nowish, Thread, !Info) :-
+    !.Info = index_info(Scrollable0),
+    thread_to_index_line(Nowish, Thread, Line),
+    set_cursor_line(Line, Scrollable0, Scrollable),
+    !:Info = index_info(Scrollable).
+
+%-----------------------------------------------------------------------------%
+
+:- pred draw_index_view(screen::in, index_info::in, io::di, io::uo) is det.
 
 draw_index_view(Screen, Info, !IO) :-
     MainPanels = Screen ^ main_panels,
