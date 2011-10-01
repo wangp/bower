@@ -22,23 +22,31 @@
 %-----------------------------------------------------------------------------%
 
 popen(Command, Res, !IO) :-
-    popen_2(Command, Errno, RevList, !IO),
+    popen_2(Command, Errno, ExitStatus, RevList, !IO),
     ( Errno = 0 ->
-        ( RevList = [String0] ->
-            String = String0
+        ( ExitStatus = 0 ->
+            ( RevList = [String0] ->
+                String = String0
+            ;
+                list.reverse(RevList, List),
+                string.append_list(List, String)
+            ),
+            Res = ok(String)
         ;
-            list.reverse(RevList, List),
-            string.append_list(List, String)
-        ),
-        Res = ok(String)
+            Msg = "process returned with exit code " ++
+                string.from_int(ExitStatus),
+            Res = error(io.make_io_error(Msg))
+        )
     ;
         Res = error(io.make_io_error(strerror(Errno)))
     ).
 
-:- pred popen_2(string::in, int::out, list(string)::uo, io::di, io::uo) is det.
+:- pred popen_2(string::in, int::out, int::out, list(string)::uo,
+    io::di, io::uo) is det.
 
 :- pragma foreign_proc("C",
-    popen_2(Command::in, Errno::out, RevList::uo, IO0::di, IO::uo),
+    popen_2(Command::in, Errno::out, ExitStatus::out, RevList::uo,
+        IO0::di, IO::uo),
     [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
         may_not_duplicate],
 "
@@ -66,9 +74,11 @@ popen(Command, Res, !IO) :-
                 RevList = MR_list_cons(s, RevList); 
             }
         }
-        pclose(fp);
+        ExitStatus = pclose(fp);
+        ExitStatus = WEXITSTATUS(ExitStatus);
     } else {
         Errno = errno;
+        ExitStatus = -1;
     }
     IO = IO0;
 ").
