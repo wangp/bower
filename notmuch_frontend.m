@@ -330,40 +330,6 @@ do_save_attachment(MessageId, Part, FileName, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred open_pager(screen::in, thread_id::in, io::di, io::uo) is det.
-
-open_pager(Screen, ThreadId, !IO) :-
-    run_notmuch(["show", "--format=json", thread_id_to_search_term(ThreadId)],
-        parse_messages_list, Result, !IO),
-    (
-        Result = ok(Messages),
-        Cols = Screen ^ cols,
-        setup_pager(Cols, Messages, PagerInfo),
-        pager_loop(Screen, PagerInfo, !IO)
-    ;
-        Result = error(Error),
-        unexpected($module, $pred, io.error_message(Error))
-    ).
-
-:- pred pager_loop(screen::in, pager_info::in, io::di, io::uo)
-    is det.
-
-pager_loop(Screen, !.PagerInfo, !IO) :-
-    draw_pager(Screen, !.PagerInfo, !IO),
-    draw_bar(Screen, !IO),
-    panel.update_panels(!IO),
-    get_char(Char, !IO),
-    pager_input(Screen, Char, Action, MessageUpdate, !PagerInfo),
-    update_message(Screen, MessageUpdate, !IO),
-    (
-        Action = continue,
-        pager_loop(Screen, !.PagerInfo, !IO)
-    ;
-        Action = leave_pager
-    ).
-
-%-----------------------------------------------------------------------------%
-
 :- pred draw_bar(screen::in, io::di, io::uo) is det.
 
 draw_bar(Screen, !IO) :-
