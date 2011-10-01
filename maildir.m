@@ -26,6 +26,7 @@
 
 :- implementation.
 
+:- import_module require.
 :- import_module string.
 
 :- import_module callout.
@@ -71,7 +72,13 @@ find_drafts(MessageIds, !IO) :-
     run_notmuch([
         "search", "--format=json", "--output=messages",
         "tag:draft", "-tag:deleted"
-    ], parse_message_id_list, MessageIds, !IO).
+    ], parse_message_id_list, Result, !IO),
+    (
+        Result = ok(MessageIds)
+    ;
+        Result = error(Error),
+        unexpected($module, $pred, io.error_message(Error))
+    ).
 
 %-----------------------------------------------------------------------------%
 

@@ -20,6 +20,7 @@
 :- import_module bool.
 :- import_module int.
 :- import_module list.
+:- import_module require.
 
 :- import_module callout.
 :- import_module curs.
@@ -70,11 +71,17 @@ make_recall_line(MessageId, Line, !IO) :-
     run_notmuch([
         "show", "--format=json", "--part=0",
         message_id_to_search_term(MessageId)
-    ], parse_top_message, Message, !IO),
-    Headers = Message ^ m_headers,
-    To = Headers ^ h_to,
-    Subject = Headers ^ h_subject,
-    Line = recall_line(Message, To, Subject).
+    ], parse_top_message, Result, !IO),
+    (
+        Result = ok(Message),
+        Headers = Message ^ m_headers,
+        To = Headers ^ h_to,
+        Subject = Headers ^ h_subject,
+        Line = recall_line(Message, To, Subject)
+    ;
+        Result = error(Error),
+        unexpected($module, $pred, io.error_message(Error))
+    ).
 
 %-----------------------------------------------------------------------------%
 

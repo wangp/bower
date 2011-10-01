@@ -15,7 +15,7 @@
     is det.
 
 :- pred run_notmuch(list(string)::in, pred(json, T)::in(pred(in, out) is det),
-    T::out, io::di, io::uo) is det.
+    io.res(T)::out, io::di, io::uo) is det.
 
 :- pred parse_messages_list(json::in, list(message)::out) is det.
 
@@ -63,14 +63,15 @@ run_notmuch(Args, P, Result, !IO) :-
         parse_json(String, ParseResult),
         (
             ParseResult = ok(JSON),
-            P(JSON, Result)
+            P(JSON, T),
+            Result = ok(T)
         ;
             ParseResult = error(_, _, _),
-            error(string(ParseResult))
+            Result = error(io.make_io_error(string(ParseResult)))
         )
     ;
-        CommandResult = error(_),
-        error(string(CommandResult))
+        CommandResult = error(Error),
+        Result = error(Error)
     ).
 
 %-----------------------------------------------------------------------------%

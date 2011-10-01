@@ -19,6 +19,7 @@
 :- import_module map.
 :- import_module maybe.
 :- import_module set.
+:- import_module require.
 :- import_module string.
 :- import_module time.
 
@@ -80,9 +81,18 @@ search_and_open_index(Screen, Terms, !IO) :-
     update_message(Screen, set_info("Searching..."), !IO),
     panel.update_panels(!IO),
     run_notmuch(["search", "--format=json" | Terms], parse_threads_list,
-        Threads, !IO),
-    string.format("Found %d threads.", [i(length(Threads))], Message),
-    update_message(Screen, set_info(Message), !IO),
+        Result, !IO),
+    (
+        Result = ok(Threads),
+        string.format("Found %d threads.", [i(length(Threads))], Message),
+        MessageUpdate = set_info(Message)
+    ;
+        Result = error(Error),
+        Message = "Error: " ++ io.error_message(Error),
+        MessageUpdate = set_warning(Message),
+        Threads = []
+    ),
+    update_message(Screen, MessageUpdate, !IO),
     open_index(Screen, Threads, !IO).
 
 :- pred open_index(screen::in, list(thread)::in, io::di, io::uo) is det.
@@ -148,15 +158,16 @@ index_loop(Screen, !.IndexInfo, !IO) :-
 refresh_index_line(Screen, ThreadId, !IndexInfo, !IO) :-
     Term = thread_id_to_search_term(ThreadId),
     run_notmuch(["search", "--format=json", Term],
-        parse_threads_list, Threads, !IO),
+        parse_threads_list, Result, !IO),
     (
-        Threads = [Thread],
+        Result = ok([Thread]),
         time(Time, !IO),
         Nowish = localtime(Time),
         replace_index_cursor_line(Nowish, Thread, !IndexInfo)
     ;
-        ( Threads = []
-        ; Threads = [_, _ | _]
+        ( Result = ok([])
+        ; Result = ok([_, _ | _])
+        ; Result = error(_)
         ),
         update_message(Screen, set_warning("Error refreshing index."), !IO)
     ).
@@ -168,9 +179,14 @@ refresh_index_line(Screen, ThreadId, !IndexInfo, !IO) :-
 
 open_thread_pager(Screen, ThreadId, NeedRefresh, !IO) :-
     run_notmuch(["show", "--format=json", thread_id_to_search_term(ThreadId)],
-        parse_messages_list, Messages0 : list(message), !IO),
-    list.filter_map(filter_unwanted_messages, Messages0, Messages),
-
+        parse_messages_list, Result, !IO),
+    (
+        Result = ok(Messages0),
+        list.filter_map(filter_unwanted_messages, Messages0, Messages)
+    ;
+        Result = error(Error),
+        unexpected($module, $pred, io.error_message(Error))
+    ),
     time(Time, !IO),
     Nowish = localtime(Time),
     Rows = Screen ^ rows,
@@ -318,10 +334,16 @@ do_save_attachment(MessageId, Part, FileName, Res, !IO) :-
 
 open_pager(Screen, ThreadId, !IO) :-
     run_notmuch(["show", "--format=json", thread_id_to_search_term(ThreadId)],
-        parse_messages_list, Messages : list(message), !IO),
-    Cols = Screen ^ cols,
-    setup_pager(Cols, Messages, PagerInfo),
-    pager_loop(Screen, PagerInfo, !IO).
+        parse_messages_list, Result, !IO),
+    (
+        Result = ok(Messages),
+        Cols = Screen ^ cols,
+        setup_pager(Cols, Messages, PagerInfo),
+        pager_loop(Screen, PagerInfo, !IO)
+    ;
+        Result = error(Error),
+        unexpected($module, $pred, io.error_message(Error))
+    ).
 
 :- pred pager_loop(screen::in, pager_info::in, io::di, io::uo)
     is det.
