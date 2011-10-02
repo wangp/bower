@@ -87,6 +87,7 @@
     --->    continue
     ;       start_reply(message, reply_kind)
     ;       prompt_save_attachment(part)
+    ;       prompt_open_attachment(part)
     ;       prompt_search
     ;       leave(
                 map(set(tag_delta), list(message_id))
@@ -285,6 +286,10 @@ thread_pager_loop(Screen, NeedRefresh, !Info, !IO) :-
         prompt_save_attachment(Screen, Content, !IO),
         thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
     ;
+        Action = prompt_open_attachment(Content),
+        prompt_open_attachment(Screen, Content, !IO),
+        thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
+    ;
         Action = prompt_search,
         prompt_search(Screen, !Info, !IO),
         thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
@@ -385,6 +390,8 @@ thread_pager_input(Char, Action, MessageUpdate, !Info) :-
         Action = continue
     ; Char = 's' ->
         save_attachment(Action, MessageUpdate, !Info)
+    ; Char = 'o' ->
+        open_attachment(Action, MessageUpdate, !Info)
     ; Char = ('/') ->
         Action = prompt_search,
         MessageUpdate = clear_message
@@ -652,6 +659,82 @@ do_save_attachment(MessageId, Part, FileName, Res, !IO) :-
         CallRes = error(Error),
         Res = error(Error)
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred open_attachment(thread_pager_action::out, message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+open_attachment(Action, MessageUpdate, !Info) :-
+    Pager = !.Info ^ tp_pager,
+    ( get_highlighted_attachment(Pager, Content) ->
+        Action = prompt_open_attachment(Content),
+        MessageUpdate = clear_message
+    ;
+        Action = continue,
+        MessageUpdate = set_warning("No attachment selected.")
+    ).
+
+:- pred prompt_open_attachment(screen::in, part::in, io::di, io::uo)
+    is det.
+
+prompt_open_attachment(Screen, Part, !IO) :-
+    Initial = "xdg-open",
+    text_entry_initial(Screen, "Open with command: ", Initial, Return, !IO),
+    (
+        Return = yes(Command),
+        Command \= ""
+    ->
+        io.make_temp(FileName, !IO),
+        MessageId = Part ^ pt_msgid,
+        PartId = Part ^ pt_part,
+        do_save_attachment(MessageId, PartId, FileName, Res, !IO),
+        (
+            Res = ok,
+            args_to_quoted_command([Command, FileName], CommandString),
+            update_message(Screen, set_info("Calling " ++ Command ++ "..."),
+                !IO),
+            panel.update_panels(!IO),
+            io.call_system(CommandString, CallRes, !IO),
+            (
+                CallRes = ok(ExitStatus),
+                ( ExitStatus = 0 ->
+                    % Give the async process a chance to open the temporary
+                    % file before we delete it.
+                    % XXX obviously this is a horrible hack
+                    sleep(2, !IO),
+                    MessageUpdate = clear_message
+                ;
+                    string.format("%s returned with exit status %d",
+                        [s(Command), i(ExitStatus)], Msg),
+                    MessageUpdate = set_warning(Msg)
+                )
+            ;
+                CallRes = error(Error),
+                Msg = "Error: " ++ io.error_message(Error),
+                MessageUpdate = set_warning(Msg)
+            )
+        ;
+            Res = error(Error),
+            string.format("Error saving to %s: %s",
+                [s(FileName), s(io.error_message(Error))], Msg),
+            MessageUpdate = set_warning(Msg)
+        ),
+        io.remove_file(FileName, _, !IO)
+    ;
+        MessageUpdate = clear_message
+    ),
+    update_message(Screen, MessageUpdate, !IO).
+
+:- pred sleep(int::in, io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    sleep(N::in, IO0::di, IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io],
+"
+    sleep(N);
+    IO = IO0;
+").
 
 %-----------------------------------------------------------------------------%
 
