@@ -50,7 +50,8 @@
                 tp_scrollable       :: scrollable(thread_line),
                 tp_num_thread_rows  :: int,
                 tp_pager            :: pager_info,
-                tp_num_pager_rows   :: int
+                tp_num_pager_rows   :: int,
+                tp_search           :: maybe(string)
             ).
 
 :- type thread_line
@@ -86,6 +87,7 @@
     --->    continue
     ;       start_reply(message, reply_kind)
     ;       prompt_save_attachment(part)
+    ;       prompt_search
     ;       leave(
                 map(set(tag_delta), list(message_id))
                 % Group messages by the tag changes to be applied.
@@ -143,7 +145,7 @@ setup_thread_pager(Nowish, Rows, Cols, Messages, ThreadPagerInfo,
     SepLine = 1,
     NumPagerRows = int.max(0, Rows - NumThreadRows - SepLine),
     ThreadPagerInfo1 = thread_pager_info(Scrollable, NumThreadRows,
-        PagerInfo, NumPagerRows),
+        PagerInfo, NumPagerRows, no),
     (
         get_cursor_line(Scrollable, _, FirstLine),
         is_unread_line(FirstLine)
@@ -283,6 +285,10 @@ thread_pager_loop(Screen, NeedRefresh, !Info, !IO) :-
         prompt_save_attachment(Screen, Content, !IO),
         thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
     ;
+        Action = prompt_search,
+        prompt_search(Screen, !Info, !IO),
+        thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
+    ;
         Action = leave(TagGroups),
         ( map.is_empty(TagGroups) ->
             NeedRefresh = no
@@ -379,6 +385,12 @@ thread_pager_input(Char, Action, MessageUpdate, !Info) :-
         Action = continue
     ; Char = 's' ->
         save_attachment(Action, MessageUpdate, !Info)
+    ; Char = ('/') ->
+        Action = prompt_search,
+        MessageUpdate = clear_message
+    ; Char = 'n' ->
+        skip_to_search(continue_search, MessageUpdate, !Info),
+        Action = continue
     ;
         ( Char = 'i'
         ; Char = 'q'
@@ -459,7 +471,7 @@ sync_thread_to_pager(!Info) :-
 
 skip_to_unread(MessageUpdate, !Info) :-
     !.Info = thread_pager_info(Scrollable0, NumThreadRows, PagerInfo0,
-        NumPagerRows),
+        NumPagerRows, MaybeSearch),
     (
         get_cursor(Scrollable0, Cursor0),
         search_forward(is_unread_line, Scrollable0, Cursor0 + 1, Cursor,
@@ -469,7 +481,7 @@ skip_to_unread(MessageUpdate, !Info) :-
         MessageId = ThreadLine ^ tp_message ^ m_id,
         skip_to_message(MessageId, PagerInfo0, PagerInfo),
         !:Info = thread_pager_info(Scrollable, NumThreadRows, PagerInfo,
-            NumPagerRows),
+            NumPagerRows, MaybeSearch),
         MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("No more unread messages.")
@@ -639,6 +651,50 @@ do_save_attachment(MessageId, Part, FileName, Res, !IO) :-
     ;
         CallRes = error(Error),
         Res = error(Error)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred prompt_search(screen::in, thread_pager_info::in,
+    thread_pager_info::out, io::di, io::uo) is det.
+
+prompt_search(Screen, !Info, !IO) :-
+    MaybeInitial = !.Info ^ tp_search,
+    (
+        MaybeInitial = yes(Initial)
+    ;
+        MaybeInitial = no,
+        Initial = ""
+    ),
+    text_entry_initial(Screen, "Search for: ", Initial, Return, !IO),
+    ( Return = yes(Search) ->
+        ( Search = "" ->
+            !Info ^ tp_search := no
+        ;
+            !Info ^ tp_search := yes(Search),
+            skip_to_search(new_search, MessageUpdate, !Info),
+            update_message(Screen, MessageUpdate, !IO)
+        )
+    ;
+        true
+    ).
+
+:- pred skip_to_search(search_kind::in, message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+skip_to_search(SearchKind, MessageUpdate, !Info) :-
+    MaybeSearch = !.Info ^ tp_search,
+    (
+        MaybeSearch = yes(Search),
+        Pager0 = !.Info ^ tp_pager,
+        NumRows = !.Info ^ tp_num_pager_rows,
+        pager.skip_to_search(NumRows, SearchKind, Search, MessageUpdate,
+            Pager0, Pager),
+        !Info ^ tp_pager := Pager,
+        sync_thread_to_pager(!Info)
+    ;
+        MaybeSearch = no,
+        MessageUpdate = set_warning("No search string.")
     ).
 
 %-----------------------------------------------------------------------------%

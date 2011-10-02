@@ -44,6 +44,13 @@
 :- pred skip_to_message(message_id::in, pager_info::in, pager_info::out)
     is det.
 
+:- type search_kind
+    --->    new_search
+    ;       continue_search.
+
+:- pred skip_to_search(int::in, search_kind::in, string::in,
+    message_update::out, pager_info::in, pager_info::out) is det.
+
 :- pred highlight_attachment(int::in, message_update::out,
     pager_info::in, pager_info::out) is det.
 
@@ -470,6 +477,52 @@ is_message_start(MessageId, start_message_header(Message, _, _)) :-
 
 %-----------------------------------------------------------------------------%
 
+skip_to_search(NumRows, SearchKind, Search, MessageUpdate, !Info) :-
+    !.Info = pager_info(Scrollable0),
+    Top = get_top(Scrollable0),
+    Bot = Top + NumRows,
+    (
+        SearchKind = continue_search,
+        get_cursor(Scrollable0, Cursor0),
+        Cursor0 >= Top,
+        Cursor0 < Bot
+    ->
+        Cursor1 = Cursor0 + 1
+    ;
+        Cursor1 = Top
+    ),
+    (
+        search_forward(line_matches_search(Search), Scrollable0,
+            Cursor1, Cursor, _MatchLine)
+    ->
+        set_cursor_centred(Cursor, NumRows, Scrollable0, Scrollable),
+        MessageUpdate = clear_message
+    ;
+        set_cursor_none(Scrollable0, Scrollable),
+        MessageUpdate = set_warning("Not found.")
+    ),
+    !:Info = pager_info(Scrollable).
+
+:- pred line_matches_search(string::in, pager_line::in) is semidet.
+
+line_matches_search(Search, Line) :-
+    require_complete_switch [Line]
+    (
+        ( Line = start_message_header(_, _, String)
+        ; Line = header(_, String)
+        ; Line = text(String)
+        ; Line = quoted_text(_, String)
+        ),
+        strcase_str(String, Search)
+    ;
+        ( Line = attachment(_)
+        ; Line = message_separator
+        ),
+        fail
+    ).
+
+%-----------------------------------------------------------------------------%
+
 highlight_attachment(NumRows, MessageUpdate, !Info) :-
     !.Info = pager_info(Scrollable0),
     Top = get_top(Scrollable0),
@@ -526,15 +579,29 @@ draw_pager_line(Panel, Line, IsCursor, !IO) :-
         my_addstr(Panel, "| ", !IO),
         my_addstr(Panel, Header, !IO),
         my_addstr(Panel, ": ", !IO),
-        panel.attr_set(Panel, normal, !IO),
+        (
+            IsCursor = yes,
+            Attr = reverse
+        ;
+            IsCursor = no,
+            Attr = normal
+        ),
+        panel.attr_set(Panel, Attr, !IO),
         my_addstr(Panel, Value, !IO)
     ;
         (
             Line = text(Text),
-            Attr = normal
+            Attr0 = normal
         ;
             Line = quoted_text(QuoteLevel, Text),
-            Attr = quote_level_to_attr(QuoteLevel)
+            Attr0 = quote_level_to_attr(QuoteLevel)
+        ),
+        (
+            IsCursor = yes,
+            Attr = Attr0 + reverse
+        ;
+            IsCursor = no,
+            Attr = Attr0
         ),
         panel.attr_set(Panel, Attr, !IO),
         my_addstr(Panel, Text, !IO)

@@ -5,6 +5,8 @@
 
 :- pred strcase_equal(string::in, string::in) is semidet.
 
+:- pred strcase_str(string::in, string::in) is semidet.
+
 :- pred verify_utf8(string::in) is semidet.
 
 %-----------------------------------------------------------------------------%
@@ -19,6 +21,13 @@
     [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
 "
     SUCCESS_INDICATOR = (strcasecmp(SA, SB) == 0);
+").
+
+:- pragma foreign_proc("C",
+    strcase_str(SA::in, SB::in),
+    [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
+"
+    SUCCESS_INDICATOR = (strcasestr(SA, SB) != 0);
 ").
 
 verify_utf8(String) :-
