@@ -19,6 +19,7 @@
 
 :- implementation.
 
+:- import_module bool.
 :- import_module char.
 :- import_module list.
 :- import_module string.
@@ -34,13 +35,15 @@ text_entry(Screen, Prompt, Return, !IO) :-
 text_entry_initial(Screen, Prompt, Initial, Return, !IO) :-
     string.to_char_list(Initial, Before0),
     list.reverse(Before0, Before),
-    text_entry(Screen, Prompt, Before, [], Return, !IO),
+    After = [],
+    FirstTime = yes,
+    text_entry(Screen, Prompt, Before, After, FirstTime, Return, !IO),
     update_message(Screen, clear_message, !IO).
 
 :- pred text_entry(screen::in, string::in, list(char)::in, list(char)::in,
-    maybe(string)::out, io::di, io::uo) is det.
+    bool::in, maybe(string)::out, io::di, io::uo) is det.
 
-text_entry(Screen, Prompt, Before, After, Return, !IO) :-
+text_entry(Screen, Prompt, Before, After, FirstTime, Return, !IO) :-
     draw_text_entry(Screen, Prompt, Before, After, !IO),
     get_char(Char, !IO),
     (
@@ -104,11 +107,27 @@ text_entry(Screen, Prompt, Before, After, Return, !IO) :-
         text_entry(Screen, Prompt, [], [], Return, !IO)
     ;
         ( isprint(Char) ->
-            text_entry(Screen, Prompt, [Char | Before], After, Return, !IO)
+            (
+                FirstTime = yes,
+                not char.is_whitespace(Char)
+            ->
+                Before1 = [Char]
+            ;
+                Before1 = [Char | Before]
+            ),
+            text_entry(Screen, Prompt, Before1, After, Return, !IO)
         ;
             text_entry(Screen, Prompt, Before, After, Return, !IO)
         )
     ).
+
+:- pred text_entry(screen::in, string::in,
+    list(char)::in, list(char)::in, maybe(string)::out, io::di, io::uo) is det.
+
+:- pragma inline(text_entry/7).
+
+text_entry(Screen, Prompt, Before, After, Return, !IO) :-
+    text_entry(Screen, Prompt, Before, After, no, Return, !IO).
 
 :- pred draw_text_entry(screen::in, string::in, list(char)::in, list(char)::in,
     io::di, io::uo) is det.
