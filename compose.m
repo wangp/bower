@@ -620,7 +620,7 @@ append_attachment(NewAttachment, NumRows, !AttachInfo) :-
     scrollable.append_line(NewAttachment, !AttachInfo),
     NumLines = get_num_lines(!.AttachInfo),
     Cursor = NumLines - 1,
-    scrollable.set_cursor_centred(Cursor, NumRows, !AttachInfo).
+    scrollable.set_cursor_visible(Cursor, NumRows, !AttachInfo).
 
 :- pred delete_attachment(screen::in, attach_info::in, attach_info::out,
     io::di, io::uo) is det.
