@@ -57,6 +57,7 @@
                 i_date      :: string,
                 i_authors   :: string,
                 i_subject   :: string,
+                i_matched   :: int,
                 i_total     :: int
             ).
 
@@ -144,12 +145,12 @@ add_thread(Nowish, Thread, !Lines) :-
 :- pred thread_to_index_line(tm::in, thread::in, index_line::out) is det.
 
 thread_to_index_line(Nowish, Thread, Line) :-
-    Thread = thread(Id, Timestamp, Authors, Subject, Tags, _Matched, Total),
+    Thread = thread(Id, Timestamp, Authors, Subject, Tags, Matched, Total),
     timestamp_to_tm(Timestamp, TM),
     Shorter = yes,
     make_reldate(Nowish, TM, Shorter, Date),
     Line0 = index_line(Id, old, read, not_replied, unflagged, Date, Authors,
-        Subject, Total),
+        Subject, Matched, Total),
     list.foldl(apply_tag, Tags, Line0, Line).
 
 :- pred apply_tag(string::in, index_line::in, index_line::out) is det.
@@ -384,7 +385,7 @@ draw_index_view(Screen, Info, !IO) :-
 
 draw_index_line(Panel, Line, IsCursor, !IO) :-
     Line = index_line(_Id, _New, Unread, Replied, Flagged, Date, Authors,
-        Subject, Total),
+        Subject, Matched, Total),
     (
         IsCursor = yes,
         panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
@@ -421,7 +422,12 @@ draw_index_line(Panel, Line, IsCursor, !IO) :-
     cond_attr_set(Panel, Base, IsCursor, !IO),
     my_addstr_fixed(Panel, 25, Authors, ' ', !IO),
     cond_attr_set(Panel, fg(green) + Base, IsCursor, !IO),
-    my_addstr(Panel, format(" %-3d ", [i(Total)]), !IO),
+    ( Matched = Total ->
+        CountStr = format(" %3d     ", [i(Total)])
+    ;
+        CountStr = format(" %3d/%-3d ", [i(Matched), i(Total)])
+    ),
+    my_addstr(Panel, CountStr, !IO),
     cond_attr_set(Panel, normal, IsCursor, !IO),
     my_addstr(Panel, Subject, !IO).
 
