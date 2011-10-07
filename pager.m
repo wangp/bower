@@ -479,23 +479,35 @@ is_message_start(MessageId, start_message_header(Message, _, _)) :-
 
 skip_to_search(NumRows, SearchKind, Search, MessageUpdate, !Info) :-
     !.Info = pager_info(Scrollable0),
-    Top = get_top(Scrollable0),
-    Bot = Top + NumRows,
+    Top0 = get_top(Scrollable0),
+    Bot = Top0 + NumRows,
     (
         SearchKind = continue_search,
         get_cursor(Scrollable0, Cursor0),
-        Cursor0 >= Top,
+        Cursor0 >= Top0,
         Cursor0 < Bot
     ->
         Cursor1 = Cursor0 + 1
     ;
-        Cursor1 = Top
+        Cursor1 = Top0
     ),
     (
         search_forward(line_matches_search(Search), Scrollable0,
             Cursor1, Cursor, _MatchLine)
     ->
-        set_cursor_centred(Cursor, NumRows, Scrollable0, Scrollable),
+        (
+            % Jump to the message containing the match, if it wasn't already.
+            search_reverse(is_message_start, Scrollable0, Cursor + 1,
+                NewMsgStart),
+            search_reverse(is_message_start, Scrollable0, Top0 + 1,
+                OldMsgStart),
+            NewMsgStart \= OldMsgStart
+        ->
+            set_top(NewMsgStart, Scrollable0, Scrollable1)
+        ;
+            Scrollable1 = Scrollable0
+        ),
+        set_cursor_visible(Cursor, NumRows, Scrollable1, Scrollable),
         MessageUpdate = clear_message
     ;
         set_cursor_none(Scrollable0, Scrollable),
