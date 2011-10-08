@@ -136,8 +136,14 @@ setup_index_view(Threads, Info, !IO) :-
     Nowish = localtime(Time),
     list.foldl(add_thread(Nowish), Threads, cord.init, LinesCord),
     Lines = list(LinesCord),
-    Cursor = 0,
-    Scrollable = scrollable.init_with_cursor(Lines, Cursor),
+    (
+        Lines = [],
+        Scrollable = scrollable.init(Lines)
+    ;
+        Lines = [_ | _],
+        Cursor = 0,
+        Scrollable = scrollable.init_with_cursor(Lines, Cursor)
+    ),
     MaybeSearch = no,
     Info = index_info(Scrollable, MaybeSearch).
 
