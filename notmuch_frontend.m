@@ -35,7 +35,7 @@ main(!IO) :-
     create_screen(Screen, !IO),
     (
         Terms = [],
-        open_index(Screen, [], !IO)
+        open_index(Screen, [], Terms, !IO)
     ;
         Terms = [_ | _],
         open_index_search_terms(Screen, Terms, !IO)
