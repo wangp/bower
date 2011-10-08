@@ -120,8 +120,9 @@ open_index_search_terms(Screen, Terms, !IO) :-
 search_terms_with_progress(Screen, Terms, Threads, !IO) :-
     update_message(Screen, set_info("Searching..."), !IO),
     panel.update_panels(!IO),
-    run_notmuch(["search", "--format=json" | Terms], parse_threads_list,
-        Result, !IO),
+    run_notmuch([
+        "search", "--format=json", "--" | Terms
+    ], parse_threads_list, Result, !IO),
     (
         Result = ok(Threads),
         string.format("Found %d threads.", [i(length(Threads))], Message),
@@ -501,8 +502,9 @@ line_matches_thread_id(ThreadId, Line) :-
 
 refresh_index_line(Screen, ThreadId, !IndexInfo, !IO) :-
     Term = thread_id_to_search_term(ThreadId),
-    run_notmuch(["search", "--format=json", Term],
-        parse_threads_list, Result, !IO),
+    run_notmuch([
+        "search", "--format=json", "--", Term
+    ], parse_threads_list, Result, !IO),
     (
         Result = ok([Thread]),
         time(Time, !IO),

@@ -101,8 +101,9 @@
 %-----------------------------------------------------------------------------%
 
 open_thread_pager(Screen, ThreadId, NeedRefresh, !IO) :-
-    run_notmuch(["show", "--format=json", thread_id_to_search_term(ThreadId)],
-        parse_messages_list, Result, !IO),
+    run_notmuch([
+        "show", "--format=json", "--", thread_id_to_search_term(ThreadId)
+    ], parse_messages_list, Result, !IO),
     (
         Result = ok(Messages0),
         list.filter_map(filter_unwanted_messages, Messages0, Messages)

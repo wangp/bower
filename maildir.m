@@ -70,7 +70,7 @@ call_notmuch_deliver(FileName, Folder, TagOps, Res, !IO) :-
 
 find_drafts(MessageIds, !IO) :-
     run_notmuch([
-        "search", "--format=json", "--output=messages",
+        "search", "--format=json", "--output=messages", "--",
         "tag:draft", "-tag:deleted"
     ], parse_message_id_list, Result, !IO),
     (

@@ -69,7 +69,7 @@ select_recall(Screen, MaybeSelected, !IO) :-
 
 make_recall_line(MessageId, Line, !IO) :-
     run_notmuch([
-        "show", "--format=json", "--part=0",
+        "show", "--format=json", "--part=0", "--",
         message_id_to_search_term(MessageId)
     ], parse_top_message, Result, !IO),
     (
