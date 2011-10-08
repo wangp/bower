@@ -36,6 +36,7 @@
 :- import_module curs.panel.
 :- import_module recall.
 :- import_module scrollable.
+:- import_module string_util.
 :- import_module text_entry.
 :- import_module thread_pager.
 :- import_module time_util.
@@ -44,7 +45,8 @@
 
 :- type index_info
     --->    index_info(
-                i_scrollable    :: scrollable(index_line)
+                i_scrollable    :: scrollable(index_line),
+                i_search        :: maybe(string)
             ).
 
 :- type index_line
@@ -85,6 +87,8 @@
     ;       enter_limit
     ;       start_compose
     ;       start_recall
+    ;       prompt_search
+    ;       skip_to_search
     ;       quit.
 
 :- type action
@@ -93,6 +97,7 @@
     ;       enter_limit
     ;       start_compose
     ;       start_recall
+    ;       prompt_search
     ;       quit.
 
 :- instance scrollable.line(index_line) where [
@@ -133,7 +138,8 @@ setup_index_view(Threads, Info, !IO) :-
     Lines = list(LinesCord),
     Cursor = 0,
     Scrollable = scrollable.init_with_cursor(Lines, Cursor),
-    Info = index_info(Scrollable).
+    MaybeSearch = no,
+    Info = index_info(Scrollable, MaybeSearch).
 
 :- pred add_thread(tm::in, thread::in,
     cord(index_line)::in, cord(index_line)::out) is det.
@@ -218,6 +224,10 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         ),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
+        Action = prompt_search,
+        prompt_search(Screen, !IndexInfo, !IO),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
         Action = quit
     ).
 
@@ -257,6 +267,14 @@ index_view_input(Screen, Char, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = start_recall
         ;
+            Binding = prompt_search,
+            MessageUpdate = no_change,
+            Action = prompt_search
+        ;
+            Binding = skip_to_search,
+            skip_to_search(Screen, MessageUpdate, !IndexInfo),
+            Action = continue
+        ;
             Binding = quit,
             MessageUpdate = no_change,
             Action = quit
@@ -275,16 +293,18 @@ key_binding('\r', enter).
 key_binding('l', enter_limit).
 key_binding('m', start_compose).
 key_binding('R', start_recall).
+key_binding('/', prompt_search).
+key_binding('n', skip_to_search).
 key_binding('q', quit).
 
 :- pred move_cursor(screen::in, int::in, message_update::out,
     index_info::in, index_info::out) is det.
 
 move_cursor(Screen, Delta, MessageUpdate, !Info) :-
-    !.Info = index_info(Scrollable0),
+    !.Info = index_info(Scrollable0, MaybeSearch),
     NumRows = list.length(Screen ^ main_panels),
     move_cursor(NumRows, Delta, HitLimit, Scrollable0, Scrollable),
-    !:Info = index_info(Scrollable),
+    !:Info = index_info(Scrollable, MaybeSearch),
     (
         HitLimit = no,
         MessageUpdate = clear_message
@@ -301,7 +321,7 @@ move_cursor(Screen, Delta, MessageUpdate, !Info) :-
     index_info::in, index_info::out) is det.
 
 skip_to_unread(Screen, MessageUpdate, !Info) :-
-    !.Info = index_info(Scrollable0),
+    !.Info = index_info(Scrollable0, MaybeSearch),
     NumRows = list.length(Screen ^ main_panels),
     ( get_cursor(Scrollable0, Cursor0) ->
         (
@@ -322,7 +342,7 @@ skip_to_unread(Screen, MessageUpdate, !Info) :-
     ;
         unexpected($module, $pred, "no cursor")
     ),
-    !:Info = index_info(Scrollable).
+    !:Info = index_info(Scrollable, MaybeSearch).
 
 :- pred is_unread_line(index_line::in) is semidet.
 
@@ -332,12 +352,80 @@ is_unread_line(Line) :-
 :- pred enter(index_info::in, action::out) is det.
 
 enter(Info, Action) :-
-    Info = index_info(Scrollable),
+    Info = index_info(Scrollable, _),
     ( get_cursor_line(Scrollable, _, CursorLine) ->
         ThreadId = CursorLine ^ i_id,
         Action = open_pager(ThreadId)
     ;
         Action = continue
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred prompt_search(screen::in, index_info::in, index_info::out,
+    io::di, io::uo) is det.
+
+prompt_search(Screen, !Info, !IO) :-
+    MaybeInitial = !.Info ^ i_search,
+    (
+        MaybeInitial = yes(Initial)
+    ;
+        MaybeInitial = no,
+        Initial = ""
+    ),
+    text_entry_initial(Screen, "Search for: ", Initial, Return, !IO),
+    ( Return = yes(Search) ->
+        ( Search = "" ->
+            !Info ^ i_search := no
+        ;
+            !Info ^ i_search := yes(Search),
+            skip_to_search(Screen, MessageUpdate, !Info),
+            update_message(Screen, MessageUpdate, !IO)
+        )
+    ;
+        true
+    ).
+
+:- pred skip_to_search(screen::in, message_update::out,
+    index_info::in, index_info::out) is det.
+
+skip_to_search(Screen, MessageUpdate, !Info) :-
+    !.Info = index_info(Scrollable0, MaybeSearch),
+    NumRows = list.length(Screen ^ main_panels),
+    (
+        MaybeSearch = yes(Search),
+        (
+            get_cursor(Scrollable0, Cursor0),
+            search_forward(line_matches_search(Search), Scrollable0,
+                Cursor0 + 1, Cursor, _)
+        ->
+            set_cursor_visible(Cursor, NumRows, Scrollable0, Scrollable),
+            MessageUpdate = clear_message
+        ;
+            search_forward(line_matches_search(Search), Scrollable0,
+                0, Cursor, _)
+        ->
+            set_cursor_visible(Cursor, NumRows, Scrollable0, Scrollable),
+            MessageUpdate = set_info("Search wrapped to top.")
+        ;
+            Scrollable = Scrollable0,
+            MessageUpdate = set_warning("Not found.")
+        ),
+        !:Info = index_info(Scrollable, MaybeSearch)
+    ;
+        MaybeSearch = no,
+        MessageUpdate = set_warning("No search string.")
+    ).
+
+:- pred line_matches_search(string::in, index_line::in) is semidet.
+
+line_matches_search(Search, Line) :-
+    Line = index_line(_Id, _New, _Unread, _Replied, _Flagged, _Date,
+        Authors, Subject, _Matched, _Total),
+    (
+        strcase_str(Authors, Search)
+    ;
+        strcase_str(Subject, Search)
     ).
 
 %-----------------------------------------------------------------------------%
@@ -366,10 +454,10 @@ refresh_index_line(Screen, ThreadId, !IndexInfo, !IO) :-
     index_info::in, index_info::out) is det.
 
 replace_index_cursor_line(Nowish, Thread, !Info) :-
-    !.Info = index_info(Scrollable0),
+    !.Info = index_info(Scrollable0, MaybeSearch),
     thread_to_index_line(Nowish, Thread, Line),
     set_cursor_line(Line, Scrollable0, Scrollable),
-    !:Info = index_info(Scrollable).
+    !:Info = index_info(Scrollable, MaybeSearch).
 
 %-----------------------------------------------------------------------------%
 
@@ -377,7 +465,7 @@ replace_index_cursor_line(Nowish, Thread, !Info) :-
 
 draw_index_view(Screen, Info, !IO) :-
     MainPanels = Screen ^ main_panels,
-    Info = index_info(Scrollable),
+    Info = index_info(Scrollable, _),
     scrollable.draw(MainPanels, Scrollable, !IO).
 
 :- pred draw_index_line(panel::in, index_line::in, bool::in,
