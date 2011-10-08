@@ -88,10 +88,17 @@
     ;       header(string, string)
     ;       text(string)
     ;       quoted_text(quote_level, string)
+    ;       diff_text(diff_line, string)
     ;       attachment(part)
     ;       message_separator.
 
 :- type quote_level == int.
+
+:- type diff_line
+    --->    diff_add
+    ;       diff_rem
+    ;       diff_hunk
+    ;       diff_index.
 
 :- type binding
     --->    leave_pager
@@ -180,54 +187,59 @@ append_part(Cols, IsFirst, Part, !Lines) :-
         Start = 0,
         LastBreak = 0,
         Cur = 0,
-        append_text(Cols, Text, Start, LastBreak, Cur, no, !Lines)
+        QuoteLevel = no,
+        InDiff = no,
+        append_text(Cols, Text, Start, LastBreak, Cur, QuoteLevel, InDiff,
+            !Lines)
     ;
         MaybeText = no,
         snoc(text("(not supported)"), !Lines)
     ).
 
 :- pred append_text(int::in, string::in, int::in, int::in, int::in,
-    maybe(quote_level)::in, cord(pager_line)::in, cord(pager_line)::out)
-    is det.
+    maybe(quote_level)::in, bool::in,
+    cord(pager_line)::in, cord(pager_line)::out) is det.
 
-append_text(Max, String, Start, LastBreak, Cur, QuoteLevel, !Lines) :-
+append_text(Max, String, Start, LastBreak, Cur, QuoteLevel, !.InDiff, !Lines) :-
     ( string.unsafe_index_next(String, Cur, Next, Char) ->
         (
             Char = '\n'
         ->
-            append_substring(String, Start, Cur, QuoteLevel, _, !Lines),
-            append_text(Max, String, Next, Next, Next, no, !Lines)
+            append_substring(String, Start, Cur, QuoteLevel, _, !InDiff, !Lines),
+            append_text(Max, String, Next, Next, Next, no, !.InDiff, !Lines)
         ;
             char.is_whitespace(Char)
         ->
-            append_text(Max, String, Start, Cur, Next, QuoteLevel, !Lines)
+            append_text(Max, String, Start, Cur, Next, QuoteLevel, !.InDiff,
+                !Lines)
         ;
             % XXX this should actually count with wcwidth
             Next - Start > Max
         ->
             maybe_append_substring(String, Start, LastBreak, QuoteLevel,
-                ContQuoteLevel, !Lines),
+                ContQuoteLevel, !InDiff, !Lines),
             skip_whitespace(String, LastBreak, NextStart),
             append_text(Max, String, NextStart, NextStart, Next,
-                yes(ContQuoteLevel), !Lines)
+                yes(ContQuoteLevel), !.InDiff, !Lines)
         ;
             append_text(Max, String, Start, LastBreak, Next, QuoteLevel,
-                !Lines)
+                !.InDiff, !Lines)
         )
     ;
         % End of string.
-        maybe_append_substring(String, Start, Cur, QuoteLevel, _, !Lines)
+        maybe_append_substring(String, Start, Cur, QuoteLevel, _,
+            !.InDiff, _, !Lines)
     ).
 
 :- pred maybe_append_substring(string::in, int::in, int::in,
-    maybe(quote_level)::in, quote_level::out,
+    maybe(quote_level)::in, quote_level::out, bool::in, bool::out,
     cord(pager_line)::in, cord(pager_line)::out) is det.
 
 maybe_append_substring(String, Start, End, QuoteLevel, ContQuoteLevel,
-        !Lines) :-
+        !InDiff, !Lines) :-
     ( End > Start ->
         append_substring(String, Start, End, QuoteLevel, ContQuoteLevel,
-            !Lines)
+            !InDiff, !Lines)
     ;
         (
             QuoteLevel = yes(ContQuoteLevel)
@@ -238,9 +250,11 @@ maybe_append_substring(String, Start, End, QuoteLevel, ContQuoteLevel,
     ).
 
 :- pred append_substring(string::in, int::in, int::in, maybe(quote_level)::in,
-    quote_level::out, cord(pager_line)::in, cord(pager_line)::out) is det.
+    quote_level::out, bool::in, bool::out,
+    cord(pager_line)::in, cord(pager_line)::out) is det.
 
-append_substring(String, Start, End, MaybeLevel, ContQuoteLevel, !Lines) :-
+append_substring(String, Start, End, MaybeLevel, ContQuoteLevel, !InDiff,
+        !Lines) :-
     string.unsafe_between(String, Start, End, SubString),
     (
         MaybeLevel = yes(Level)
@@ -249,11 +263,22 @@ append_substring(String, Start, End, MaybeLevel, ContQuoteLevel, !Lines) :-
         Level = detect_quote_level(SubString, 0)
     ),
     ( Level = 0 ->
-        snoc(text(SubString), !Lines)
+        append_unquoted_string(SubString, !InDiff, !Lines)
     ;
         snoc(quoted_text(Level, SubString), !Lines)
     ),
     ContQuoteLevel = Level.
+
+:- pred append_unquoted_string(string::in, bool::in, bool::out,
+    cord(pager_line)::in, cord(pager_line)::out) is det.
+
+append_unquoted_string(String, !InDiff, !Lines) :-
+    (  detect_diff(String, !.InDiff, DiffLine) ->
+        !:InDiff = yes,
+        snoc(diff_text(DiffLine, String), !Lines)
+    ;
+        snoc(text(String), !Lines)
+    ).
 
 :- func detect_quote_level(string, int) = int.
 
@@ -268,6 +293,37 @@ detect_quote_level(String, Pos) = QuoteLevel :-
         )
     ;
         QuoteLevel = 0
+    ).
+
+:- pred detect_diff(string::in, bool::in, diff_line::out) is semidet.
+
+detect_diff(String, InDiff, Diff) :-
+    ( String \= "" ->
+        string.unsafe_index(String, 0, Char),
+        (
+            Char = ('+'),
+            InDiff = yes,
+            Diff = diff_add
+        ;
+            Char = ('-'),
+            not string.all_match(unify('-'), String),
+            InDiff = yes,
+            Diff = diff_rem
+        ;
+            Char = ('@'),
+            string.prefix(String, "@@ "),
+            Diff = diff_hunk
+        ;
+            Char = 'd',
+            string.prefix(String, "diff -"),
+            Diff = diff_index
+        ;
+            Char = 'I',
+            string.prefix(String, "Index: "),
+            Diff = diff_index
+        )
+    ;
+        fail
     ).
 
 :- pred skip_whitespace(string::in, int::in, int::out) is det.
@@ -293,7 +349,10 @@ setup_pager_for_staging(Cols, Text, Info) :-
     Start = 0,
     LastBreak = 0,
     Cur = 0,
-    append_text(Cols, Text, Start, LastBreak, Cur, no, cord.init, LinesCord),
+    MaybeLevel = no,
+    InDiff = no,
+    append_text(Cols, Text, Start, LastBreak, Cur, MaybeLevel, InDiff,
+        cord.init, LinesCord),
     Lines = list(LinesCord),
     Scrollable = scrollable.init(Lines),
     Info = pager_info(Scrollable).
@@ -524,6 +583,7 @@ line_matches_search(Search, Line) :-
         ; Line = header(_, String)
         ; Line = text(String)
         ; Line = quoted_text(_, String)
+        ; Line = diff_text(_, String)
         ),
         strcase_str(String, Search)
     ;
@@ -607,6 +667,9 @@ draw_pager_line(Panel, Line, IsCursor, !IO) :-
         ;
             Line = quoted_text(QuoteLevel, Text),
             Attr0 = quote_level_to_attr(QuoteLevel)
+        ;
+            Line = diff_text(DiffLine, Text),
+            Attr0 = diff_line_to_attr(DiffLine)
         ),
         (
             IsCursor = yes,
@@ -653,6 +716,13 @@ quote_level_to_attr(QuoteLevel) =
     ;
         fg_bg(green, black)
     ).
+
+:- func diff_line_to_attr(diff_line) = attr.
+
+diff_line_to_attr(diff_add) = fg_bg(cyan, black) + bold.
+diff_line_to_attr(diff_rem) = fg_bg(red, black) + bold.
+diff_line_to_attr(diff_hunk) = fg_bg(yellow, black) + bold.
+diff_line_to_attr(diff_index) = fg_bg(green, black) + bold.
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
