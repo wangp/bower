@@ -8,11 +8,12 @@
 
 :- import_module data.
 :- import_module screen.
+:- import_module text_entry.
 
 %-----------------------------------------------------------------------------%
 
-:- pred open_thread_pager(screen::in, thread_id::in, bool::out, io::di, io::uo)
-    is det.
+:- pred open_thread_pager(screen::in, thread_id::in, bool::out,
+    history::in, history::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -40,7 +41,6 @@
 :- import_module pager.
 :- import_module quote_arg.
 :- import_module scrollable.
-:- import_module text_entry.
 :- import_module time_util.
 
 %-----------------------------------------------------------------------------%
@@ -51,7 +51,8 @@
                 tp_num_thread_rows  :: int,
                 tp_pager            :: pager_info,
                 tp_num_pager_rows   :: int,
-                tp_search           :: maybe(string)
+                tp_search           :: maybe(string),
+                tp_search_history   :: history
             ).
 
 :- type thread_line
@@ -100,7 +101,8 @@
 
 %-----------------------------------------------------------------------------%
 
-open_thread_pager(Screen, ThreadId, NeedRefresh, !IO) :-
+open_thread_pager(Screen, ThreadId, NeedRefresh, SearchHistory0, SearchHistory,
+        !IO) :-
     run_notmuch([
         "show", "--format=json", "--", thread_id_to_search_term(ThreadId)
     ], parse_messages_list, Result, !IO),
@@ -115,11 +117,13 @@ open_thread_pager(Screen, ThreadId, NeedRefresh, !IO) :-
     Nowish = localtime(Time),
     Rows = Screen ^ rows,
     Cols = Screen ^ cols,
-    setup_thread_pager(Nowish, Rows - 2, Cols, Messages, ThreadPagerInfo,
-        Count),
+    setup_thread_pager(Nowish, Rows - 2, Cols, Messages, SearchHistory0,
+        ThreadPagerInfo0, Count),
     string.format("Showing message 1 of %d.", [i(Count)], Msg),
     update_message(Screen, set_info(Msg), !IO),
-    thread_pager_loop(Screen, NeedRefresh, ThreadPagerInfo, _, !IO).
+    thread_pager_loop(Screen, NeedRefresh, ThreadPagerInfo0, ThreadPagerInfo,
+        !IO),
+    SearchHistory = ThreadPagerInfo ^ tp_search_history.
 
 :- pred filter_unwanted_messages(message::in, message::out) is semidet.
 
@@ -133,10 +137,10 @@ filter_unwanted_messages(!Message) :-
     !Message ^ m_replies := Replies.
 
 :- pred setup_thread_pager(tm::in, int::in, int::in, list(message)::in,
-    thread_pager_info::out, int::out) is det.
+    history::in, thread_pager_info::out, int::out) is det.
 
-setup_thread_pager(Nowish, Rows, Cols, Messages, ThreadPagerInfo,
-        NumThreadLines) :-
+setup_thread_pager(Nowish, Rows, Cols, Messages, SearchHistory,
+        ThreadPagerInfo, NumThreadLines) :-
     append_messages(Nowish, [], [], Messages, "", cord.init, ThreadCord),
     ThreadLines = list(ThreadCord),
     Scrollable = scrollable.init_with_cursor(ThreadLines, 0),
@@ -147,7 +151,7 @@ setup_thread_pager(Nowish, Rows, Cols, Messages, ThreadPagerInfo,
     SepLine = 1,
     NumPagerRows = int.max(0, Rows - NumThreadRows - SepLine),
     ThreadPagerInfo1 = thread_pager_info(Scrollable, NumThreadRows,
-        PagerInfo, NumPagerRows, no),
+        PagerInfo, NumPagerRows, no, SearchHistory),
     (
         get_cursor_line(Scrollable, _, FirstLine),
         is_unread_line(FirstLine)
@@ -479,7 +483,7 @@ sync_thread_to_pager(!Info) :-
 
 skip_to_unread(MessageUpdate, !Info) :-
     !.Info = thread_pager_info(Scrollable0, NumThreadRows, PagerInfo0,
-        NumPagerRows, MaybeSearch),
+        NumPagerRows, MaybeSearch, SearchHistory),
     (
         get_cursor(Scrollable0, Cursor0),
         search_forward(is_unread_line, Scrollable0, Cursor0 + 1, Cursor,
@@ -489,7 +493,7 @@ skip_to_unread(MessageUpdate, !Info) :-
         MessageId = ThreadLine ^ tp_message ^ m_id,
         skip_to_message(MessageId, PagerInfo0, PagerInfo),
         !:Info = thread_pager_info(Scrollable, NumThreadRows, PagerInfo,
-            NumPagerRows, MaybeSearch),
+            NumPagerRows, MaybeSearch, SearchHistory),
         MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("No more unread messages.")
@@ -745,21 +749,16 @@ prompt_open_attachment(Screen, Part, !IO) :-
     thread_pager_info::out, io::di, io::uo) is det.
 
 prompt_search(Screen, !Info, !IO) :-
-    MaybeInitial = !.Info ^ tp_search,
-    (
-        MaybeInitial = yes(Initial)
-    ;
-        MaybeInitial = no,
-        Initial = ""
-    ),
-    text_entry_initial(Screen, "Search for: ", init_history, Initial, Return,
-        !IO),
+    History0 = !.Info ^ tp_search_history,
+    text_entry(Screen, "Search for: ", History0, Return, !IO),
     (
         Return = yes(Search),
         ( Search = "" ->
             !Info ^ tp_search := no
         ;
+            add_history_nodup(Search, History0, History),
             !Info ^ tp_search := yes(Search),
+            !Info ^ tp_search_history := History,
             skip_to_search(new_search, MessageUpdate, !Info),
             update_message(Screen, MessageUpdate, !IO)
         )

@@ -215,7 +215,10 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = open_pager(ThreadId),
-        open_thread_pager(Screen, ThreadId, NeedRefresh, !IO),
+        History0 = !.IndexInfo ^ i_search_history,
+        open_thread_pager(Screen, ThreadId, NeedRefresh, History0, History,
+            !IO),
+        !IndexInfo ^ i_search_history := History,
         (
             NeedRefresh = yes,
             refresh_index_line(Screen, ThreadId, !IndexInfo, !IO)
