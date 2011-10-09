@@ -96,10 +96,10 @@
 
 start_compose(Screen, !IO) :-
     get_from(From, !IO),
-    text_entry(Screen, "To: ", MaybeTo, !IO),
+    text_entry(Screen, "To: ", init_history, MaybeTo, !IO),
     (
         MaybeTo = yes(To),
-        text_entry(Screen, "Subject: ", MaybeSubject, !IO),
+        text_entry(Screen, "Subject: ", init_history, MaybeSubject, !IO),
         (
             MaybeSubject = yes(Subject),
             some [!Headers] (
@@ -466,7 +466,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO) :-
 edit_header(Screen, HeaderType, !StagingInfo, !IO) :-
     Headers0 = !.StagingInfo ^ si_headers,
     get_header(HeaderType, Headers0, Prompt, Initial),
-    text_entry_initial(Screen, Prompt, Initial, Return, !IO),
+    text_entry_initial(Screen, Prompt, init_history, Initial, Return, !IO),
     (
         Return = yes(Final),
         set_header(HeaderType, Final, Headers0, Headers),
@@ -519,7 +519,7 @@ scroll_attachments(Screen, NumRows, Delta, !AttachInfo, !IO) :-
     io::di, io::uo) is det.
 
 add_attachment(Screen, NumRows, !AttachInfo, !IO) :-
-    text_entry(Screen, "Attach file: ", Return, !IO),
+    text_entry(Screen, "Attach file: ", init_history, Return, !IO),
     (
         Return = yes(FileName),
         do_attach_file(FileName, NumRows, MessageUpdate, !AttachInfo, !IO)

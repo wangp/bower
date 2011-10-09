@@ -4,18 +4,12 @@
 :- interface.
 
 :- import_module io.
-:- import_module list.
 
-:- import_module data.
 :- import_module screen.
 
 %-----------------------------------------------------------------------------%
 
-:- pred open_index_search_terms(screen::in, list(string)::in, io::di, io::uo)
-    is det.
-
-:- pred open_index(screen::in, list(thread)::in, list(string)::in,
-    io::di, io::uo) is det.
+:- pred open_index(screen::in, string::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -25,6 +19,7 @@
 :- import_module char.
 :- import_module bool.
 :- import_module cord.
+:- import_module list.
 :- import_module maybe.
 :- import_module int.
 :- import_module require.
@@ -35,6 +30,7 @@
 :- import_module compose.
 :- import_module curs.
 :- import_module curs.panel.
+:- import_module data.
 :- import_module recall.
 :- import_module scrollable.
 :- import_module string_util.
@@ -46,9 +42,11 @@
 
 :- type index_info
     --->    index_info(
-                i_scrollable    :: scrollable(index_line),
-                i_search_terms  :: list(string),
-                i_search        :: maybe(string)
+                i_scrollable        :: scrollable(index_line),
+                i_search_terms      :: string,
+                i_search            :: maybe(string),
+                i_limit_history     :: history,
+                i_search_history    :: history
             ).
 
 :- type index_line
@@ -110,18 +108,28 @@
 
 %-----------------------------------------------------------------------------%
 
-open_index_search_terms(Screen, Terms, !IO) :-
-    search_terms_with_progress(Screen, Terms, Threads, !IO),
-    open_index(Screen, Threads, Terms, !IO).
+open_index(Screen, Terms, !IO) :-
+    ( Terms = "" ->
+        Threads = [],
+        History = init_history
+    ;
+        search_terms_with_progress(Screen, Terms, Threads, !IO),
+        add_history_nodup(Terms, init_history, History)
+    ),
+    setup_index_scrollable_now(Threads, Scrollable, !IO),
+    MaybeSearch = no,
+    IndexInfo = index_info(Scrollable, Terms, MaybeSearch, History,
+        init_history),
+    index_loop(Screen, IndexInfo, !IO).
 
-:- pred search_terms_with_progress(screen::in, list(string)::in,
+:- pred search_terms_with_progress(screen::in, string::in,
     list(thread)::out, io::di, io::uo) is det.
 
 search_terms_with_progress(Screen, Terms, Threads, !IO) :-
     update_message(Screen, set_info("Searching..."), !IO),
     panel.update_panels(!IO),
     run_notmuch([
-        "search", "--format=json", "--" | Terms
+        "search", "--format=json", "--", Terms
     ], parse_threads_list, Result, !IO),
     (
         Result = ok(Threads),
@@ -135,13 +143,13 @@ search_terms_with_progress(Screen, Terms, Threads, !IO) :-
     ),
     update_message(Screen, MessageUpdate, !IO).
 
-open_index(Screen, Threads, Terms, !IO) :-
+:- pred setup_index_scrollable_now(list(thread)::in,
+    scrollable(index_line)::out, io::di, io::uo) is det.
+
+setup_index_scrollable_now(Threads, Scrollable, !IO) :-
     time(Time, !IO),
     Nowish = localtime(Time),
-    setup_index_scrollable(Nowish, Threads, Scrollable),
-    MaybeSearch = no,
-    IndexInfo = index_info(Scrollable, Terms, MaybeSearch),
-    index_loop(Screen, IndexInfo, !IO).
+    setup_index_scrollable(Nowish, Threads, Scrollable).
 
 :- pred setup_index_scrollable(tm::in, list(thread)::in,
     scrollable(index_line)::out) is det.
@@ -217,10 +225,18 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = enter_limit,
-        text_entry(Screen, "Limit to messages matching: ", Return, !IO),
+        History0 = !.IndexInfo ^ i_limit_history,
+        text_entry(Screen, "Limit to messages matching: ", History0,
+            Return, !IO),
         (
-            Return = yes(String),
-            open_index_search_terms(Screen, [String], !IO)
+            Return = yes(Terms),
+            search_terms_with_progress(Screen, Terms, Threads, !IO),
+            setup_index_scrollable_now(Threads, Scrollable, !IO),
+            add_history_nodup(Terms, History0, History),
+            !IndexInfo ^ i_scrollable := Scrollable,
+            !IndexInfo ^ i_search_terms := Terms,
+            !IndexInfo ^ i_limit_history := History,
+            index_loop(Screen, !.IndexInfo, !IO)
         ;
             Return = no,
             update_message(Screen, clear_message, !IO),
@@ -392,34 +408,32 @@ enter(Info, Action) :-
     io::di, io::uo) is det.
 
 prompt_search(Screen, !Info, !IO) :-
-    MaybeInitial = !.Info ^ i_search,
+    History0 = !.Info ^ i_search_history,
+    text_entry(Screen, "Search for: ", History0, Return, !IO),
     (
-        MaybeInitial = yes(Initial)
-    ;
-        MaybeInitial = no,
-        Initial = ""
-    ),
-    text_entry_initial(Screen, "Search for: ", Initial, Return, !IO),
-    ( Return = yes(Search) ->
+        Return = yes(Search),
         ( Search = "" ->
             !Info ^ i_search := no
         ;
+            add_history_nodup(Search, History0, History),
             !Info ^ i_search := yes(Search),
+            !Info ^ i_search_history := History,
             skip_to_search(Screen, MessageUpdate, !Info),
             update_message(Screen, MessageUpdate, !IO)
         )
     ;
-        true
+        Return = no
     ).
 
 :- pred skip_to_search(screen::in, message_update::out,
     index_info::in, index_info::out) is det.
 
 skip_to_search(Screen, MessageUpdate, !Info) :-
-    !.Info = index_info(Scrollable0, Terms, MaybeSearch),
-    NumRows = list.length(Screen ^ main_panels),
+    MaybeSearch = !.Info ^ i_search,
     (
         MaybeSearch = yes(Search),
+        Scrollable0 = !.Info ^ i_scrollable,
+        NumRows = list.length(Screen ^ main_panels),
         (
             get_cursor(Scrollable0, Cursor0),
             search_forward(line_matches_search(Search), Scrollable0,
@@ -437,7 +451,7 @@ skip_to_search(Screen, MessageUpdate, !Info) :-
             Scrollable = Scrollable0,
             MessageUpdate = set_warning("Not found.")
         ),
-        !:Info = index_info(Scrollable, Terms, MaybeSearch)
+        !Info ^ i_scrollable := Scrollable
     ;
         MaybeSearch = no,
         MessageUpdate = set_warning("No search string.")
@@ -460,13 +474,12 @@ line_matches_search(Search, Line) :-
     io::di, io::uo) is det.
 
 refresh_all(Screen, !Info, !IO) :-
-    !.Info = index_info(Scrollable0, Terms, MaybeSearch),
+    Terms = !.Info ^ i_search_terms,
     search_terms_with_progress(Screen, Terms, Threads, !IO),
-    time(Time, !IO),
-    Nowish = localtime(Time),
     some [!Scrollable] (
-        setup_index_scrollable(Nowish, Threads, !:Scrollable),
+        Scrollable0 = !.Info ^ i_scrollable,
         Top0 = get_top(Scrollable0),
+        setup_index_scrollable_now(Threads, !:Scrollable, !IO),
         ( Top0 < get_num_lines(!.Scrollable) ->
             set_top(Top0, !Scrollable)
         ;
@@ -486,9 +499,8 @@ refresh_all(Screen, !Info, !IO) :-
         ;
             true
         ),
-        Scrollable = !.Scrollable
-    ),
-    !:Info = index_info(Scrollable, Terms, MaybeSearch).
+        !Info ^ i_scrollable := !.Scrollable
+    ).
 
 :- pred line_matches_thread_id(thread_id::in, index_line::in) is semidet.
 
