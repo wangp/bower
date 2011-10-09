@@ -8,12 +8,17 @@
 :- import_module data.
 :- import_module screen.
 
+:- type compose_history.
+
 :- type reply_kind
     --->    direct_reply
     ;       group_reply
     ;       list_reply.
 
-:- pred start_compose(screen::in, io::di, io::uo) is det.
+:- func init_compose_history = compose_history.
+
+:- pred start_compose(screen::in, compose_history::in, compose_history::out,
+    io::di, io::uo) is det.
 
 :- pred start_reply(screen::in, message::in, reply_kind::in,
     io::di, io::uo) is det.
@@ -62,11 +67,18 @@
     ;       subject
     ;       replyto.
 
+:- type compose_history
+    --->    compose_history(
+                ch_to_hist      :: history,
+                ch_subject_hist :: history
+            ).
+
 :- type staging_info
     --->    staging_info(
                 si_headers      :: headers,
                 si_text         :: string,
-                si_old_msgid    :: maybe(message_id)
+                si_old_msgid    :: maybe(message_id),
+                si_attach_hist  :: history
             ).
 
 :- type attach_info == scrollable(attachment).
@@ -94,14 +106,21 @@
 
 %-----------------------------------------------------------------------------%
 
-start_compose(Screen, !IO) :-
+init_compose_history = compose_history(init_history, init_history).
+
+start_compose(Screen, !History, !IO) :-
     get_from(From, !IO),
-    text_entry(Screen, "To: ", init_history, MaybeTo, !IO),
+    !.History = compose_history(ToHistory0, SubjectHistory0),
+    text_entry_initial(Screen, "To: ", ToHistory0, "", MaybeTo, !IO),
     (
         MaybeTo = yes(To),
-        text_entry(Screen, "Subject: ", init_history, MaybeSubject, !IO),
+        add_history_nodup(To, ToHistory0, ToHistory),
+        text_entry_initial(Screen, "Subject: ", SubjectHistory0, "",
+            MaybeSubject, !IO),
         (
             MaybeSubject = yes(Subject),
+            add_history_nodup(Subject, SubjectHistory0, SubjectHistory),
+            !:History = compose_history(ToHistory, SubjectHistory),
             some [!Headers] (
                 !:Headers = init_headers,
                 !Headers ^ h_from := From,
@@ -298,7 +317,8 @@ create_edit_stage(Screen, Headers0, Text0, Attachments, MaybeOldDraft, !IO) :-
                 ResParse = ok(Headers1 - Text),
                 io.remove_file(Filename, _, !IO),
                 update_references(Headers0, Headers1, Headers),
-                StagingInfo = staging_info(Headers, Text, MaybeOldDraft),
+                StagingInfo = staging_info(Headers, Text, MaybeOldDraft,
+                    init_history),
                 AttachInfo = scrollable.init_with_cursor(Attachments, 0),
                 Cols = Screen ^ cols,
                 setup_pager_for_staging(Cols, Text, PagerInfo),
@@ -375,7 +395,7 @@ update_references(Headers0, !Headers) :-
     pager_info::in, io::di, io::uo) is det.
 
 staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO) :-
-    !.StagingInfo = staging_info(Headers, Text, MaybeOldDraft),
+    !.StagingInfo = staging_info(Headers, Text, MaybeOldDraft, _AttachHistory),
     split_panels(Screen, HeaderPanels, AttachmentPanels, MaybeSepPanel,
         PagerPanels),
     draw_header_lines(HeaderPanels, Headers, !IO),
@@ -416,7 +436,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO) :-
         scroll_attachments(Screen, NumAttachmentRows, -1, !AttachInfo, !IO),
         staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
     ; Char = 'a' ->
-        add_attachment(Screen, NumAttachmentRows, !AttachInfo, !IO),
+        add_attachment(Screen, NumAttachmentRows, !StagingInfo, !AttachInfo, !IO),
         staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
     ; Char = 'd' ->
         delete_attachment(Screen, !AttachInfo, !IO),
@@ -515,13 +535,17 @@ scroll_attachments(Screen, NumRows, Delta, !AttachInfo, !IO) :-
     ),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred add_attachment(screen::in, int::in, attach_info::in, attach_info::out,
+:- pred add_attachment(screen::in, int::in,
+    staging_info::in, staging_info::out, attach_info::in, attach_info::out,
     io::di, io::uo) is det.
 
-add_attachment(Screen, NumRows, !AttachInfo, !IO) :-
-    text_entry(Screen, "Attach file: ", init_history, Return, !IO),
+add_attachment(Screen, NumRows, !StagingInfo, !AttachInfo, !IO) :-
+    AttachHistory0 = !.StagingInfo ^ si_attach_hist,
+    text_entry(Screen, "Attach file: ", AttachHistory0, Return, !IO),
     (
         Return = yes(FileName),
+        add_history_nodup(FileName, AttachHistory0, AttachHistory),
+        !StagingInfo ^ si_attach_hist := AttachHistory,
         do_attach_file(FileName, NumRows, MessageUpdate, !AttachInfo, !IO)
     ;
         Return = no,

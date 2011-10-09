@@ -46,7 +46,8 @@
                 i_search_terms      :: string,
                 i_search            :: maybe(string),
                 i_limit_history     :: history,
-                i_search_history    :: history
+                i_search_history    :: history,
+                i_compose_history   :: compose_history
             ).
 
 :- type index_line
@@ -119,7 +120,7 @@ open_index(Screen, Terms, !IO) :-
     setup_index_scrollable_now(Threads, Scrollable, !IO),
     MaybeSearch = no,
     IndexInfo = index_info(Scrollable, Terms, MaybeSearch, History,
-        init_history),
+        init_history, init_compose_history),
     index_loop(Screen, IndexInfo, !IO).
 
 :- pred search_terms_with_progress(screen::in, string::in,
@@ -251,7 +252,9 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = start_compose,
-        start_compose(Screen, !IO),
+        ComposeHistory0 = !.IndexInfo ^ i_compose_history,
+        start_compose(Screen, ComposeHistory0, ComposeHistory, !IO),
+        !IndexInfo ^ i_compose_history := ComposeHistory,
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = start_recall,
