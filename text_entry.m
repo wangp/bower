@@ -74,21 +74,22 @@ text_entry_initial(Screen, Prompt, History, Initial, Return, !IO) :-
 
 text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
     draw_text_entry(Screen, Prompt, Before, After, !IO),
-    get_char(Char, !IO),
+    get_keycode(Key, !IO),
     (
-        ( Char = '\x07\' % BEL (^G)
-        ; Char = '\x1b\' % ESC
+        ( Key = char('\x07\') % BEL (^G)
+        ; Key = char('\x1b\') % ESC
         )
     ->
         Return = no
     ;
-        Char = '\r' % CR
+        Key = char('\r') % CR
     ->
         String = char_lists_to_string(Before, After),
         Return = yes(String)
     ;
-        ( Char = '\x7f\' % DEL
-        ; Char = '\x08\' % BS
+        ( Key = char('\x7f\') % DEL
+        ; Key = char('\x08\') % BS
+        ; Key = code(key_backspace)
         )
     ->
         (
@@ -99,7 +100,9 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
             text_entry(Screen, Prompt, History, Before1, After, Return, !IO)
         )
     ;
-        Char = '\x02\' % ^B
+        ( Key = char('\x02\') % ^B
+        ; Key = code(key_left)
+        )
     ->
         (
             Before = [B | Before1],
@@ -109,7 +112,9 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
             text_entry(Screen, Prompt, History, Before, After, Return, !IO)
         )
     ;
-        Char = '\x06\' % ^F
+        ( Key = char('\x06\') % ^F
+        ; Key = code(key_right)
+        )
     ->
         (
             After = [A | After1],
@@ -120,21 +125,27 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
             text_entry(Screen, Prompt, History, Before, After, Return, !IO)
         )
     ;
-        Char = '\x01\' % ^A
+        ( Key = char('\x01\') % ^A
+        ; Key = code(key_home)
+        )
     ->
         After1 = list.reverse(Before) ++ After,
         text_entry(Screen, Prompt, History, [], After1, Return, !IO)
     ;
-        Char = '\x05\' % ^E
+        ( Key = char('\x05\') % ^E
+        ; Key = code(key_end)
+        )
     ->
         Before1 = list.reverse(After) ++ Before,
         text_entry(Screen, Prompt, History, Before1, [], Return, !IO)
     ;
-        Char = '\x15\' % ^U
+        Key = char('\x15\') % ^U
     ->
         text_entry(Screen, Prompt, History, [], [], Return, !IO)
     ;
-        Char = '\x10\' % ^P
+        ( Key = char('\x10\') % ^P
+        ; Key = code(key_up)
+        )
     ->
         History = Pre - Post,
         (
@@ -149,7 +160,9 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
             text_entry(Screen, Prompt, History1, Before1, [], Return, !IO)
         )
     ;
-        Char = '\xe\' % ^N
+        ( Key = char('\xe\') % ^N
+        ; Key = code(key_down)
+        )
     ->
         History = Pre - Post,
         (
@@ -164,7 +177,10 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
             text_entry(Screen, Prompt, History1, Before1, [], Return, !IO)
         )
     ;
-        ( isprint(Char) ->
+        (
+            Key = char(Char),
+            isprint(Char)
+        ->
             (
                 FirstTime = yes,
                 not char.is_whitespace(Char)
