@@ -100,6 +100,18 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
             text_entry(Screen, Prompt, History, Before1, After, Return, !IO)
         )
     ;
+        ( Key = char('\x04\') % ^D
+        ; Key = code(key_del)
+        )
+    ->
+        (
+            After = [],
+            text_entry(Screen, Prompt, History, Before, After, Return, !IO)
+        ;
+            After = [_ | After1],
+            text_entry(Screen, Prompt, History, Before, After1, Return, !IO)
+        )
+    ;
         ( Key = char('\x02\') % ^B
         ; Key = code(key_left)
         )
