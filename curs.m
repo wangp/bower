@@ -739,14 +739,14 @@ session(P, !IO) :-
     key_pageup = (K::out),
     [will_not_call_mercury, promise_pure],
 "
-    K = KEY_NPAGE;
+    K = KEY_PPAGE;
 ").
 
 :- pragma foreign_proc("C",
     key_pagedown = (K::out),
     [will_not_call_mercury, promise_pure],
 "
-    K = KEY_PPAGE;
+    K = KEY_NPAGE;
 ").
 
 :- pragma foreign_proc("C",
