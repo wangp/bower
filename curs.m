@@ -107,7 +107,7 @@
     %
 :- pred getch(int::out, io::di, io::uo) is det.
 
-:- pred get_wch(int::out, io::di, io::uo) is det.
+:- pred get_wch(int::out, bool::out, io::di, io::uo) is det.
 
     % Throw away any typeahead that has not yet been read by the program.
     %
@@ -647,14 +647,22 @@ session(P, !IO) :-
 %-----------------------------------------------------------------------------%
 
 :- pragma foreign_proc("C",
-    get_wch(CharCode::out, IO0::di, IO::uo),
+    get_wch(CharCode::out, IsCode::out, IO0::di, IO::uo),
     [will_not_call_mercury, promise_pure, may_not_duplicate],
 "
     wint_t ch;
-    if (get_wch(&ch) == OK) {
+    int rc;
+
+    rc = get_wch(&ch);
+    if (rc == OK) {
         CharCode = ch;
+        IsCode = MR_NO;
+    } else if (rc == KEY_CODE_YES) {
+        CharCode = ch;
+        IsCode = MR_YES;
     } else {
         CharCode = 0;
+        IsCode = MR_NO;
     }
     IO = IO0;
 ").

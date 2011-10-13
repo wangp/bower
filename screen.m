@@ -47,6 +47,12 @@
 
 :- pred draw_bar(screen::in, io::di, io::uo) is det.
 
+:- type keycode
+    --->    char(char)
+    ;       code(int).
+
+:- pred get_keycode(keycode::out, io::di, io::uo) is det.
+
 :- pred get_char(char::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
@@ -185,17 +191,32 @@ draw_bar(Screen, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-get_char(Char, !IO) :-
-    curs.get_wch(C, !IO),
+get_keycode(Code, !IO) :-
+    curs.get_wch(C, IsCode, !IO),
     ( C = 12 ->
         % Redraw the whole screen with ^L.
         % I have a feeling this is not really correct.
         curs.redrawwin_stdscr(!IO),
         panel.update_panels(!IO),
-        get_char(Char, !IO)
-    ; char.from_int(C, Char0) ->
-        Char = Char0
+        get_keycode(Code, !IO)
     ;
+        IsCode = yes,
+        Code = code(C)
+    ;
+        IsCode = no,
+        ( char.from_int(C, Char0) ->
+            Code = char(Char0)
+        ;
+            get_keycode(Code, !IO)
+        )
+    ).
+
+get_char(Char, !IO) :-
+    get_keycode(Code, !IO),
+    (
+        Code = char(Char)
+    ;
+        Code = code(_),
         get_char(Char, !IO)
     ).
 

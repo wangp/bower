@@ -83,6 +83,10 @@
 :- type binding
     --->    scroll_down
     ;       scroll_up
+    ;       home
+    ;       end
+    ;       page_up
+    ;       page_down
     ;       skip_to_unread
     ;       enter
     ;       enter_limit
@@ -208,8 +212,8 @@ index_loop(Screen, !.IndexInfo, !IO) :-
     draw_index_view(Screen, !.IndexInfo, !IO),
     draw_bar(Screen, !IO),
     panel.update_panels(!IO),
-    get_char(Char, !IO),
-    index_view_input(Screen, Char, MessageUpdate, Action, !IndexInfo),
+    get_keycode(KeyCode, !IO),
+    index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo),
     update_message(Screen, MessageUpdate, !IO),
     (
         Action = continue,
@@ -276,11 +280,11 @@ index_loop(Screen, !.IndexInfo, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred index_view_input(screen::in, char::in, message_update::out,
+:- pred index_view_input(screen::in, keycode::in, message_update::out,
     action::out, index_info::in, index_info::out) is det.
 
-index_view_input(Screen, Char, MessageUpdate, Action, !IndexInfo) :-
-    ( key_binding(Char, Binding) ->
+index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
+    ( key_binding(KeyCode, Binding) ->
         (
             Binding = scroll_down,
             move_cursor(Screen, 1, MessageUpdate, !IndexInfo),
@@ -288,6 +292,28 @@ index_view_input(Screen, Char, MessageUpdate, Action, !IndexInfo) :-
         ;
             Binding = scroll_up,
             move_cursor(Screen, -1, MessageUpdate, !IndexInfo),
+            Action = continue
+        ;
+            Binding = page_down,
+            NumRows = list.length(Screen ^ main_panels),
+            move_cursor(Screen, NumRows - 1, MessageUpdate, !IndexInfo),
+            Action = continue
+        ;
+            Binding = page_up,
+            NumRows = list.length(Screen ^ main_panels),
+            move_cursor(Screen, -NumRows + 1, MessageUpdate, !IndexInfo),
+            Action = continue
+        ;
+            Binding = home,
+            Scrollable0 = !.IndexInfo ^ i_scrollable,
+            NumLines = get_num_lines(Scrollable0),
+            move_cursor(Screen, -NumLines, MessageUpdate, !IndexInfo),
+            Action = continue
+        ;
+            Binding = end,
+            Scrollable0 = !.IndexInfo ^ i_scrollable,
+            NumLines = get_num_lines(Scrollable0),
+            move_cursor(Screen, NumLines, MessageUpdate, !IndexInfo),
             Action = continue
         ;
             Binding = skip_to_unread,
@@ -331,19 +357,38 @@ index_view_input(Screen, Char, MessageUpdate, Action, !IndexInfo) :-
         Action = continue
     ).
 
-:- pred key_binding(char::in, binding::out) is semidet.
+:- pred key_binding(keycode::in, binding::out) is semidet.
 
-key_binding('=', refresh_all).
-key_binding('j', scroll_down).
-key_binding('k', scroll_up).
-key_binding('\t', skip_to_unread).
-key_binding('\r', enter).
-key_binding('l', enter_limit).
-key_binding('m', start_compose).
-key_binding('R', start_recall).
-key_binding('/', prompt_search).
-key_binding('n', skip_to_search).
-key_binding('q', quit).
+key_binding(char(Char), Binding) :-
+    key_binding_char(Char, Binding).
+key_binding(code(Code), Binding) :-
+    ( Code = key_home ->
+        Binding = home
+    ; Code = key_end ->
+        Binding = end
+    ; Code = key_pageup ->
+        Binding = page_up
+    ; Code = key_pagedown ->
+        Binding = page_down
+    ;
+        fail
+    ).
+
+:- pred key_binding_char(char::in, binding::out) is semidet.
+
+key_binding_char('=', refresh_all).
+key_binding_char('j', scroll_down).
+key_binding_char('k', scroll_up).
+key_binding_char('g', home).
+key_binding_char('G', end).
+key_binding_char('\t', skip_to_unread).
+key_binding_char('\r', enter).
+key_binding_char('l', enter_limit).
+key_binding_char('m', start_compose).
+key_binding_char('R', start_recall).
+key_binding_char('/', prompt_search).
+key_binding_char('n', skip_to_search).
+key_binding_char('q', quit).
 
 :- pred move_cursor(screen::in, int::in, message_update::out,
     index_info::in, index_info::out) is det.
