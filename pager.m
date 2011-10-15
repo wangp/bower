@@ -501,7 +501,11 @@ get_top_message(Info, Message) :-
     Info = pager_info(Scrollable),
     Top = get_top(Scrollable),
     Lines = get_lines(Scrollable),
-    get_top_message_2(Lines, Top, Message).
+    ( Top < version_array.size(Lines) ->
+        get_top_message_2(Lines, Top, Message)
+    ;
+        fail
+    ).
 
 :- pred get_top_message_2(version_array(pager_line)::in, int::in, message::out)
     is semidet.
