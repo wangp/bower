@@ -31,7 +31,13 @@
 main(!IO) :-
     setlocale(!IO),
     io.command_line_arguments(Args, !IO),
-    Terms = string.join_list(" ", Args),
+    (
+        Args = [],
+        Terms = "~lw"
+    ;
+        Args = [_ | _],
+        Terms = string.join_list(" ", Args)
+    ),
     curs.start(!IO),
     create_screen(Screen, !IO),
     open_index(Screen, Terms, !IO),

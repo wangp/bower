@@ -33,6 +33,7 @@
 :- import_module data.
 :- import_module recall.
 :- import_module scrollable.
+:- import_module search_term.
 :- import_module string_util.
 :- import_module text_entry.
 :- import_module thread_pager.
@@ -135,9 +136,10 @@ open_index(Screen, Terms, !IO) :-
 :- pred search_terms_with_progress(screen::in, string::in,
     list(thread)::out, io::di, io::uo) is det.
 
-search_terms_with_progress(Screen, Terms, Threads, !IO) :-
+search_terms_with_progress(Screen, Terms0, Threads, !IO) :-
     update_message(Screen, set_info("Searching..."), !IO),
     panel.update_panels(!IO),
+    string_to_search_terms(Terms0, Terms, !IO),
     run_notmuch([
         "search", "--format=json", "--", Terms
     ], parse_threads_list, Result, !IO),
