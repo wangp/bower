@@ -172,8 +172,7 @@ setup_index_scrollable(Nowish, Threads, Scrollable) :-
         Scrollable = scrollable.init(Lines)
     ;
         Lines = [_ | _],
-        Cursor = 0,
-        Scrollable = scrollable.init_with_cursor(Lines, Cursor)
+        Scrollable = scrollable.init_with_cursor(Lines)
     ).
 
 :- pred add_thread(tm::in, thread::in,

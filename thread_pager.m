@@ -147,7 +147,7 @@ setup_thread_pager(Nowish, Rows, Cols, Messages, SearchHistory,
         ThreadPagerInfo, NumThreadLines) :-
     append_messages(Nowish, [], [], Messages, "", cord.init, ThreadCord),
     ThreadLines = list(ThreadCord),
-    Scrollable = scrollable.init_with_cursor(ThreadLines, 0),
+    Scrollable = scrollable.init_with_cursor(ThreadLines),
     setup_pager(Cols, Messages, PagerInfo),
 
     NumThreadLines = get_num_lines(Scrollable),

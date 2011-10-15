@@ -21,7 +21,7 @@
 
 :- func init(list(T)) = scrollable(T).
 
-:- func init_with_cursor(list(T), int) = scrollable(T).
+:- func init_with_cursor(list(T)) = scrollable(T).
 
 :- func get_lines(scrollable(T)) = version_array(T).
 
@@ -98,10 +98,17 @@ init(Lines) = Scrollable :-
     Top = 0,
     Scrollable = scrollable(LinesArray, Top, no).
 
-init_with_cursor(Lines, Cursor) = Scrollable :-
+init_with_cursor(Lines) = Scrollable :-
     LinesArray = version_array.from_list(Lines),
     Top = 0,
-    Scrollable = scrollable(LinesArray, Top, yes(Cursor)).
+    (
+        Lines = [],
+        MaybeCursor = no
+    ;
+        Lines = [_ | _],
+        MaybeCursor = yes(0)
+    ),
+    Scrollable = scrollable(LinesArray, Top, MaybeCursor).
 
 get_lines(Scrollable) = Scrollable ^ s_lines.
 

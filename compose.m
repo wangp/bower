@@ -320,7 +320,7 @@ create_edit_stage(Screen, Headers0, Text0, Attachments, MaybeOldDraft, !IO) :-
                 update_references(Headers0, Headers1, Headers),
                 StagingInfo = staging_info(Headers, Text, MaybeOldDraft,
                     init_history),
-                AttachInfo = scrollable.init_with_cursor(Attachments, 0),
+                AttachInfo = scrollable.init_with_cursor(Attachments),
                 Cols = Screen ^ cols,
                 setup_pager_for_staging(Cols, Text, PagerInfo),
                 staging_screen(Screen, StagingInfo, AttachInfo, PagerInfo, !IO)

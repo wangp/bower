@@ -58,7 +58,7 @@ select_recall(Screen, MaybeSelected, !IO) :-
     ;
         Ids = [_ | _],
         list.map_foldl(make_recall_line, Ids, Lines, !IO),
-        Scrollable = scrollable.init_with_cursor(Lines, 0),
+        Scrollable = scrollable.init_with_cursor(Lines),
         Info = recall_info(Scrollable),
         update_message(Screen, clear_message, !IO),
         recall_screen_loop(Screen, MaybeSelected, Info, _Info, !IO)
