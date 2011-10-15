@@ -49,6 +49,7 @@
 
 :- type keycode
     --->    char(char)
+    ;       meta(char)
     ;       code(int).
 
 :- pred get_keycode(keycode::out, io::di, io::uo) is det.
@@ -204,10 +205,25 @@ get_keycode(Code, !IO) :-
         Code = code(C)
     ;
         IsCode = no,
-        ( char.from_int(C, Char0) ->
-            Code = char(Char0)
+        ( C = 27 -> % Escape
+            nodelay(yes, !IO),
+            curs.get_wch(C2, IsCode2, !IO),
+            nodelay(no, !IO),
+            (
+                IsCode2 = no,
+                C2 \= 0,
+                char.from_int(C2, Char2)
+            ->
+                Code = meta(Char2)
+            ;
+                Code = char('\033') % ESC
+            )
         ;
-            get_keycode(Code, !IO)
+            ( char.from_int(C, Char0) ->
+                Code = char(Char0)
+            ;
+                get_keycode(Code, !IO)
+            )
         )
     ).
 
@@ -217,6 +233,9 @@ get_char(Char, !IO) :-
         Code = char(Char)
     ;
         Code = code(_),
+        get_char(Char, !IO)
+    ;
+        Code = meta(_),
         get_char(Char, !IO)
     ).
 

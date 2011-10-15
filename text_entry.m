@@ -100,6 +100,13 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
             text_entry(Screen, Prompt, History, Before1, After, Return, !IO)
         )
     ;
+        ( Key = meta('\x7f\') % DEL
+        ; Key = meta('\x08\') % BS
+        )
+    ->
+        delete_word(Before, Before1),
+        text_entry(Screen, Prompt, History, Before1, After, Return, !IO)
+    ;
         ( Key = char('\x04\') % ^D
         ; Key = code(key_del)
         )
@@ -111,6 +118,11 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
             After = [_ | After1],
             text_entry(Screen, Prompt, History, Before, After1, Return, !IO)
         )
+    ;
+        Key = meta('d')
+    ->
+        delete_word(After, After1),
+        text_entry(Screen, Prompt, History, Before, After1, Return, !IO)
     ;
         ( Key = char('\x02\') % ^B
         ; Key = code(key_left)
@@ -136,6 +148,16 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
             After = [],
             text_entry(Screen, Prompt, History, Before, After, Return, !IO)
         )
+    ;
+        Key = meta('b')
+    ->
+        back_word(Before, Before1, After, After1),
+        text_entry(Screen, Prompt, History, Before1, After1, Return, !IO)
+    ;
+        Key = meta('f')
+    ->
+        forward_word(Before, Before1, After, After1),
+        text_entry(Screen, Prompt, History, Before1, After1, Return, !IO)
     ;
         ( Key = char('\x01\') % ^A
         ; Key = code(key_home)
@@ -199,7 +221,7 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
         ->
             (
                 FirstTime = yes,
-                not char.is_whitespace(Char)
+                not_whitespace(Char)
             ->
                 History = Pre - Post,
                 String = char_lists_to_string(Before, After),
@@ -228,6 +250,35 @@ text_entry(Screen, Prompt, History, Before, After, Return, !IO) :-
 char_lists_to_string(Before, After) = BeforeString ++ AfterString :-
     string.from_rev_char_list(Before, BeforeString),
     string.from_char_list(After, AfterString).
+
+:- pred delete_word(list(char)::in, list(char)::out) is det.
+
+delete_word(Cs0, Cs) :-
+    list.takewhile(is_whitespace, Cs0, _, Cs1),
+    list.takewhile(not_whitespace, Cs1, _, Cs).
+
+:- pred back_word(list(char)::in, list(char)::out,
+    list(char)::in, list(char)::out) is det.
+
+back_word(Before0, Before, After0, After) :-
+    list.takewhile(is_whitespace, Before0, Take0, Before1),
+    list.takewhile(not_whitespace, Before1, Take1, Before),
+    After = list.reverse(Take0 ++ Take1) ++ After0.
+
+:- pred forward_word(list(char)::in, list(char)::out,
+    list(char)::in, list(char)::out) is det.
+
+forward_word(Before0, Before, After0, After) :-
+    list.takewhile(not_whitespace, After0, Take0, After1),
+    list.takewhile(is_whitespace, After1, Take1, After),
+    Before = list.reverse(Take0 ++ Take1) ++ Before0.
+
+:- pred not_whitespace(char::in) is semidet.
+
+not_whitespace(C) :-
+    not char.is_whitespace(C).
+
+%-----------------------------------------------------------------------------%
 
 :- pred draw_text_entry(screen::in, string::in, list(char)::in, list(char)::in,
     io::di, io::uo) is det.
