@@ -772,6 +772,8 @@ postpone(Screen, Headers, Text, Attachments, Res, !IO) :-
         ResFilename, !IO),
     (
         ResFilename = ok(Filename),
+        update_message(Screen, set_info("Postponing message..."), !IO),
+        panel.update_panels(!IO),
         add_draft(Filename, DraftRes, !IO),
         io.remove_file(Filename, _, !IO),
         (
