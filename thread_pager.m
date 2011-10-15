@@ -648,10 +648,13 @@ prompt_save_attachment(Screen, Part, !IO) :-
     io.res::out, io::di, io::uo) is det.
 
 do_save_attachment(MessageId, Part, FileName, Res, !IO) :-
-    Args = ["notmuch", "show", "--format=raw", "--part=" ++ from_int(Part),
-        message_id_to_search_term(MessageId)],
+    Args = [
+        "show", "--format=raw", "--part=" ++ from_int(Part),
+        message_id_to_search_term(MessageId)
+    ],
     args_to_quoted_command(Args, no, redirect_output(FileName), Command),
-    io.call_system(Command, CallRes, !IO),
+    get_notmuch_prefix(Notmuch, !IO),
+    io.call_system(Notmuch ++ Command, CallRes, !IO),
     (
         CallRes = ok(ExitStatus),
         ( ExitStatus = 0 ->

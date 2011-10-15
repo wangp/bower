@@ -49,9 +49,10 @@ add_draft(FileName, Res, !IO) :-
 
 call_notmuch_deliver(FileName, Folder, TagOps, Res, !IO) :-
     % XXX do we need -f?
-    Args = ["notmuch-deliver", Folder] ++ TagOps,
+    Args = [Folder | TagOps],
     args_to_quoted_command(Args, redirect_input(FileName), no, Command),
-    io.call_system(Command, CallRes, !IO),
+    get_notmuch_deliver_prefix(NotmuchDeliver, !IO),
+    io.call_system(NotmuchDeliver ++ Command, CallRes, !IO),
     (
         CallRes = ok(ExitStatus),
         ( ExitStatus = 0 ->
@@ -89,9 +90,10 @@ tag_messages(TagDeltas, MessageIds, Res, !IO) :-
     ;
         MessageIds = [_ | _],
         IdStrings = list.map(message_id_to_search_term, MessageIds),
-        Args = ["notmuch", "tag"] ++ TagDeltas ++ ["--" | IdStrings],
+        get_notmuch_prefix(Notmuch, !IO),
+        Args = list.condense([["tag"], TagDeltas, ["--"], IdStrings]),
         args_to_quoted_command(Args, Command),
-        io.call_system(Command, CallRes, !IO),
+        io.call_system(Notmuch ++ Command, CallRes, !IO),
         (
             CallRes = ok(ExitStatus),
             ( ExitStatus = 0 ->

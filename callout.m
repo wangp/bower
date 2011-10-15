@@ -11,6 +11,10 @@
 
 %-----------------------------------------------------------------------------%
 
+:- pred get_notmuch_prefix(string::out, io::di, io::uo) is det.
+
+:- pred get_notmuch_deliver_prefix(string::out, io::di, io::uo) is det.
+
 :- pred get_notmuch_config(string::in, io.res(string)::out, io::di, io::uo)
     is det.
 
@@ -42,8 +46,57 @@
 
 %-----------------------------------------------------------------------------%
 
+:- mutable(notmuch_var, maybe(string), no, ground,
+    [untrailed, attach_to_io_state]).
+
+:- mutable(notmuch_deliver_var, maybe(string), no, ground,
+    [untrailed, attach_to_io_state]).
+
+get_notmuch_prefix(Notmuch, !IO) :-
+    get_notmuch_var(MaybeVar, !IO),
+    (
+        MaybeVar = yes(Notmuch)
+    ;
+        MaybeVar = no,
+        io.get_environment_var("NOTMUCH", MaybeEnv, !IO),
+        (
+            MaybeEnv = yes(Env),
+            Notmuch = Env ++ " "
+        ;
+            MaybeEnv = no,
+            Notmuch = "notmuch " % trailing space is deliberate!
+        ),
+        set_notmuch_var(yes(Notmuch), !IO)
+    ).
+
+get_notmuch_deliver_prefix(NotmuchDeliver, !IO) :-
+    get_notmuch_deliver_var(MaybeVar, !IO),
+    (
+        MaybeVar = yes(NotmuchDeliver)
+    ;
+        MaybeVar = no,
+        io.get_environment_var("NOTMUCH_DELIVER", MaybeEnv, !IO),
+        (
+            MaybeEnv = yes(Env),
+            NotmuchDeliver = Env ++ " "
+        ;
+            MaybeEnv = no,
+            % Guess notmuch-deliver command from notmuch command if possible.
+            get_notmuch_prefix(Notmuch, !IO),
+            ( string.remove_suffix(Notmuch, "notmuch ", Prefix) ->
+                NotmuchDeliver = Prefix ++ "notmuch-deliver "
+            ;
+                NotmuchDeliver = "notmuch-deliver "
+            )
+        ),
+        set_notmuch_deliver_var(yes(NotmuchDeliver), !IO)
+    ).
+
+%-----------------------------------------------------------------------------%
+
 get_notmuch_config(Key, Res, !IO) :-
-    popen("notmuch config get " ++ Key, Res0, !IO),
+    get_notmuch_prefix(Notmuch, !IO),
+    popen(Notmuch ++ "config get " ++ Key, Res0, !IO),
     (
         Res0 = ok(Value0),
         Value = string.strip(Value0),
@@ -56,8 +109,9 @@ get_notmuch_config(Key, Res, !IO) :-
 %-----------------------------------------------------------------------------%
 
 run_notmuch(Args, P, Result, !IO) :-
-    args_to_quoted_command(["notmuch" | Args], Command),
-    popen(Command, CommandResult, !IO),
+    args_to_quoted_command(Args, Command),
+    get_notmuch_prefix(Notmuch, !IO),
+    popen(Notmuch ++ Command, CommandResult, !IO),
     (
         CommandResult = ok(String),
         parse_json(String, ParseResult),

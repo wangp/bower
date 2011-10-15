@@ -163,9 +163,10 @@ get_from(From, !IO) :-
 
 start_reply(Screen, Message, ReplyKind, !IO) :-
     Message ^ m_id = MessageId,
-    Args = ["notmuch", "reply", message_id_to_search_term(MessageId)],
+    Args = ["reply", message_id_to_search_term(MessageId)],
     args_to_quoted_command(Args, Command),
-    popen(Command, CommandResult, !IO),
+    get_notmuch_prefix(Notmuch, !IO),
+    popen(Notmuch ++ Command, CommandResult, !IO),
     (
         CommandResult = ok(String),
         read_headers_from_string(String, 0, init_headers, Headers0, Text),
@@ -258,10 +259,10 @@ continue_postponed(Screen, Message, !IO) :-
     % XXX notmuch show --format=json does not return References and In-Reply-To
     % so we parse them from the raw output.
     args_to_quoted_command([
-        "notmuch", "show", "--format=raw", "--",
-        message_id_to_search_term(MessageId)
+        "show", "--format=raw", "--", message_id_to_search_term(MessageId)
     ], Command),
-    popen(Command, CallRes, !IO),
+    get_notmuch_prefix(Notmuch, !IO),
+    popen(Notmuch ++ Command, CallRes, !IO),
     (
         CallRes = ok(String),
         read_headers_from_string(String, 0, init_headers, HeadersB, _Body),
@@ -1181,10 +1182,11 @@ write_mime_part_attachment(Stream, Boundary, Attachment, !IO) :-
 get_non_text_part_base64(Part, Content, !IO) :-
     Part = part(MessageId, PartId, _, _, _),
     args_to_quoted_command([
-        "notmuch", "show", "--format=raw", "--part=" ++ from_int(PartId),
+        "show", "--format=raw", "--part=" ++ from_int(PartId),
         message_id_to_search_term(MessageId)
     ], Command),
-    popen(Command ++ " |base64", CallRes, !IO),
+    get_notmuch_prefix(Notmuch, !IO),
+    popen(Notmuch ++ Command ++ " |base64", CallRes, !IO),
     (
         CallRes = ok(Content)
     ;
