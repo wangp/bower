@@ -56,6 +56,7 @@
                 i_new       :: new,
                 i_unread    :: unread,
                 i_replied   :: replied,
+                i_deleted   :: deleted,
                 i_flagged   :: flagged,
                 i_date      :: string,
                 i_authors   :: string,
@@ -75,6 +76,10 @@
 :- type replied
     --->    replied
     ;       not_replied.
+
+:- type deleted
+    --->    deleted
+    ;       not_deleted.
 
 :- type flagged
     --->    flagged
@@ -185,8 +190,8 @@ thread_to_index_line(Nowish, Thread, Line) :-
     timestamp_to_tm(Timestamp, TM),
     Shorter = yes,
     make_reldate(Nowish, TM, Shorter, Date),
-    Line0 = index_line(Id, old, read, not_replied, unflagged, Date, Authors,
-        Subject, Matched, Total),
+    Line0 = index_line(Id, old, read, not_replied, not_deleted, unflagged,
+        Date, Authors, Subject, Matched, Total),
     list.foldl(apply_tag, Tags, Line0, Line).
 
 :- pred apply_tag(string::in, index_line::in, index_line::out) is det.
@@ -198,6 +203,8 @@ apply_tag(Tag, !Line) :-
         !Line ^ i_unread := unread
     ; Tag = "replied" ->
         !Line ^ i_replied := replied
+    ; Tag = "deleted" ->
+        !Line ^ i_deleted := deleted
     ; Tag = "flagged" ->
         !Line ^ i_flagged := flagged
     ;
@@ -511,7 +518,7 @@ skip_to_search(Screen, MessageUpdate, !Info) :-
 :- pred line_matches_search(string::in, index_line::in) is semidet.
 
 line_matches_search(Search, Line) :-
-    Line = index_line(_Id, _New, _Unread, _Replied, _Flagged, _Date,
+    Line = index_line(_Id, _New, _Unread, _Replied, _Flagged, _Deleted, _Date,
         Authors, Subject, _Matched, _Total),
     (
         strcase_str(Authors, Search)
@@ -603,8 +610,8 @@ draw_index_view(Screen, Info, !IO) :-
     io::di, io::uo) is det.
 
 draw_index_line(Panel, Line, IsCursor, !IO) :-
-    Line = index_line(_Id, _New, Unread, Replied, Flagged, Date, Authors,
-        Subject, Matched, Total),
+    Line = index_line(_Id, _New, Unread, Replied, Deleted, Flagged,
+        Date, Authors, Subject, Matched, Total),
     (
         IsCursor = yes,
         panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
@@ -628,6 +635,13 @@ draw_index_line(Panel, Line, IsCursor, !IO) :-
         my_addstr(Panel, "r", !IO)
     ;
         Replied = not_replied,
+        my_addstr(Panel, " ", !IO)
+    ),
+    (
+        Deleted = deleted,
+        my_addstr(Panel, "d", !IO)
+    ;
+        Deleted = not_deleted,
         my_addstr(Panel, " ", !IO)
     ),
     (

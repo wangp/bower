@@ -60,6 +60,7 @@
                 tp_message      :: message,
                 tp_unread       :: pair(unread),
                 tp_replied      :: replied,
+                tp_deleted      :: pair(deleted),
                 tp_flagged      :: pair(flagged),
                 tp_graphics     :: list(graphic),
                 tp_reldate      :: string,
@@ -79,6 +80,10 @@
 :- type replied
     --->    replied
     ;       not_replied.
+
+:- type deleted
+    --->    deleted
+    ;       not_deleted.
 
 :- type flagged
     --->    flagged
@@ -130,7 +135,6 @@ open_thread_pager(Screen, ThreadId, NeedRefresh, SearchHistory0, SearchHistory,
 filter_unwanted_messages(!Message) :-
     Tags = !.Message ^ m_tags,
     not list.contains(Tags, "draft"),
-    not list.contains(Tags, "deleted"),
 
     Replies0 = !.Message ^ m_replies,
     list.filter_map(filter_unwanted_messages, Replies0, Replies),
@@ -233,7 +237,8 @@ make_thread_line(Nowish, Message, Graphics, PrevSubject, Line) :-
         MaybeSubject = yes(Subject)
     ),
     Line0 = thread_line(Message, read - read, not_replied,
-        unflagged - unflagged, Graphics, RelDate, MaybeSubject),
+        not_deleted - not_deleted, unflagged - unflagged,
+        Graphics, RelDate, MaybeSubject),
     list.foldl(apply_tag, Tags, Line0, Line).
 
 :- pred apply_tag(string::in, thread_line::in, thread_line::out) is det.
@@ -243,6 +248,8 @@ apply_tag(Tag, !Line) :-
         !Line ^ tp_unread := unread - unread
     ; Tag = "replied" ->
         !Line ^ tp_replied := replied
+    ; Tag = "deleted" ->
+        !Line ^ tp_deleted := deleted - deleted
     ; Tag = "flagged" ->
         !Line ^ tp_flagged := flagged - flagged
     ;
@@ -386,6 +393,14 @@ thread_pager_input(Char, Action, MessageUpdate, !Info) :-
         toggle_unread(!Info),
         next_message(MessageUpdate, !Info),
         Action = continue
+    ; Char = 'd' ->
+        toggle_deleted(deleted, !Info),
+        next_message(MessageUpdate, !Info),
+        Action = continue
+    ; Char = 'u' ->
+        toggle_deleted(not_deleted, !Info),
+        Action = continue,
+        MessageUpdate = clear_message
     ; Char = 'F' ->
         toggle_flagged(!Info),
         MessageUpdate = clear_message,
@@ -569,6 +584,20 @@ toggle_flagged(!Info) :-
             Flag = flagged
         ),
         Line = Line0 ^ tp_flagged := OrigFlag - Flag,
+        set_cursor_line(Line, Scrollable0, Scrollable),
+        !Info ^ tp_scrollable := Scrollable
+    ;
+        true
+    ).
+
+:- pred toggle_deleted(deleted::in,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+toggle_deleted(Deleted, !Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
+        Line0 ^ tp_deleted = OrigDeleted - _,
+        Line = Line0 ^ tp_deleted := OrigDeleted - Deleted,
         set_cursor_line(Line, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
     ;
@@ -820,6 +849,7 @@ get_changed_status_messages_2(Line, !TagGroups) :-
 get_tag_delta_set(Line) = TagSet :-
     Line ^ tp_unread = Unread0 - Unread,
     Line ^ tp_flagged = Flag0 - Flag,
+    Line ^ tp_deleted = Deleted0 - Deleted,
     some [!TagSet] (
         !:TagSet = set.init,
         (
@@ -851,6 +881,21 @@ get_tag_delta_set(Line) = TagSet :-
         ;
             Flag = flagged,
             Flag0 = flagged
+        ),
+        (
+            Deleted = deleted,
+            Deleted0 = not_deleted,
+            set.insert("+deleted", !TagSet)
+        ;
+            Deleted = not_deleted,
+            Deleted0 = deleted,
+            set.insert("-deleted", !TagSet)
+        ;
+            Deleted = not_deleted,
+            Deleted0 = not_deleted
+        ;
+            Deleted = deleted,
+            Deleted0 = deleted
         ),
         TagSet = !.TagSet
     ).
@@ -899,9 +944,10 @@ draw_sep(Cols, MaybeSepPanel, !IO) :-
     io::di, io::uo) is det.
 
 draw_thread_line(Panel, Line, IsCursor, !IO) :-
-    Line = thread_line(Message, UnreadPair, Replied, FlaggedPair, Graphics,
-        RelDate, MaybeSubject),
+    Line = thread_line(Message, UnreadPair, Replied, DeletedPair, FlaggedPair,
+        Graphics, RelDate, MaybeSubject),
     UnreadPair = _ - Unread,
+    DeletedPair = _ - Deleted,
     FlaggedPair = _ - Flagged,
     From = Message ^ m_headers ^ h_from,
     (
@@ -925,6 +971,13 @@ draw_thread_line(Panel, Line, IsCursor, !IO) :-
         my_addstr(Panel, "r", !IO)
     ;
         Replied = not_replied,
+        my_addstr(Panel, " ", !IO)
+    ),
+    (
+        Deleted = deleted,
+        my_addstr(Panel, "d", !IO)
+    ;
+        Deleted = not_deleted,
         my_addstr(Panel, " ", !IO)
     ),
     (
