@@ -92,13 +92,8 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
         ; Key = code(key_backspace)
         )
     ->
-        (
-            Before = [],
-            text_entry(Screen, Prompt, History, Before, After, Return, !IO)
-        ;
-            Before = [_ | Before1],
-            text_entry(Screen, Prompt, History, Before1, After, Return, !IO)
-        )
+        delete_char(Before, Before1),
+        text_entry(Screen, Prompt, History, Before1, After, Return, !IO)
     ;
         ( Key = meta('\x7f\') % DEL
         ; Key = meta('\x08\') % BS
@@ -111,13 +106,8 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
         ; Key = code(key_del)
         )
     ->
-        (
-            After = [],
-            text_entry(Screen, Prompt, History, Before, After, Return, !IO)
-        ;
-            After = [_ | After1],
-            text_entry(Screen, Prompt, History, Before, After1, Return, !IO)
-        )
+        delete_char(After, After1),
+        text_entry(Screen, Prompt, History, Before, After1, Return, !IO)
     ;
         Key = meta('d')
     ->
@@ -128,26 +118,15 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
         ; Key = code(key_left)
         )
     ->
-        (
-            Before = [B | Before1],
-            text_entry(Screen, Prompt, History, Before1, [B | After], Return, !IO)
-        ;
-            Before = [],
-            text_entry(Screen, Prompt, History, Before, After, Return, !IO)
-        )
+        move_char(Before, Before1, After, After1),
+        text_entry(Screen, Prompt, History, Before1, After1, Return, !IO)
     ;
         ( Key = char('\x06\') % ^F
         ; Key = code(key_right)
         )
     ->
-        (
-            After = [A | After1],
-            Before1 = [A | Before],
-            text_entry(Screen, Prompt, History, Before1, After1, Return, !IO)
-        ;
-            After = [],
-            text_entry(Screen, Prompt, History, Before, After, Return, !IO)
-        )
+        move_char(After, After1, Before, Before1),
+        text_entry(Screen, Prompt, History, Before1, After1, Return, !IO)
     ;
         Key = meta('b')
     ->
@@ -163,14 +142,14 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
         ; Key = code(key_home)
         )
     ->
-        After1 = list.reverse(Before) ++ After,
+        bol_eol(Before, After, After1),
         text_entry(Screen, Prompt, History, [], After1, Return, !IO)
     ;
         ( Key = char('\x05\') % ^E
         ; Key = code(key_end)
         )
     ->
-        Before1 = list.reverse(After) ++ Before,
+        bol_eol(After, Before, Before1),
         text_entry(Screen, Prompt, History, Before1, [], Return, !IO)
     ;
         Key = char('\x15\') % ^U
@@ -186,34 +165,18 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
         )
     ->
         History = Pre - Post,
-        (
-            Pre = [],
-            text_entry(Screen, Prompt, History, Before, After, Return, !IO)
-        ;
-            Pre = [Edit | Pre1],
-            String = char_lists_to_string(Before, After),
-            Post1 = [String | Post],
-            History1 = Pre1 - Post1,
-            Before1 = list.reverse(string.to_char_list(Edit)),
-            text_entry(Screen, Prompt, History1, Before1, [], Return, !IO)
-        )
+        move_history(Before, Before1, After, After1, Pre, Pre1, Post, Post1),
+        History1 = Pre1 - Post1,
+        text_entry(Screen, Prompt, History1, Before1, After1, Return, !IO)
     ;
         ( Key = char('\xe\') % ^N
         ; Key = code(key_down)
         )
     ->
         History = Pre - Post,
-        (
-            Post = [],
-            text_entry(Screen, Prompt, History, Before, After, Return, !IO)
-        ;
-            Post = [Edit | Post1],
-            String = char_lists_to_string(Before, After),
-            Pre1 = [String | Pre],
-            History1 = Pre1 - Post1,
-            Before1 = list.reverse(string.to_char_list(Edit)),
-            text_entry(Screen, Prompt, History1, Before1, [], Return, !IO)
-        )
+        move_history(Before, Before1, After, After1, Post, Post1, Pre, Pre1),
+        History1 = Pre1 - Post1,
+        text_entry(Screen, Prompt, History1, Before1, After1, Return, !IO)
     ;
         (
             Key = char(Char),
@@ -251,11 +214,22 @@ char_lists_to_string(Before, After) = BeforeString ++ AfterString :-
     string.from_rev_char_list(Before, BeforeString),
     string.from_char_list(After, AfterString).
 
+:- pred delete_char(list(char)::in, list(char)::out) is det.
+
+delete_char([], []).
+delete_char([_ | Cs], Cs).
+
 :- pred delete_word(list(char)::in, list(char)::out) is det.
 
 delete_word(Cs0, Cs) :-
     list.takewhile(is_whitespace, Cs0, _, Cs1),
     list.takewhile(not_whitespace, Cs1, _, Cs).
+
+:- pred move_char(list(char)::in, list(char)::out,
+    list(char)::in, list(char)::out) is det.
+
+move_char([], [], Ys, Ys).
+move_char([C | Xs], Xs, Ys, [C | Ys]).
 
 :- pred back_word(list(char)::in, list(char)::out,
     list(char)::in, list(char)::out) is det.
@@ -273,10 +247,28 @@ forward_word(Before0, Before, After0, After) :-
     list.takewhile(is_whitespace, After1, Take1, After),
     Before = list.reverse(Take0 ++ Take1) ++ Before0.
 
-:- pred not_whitespace(char::in) is semidet.
+:- pred bol_eol(list(char)::in, list(char)::in, list(char)::out) is det.
 
-not_whitespace(C) :-
-    not char.is_whitespace(C).
+bol_eol(Xs, Ys, reverse(Xs) ++ Ys).
+
+:- pred move_history(list(char)::in, list(char)::out,
+    list(char)::in, list(char)::out,
+    history::in, history::out, history::in, history::out) is det.
+
+move_history(Before0, Before, After0, After, Hist0, Hist, HistOpp0, HistOpp) :-
+    (
+        Hist0 = [],
+        Before = Before0,
+        After = After0,
+        Hist = Hist0,
+        HistOpp = HistOpp0
+    ;
+        Hist0 = [Edit | Hist],
+        Before = list.reverse(string.to_char_list(Edit)),
+        After = [],
+        SaveString = char_lists_to_string(Before0, After0),
+        HistOpp = [SaveString | HistOpp0]
+    ).
 
 %-----------------------------------------------------------------------------%
 
@@ -302,6 +294,13 @@ draw_text_entry(Screen, Prompt, Before, After, !IO) :-
 "
     SUCCESS_INDICATOR = isprint(Char) || Char >= 0x80;
 ").
+
+%-----------------------------------------------------------------------------%
+
+:- pred not_whitespace(char::in) is semidet.
+
+not_whitespace(C) :-
+    not char.is_whitespace(C).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
