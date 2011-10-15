@@ -155,6 +155,10 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
     ->
         text_entry(Screen, Prompt, History, [], [], Return, !IO)
     ;
+        Key = char('\x0b\') % ^K
+    ->
+        text_entry(Screen, Prompt, History, Before, [], Return, !IO)
+    ;
         ( Key = char('\x10\') % ^P
         ; Key = code(key_up)
         )
