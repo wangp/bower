@@ -384,7 +384,11 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
 key_binding(char(Char), Binding) :-
     key_binding_char(Char, Binding).
 key_binding(code(Code), Binding) :-
-    ( Code = key_home ->
+    ( Code = key_up ->
+        Binding = scroll_up
+    ; Code = key_down ->
+        Binding = scroll_down
+    ; Code = key_home ->
         Binding = home
     ; Code = key_end ->
         Binding = end
