@@ -202,7 +202,6 @@ append_part(Cols, Part, !Lines, !IsFirst) :-
         Content = unsupported,
         snoc(blank_line, !Lines),
         snoc(attachment(Part), !Lines),
-        snoc(text("(not supported)"), !Lines),
         !:IsFirst = no
     ).
 
