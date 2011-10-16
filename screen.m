@@ -47,6 +47,8 @@
 
 :- pred draw_bar(screen::in, io::di, io::uo) is det.
 
+:- pred draw_bar_with_text(screen::in, string::in, io::di, io::uo) is det.
+
 :- type keycode
     --->    char(char)
     ;       meta(char)
@@ -188,6 +190,16 @@ draw_bar(Screen, !IO) :-
     Panel = Screen ^ bar_panel,
     panel.erase(Panel, !IO),
     panel.attr_set(Panel, fg_bg(white, blue), !IO),
+    hline(Panel, char.to_int('-'), Cols, !IO).
+
+draw_bar_with_text(Screen, Text, !IO) :-
+    Cols = Screen ^ cols,
+    Panel = Screen ^ bar_panel,
+    panel.erase(Panel, !IO),
+    panel.attr_set(Panel, fg_bg(white, blue), !IO),
+    my_addstr(Panel, "--- ", !IO),
+    my_addstr(Panel, Text, !IO),
+    my_addstr(Panel, " -", !IO),
     hline(Panel, char.to_int('-'), Cols, !IO).
 
 %-----------------------------------------------------------------------------%

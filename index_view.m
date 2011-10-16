@@ -22,6 +22,7 @@
 :- import_module list.
 :- import_module maybe.
 :- import_module int.
+:- import_module pair.
 :- import_module require.
 :- import_module string.
 :- import_module time.
@@ -45,6 +46,8 @@
     --->    index_info(
                 i_scrollable        :: scrollable(index_line),
                 i_search_terms      :: string,
+                i_counts            :: pair(int, int),
+                i_poll_time        :: time_t,
                 i_search            :: maybe(string),
                 i_limit_history     :: history,
                 i_search_history    :: history,
@@ -120,53 +123,60 @@
 %-----------------------------------------------------------------------------%
 
 open_index(Screen, Terms, !IO) :-
+    time(Time, !IO),
     ( Terms = "" ->
         Threads = [],
+        Count = 0,
         History = init_history
     ;
-        search_terms_with_progress(Screen, Terms, Threads, !IO),
+        search_terms_with_progress(Screen, Terms, Count, Threads, !IO),
         add_history_nodup(Terms, init_history, History)
     ),
-    setup_index_scrollable_now(Threads, Scrollable, !IO),
+    setup_index_scrollable(Time, Threads, Scrollable),
     MaybeSearch = no,
-    IndexInfo = index_info(Scrollable, Terms, MaybeSearch, History,
-        init_history, init_compose_history),
+    IndexInfo = index_info(Scrollable, Terms, Count - Count, Time, MaybeSearch,
+        History, init_history, init_compose_history),
     index_loop(Screen, IndexInfo, !IO).
 
-:- pred search_terms_with_progress(screen::in, string::in,
+:- pred search_terms_with_progress(screen::in, string::in, int::out,
     list(thread)::out, io::di, io::uo) is det.
 
-search_terms_with_progress(Screen, Terms0, Threads, !IO) :-
-    update_message(Screen, set_info("Searching..."), !IO),
+search_terms_with_progress(Screen, Terms0, Count, Threads, !IO) :-
+    update_message(Screen, set_info("Counting..."), !IO),
     panel.update_panels(!IO),
     string_to_search_terms(Terms0, Terms, !IO),
-    run_notmuch([
-        "search", "--format=json", "--", Terms
-    ], parse_threads_list, Result, !IO),
+    run_notmuch_count(Terms, ResCount, !IO),
     (
-        Result = ok(Threads),
-        string.format("Found %d threads.", [i(length(Threads))], Message),
-        MessageUpdate = set_info(Message)
+        ResCount = ok(Count),
+        update_message(Screen, set_info("Searching..."), !IO),
+        panel.update_panels(!IO),
+        run_notmuch([
+            "search", "--format=json", "--", Terms
+        ], parse_threads_list, ResThreads, !IO),
+        (
+            ResThreads = ok(Threads),
+            string.format("Found %d threads.", [i(length(Threads))], Message),
+            MessageUpdate = set_info(Message)
+        ;
+            ResThreads = error(Error),
+            Message = "Error: " ++ io.error_message(Error),
+            MessageUpdate = set_warning(Message),
+            Threads = []
+        )
     ;
-        Result = error(Error),
+        ResCount = error(Error),
         Message = "Error: " ++ io.error_message(Error),
         MessageUpdate = set_warning(Message),
-        Threads = []
+        Threads = [],
+        Count = 0
     ),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred setup_index_scrollable_now(list(thread)::in,
-    scrollable(index_line)::out, io::di, io::uo) is det.
-
-setup_index_scrollable_now(Threads, Scrollable, !IO) :-
-    time(Time, !IO),
-    Nowish = localtime(Time),
-    setup_index_scrollable(Nowish, Threads, Scrollable).
-
-:- pred setup_index_scrollable(tm::in, list(thread)::in,
+:- pred setup_index_scrollable(time_t::in, list(thread)::in,
     scrollable(index_line)::out) is det.
 
-setup_index_scrollable(Nowish, Threads, Scrollable) :-
+setup_index_scrollable(Time, Threads, Scrollable) :-
+    Nowish = localtime(Time),
     list.foldl(add_thread(Nowish), Threads, cord.init, LinesCord),
     Lines = list(LinesCord),
     (
@@ -218,13 +228,14 @@ apply_tag(Tag, !Line) :-
 
 index_loop(Screen, !.IndexInfo, !IO) :-
     draw_index_view(Screen, !.IndexInfo, !IO),
-    draw_bar(Screen, !IO),
+    draw_index_bar(Screen, !.IndexInfo, !IO),
     panel.update_panels(!IO),
     get_keycode(KeyCode, !IO),
     index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo),
     update_message(Screen, MessageUpdate, !IO),
     (
         Action = continue,
+        maybe_poll(!IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = open_pager(ThreadId),
@@ -246,11 +257,14 @@ index_loop(Screen, !.IndexInfo, !IO) :-
             Return, !IO),
         (
             Return = yes(Terms),
-            search_terms_with_progress(Screen, Terms, Threads, !IO),
-            setup_index_scrollable_now(Threads, Scrollable, !IO),
+            time(Time, !IO),
+            search_terms_with_progress(Screen, Terms, Count, Threads, !IO),
+            setup_index_scrollable(Time, Threads, Scrollable),
             add_history_nodup(Terms, History0, History),
             !IndexInfo ^ i_scrollable := Scrollable,
             !IndexInfo ^ i_search_terms := Terms,
+            !IndexInfo ^ i_counts := Count - Count,
+            !IndexInfo ^ i_poll_time := Time,
             !IndexInfo ^ i_limit_history := History,
             index_loop(Screen, !.IndexInfo, !IO)
         ;
@@ -534,11 +548,12 @@ line_matches_search(Search, Line) :-
 
 refresh_all(Screen, !Info, !IO) :-
     Terms = !.Info ^ i_search_terms,
-    search_terms_with_progress(Screen, Terms, Threads, !IO),
+    time(Time, !IO),
+    search_terms_with_progress(Screen, Terms, Count, Threads, !IO),
     some [!Scrollable] (
         Scrollable0 = !.Info ^ i_scrollable,
         Top0 = get_top(Scrollable0),
-        setup_index_scrollable_now(Threads, !:Scrollable, !IO),
+        setup_index_scrollable(Time, Threads, !:Scrollable),
         ( Top0 < get_num_lines(!.Scrollable) ->
             set_top(Top0, !Scrollable)
         ;
@@ -558,7 +573,9 @@ refresh_all(Screen, !Info, !IO) :-
         ;
             true
         ),
-        !Info ^ i_scrollable := !.Scrollable
+        !Info ^ i_scrollable := !.Scrollable,
+        !Info ^ i_counts := Count - Count,
+        !Info ^ i_poll_time := Time
     ).
 
 :- pred line_matches_thread_id(thread_id::in, index_line::in) is semidet.
@@ -597,6 +614,41 @@ replace_index_cursor_line(Nowish, Thread, !Info) :-
     thread_to_index_line(Nowish, Thread, Line),
     set_cursor_line(Line, Scrollable0, Scrollable),
     !Info ^ i_scrollable := Scrollable.
+
+%-----------------------------------------------------------------------------%
+
+:- pred maybe_poll(index_info::in, index_info::out, io::di, io::uo) is det.
+
+maybe_poll(!Info, !IO) :-
+    Counts = !.Info ^ i_counts,
+    Counts = CountA - CountB,
+    ( CountA \= CountB ->
+        true
+    ;
+        time(Time, !IO),
+        PollTime = !.Info ^ i_poll_time,
+        time_to_int(Time, TimeInt),
+        time_to_int(PollTime, PollTimeInt),
+        ( TimeInt - PollTimeInt < poll_period_secs ->
+            true
+        ;
+            !Info ^ i_poll_time := Time,
+            Terms0 = !.Info ^ i_search_terms,
+            string_to_search_terms(Terms0, Terms, !IO),
+            run_notmuch_count(Terms, ResCount, !IO),
+            (
+                ResCount = ok(NewCountB),
+                !Info ^ i_counts := CountA - NewCountB
+            ;
+                ResCount = error(_)
+                % XXX show error message?
+            )
+        )
+    ).
+
+:- func poll_period_secs = int.
+
+poll_period_secs = 60.
 
 %-----------------------------------------------------------------------------%
 
@@ -664,6 +716,16 @@ draw_index_line(Panel, Line, IsCursor, !IO) :-
     my_addstr(Panel, CountStr, !IO),
     cond_attr_set(Panel, normal, IsCursor, !IO),
     my_addstr(Panel, Subject, !IO).
+
+:- pred draw_index_bar(screen::in, index_info::in, io::di, io::uo) is det.
+
+draw_index_bar(Screen, Info, !IO) :-
+    CountA - CountB = Info ^ i_counts,
+    ( CountA = CountB ->
+        draw_bar(Screen, !IO)
+    ;
+        draw_bar_with_text(Screen, "Press = to refresh", !IO)
+    ).
 
 :- pred cond_attr_set(panel::in, attr::in, bool::in, io::di, io::uo) is det.
 

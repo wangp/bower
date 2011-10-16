@@ -18,6 +18,9 @@
 :- pred get_notmuch_config(string::in, io.res(string)::out, io::di, io::uo)
     is det.
 
+:- pred run_notmuch_count(string::in, io.res(int)::out, io::di, io::uo)
+    is det.
+
 :- pred run_notmuch(list(string)::in, pred(json, T)::in(pred(in, out) is det),
     io.res(T)::out, io::di, io::uo) is det.
 
@@ -104,6 +107,28 @@ get_notmuch_config(Key, Res, !IO) :-
     ;
         Res0 = error(_),
         Res = Res0
+    ).
+
+%-----------------------------------------------------------------------------%
+
+run_notmuch_count(Terms, Result, !IO) :-
+    args_to_quoted_command([
+        "count", "--", Terms
+    ], Command),
+    get_notmuch_prefix(Notmuch, !IO),
+    popen(Notmuch ++ Command, CommandResult, !IO),
+    (
+        CommandResult = ok(String0),
+        String = string.rstrip(String0),
+        ( string.to_int(String, Int) ->
+            Result = ok(Int)
+        ;
+            Error = io.make_io_error("notmuch count return unexpected result"),
+            Result = error(Error)
+        )
+    ;
+        CommandResult = error(Error),
+        Result = error(Error)
     ).
 
 %-----------------------------------------------------------------------------%
