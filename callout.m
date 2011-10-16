@@ -37,7 +37,6 @@
 
 :- implementation.
 
-:- import_module cord.
 :- import_module map.
 :- import_module maybe.
 :- import_module parsing_utils.
@@ -198,7 +197,7 @@ parse_message_details(JSON, Replies, Message) :-
         JSON/"tags" = array(TagsList),
         list.map(parse_tag, TagsList, Tags),
         JSON/"body" = array(BodyList),
-        list.foldl(parse_part(MessageId), BodyList, cord.init, Body)
+        list.map(parse_part(MessageId), BodyList, Body)
     ->
         Message = message(MessageId, Timestamp, Headers, Tags, Body, Replies)
     ;
@@ -232,10 +231,9 @@ parse_header(Key, unesc_string(Value), !Headers) :-
         !Headers ^ h_rest := Rest
     ).
 
-:- pred parse_part(message_id::in, json::in,
-    cord(part)::in, cord(part)::out) is det.
+:- pred parse_part(message_id::in, json::in, part::out) is det.
 
-parse_part(MessageId, JSON, !Parts) :-
+parse_part(MessageId, JSON, Part) :-
     (
         JSON/"id" = int(PartId),
         JSON/"content-type" = unesc_string(ContentType)
@@ -246,17 +244,16 @@ parse_part(MessageId, JSON, !Parts) :-
             MaybeFilename = no
         ),
         ( JSON/"content" = unesc_string(ContentString) ->
-            Part = part(MessageId, PartId, ContentType, yes(ContentString),
-                MaybeFilename),
-            snoc(Part, !Parts)
-        ; JSON/"content" = array(SubParts) ->
-            list.foldl(parse_part(MessageId), SubParts, !Parts)
+            Content = text(ContentString)
+        ; JSON/"content" = array(SubParts0) ->
+            list.map(parse_part(MessageId), SubParts0, SubParts),
+            Content = subparts(SubParts)
         ;
             % "content" is unavailable for non-text parts.
             % We can those by running notmuch show --part=N id:NNN
-            Part = part(MessageId, PartId, ContentType, no, MaybeFilename),
-            snoc(Part, !Parts)
-        )
+            Content = unsupported
+        ),
+        Part = part(MessageId, PartId, ContentType, Content, MaybeFilename)
     ;
         notmuch_json_error
     ).

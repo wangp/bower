@@ -15,9 +15,7 @@
 
 :- implementation.
 
-:- import_module cord.
 :- import_module list.
-:- import_module maybe.
 :- import_module string.
 
 :- import_module callout.
@@ -29,34 +27,40 @@
 
 expand_copious_output(Message0, Message, !IO) :-
     Message0 = message(Id, Timestamp, Headers, Tags, Body0, Replies0),
-    BodyList0 = cord.list(Body0),
-    list.map_foldl(expand_part, BodyList0, BodyList, !IO),
-    Body = cord.from_list(BodyList),
+    list.map_foldl(expand_part, Body0, Body, !IO),
     list.map_foldl(expand_copious_output, Replies0, Replies, !IO),
     Message = message(Id, Timestamp, Headers, Tags, Body, Replies).
 
 :- pred expand_part(part::in, part::out, io::di, io::uo) is det.
 
 expand_part(Part0, Part, !IO) :-
-    Type = Part0 ^ pt_type,
-    MaybeContent0 = Part0 ^ pt_content,
+    Part0 = part(MessageId, PartId, Type, Content0, MaybeFilename),
     (
-        % XXX we should use mailcap, though we don't want to show everything
-        strcase_equal(Type, "text/html"),
-        MaybeContent0 = no
-    ->
-        MessageId = Part0 ^ pt_msgid,
-        PartId = Part0 ^ pt_part,
-        expand_html(MessageId, PartId, MaybeContent, !IO),
-        Part = Part0 ^ pt_content := MaybeContent
-    ;
+        Content0 = text(_),
         Part = Part0
+    ;
+        Content0 = subparts(SubParts0),
+        list.map_foldl(expand_part, SubParts0, SubParts, !IO),
+        Content = subparts(SubParts),
+        Part = part(MessageId, PartId, Type, Content, MaybeFilename)
+    ;
+        Content0 = unsupported,
+        (
+            % XXX we should use mailcap, though we don't want to show
+            % everything
+            strcase_equal(Type, "text/html")
+        ->
+            expand_html(MessageId, PartId, Content, !IO),
+            Part = part(MessageId, PartId, Type, Content, MaybeFilename)
+        ;
+            Part = Part0
+        )
     ).
 
-:- pred expand_html(message_id::in, int::in, maybe(string)::out,
+:- pred expand_html(message_id::in, int::in, part_content::out,
     io::di, io::uo) is det.
 
-expand_html(MessageId, PartId, MaybeContent, !IO) :-
+expand_html(MessageId, PartId, Content, !IO) :-
     get_notmuch_prefix(Notmuch, !IO),
     args_to_quoted_command([
         "show", "--format=raw", "--part=" ++ from_int(PartId),
@@ -64,11 +68,11 @@ expand_html(MessageId, PartId, MaybeContent, !IO) :-
     ], ShowCommand),
     popen(Notmuch ++ ShowCommand ++ dump_pipe, CallRes, !IO),
     (
-        CallRes = ok(Content),
-        MaybeContent = yes(Content)
+        CallRes = ok(ContentString),
+        Content = text(ContentString)
     ;
         CallRes = error(_),
-        MaybeContent = no
+        Content = unsupported
     ).
 
     % XXX we should use mailcap

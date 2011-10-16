@@ -30,7 +30,7 @@
                 m_timestamp :: int,
                 m_headers   :: headers,
                 m_tags      :: list(string),
-                m_body      :: cord(part),
+                m_body      :: list(part),
                 m_replies   :: list(message)
             ).
 
@@ -57,9 +57,14 @@
                 pt_msgid        :: message_id,
                 pt_part         :: int,
                 pt_type         :: string,
-                pt_content      :: maybe(string),
+                pt_content      :: part_content,
                 pt_filename     :: maybe(string)
             ).
+
+:- type part_content
+    --->    text(string)
+    ;       subparts(list(part))
+    ;       unsupported.
 
 %-----------------------------------------------------------------------------%
 

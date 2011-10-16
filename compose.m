@@ -32,7 +32,6 @@
 
 :- import_module bool.
 :- import_module char.
-:- import_module cord.
 :- import_module dir.
 :- import_module int.
 :- import_module list.
@@ -252,7 +251,7 @@ set_headers_for_list_reply(OrigFrom, !Headers) :-
 continue_postponed(Screen, Message, !IO) :-
     MessageId = Message ^ m_id,
     Headers0 = Message ^ m_headers,
-    Body0 = cord.list(Message ^ m_body),
+    Body0 = Message ^ m_body,
     first_text_part(Body0, Text, AttachmentParts),
     list.map(to_old_attachment, AttachmentParts, Attachments),
 
@@ -288,10 +287,12 @@ first_text_part([], "", []).
 first_text_part([Part | Parts], Text, AttachmentParts) :-
     MaybeContent = Part ^ pt_content,
     (
-        MaybeContent = yes(Text),
+        MaybeContent = text(Text),
         AttachmentParts = Parts
     ;
-        MaybeContent = no,
+        ( MaybeContent = subparts(_)
+        ; MaybeContent = unsupported
+        ),
         first_text_part(Parts, Text, AttachmentParts0),
         AttachmentParts = [Part | AttachmentParts0]
     ).
@@ -1146,22 +1147,25 @@ write_mime_part_attachment(Stream, Boundary, Attachment, !IO) :-
     (
         Attachment = old_attachment(Part),
         Type = Part ^ pt_type,
-        MaybeContent = Part ^ pt_content,
+        Content = Part ^ pt_content,
         (
-            MaybeContent = yes(Content),
+            Content = text(ContentString),
             CTE = "8bit"
         ;
-            MaybeContent = no,
+            Content = unsupported,
             CTE = "base64",
-            get_non_text_part_base64(Part, Content, !IO)
+            get_non_text_part_base64(Part, ContentString, !IO)
+        ;
+            Content = subparts(_),
+            unexpected($module, $pred, "nested part")
         ),
         MaybeFileName = Part ^ pt_filename
     ;
-        Attachment = new_text_attachment(Type, Content, FileName),
+        Attachment = new_text_attachment(Type, ContentString, FileName),
         MaybeFileName = yes(FileName),
         CTE = "8bit"
     ;
-        Attachment = new_binary_attachment(Type, Content, FileName),
+        Attachment = new_binary_attachment(Type, ContentString, FileName),
         MaybeFileName = yes(FileName),
         CTE = "base64"
     ),
@@ -1177,7 +1181,7 @@ write_mime_part_attachment(Stream, Boundary, Attachment, !IO) :-
     write_content_disposition_attachment(Stream, MaybeFileName, !IO),
     write_content_transfer_encoding(Stream, CTE, !IO),
     io.nl(Stream, !IO),
-    io.write_string(Stream, Content, !IO).
+    io.write_string(Stream, ContentString, !IO).
 
 :- pred get_non_text_part_base64(part::in, string::out, io::di, io::uo) is det.
 

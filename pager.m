@@ -149,12 +149,7 @@ append_message(Cols, Message, !Lines) :-
     ),
     snoc(blank_line, !Lines),
     Body = Message ^ m_body,
-    ( cord.head_tail(Body, FirstPart, RestParts) ->
-        append_part(Cols, yes, FirstPart, !Lines),
-        cord.foldl_pred(append_part(Cols, no), RestParts, !Lines)
-    ;
-        true
-    ),
+    list.foldl2(append_part(Cols), Body, !Lines, yes, _IsFirst),
     snoc(message_separator, !Lines),
     snoc(message_separator, !Lines),
     snoc(message_separator, !Lines),
@@ -168,22 +163,23 @@ append_header(Header, Value, !Lines) :-
     Line = header(Header, Value),
     snoc(Line, !Lines).
 
-:- pred append_part(int::in, bool::in, part::in,
-    cord(pager_line)::in, cord(pager_line)::out) is det.
+:- pred append_part(int::in, part::in,
+    cord(pager_line)::in, cord(pager_line)::out, bool::in, bool::out) is det.
 
-append_part(Cols, IsFirst, Part, !Lines) :-
-    Part = part(_MsgId, _Part, Type, MaybeText, _MaybeFilename),
+append_part(Cols, Part, !Lines, !IsFirst) :-
+    Part = part(_MsgId, _Part, Type, Content, _MaybeFilename),
     (
-        IsFirst = yes,
-        strcase_equal(Type, "text/plain")
-    ->
-        true
-    ;
-        snoc(blank_line, !Lines),
-        snoc(attachment(Part), !Lines)
-    ),
-    (
-        MaybeText = yes(Text),
+        Content = text(Text),
+        (
+            !.IsFirst = yes,
+            strcase_equal(Type, "text/plain")
+        ->
+            true
+        ;
+            snoc(blank_line, !Lines),
+            snoc(attachment(Part), !Lines)
+        ),
+        !:IsFirst = no,
         Start = 0,
         LastBreak = 0,
         Cur = 0,
@@ -192,8 +188,14 @@ append_part(Cols, IsFirst, Part, !Lines) :-
         append_text(Cols, Text, Start, LastBreak, Cur, QuoteLevel, InDiff,
             !Lines)
     ;
-        MaybeText = no,
-        snoc(text("(not supported)"), !Lines)
+        Content = subparts(SubParts),
+        list.foldl2(append_part(Cols), SubParts, !Lines, !IsFirst)
+    ;
+        Content = unsupported,
+        snoc(blank_line, !Lines),
+        snoc(attachment(Part), !Lines),
+        snoc(text("(not supported)"), !Lines),
+        !:IsFirst = no
     ).
 
 :- pred append_text(int::in, string::in, int::in, int::in, int::in,
