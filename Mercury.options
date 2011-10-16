@@ -12,3 +12,5 @@ CFLAGS-sys_util += -D_BSD_SOURCE
 CFLAGS-string_util += -D_GNU_SOURCE
 
 MLLIBS-notmuch_frontend += -lncursesw -lpanel
+
+-include Mercury.params
