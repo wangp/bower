@@ -35,6 +35,7 @@
 
 :- import_module callout.
 :- import_module compose.
+:- import_module copious_output.
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module maildir.
@@ -113,7 +114,8 @@ open_thread_pager(Screen, ThreadId, NeedRefresh, SearchHistory0, SearchHistory,
     ], parse_messages_list, Result, !IO),
     (
         Result = ok(Messages0),
-        list.filter_map(filter_unwanted_messages, Messages0, Messages)
+        list.filter_map(filter_unwanted_messages, Messages0, Messages1),
+        list.map_foldl(expand_copious_output, Messages1, Messages, !IO)
     ;
         Result = error(Error),
         unexpected($module, $pred, io.error_message(Error))
