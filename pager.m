@@ -189,7 +189,15 @@ append_part(Cols, Part, !Lines, !IsFirst) :-
             !Lines)
     ;
         Content = subparts(SubParts),
-        list.foldl2(append_part(Cols), SubParts, !Lines, !IsFirst)
+        (
+            strcase_equal(Type, "multipart/alternative"),
+            SubParts = [FirstPart | _],
+            strcase_equal(FirstPart ^ pt_type, "text/plain")
+        ->
+            append_part(Cols, FirstPart, !Lines, !IsFirst)
+        ;
+            list.foldl2(append_part(Cols), SubParts, !Lines, !IsFirst)
+        )
     ;
         Content = unsupported,
         snoc(blank_line, !Lines),
