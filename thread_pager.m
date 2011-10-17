@@ -494,6 +494,13 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Action = leave(TagGroups),
         MessageUpdate = clear_message
     ;
+        Key = char('I')
+    ->
+        mark_all_read(!Info),
+        get_tag_delta_groups(!.Info, TagGroups),
+        Action = leave(TagGroups),
+        MessageUpdate = clear_message
+    ;
         Key = char('r')
     ->
         reply(!.Info, direct_reply, Action, MessageUpdate)
