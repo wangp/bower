@@ -286,8 +286,8 @@ thread_pager_loop(Screen, NeedRefresh, !Info, !IO) :-
     draw_thread_pager(Screen, !.Info, !IO),
     draw_bar(Screen, !IO),
     panel.update_panels(!IO),
-    get_char(Char, !IO),
-    thread_pager_input(Char, Action, MessageUpdate, !Info),
+    get_keycode(Key, !IO),
+    thread_pager_input(Key, Action, MessageUpdate, !Info),
     update_message(Screen, MessageUpdate, !IO),
     (
         Action = continue,
@@ -341,99 +341,157 @@ apply_tag_delta(TagDeltaSet, MessageIds, !AccRes, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred thread_pager_input(char::in, thread_pager_action::out,
+:- pred thread_pager_input(keycode::in, thread_pager_action::out,
     message_update::out, thread_pager_info::in, thread_pager_info::out) is det.
 
-thread_pager_input(Char, Action, MessageUpdate, !Info) :-
+thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     NumPagerRows = !.Info ^ tp_num_pager_rows,
-    ( Char = 'j' ->
+    (
+        ( Key = char('j')
+        ; Key = code(key_down)
+        )
+    ->
         next_message(MessageUpdate, !Info),
         Action = continue
-    ; Char = 'J' ->
+    ;
+        Key = char('J')
+    ->
         set_current_line_read(!Info),
         next_message(MessageUpdate, !Info),
         Action = continue
-    ; Char = 'k' ->
+    ;
+        ( Key = char('k')
+        ; Key = code(key_up)
+        )
+    ->
         prev_message(MessageUpdate, !Info),
         Action = continue
-    ; Char = 'K' ->
+    ;
+        Key = char('K')
+    ->
         set_current_line_read(!Info),
         prev_message(MessageUpdate, !Info),
         Action = continue
-    ; Char = '\r' ->
+    ;
+        Key = char('\r')
+    ->
         scroll(1, MessageUpdate, !Info),
         Action = continue
-    ; Char = ('\\') ->
+    ;
+        Key = char('\\')
+    ->
         scroll(-1, MessageUpdate, !Info),
         Action = continue
-    ; Char = ']' ->
+    ;
+        Key = char(']')
+    ->
         Delta = int.min(15, NumPagerRows - 1),
         scroll(Delta, MessageUpdate, !Info),
         Action = continue
-    ; Char = '[' ->
+    ;
+        Key = char('[')
+    ->
         Delta = int.min(15, NumPagerRows - 1),
         scroll(-Delta, MessageUpdate, !Info),
         Action = continue
-    ; Char = ' ' ->
+    ;
+        ( Key = char(' ')
+        ; Key = code(key_pagedown)
+        )
+    ->
         Delta = int.max(0, NumPagerRows - 1),
         scroll(Delta, MessageUpdate, !Info),
         Action = continue
-    ; Char = 'b' ->
+    ;
+        ( Key = char('b')
+        ; Key = code(key_pageup)
+        )
+    ->
         Delta = int.max(0, NumPagerRows - 1),
         scroll(-Delta, MessageUpdate, !Info),
         Action = continue
-    ; Char = 'S' ->
+    ;
+        Key = char('S')
+    ->
         skip_quoted_text(MessageUpdate, !Info),
         Action = continue
-    ; Char = '\t' ->
+    ;
+        Key = char('\t')
+    ->
         skip_to_unread(MessageUpdate, !Info),
         Action = continue
-    ; Char = '\x12\' -> % ^R
+    ;
+        Key = char('\x12\') % ^R
+    ->
         mark_all_read(!Info),
         MessageUpdate = clear_message,
         Action = continue
-    ; Char = 'N' ->
+    ;
+        Key = char('N')
+    ->
         toggle_unread(!Info),
         next_message(MessageUpdate, !Info),
         Action = continue
-    ; Char = 'd' ->
+    ;
+        Key = char('d')
+    ->
         toggle_deleted(deleted, !Info),
         next_message(MessageUpdate, !Info),
         Action = continue
-    ; Char = 'u' ->
+    ;
+        Key = char('u')
+    ->
         toggle_deleted(not_deleted, !Info),
         Action = continue,
         MessageUpdate = clear_message
-    ; Char = 'F' ->
+    ;
+        Key = char('F')
+    ->
         toggle_flagged(!Info),
         MessageUpdate = clear_message,
         Action = continue
-    ; Char = 'v' ->
+    ;
+        Key = char('v')
+    ->
         highlight_attachment(MessageUpdate, !Info),
         Action = continue
-    ; Char = 's' ->
+    ;
+        Key = char('s')
+    ->
         save_attachment(Action, MessageUpdate, !Info)
-    ; Char = 'o' ->
+    ;
+        Key = char('o')
+    ->
         open_attachment(Action, MessageUpdate, !Info)
-    ; Char = ('/') ->
+    ;
+        Key = char('/')
+    ->
         Action = prompt_search,
         MessageUpdate = clear_message
-    ; Char = 'n' ->
+    ;
+        Key = char('n')
+    ->
         skip_to_search(continue_search, MessageUpdate, !Info),
         Action = continue
     ;
-        ( Char = 'i'
-        ; Char = 'q'
+        ( Key = char('i')
+        ; Key = char('q')
         )
     ->
         get_tag_delta_groups(!.Info, TagGroups),
         Action = leave(TagGroups),
         MessageUpdate = clear_message
-    ; Char = 'r' ->
+    ;
+        Key = char('r')
+    ->
         reply(!.Info, direct_reply, Action, MessageUpdate)
-    ; Char = 'g' ->
+    ;
+        Key = char('g')
+    ->
         reply(!.Info, group_reply, Action, MessageUpdate)
-    ; Char = 'L' ->
+    ;
+        Key = char('L')
+    ->
         reply(!.Info, list_reply, Action, MessageUpdate)
     ;
         Action = continue,
