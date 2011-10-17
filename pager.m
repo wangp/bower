@@ -36,6 +36,10 @@
 :- pred prev_message(message_update::out, pager_info::in, pager_info::out)
     is det.
 
+:- pred goto_first_message(pager_info::in, pager_info::out) is det.
+
+:- pred goto_last_message(pager_info::in, pager_info::out) is det.
+
 :- pred skip_quoted_text(message_update::out, pager_info::in, pager_info::out)
     is det.
 
@@ -468,6 +472,21 @@ prev_message(MessageUpdate, !Info) :-
         MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("Already at first message.")
+    ).
+
+goto_first_message(!Info) :-
+    !.Info = pager_info(Scrollable0),
+    set_top(0, Scrollable0, Scrollable),
+    !:Info = pager_info(Scrollable).
+
+goto_last_message(!Info) :-
+    !.Info = pager_info(Scrollable0),
+    Top0 = scrollable.get_num_lines(Scrollable0),
+    ( search_reverse(is_message_start, Scrollable0, Top0, Top) ->
+        set_top(Top, Scrollable0, Scrollable),
+        !:Info = pager_info(Scrollable)
+    ;
+        true
     ).
 
 :- pred is_message_start(pager_line::in) is semidet.

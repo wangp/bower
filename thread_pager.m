@@ -411,6 +411,18 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         scroll(-Delta, MessageUpdate, !Info),
         Action = continue
     ;
+        Key = code(key_home)
+    ->
+        goto_first_message(!Info),
+        MessageUpdate = clear_message,
+        Action = continue
+    ;
+        Key = code(key_end)
+    ->
+        goto_last_message(!Info),
+        MessageUpdate = clear_message,
+        Action = continue
+    ;
         Key = char('S')
     ->
         skip_quoted_text(MessageUpdate, !Info),
@@ -523,6 +535,24 @@ scroll(Delta, MessageUpdate, !Info) :-
     PagerInfo0 = !.Info ^ tp_pager,
     NumPagerRows = !.Info ^ tp_num_pager_rows,
     pager.scroll(NumPagerRows, Delta, MessageUpdate, PagerInfo0, PagerInfo),
+    !Info ^ tp_pager := PagerInfo,
+    sync_thread_to_pager(!Info).
+
+:- pred goto_first_message(thread_pager_info::in, thread_pager_info::out)
+    is det.
+
+goto_first_message(!Info) :-
+    PagerInfo0 = !.Info ^ tp_pager,
+    pager.goto_first_message(PagerInfo0, PagerInfo),
+    !Info ^ tp_pager := PagerInfo,
+    sync_thread_to_pager(!Info).
+
+:- pred goto_last_message(thread_pager_info::in, thread_pager_info::out)
+    is det.
+
+goto_last_message(!Info) :-
+    PagerInfo0 = !.Info ^ tp_pager,
+    pager.goto_last_message(PagerInfo0, PagerInfo),
     !Info ^ tp_pager := PagerInfo,
     sync_thread_to_pager(!Info).
 
