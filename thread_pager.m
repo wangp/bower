@@ -386,13 +386,13 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Key = char(']')
     ->
         Delta = int.min(15, NumPagerRows - 1),
-        scroll(Delta, MessageUpdate, !Info),
+        scroll_but_stop_at_message(Delta, MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('[')
     ->
         Delta = int.min(15, NumPagerRows - 1),
-        scroll(-Delta, MessageUpdate, !Info),
+        scroll_but_stop_at_message(-Delta, MessageUpdate, !Info),
         Action = continue
     ;
         ( Key = char(' ')
@@ -400,7 +400,7 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         )
     ->
         Delta = int.max(0, NumPagerRows - 1),
-        scroll(Delta, MessageUpdate, !Info),
+        scroll_but_stop_at_message(Delta, MessageUpdate, !Info),
         Action = continue
     ;
         ( Key = char('b')
@@ -408,7 +408,7 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         )
     ->
         Delta = int.max(0, NumPagerRows - 1),
-        scroll(-Delta, MessageUpdate, !Info),
+        scroll_but_stop_at_message(-Delta, MessageUpdate, !Info),
         Action = continue
     ;
         Key = code(key_home)
@@ -535,6 +535,17 @@ scroll(Delta, MessageUpdate, !Info) :-
     PagerInfo0 = !.Info ^ tp_pager,
     NumPagerRows = !.Info ^ tp_num_pager_rows,
     pager.scroll(NumPagerRows, Delta, MessageUpdate, PagerInfo0, PagerInfo),
+    !Info ^ tp_pager := PagerInfo,
+    sync_thread_to_pager(!Info).
+
+:- pred scroll_but_stop_at_message(int::in, message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+scroll_but_stop_at_message(Delta, MessageUpdate, !Info) :-
+    PagerInfo0 = !.Info ^ tp_pager,
+    NumPagerRows = !.Info ^ tp_num_pager_rows,
+    pager.scroll_but_stop_at_message(NumPagerRows, Delta, MessageUpdate,
+        PagerInfo0, PagerInfo),
     !Info ^ tp_pager := PagerInfo,
     sync_thread_to_pager(!Info).
 

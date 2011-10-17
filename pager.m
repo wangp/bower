@@ -30,6 +30,9 @@
 :- pred scroll(int::in, int::in, message_update::out,
     pager_info::in, pager_info::out) is det.
 
+:- pred scroll_but_stop_at_message(int::in, int::in, message_update::out,
+    pager_info::in, pager_info::out) is det.
+
 :- pred next_message(message_update::out, pager_info::in, pager_info::out)
     is det.
 
@@ -450,6 +453,29 @@ scroll(NumRows, Delta, MessageUpdate, !Info) :-
     ;
         HitLimit = no,
         MessageUpdate = clear_message
+    ).
+
+scroll_but_stop_at_message(NumRows, Delta, MessageUpdate, !Info) :-
+    !.Info = pager_info(Scrollable0),
+    Top0 = get_top(Scrollable0),
+    (
+        ( Delta > 0 ->
+            Limit = Top0 + Delta,
+            search_forward_limit(is_message_start, Scrollable0, Top0 + 1,
+                Limit, MessageTop, _)
+        ; Delta < 0 ->
+            Limit = int.max(0, Top0 + Delta),
+            search_reverse_limit(is_message_start, Scrollable0, Top0,
+                Limit, MessageTop, _)
+        ;
+            fail
+        )
+    ->
+        set_top(MessageTop, Scrollable0, Scrollable),
+        !:Info = pager_info(Scrollable),
+        MessageUpdate = clear_message
+    ;
+        scroll(NumRows, Delta, MessageUpdate, !Info)
     ).
 
 next_message(MessageUpdate, !Info) :-

@@ -67,6 +67,9 @@
 :- pred search_reverse(pred(T)::in(pred(in) is semidet),
     scrollable(T)::in, int::in, int::out) is semidet.
 
+:- pred search_reverse_limit(pred(T)::in(pred(in) is semidet),
+    scrollable(T)::in, int::in, int::in, int::out, T::out) is semidet.
+
 :- pred append_line(T::in, scrollable(T)::in, scrollable(T)::out) is det.
 
 :- pred delete_cursor_line(scrollable(T)::in, scrollable(T)::out) is semidet.
@@ -234,20 +237,24 @@ search_forward_2(P, Array, Limit, N0, N, MatchX) :-
     ).
 
 search_reverse(P, Scrollable, I0, I) :-
+    Limit = 0,
+    search_reverse_limit(P, Scrollable, I0, Limit, I, _MatchLine).
+
+search_reverse_limit(P, Scrollable, I0, Limit, I, MatchLine) :-
     Scrollable = scrollable(Lines, _Top, _MaybeCursor),
-    search_reverse_2(P, Lines, I0 - 1, I, _).
+    search_reverse_2(P, Lines, Limit, I0 - 1, I, MatchLine).
 
 :- pred search_reverse_2(pred(T)::in(pred(in) is semidet),
-    version_array(T)::in, int::in, int::out, T::out) is semidet.
+    version_array(T)::in, int::in, int::in, int::out, T::out) is semidet.
 
-search_reverse_2(P, Array, N0, N, MatchX) :-
-    ( N0 >= 0 ->
+search_reverse_2(P, Array, Limit, N0, N, MatchX) :-
+    ( N0 >= Limit ->
         X = version_array.lookup(Array, N0),
         ( P(X) ->
             N = N0,
             MatchX = X
         ;
-            search_reverse_2(P, Array, N0 - 1, N, MatchX)
+            search_reverse_2(P, Array, Limit, N0 - 1, N, MatchX)
         )
     ;
         fail
