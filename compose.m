@@ -870,7 +870,7 @@ tag_replied_message(Screen, Headers, !IO) :-
     ->
         string.between(InReplyTo0, 1, LastPos, Id),
         MessageId = message_id(Id),
-        tag_messages(["+replied"], [MessageId], TagRes, !IO),
+        tag_messages(["+replied", "-unread"], [MessageId], TagRes, !IO),
         (
             TagRes = ok
         ;
