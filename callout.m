@@ -98,7 +98,7 @@ get_notmuch_deliver_prefix(NotmuchDeliver, !IO) :-
 
 get_notmuch_config(Key, Res, !IO) :-
     get_notmuch_prefix(Notmuch, !IO),
-    popen(Notmuch ++ "config get " ++ Key, Res0, !IO),
+    popen(Notmuch ++ "config get " ++ Key ++ " 2>/dev/null", Res0, !IO),
     (
         Res0 = ok(Value0),
         Value = string.strip(Value0),

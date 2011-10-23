@@ -120,10 +120,11 @@ start_compose(Screen, !History, !IO) :-
             MaybeSubject = yes(Subject),
             add_history_nodup(Subject, SubjectHistory0, SubjectHistory),
             !:History = compose_history(ToHistory, SubjectHistory),
+            expand_aliases(To, ExpandTo, !IO),
             some [!Headers] (
                 !:Headers = init_headers,
                 !Headers ^ h_from := From,
-                !Headers ^ h_to := To,
+                !Headers ^ h_to := ExpandTo,
                 !Headers ^ h_subject := Subject,
                 Headers = !.Headers
             ),
@@ -487,25 +488,32 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO) :-
 
 edit_header(Screen, HeaderType, !StagingInfo, !IO) :-
     Headers0 = !.StagingInfo ^ si_headers,
-    get_header(HeaderType, Headers0, Prompt, Initial),
+    get_header(HeaderType, Headers0, Prompt, Initial, ExpandAddresses),
     text_entry_initial(Screen, Prompt, init_history, Initial, Return, !IO),
     (
-        Return = yes(Final),
-        set_header(HeaderType, Final, Headers0, Headers),
+        Return = yes(Value0),
+        (
+            ExpandAddresses = yes,
+            expand_aliases(Value0, Value, !IO)
+        ;
+            ExpandAddresses = no,
+            Value = Value0
+        ),
+        set_header(HeaderType, Value, Headers0, Headers),
         !StagingInfo ^ si_headers := Headers
     ;
         Return = no
     ).
 
-:- pred get_header(header_type::in, headers::in, string::out, string::out)
-    is det.
+:- pred get_header(header_type::in, headers::in, string::out, string::out,
+    bool::out) is det.
 
-get_header(from,    H, "From: ",     H ^ h_from).
-get_header(to,      H, "To: ",       H ^ h_to).
-get_header(cc,      H, "Cc: ",       H ^ h_cc).
-get_header(bcc,     H, "Bcc: ",      H ^ h_bcc).
-get_header(subject, H, "Subject: ",  H ^ h_subject).
-get_header(replyto, H, "Reply-To: ", H ^ h_replyto).
+get_header(from,    H, "From: ",     H ^ h_from,    no).
+get_header(to,      H, "To: ",       H ^ h_to,      yes).
+get_header(cc,      H, "Cc: ",       H ^ h_cc,      yes).
+get_header(bcc,     H, "Bcc: ",      H ^ h_bcc,     yes).
+get_header(subject, H, "Subject: ",  H ^ h_subject, no).
+get_header(replyto, H, "Reply-To: ", H ^ h_replyto, no).
 
 :- pred set_header(header_type::in, string::in, headers::in, headers::out)
     is det.
@@ -516,6 +524,40 @@ set_header(cc,      Value, H, H ^ h_cc := Value).
 set_header(bcc,     Value, H, H ^ h_bcc := Value).
 set_header(subject, Value, H, H ^ h_subject := Value).
 set_header(replyto, Value, H, H ^ h_replyto := Value).
+
+:- pred expand_aliases(string::in, string::out, io::di, io::uo) is det.
+
+expand_aliases(String0, String, !IO) :-
+    Words0 = string.split_at_string(", ", String0),
+    list.map_foldl(expand_aliases_2, Words0, Words1, !IO),
+    ( Words0 = Words1 ->
+        String = String0
+    ;
+        String = string.join_list(", ", Words1)
+    ).
+
+:- pred expand_aliases_2(string::in, string::out, io::di, io::uo) is det.
+
+expand_aliases_2(Word0, Expansion, !IO) :-
+    Word1 = string.strip(Word0),
+    ( string.all_match(is_alias_char, Word1) ->
+        Key = "addressbook." ++ Word1,
+        get_notmuch_config(Key, MaybeValue, !IO),
+        (
+            MaybeValue = ok(Expansion)
+        ;
+            MaybeValue = error(_),
+            Expansion = Word0
+        )
+    ;
+        Expansion = Word0
+    ).
+
+:- pred is_alias_char(char::in) is semidet.
+
+is_alias_char(C) :- char.is_alnum_or_underscore(C).
+is_alias_char('-').
+is_alias_char('+').
 
 %-----------------------------------------------------------------------------%
 
