@@ -24,7 +24,7 @@
     --->    continue
     ;       leave_pager.
 
-:- pred pager_input(screen::in, char::in, pager_action::out,
+:- pred pager_input(int::in, char::in, pager_action::out,
     message_update::out, pager_info::in, pager_info::out) is det.
 
 :- pred scroll(int::in, int::in, message_update::out,
@@ -375,10 +375,8 @@ setup_pager_for_staging(Cols, Text, Info) :-
 
 %-----------------------------------------------------------------------------%
 
-pager_input(Screen, Char, Action, MessageUpdate, !Info) :-
+pager_input(NumRows, Char, Action, MessageUpdate, !Info) :-
     ( key_binding(Char, Binding) ->
-        % XXX should cache the number of rows
-        NumRows = list.length(Screen ^ main_panels),
         (
             Binding = leave_pager,
             Action = leave_pager,

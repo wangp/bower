@@ -409,6 +409,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO) :-
     draw_staging_bar(Screen, !IO),
     panel.update_panels(!IO),
     NumAttachmentRows = list.length(AttachmentPanels),
+    NumPagerRows = list.length(PagerPanels),
     get_char(Char, !IO),
     ( Char = 'e' ->
         Attachments = get_lines_list(!.AttachInfo),
@@ -476,7 +477,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO) :-
             update_message(Screen, set_info("Mail not sent."), !IO)
         )
     ;
-        pager_input(Screen, Char, _Action, MessageUpdate, !PagerInfo),
+        pager_input(NumPagerRows, Char, _Action, MessageUpdate, !PagerInfo),
         update_message(Screen, MessageUpdate, !IO),
         staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
     ).
