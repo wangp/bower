@@ -28,13 +28,19 @@
 :- import_module bool.
 :- import_module char.
 :- import_module list.
-:- import_module pair.
 :- import_module string.
 
 :- import_module curs.
 :- import_module curs.panel.
 
 :- type history == list(string). % reverse
+
+:- type sub_info
+    --->    sub_info(
+                first_time      :: bool,
+                pre_history     :: history,
+                post_history    :: history
+            ).
 
 %-----------------------------------------------------------------------------%
 
@@ -64,15 +70,14 @@ text_entry_initial(Screen, Prompt, History, Initial, Return, !IO) :-
     list.reverse(Before0, Before),
     After = [],
     FirstTime = yes,
-    text_entry(Screen, Prompt, History - [], Before, After, FirstTime,
-        Return, !IO),
+    SubInfo = sub_info(FirstTime, History, []),
+    text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO),
     update_message(Screen, clear_message, !IO).
 
-:- pred text_entry(screen::in, string::in, pair(history, history)::in,
-    list(char)::in, list(char)::in, bool::in, maybe(string)::out,
-    io::di, io::uo) is det.
+:- pred text_entry_real(screen::in, string::in, list(char)::in, list(char)::in,
+    sub_info::in, maybe(string)::out, io::di, io::uo) is det.
 
-text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
+text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO) :-
     draw_text_entry(Screen, Prompt, Before, After, !IO),
     get_keycode(Key, !IO),
     (
@@ -93,120 +98,126 @@ text_entry(Screen, Prompt, History, Before, After, FirstTime, Return, !IO) :-
         )
     ->
         delete_char(Before, Before1),
-        text_entry(Screen, Prompt, History, Before1, After, Return, !IO)
+        text_entry(Screen, Prompt, Before1, After, SubInfo, Return, !IO)
     ;
         ( Key = meta('\x7f\') % DEL
         ; Key = meta('\x08\') % BS
         )
     ->
         delete_word(Before, Before1),
-        text_entry(Screen, Prompt, History, Before1, After, Return, !IO)
+        text_entry(Screen, Prompt, Before1, After, SubInfo, Return, !IO)
     ;
         ( Key = char('\x04\') % ^D
         ; Key = code(key_del)
         )
     ->
         delete_char(After, After1),
-        text_entry(Screen, Prompt, History, Before, After1, Return, !IO)
+        text_entry(Screen, Prompt, Before, After1, SubInfo, Return, !IO)
     ;
         Key = meta('d')
     ->
         delete_word(After, After1),
-        text_entry(Screen, Prompt, History, Before, After1, Return, !IO)
+        text_entry(Screen, Prompt, Before, After1, SubInfo, Return, !IO)
     ;
         ( Key = char('\x02\') % ^B
         ; Key = code(key_left)
         )
     ->
         move_char(Before, Before1, After, After1),
-        text_entry(Screen, Prompt, History, Before1, After1, Return, !IO)
+        text_entry(Screen, Prompt, Before1, After1, SubInfo, Return, !IO)
     ;
         ( Key = char('\x06\') % ^F
         ; Key = code(key_right)
         )
     ->
         move_char(After, After1, Before, Before1),
-        text_entry(Screen, Prompt, History, Before1, After1, Return, !IO)
+        text_entry(Screen, Prompt, Before1, After1, SubInfo, Return, !IO)
     ;
         Key = meta('b')
     ->
         back_word(Before, Before1, After, After1),
-        text_entry(Screen, Prompt, History, Before1, After1, Return, !IO)
+        text_entry(Screen, Prompt, Before1, After1, SubInfo, Return, !IO)
     ;
         Key = meta('f')
     ->
         forward_word(Before, Before1, After, After1),
-        text_entry(Screen, Prompt, History, Before1, After1, Return, !IO)
+        text_entry(Screen, Prompt, Before1, After1, SubInfo, Return, !IO)
     ;
         ( Key = char('\x01\') % ^A
         ; Key = code(key_home)
         )
     ->
         bol_eol(Before, After, After1),
-        text_entry(Screen, Prompt, History, [], After1, Return, !IO)
+        text_entry(Screen, Prompt, [], After1, SubInfo, Return, !IO)
     ;
         ( Key = char('\x05\') % ^E
         ; Key = code(key_end)
         )
     ->
         bol_eol(After, Before, Before1),
-        text_entry(Screen, Prompt, History, Before1, [], Return, !IO)
+        text_entry(Screen, Prompt, Before1, [], SubInfo, Return, !IO)
     ;
         Key = char('\x15\') % ^U
     ->
-        text_entry(Screen, Prompt, History, [], [], Return, !IO)
+        text_entry(Screen, Prompt, [], [], SubInfo, Return, !IO)
     ;
         Key = char('\x0b\') % ^K
     ->
-        text_entry(Screen, Prompt, History, Before, [], Return, !IO)
+        text_entry(Screen, Prompt, Before, [], SubInfo, Return, !IO)
     ;
         ( Key = char('\x10\') % ^P
         ; Key = code(key_up)
         )
     ->
-        History = Pre - Post,
+        get_history(SubInfo, Pre, Post),
         move_history(Before, Before1, After, After1, Pre, Pre1, Post, Post1),
-        History1 = Pre1 - Post1,
-        text_entry(Screen, Prompt, History1, Before1, After1, Return, !IO)
+        set_history(Pre1, Post1, SubInfo, SubInfo1),
+        text_entry(Screen, Prompt, Before1, After1, SubInfo1, Return, !IO)
     ;
         ( Key = char('\xe\') % ^N
         ; Key = code(key_down)
         )
     ->
-        History = Pre - Post,
+        get_history(SubInfo, Pre, Post),
         move_history(Before, Before1, After, After1, Post, Post1, Pre, Pre1),
-        History1 = Pre1 - Post1,
-        text_entry(Screen, Prompt, History1, Before1, After1, Return, !IO)
+        set_history(Pre1, Post1, SubInfo, SubInfo1),
+        text_entry(Screen, Prompt, Before1, After1, SubInfo1, Return, !IO)
     ;
         (
             Key = char(Char),
             isprint(Char)
         ->
             (
-                FirstTime = yes,
+                SubInfo ^ first_time = yes,
                 not_whitespace(Char)
             ->
-                History = Pre - Post,
+                Before1 = [Char],
+                get_history(SubInfo, Pre, Post),
                 String = char_lists_to_string(Before, After),
-                History1 = [String | Pre] - Post,
-                Before1 = [Char]
+                Pre1 = [String | Pre],
+                set_history(Pre1, Post, SubInfo, SubInfo1)
             ;
                 Before1 = [Char | Before],
-                History1 = History
+                SubInfo1 = SubInfo
             ),
-            text_entry(Screen, Prompt, History1, Before1, After, Return, !IO)
+            text_entry(Screen, Prompt, Before1, After, SubInfo1, Return, !IO)
         ;
-            text_entry(Screen, Prompt, History, Before, After, Return, !IO)
+            text_entry(Screen, Prompt, Before, After, SubInfo, Return, !IO)
         )
     ).
 
-:- pred text_entry(screen::in, string::in, pair(history, history)::in,
-    list(char)::in, list(char)::in, maybe(string)::out, io::di, io::uo) is det.
+:- pred text_entry(screen::in, string::in, list(char)::in, list(char)::in,
+    sub_info::in, maybe(string)::out, io::di, io::uo) is det.
 
 :- pragma inline(text_entry/8).
 
-text_entry(Screen, Prompt, History, Before, After, Return, !IO) :-
-    text_entry(Screen, Prompt, History, Before, After, no, Return, !IO).
+text_entry(Screen, Prompt, Before, After, SubInfo0, Return, !IO) :-
+    ( SubInfo0 ^ first_time = yes ->
+        SubInfo = SubInfo0 ^ first_time := no
+    ;
+        SubInfo = SubInfo0
+    ),
+    text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO).
 
 :- func char_lists_to_string(list(char), list(char)) = string.
 
@@ -250,6 +261,19 @@ forward_word(Before0, Before, After0, After) :-
 :- pred bol_eol(list(char)::in, list(char)::in, list(char)::out) is det.
 
 bol_eol(Xs, Ys, reverse(Xs) ++ Ys).
+
+:- pred get_history(sub_info::in, history::out, history::out) is det.
+
+get_history(SubInfo, Pre, Post) :-
+    Pre = SubInfo ^ pre_history,
+    Post = SubInfo ^ post_history.
+
+:- pred set_history(history::in, history::in, sub_info::in, sub_info::out)
+    is det.
+
+set_history(Pre, Post, !SubInfo) :-
+    !SubInfo ^ pre_history := Pre,
+    !SubInfo ^ post_history := Post.
 
 :- pred move_history(list(char)::in, list(char)::out,
     list(char)::in, list(char)::out,
