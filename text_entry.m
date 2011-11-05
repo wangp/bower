@@ -10,15 +10,19 @@
 
 :- type history.
 
+:- type completion_type
+    --->    complete_none
+    ;       complete_path.
+
 :- func init_history = history.
 
 :- pred add_history_nodup(string::in, history::in, history::out) is det.
 
-:- pred text_entry(screen::in, string::in, history::in, maybe(string)::out,
-    io::di, io::uo) is det.
+:- pred text_entry(screen::in, string::in, history::in, completion_type::in,
+    maybe(string)::out, io::di, io::uo) is det.
 
 :- pred text_entry_initial(screen::in, string::in, history::in, string::in,
-    maybe(string)::out, io::di, io::uo) is det.
+    completion_type::in, maybe(string)::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -27,6 +31,7 @@
 
 :- import_module bool.
 :- import_module char.
+:- import_module dir.
 :- import_module list.
 :- import_module string.
 
@@ -39,7 +44,9 @@
     --->    sub_info(
                 first_time      :: bool,
                 pre_history     :: history,
-                post_history    :: history
+                post_history    :: history,
+                compl_type      :: completion_type,
+                compl_choices   :: list(string)
             ).
 
 %-----------------------------------------------------------------------------%
@@ -55,7 +62,7 @@ add_history_nodup(Candidate, Hist0, Hist) :-
 
 %-----------------------------------------------------------------------------%
 
-text_entry(Screen, Prompt, History0, Return, !IO) :-
+text_entry(Screen, Prompt, History0, CompleteType, Return, !IO) :-
     (
         History0 = [],
         Initial = "",
@@ -63,14 +70,15 @@ text_entry(Screen, Prompt, History0, Return, !IO) :-
     ;
         History0 = [Initial | History]
     ),
-    text_entry_initial(Screen, Prompt, History, Initial, Return, !IO).
+    text_entry_initial(Screen, Prompt, History, Initial, CompleteType, Return,
+        !IO).
 
-text_entry_initial(Screen, Prompt, History, Initial, Return, !IO) :-
+text_entry_initial(Screen, Prompt, History, Initial, CompleteType, Return, !IO) :-
     string.to_char_list(Initial, Before0),
     list.reverse(Before0, Before),
     After = [],
     FirstTime = yes,
-    SubInfo = sub_info(FirstTime, History, []),
+    SubInfo = sub_info(FirstTime, History, [], CompleteType, []),
     text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO),
     update_message(Screen, clear_message, !IO).
 
@@ -183,6 +191,20 @@ text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO) :-
         set_history(Pre1, Post1, SubInfo, SubInfo1),
         text_entry(Screen, Prompt, Before1, After1, SubInfo1, Return, !IO)
     ;
+        Key = char('\x09\') % Tab
+    ->
+        bol_eol(After, Before, Before1),
+        do_completion(Before1, Before2, SubInfo, MaybeSubInfo1, !IO),
+        (
+            MaybeSubInfo1 = yes(SubInfo1),
+            clear_first_time_flag(SubInfo1, SubInfo2),
+            text_entry_real(Screen, Prompt, Before2, [], SubInfo2, Return, !IO)
+        ;
+            MaybeSubInfo1 = no,
+            % XXX type tab?
+            text_entry(Screen, Prompt, Before, After, SubInfo, Return, !IO)
+        )
+    ;
         (
             Key = char(Char),
             isprint(Char)
@@ -211,13 +233,28 @@ text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO) :-
 
 :- pragma inline(text_entry/8).
 
-text_entry(Screen, Prompt, Before, After, SubInfo0, Return, !IO) :-
-    ( SubInfo0 ^ first_time = yes ->
-        SubInfo = SubInfo0 ^ first_time := no
+text_entry(Screen, Prompt, Before, After, !.SubInfo, Return, !IO) :-
+    clear_first_time_flag(!SubInfo),
+    clear_completion_choices(!SubInfo),
+    text_entry_real(Screen, Prompt, Before, After, !.SubInfo, Return, !IO).
+
+:- pred clear_first_time_flag(sub_info::in, sub_info::out) is det.
+
+clear_first_time_flag(!SubInfo) :-
+    ( !.SubInfo ^ first_time = yes ->
+        !SubInfo ^ first_time := no
     ;
-        SubInfo = SubInfo0
-    ),
-    text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO).
+        true
+    ).
+
+:- pred clear_completion_choices(sub_info::in, sub_info::out) is det.
+
+clear_completion_choices(!SubInfo) :-
+    ( !.SubInfo ^ compl_choices = [_ | _] ->
+        !SubInfo ^ compl_choices := []
+    ;
+        true
+    ).
 
 :- func char_lists_to_string(list(char), list(char)) = string.
 
@@ -292,6 +329,101 @@ move_history(Before0, Before, After0, After, Hist0, Hist, HistOpp0, HistOpp) :-
         After = [],
         SaveString = char_lists_to_string(Before0, After0),
         HistOpp = [SaveString | HistOpp0]
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred do_completion(list(char)::in, list(char)::out, sub_info::in,
+    maybe(sub_info)::out, io::di, io::uo) is det.
+
+do_completion(Orig, Replacement, SubInfo0, MaybeSubInfo, !IO) :-
+    Type = SubInfo0 ^ compl_type,
+    Choices0 = SubInfo0 ^ compl_choices,
+    (
+        Choices0 = [],
+        Type = complete_none,
+        Choices = []
+    ;
+        Choices0 = [],
+        Type = complete_path,
+        string.from_rev_char_list(Orig, OrigString),
+        generate_path_choices(OrigString, Choices, !IO)
+    ;
+        Choices0 = [_ | _],
+        Choices = Choices0
+    ),
+    (
+        Choices = [],
+        Replacement = Orig,
+        MaybeSubInfo = no
+    ;
+        Choices = [FirstChoice | MoreChoices],
+        Replacement = list.reverse(string.to_char_list(FirstChoice)),
+        (
+            MoreChoices = [],
+            SubInfo = SubInfo0 ^ compl_choices := []
+        ;
+            MoreChoices = [_ | _],
+            SubInfo = SubInfo0 ^ compl_choices := MoreChoices ++ [FirstChoice]
+        ),
+        MaybeSubInfo = yes(SubInfo)
+    ).
+
+:- pred generate_path_choices(string::in, list(string)::out,
+    io::di, io::uo) is det.
+
+generate_path_choices(OrigString, Choices, !IO) :-
+    ( string.suffix(OrigString, "/") ->
+        DirName = OrigString,
+        Filter = filter_path_nonhidden(DirName)
+    ; dir.split_name(OrigString, DirName0, BaseNamePrefix) ->
+        DirName = DirName0,
+        Filter = filter_path_prefix(DirName / "", BaseNamePrefix)
+    ;
+        DirName = dir.this_directory,
+        Filter = filter_path_prefix("", OrigString)
+    ),
+    dir.foldl2(Filter, DirName, [], Result, !IO),
+    (
+        Result = ok(Choices0),
+        list.sort(Choices0, Choices)
+    ;
+        Result = error(_, _),
+        Choices = []
+    ).
+
+:- pred filter_path_nonhidden(string::in, string::in, string::in,
+    io.file_type::in, bool::out, list(string)::in, list(string)::out,
+    io::di, io::uo) is det.
+
+filter_path_nonhidden(AddPrefix, _DirName, BaseName, FileType, yes,
+        !Matches, !IO) :-
+    ( string.prefix(BaseName, ".") ->
+        true
+    ;
+        ( FileType = directory ->
+            Match = AddPrefix ++ BaseName ++ "/"
+        ;
+            Match = AddPrefix ++ BaseName
+        ),
+        list.cons(Match, !Matches)
+    ).
+
+:- pred filter_path_prefix(string::in, string::in, string::in, string::in,
+    io.file_type::in, bool::out, list(string)::in, list(string)::out,
+    io::di, io::uo) is det.
+
+filter_path_prefix(AddPrefix, MatchBaseNamePrefix, _DirName, BaseName,
+        FileType, yes, !Matches, !IO) :-
+    ( string.prefix(BaseName, MatchBaseNamePrefix) ->
+        ( FileType = directory ->
+            Match = AddPrefix ++ BaseName ++ "/"
+        ;
+            Match = AddPrefix ++ BaseName
+        ),
+        list.cons(Match, !Matches)
+    ;
+        true
     ).
 
 %-----------------------------------------------------------------------------%

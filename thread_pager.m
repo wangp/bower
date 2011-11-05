@@ -752,7 +752,7 @@ prompt_save_attachment(Screen, Part, !IO) :-
         Initial = string.format("%s.part_%d", [s(IdStr), i(PartId)])
     ),
     text_entry_initial(Screen, "Save to file: ", init_history, Initial,
-        Return, !IO),
+        complete_path, Return, !IO),
     (
         Return = yes(FileName),
         FileName \= ""
@@ -828,7 +828,7 @@ open_attachment(Action, MessageUpdate, !Info) :-
 prompt_open_attachment(Screen, Part, !IO) :-
     Initial = "xdg-open",
     text_entry_initial(Screen, "Open with command: ", init_history, Initial,
-        Return, !IO),
+        complete_path, Return, !IO),
     (
         Return = yes(Command),
         Command \= ""
@@ -891,7 +891,7 @@ prompt_open_attachment(Screen, Part, !IO) :-
 
 prompt_search(Screen, !Info, !IO) :-
     History0 = !.Info ^ tp_search_history,
-    text_entry(Screen, "Search for: ", History0, Return, !IO),
+    text_entry(Screen, "Search for: ", History0, complete_none, Return, !IO),
     (
         Return = yes(Search),
         ( Search = "" ->

@@ -244,7 +244,7 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         Action = enter_limit,
         History0 = !.IndexInfo ^ i_limit_history,
         text_entry(Screen, "Limit to messages matching: ", History0,
-            Return, !IO),
+            complete_none, Return, !IO),
         (
             Return = yes(Terms),
             time(Time, !IO),
@@ -477,7 +477,7 @@ enter(Info, Action) :-
 
 prompt_search(Screen, !Info, !IO) :-
     History0 = !.Info ^ i_search_history,
-    text_entry(Screen, "Search for: ", History0, Return, !IO),
+    text_entry(Screen, "Search for: ", History0, complete_none, Return, !IO),
     (
         Return = yes(Search),
         ( Search = "" ->

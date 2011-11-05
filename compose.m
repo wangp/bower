@@ -110,12 +110,13 @@ init_compose_history = compose_history(init_history, init_history).
 start_compose(Screen, !History, !IO) :-
     get_from(From, !IO),
     !.History = compose_history(ToHistory0, SubjectHistory0),
-    text_entry_initial(Screen, "To: ", ToHistory0, "", MaybeTo, !IO),
+    text_entry_initial(Screen, "To: ", ToHistory0, "", complete_none, MaybeTo,
+        !IO),
     (
         MaybeTo = yes(To),
         add_history_nodup(To, ToHistory0, ToHistory),
         text_entry_initial(Screen, "Subject: ", SubjectHistory0, "",
-            MaybeSubject, !IO),
+            complete_none, MaybeSubject, !IO),
         (
             MaybeSubject = yes(Subject),
             add_history_nodup(Subject, SubjectHistory0, SubjectHistory),
@@ -490,7 +491,8 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO) :-
 edit_header(Screen, HeaderType, !StagingInfo, !IO) :-
     Headers0 = !.StagingInfo ^ si_headers,
     get_header(HeaderType, Headers0, Prompt, Initial, ExpandAddresses),
-    text_entry_initial(Screen, Prompt, init_history, Initial, Return, !IO),
+    text_entry_initial(Screen, Prompt, init_history, Initial, complete_none,
+        Return, !IO),
     (
         Return = yes(Value0),
         (
@@ -586,7 +588,8 @@ scroll_attachments(Screen, NumRows, Delta, !AttachInfo, !IO) :-
 
 add_attachment(Screen, NumRows, !StagingInfo, !AttachInfo, !IO) :-
     AttachHistory0 = !.StagingInfo ^ si_attach_hist,
-    text_entry(Screen, "Attach file: ", AttachHistory0, Return, !IO),
+    text_entry(Screen, "Attach file: ", AttachHistory0, complete_path, Return,
+        !IO),
     (
         Return = yes(FileName),
         add_history_nodup(FileName, AttachHistory0, AttachHistory),
