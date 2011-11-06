@@ -31,6 +31,7 @@
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module data.
+:- import_module maildir.
 :- import_module recall.
 :- import_module scrollable.
 :- import_module search_term.
@@ -104,6 +105,7 @@
     ;       start_recall
     ;       prompt_search
     ;       skip_to_search
+    ;       toggle_unread
     ;       quit.
 
 :- type action
@@ -114,6 +116,7 @@
     ;       start_compose
     ;       start_recall
     ;       prompt_search
+    ;       toggle_unread
     ;       quit.
 
 :- instance scrollable.line(index_line) where [
@@ -288,6 +291,10 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         prompt_search(Screen, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
+        Action = toggle_unread,
+        toggle_unread(Screen, !IndexInfo, !IO),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
         Action = quit
     ).
 
@@ -361,6 +368,10 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             skip_to_search(Screen, MessageUpdate, !IndexInfo),
             Action = continue
         ;
+            Binding = toggle_unread,
+            MessageUpdate = no_change,
+            Action = toggle_unread
+        ;
             Binding = quit,
             MessageUpdate = no_change,
             Action = quit
@@ -405,6 +416,7 @@ key_binding_char('m', start_compose).
 key_binding_char('R', start_recall).
 key_binding_char('/', prompt_search).
 key_binding_char('n', skip_to_search).
+key_binding_char('N', toggle_unread).
 key_binding_char('q', quit).
 
 :- pred move_cursor(screen::in, int::in, message_update::out,
@@ -534,6 +546,41 @@ line_matches_search(Search, Line) :-
         strcase_str(Authors, Search)
     ;
         strcase_str(Subject, Search)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred toggle_unread(screen::in, index_info::in, index_info::out,
+    io::di, io::uo) is det.
+
+toggle_unread(Screen, !Info, !IO) :-
+    Scrollable0 = !.Info ^ i_scrollable,
+    ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
+        ThreadId = CursorLine0 ^ i_id,
+        Unread0 = CursorLine0 ^ i_unread,
+        (
+            Unread0 = unread,
+            TagDelta = "-unread",
+            Unread = read
+        ;
+            Unread0 = read,
+            TagDelta = "+unread",
+            Unread = unread
+        ),
+        tag_thread([TagDelta], ThreadId, Res, !IO),
+        (
+            Res = ok,
+            CursorLine = CursorLine0 ^ i_unread := Unread,
+            set_cursor_line(CursorLine, Scrollable0, Scrollable),
+            !Info ^ i_scrollable := Scrollable,
+            move_cursor(Screen, 1, _MessageUpdate, !Info)
+        ;
+            Res = error(Error),
+            MessageUpdate = set_warning(io.error_message(Error)),
+            update_message(Screen, MessageUpdate, !IO)
+        )
+    ;
+        update_message(Screen, set_warning("No thread."), !IO)
     ).
 
 %-----------------------------------------------------------------------------%

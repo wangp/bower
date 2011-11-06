@@ -21,6 +21,9 @@
 :- pred tag_messages(list(tag_delta)::in, list(message_id)::in, io.res::out,
     io::di, io::uo) is det.
 
+:- pred tag_thread(list(tag_delta)::in, thread_id::in, io.res::out,
+    io::di, io::uo) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -90,23 +93,32 @@ tag_messages(TagDeltas, MessageIds, Res, !IO) :-
     ;
         MessageIds = [_ | _],
         IdStrings = list.map(message_id_to_search_term, MessageIds),
-        get_notmuch_prefix(Notmuch, !IO),
-        Args = list.condense([["tag"], TagDeltas, ["--"], IdStrings]),
-        args_to_quoted_command(Args, Command),
-        io.call_system(Notmuch ++ Command, CallRes, !IO),
-        (
-            CallRes = ok(ExitStatus),
-            ( ExitStatus = 0 ->
-                Res = ok
-            ;
-                string.format("notmuch tag returned exit status %d",
-                    [i(ExitStatus)], Msg),
-                Res = error(io.make_io_error(Msg))
-            )
+        do_tag(TagDeltas, IdStrings, Res, !IO)
+    ).
+
+tag_thread(TagDeltas, ThreadId, Res, !IO) :-
+    do_tag(TagDeltas, [thread_id_to_search_term(ThreadId)], Res, !IO).
+
+:- pred do_tag(list(tag_delta)::in, list(string)::in, io.res::out,
+    io::di, io::uo) is det.
+
+do_tag(TagDeltas, SearchTerms, Res, !IO) :-
+    get_notmuch_prefix(Notmuch, !IO),
+    Args = list.condense([["tag"], TagDeltas, ["--"], SearchTerms]),
+    args_to_quoted_command(Args, Command),
+    io.call_system(Notmuch ++ Command, CallRes, !IO),
+    (
+        CallRes = ok(ExitStatus),
+        ( ExitStatus = 0 ->
+            Res = ok
         ;
-            CallRes = error(Error),
-            Res = error(Error)
+            string.format("notmuch tag returned exit status %d",
+                [i(ExitStatus)], Msg),
+            Res = error(io.make_io_error(Msg))
         )
+    ;
+        CallRes = error(Error),
+        Res = error(Error)
     ).
 
 %-----------------------------------------------------------------------------%
