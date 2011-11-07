@@ -3,9 +3,13 @@
 :- module string_util.
 :- interface.
 
+:- import_module char.
+
 :- pred strcase_equal(string::in, string::in) is semidet.
 
 :- pred strcase_str(string::in, string::in) is semidet.
+
+:- pred strrchr(string::in, char::in, int::out) is semidet.
 
 :- pred verify_utf8(string::in) is semidet.
 
@@ -28,6 +32,22 @@
     [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
 "
     SUCCESS_INDICATOR = (strcasestr(SA, SB) != 0);
+").
+
+:- pragma foreign_proc("C",
+    strrchr(S::in, C::in, I::out),
+    [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
+"
+    const char *p;
+
+    p = strrchr(S, C);
+    if (p != NULL) {
+        SUCCESS_INDICATOR = MR_TRUE;
+        I = (p - S);
+    } else {
+        SUCCESS_INDICATOR = MR_FALSE;
+        I = -1;
+    }
 ").
 
 verify_utf8(String) :-

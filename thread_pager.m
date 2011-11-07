@@ -42,6 +42,7 @@
 :- import_module pager.
 :- import_module quote_arg.
 :- import_module scrollable.
+:- import_module string_util.
 :- import_module time_util.
 
 %-----------------------------------------------------------------------------%
@@ -60,6 +61,7 @@
 :- type thread_line
     --->    thread_line(
                 tp_message      :: message,
+                tp_clean_from   :: string,
                 tp_unread       :: pair(unread),
                 tp_replied      :: replied,
                 tp_deleted      :: pair(deleted),
@@ -231,6 +233,7 @@ not_blank_at_column(Graphics, Col) :-
 make_thread_line(Nowish, Message, Graphics, PrevSubject, Line) :-
     Timestamp = Message ^ m_timestamp,
     Tags = Message ^ m_tags,
+    From = clean_email_address(Message ^ m_headers ^ h_from),
     Subject = Message ^ m_headers ^ h_subject,
     timestamp_to_tm(Timestamp, TM),
     Shorter = no,
@@ -240,10 +243,22 @@ make_thread_line(Nowish, Message, Graphics, PrevSubject, Line) :-
     ;
         MaybeSubject = yes(Subject)
     ),
-    Line0 = thread_line(Message, read - read, not_replied,
+    Line0 = thread_line(Message, From, read - read, not_replied,
         not_deleted - not_deleted, unflagged - unflagged,
         Graphics, RelDate, MaybeSubject),
     list.foldl(apply_tag, Tags, Line0, Line).
+
+:- func clean_email_address(string) = string.
+
+clean_email_address(Orig) = Clean :-
+    (
+        strrchr(Orig, '<', Index),
+        string.unsafe_prev_index(Orig, Index, SpaceIndex, ' ')
+    ->
+        string.unsafe_between(Orig, 0, SpaceIndex, Clean)
+    ;
+        Clean = Orig
+    ).
 
 :- pred apply_tag(string::in, thread_line::in, thread_line::out) is det.
 
@@ -1056,12 +1071,11 @@ draw_sep(Cols, MaybeSepPanel, !IO) :-
     io::di, io::uo) is det.
 
 draw_thread_line(Panel, Line, IsCursor, !IO) :-
-    Line = thread_line(Message, UnreadPair, Replied, DeletedPair, FlaggedPair,
-        Graphics, RelDate, MaybeSubject),
+    Line = thread_line(_Message, From, UnreadPair, Replied, DeletedPair,
+        FlaggedPair, Graphics, RelDate, MaybeSubject),
     UnreadPair = _ - Unread,
     DeletedPair = _ - Deleted,
     FlaggedPair = _ - Flagged,
-    From = Message ^ m_headers ^ h_from,
     (
         IsCursor = yes,
         panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
@@ -1113,7 +1127,7 @@ draw_thread_line(Panel, Line, IsCursor, !IO) :-
     my_addstr(Panel, From, !IO),
     (
         MaybeSubject = yes(Subject),
-        my_addstr(Panel, " ", !IO),
+        my_addstr(Panel, ". ", !IO),
         cond_attr_set(Panel, fg_bg(green, black), IsCursor, !IO),
         my_addstr(Panel, Subject, !IO)
     ;
