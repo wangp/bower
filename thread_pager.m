@@ -96,8 +96,8 @@
 :- type thread_pager_action
     --->    continue
     ;       start_reply(message, reply_kind)
-    ;       prompt_save_attachment(part)
-    ;       prompt_open_attachment(part)
+    ;       prompt_save_part(part)
+    ;       prompt_open_part(part)
     ;       prompt_search
     ;       leave(
                 map(set(tag_delta), list(message_id))
@@ -314,12 +314,12 @@ thread_pager_loop(Screen, !Info, !IO) :-
         !Info ^ tp_need_refresh := yes,
         thread_pager_loop(Screen, !Info, !IO)
     ;
-        Action = prompt_save_attachment(Content),
-        prompt_save_attachment(Screen, Content, !IO),
+        Action = prompt_save_part(Part),
+        prompt_save_part(Screen, Part, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
-        Action = prompt_open_attachment(Content),
-        prompt_open_attachment(Screen, Content, !IO),
+        Action = prompt_open_part(Part),
+        prompt_open_part(Screen, Part, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = prompt_search,
@@ -482,16 +482,16 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ;
         Key = char('v')
     ->
-        highlight_attachment(MessageUpdate, !Info),
+        highlight_part(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('s')
     ->
-        save_attachment(Action, MessageUpdate, !Info)
+        save_part(Action, MessageUpdate, !Info)
     ;
         Key = char('o')
     ->
-        open_attachment(Action, MessageUpdate, !Info)
+        open_part(Action, MessageUpdate, !Info)
     ;
         Key = char('/')
     ->
@@ -733,32 +733,32 @@ toggle_deleted(Deleted, !Info) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred highlight_attachment(message_update::out,
+:- pred highlight_part(message_update::out,
     thread_pager_info::in, thread_pager_info::out) is det.
 
-highlight_attachment(MessageUpdate, !Info) :-
+highlight_part(MessageUpdate, !Info) :-
     Pager0 = !.Info ^ tp_pager,
     NumRows = !.Info ^ tp_num_pager_rows,
-    highlight_attachment(NumRows, MessageUpdate, Pager0, Pager),
+    highlight_part(NumRows, MessageUpdate, Pager0, Pager),
     !Info ^ tp_pager := Pager.
 
-:- pred save_attachment(thread_pager_action::out, message_update::out,
+:- pred save_part(thread_pager_action::out, message_update::out,
     thread_pager_info::in, thread_pager_info::out) is det.
 
-save_attachment(Action, MessageUpdate, !Info) :-
+save_part(Action, MessageUpdate, !Info) :-
     Pager = !.Info ^ tp_pager,
-    ( get_highlighted_attachment(Pager, Content) ->
-        Action = prompt_save_attachment(Content),
+    ( get_highlighted_part(Pager, Part) ->
+        Action = prompt_save_part(Part),
         MessageUpdate = clear_message
     ;
         Action = continue,
-        MessageUpdate = set_warning("No attachment selected.")
+        MessageUpdate = set_warning("No message or attachment selected.")
     ).
 
-:- pred prompt_save_attachment(screen::in, part::in, io::di, io::uo)
+:- pred prompt_save_part(screen::in, part::in, io::di, io::uo)
     is det.
 
-prompt_save_attachment(Screen, Part, !IO) :-
+prompt_save_part(Screen, Part, !IO) :-
     MessageId = Part ^ pt_msgid,
     PartId = Part ^ pt_part,
     MaybeInitial = Part ^ pt_filename,
@@ -785,10 +785,14 @@ prompt_save_attachment(Screen, Part, !IO) :-
         ;
             ResType = error(_),
             % This assumes the file doesn't exist.
-            do_save_attachment(MessageId, PartId, FileName, Res, !IO),
+            do_save_part(MessageId, PartId, FileName, Res, !IO),
             (
                 Res = ok,
-                MessageUpdate = set_info("Attachment saved.")
+                ( PartId = 0 ->
+                    MessageUpdate = set_info("Message saved.")
+                ;
+                    MessageUpdate = set_info("Attachment saved.")
+                )
             ;
                 Res = error(Error),
                 ErrorMessage = io.error_message(Error),
@@ -800,10 +804,10 @@ prompt_save_attachment(Screen, Part, !IO) :-
     ),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred do_save_attachment(message_id::in, int::in, string::in,
+:- pred do_save_part(message_id::in, int::in, string::in,
     io.res::out, io::di, io::uo) is det.
 
-do_save_attachment(MessageId, Part, FileName, Res, !IO) :-
+do_save_part(MessageId, Part, FileName, Res, !IO) :-
     Args = [
         "show", "--format=raw", "--part=" ++ from_int(Part),
         message_id_to_search_term(MessageId)
@@ -827,23 +831,23 @@ do_save_attachment(MessageId, Part, FileName, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred open_attachment(thread_pager_action::out, message_update::out,
+:- pred open_part(thread_pager_action::out, message_update::out,
     thread_pager_info::in, thread_pager_info::out) is det.
 
-open_attachment(Action, MessageUpdate, !Info) :-
+open_part(Action, MessageUpdate, !Info) :-
     Pager = !.Info ^ tp_pager,
-    ( get_highlighted_attachment(Pager, Content) ->
-        Action = prompt_open_attachment(Content),
+    ( get_highlighted_part(Pager, Part) ->
+        Action = prompt_open_part(Part),
         MessageUpdate = clear_message
     ;
         Action = continue,
-        MessageUpdate = set_warning("No attachment selected.")
+        MessageUpdate = set_warning("No message or attachment selected.")
     ).
 
-:- pred prompt_open_attachment(screen::in, part::in, io::di, io::uo)
+:- pred prompt_open_part(screen::in, part::in, io::di, io::uo)
     is det.
 
-prompt_open_attachment(Screen, Part, !IO) :-
+prompt_open_part(Screen, Part, !IO) :-
     Initial = "xdg-open",
     text_entry_initial(Screen, "Open with command: ", init_history, Initial,
         complete_path, Return, !IO),
@@ -854,7 +858,7 @@ prompt_open_attachment(Screen, Part, !IO) :-
         io.make_temp(FileName, !IO),
         MessageId = Part ^ pt_msgid,
         PartId = Part ^ pt_part,
-        do_save_attachment(MessageId, PartId, FileName, Res, !IO),
+        do_save_part(MessageId, PartId, FileName, Res, !IO),
         (
             Res = ok,
             args_to_quoted_command([Command, FileName], CommandString),

@@ -58,10 +58,10 @@
 :- pred skip_to_search(int::in, search_kind::in, string::in,
     message_update::out, pager_info::in, pager_info::out) is det.
 
-:- pred highlight_attachment(int::in, message_update::out,
+:- pred highlight_part(int::in, message_update::out,
     pager_info::in, pager_info::out) is det.
 
-:- pred get_highlighted_attachment(pager_info::in, part::out) is semidet.
+:- pred get_highlighted_part(pager_info::in, part::out) is semidet.
 
 :- pred draw_pager(screen::in, pager_info::in, io::di, io::uo) is det.
 
@@ -650,7 +650,7 @@ line_matches_search(Search, Line) :-
 
 %-----------------------------------------------------------------------------%
 
-highlight_attachment(NumRows, MessageUpdate, !Info) :-
+highlight_part(NumRows, MessageUpdate, !Info) :-
     !.Info = pager_info(Scrollable0),
     Top = get_top(Scrollable0),
     Bot = Top + NumRows,
@@ -663,26 +663,33 @@ highlight_attachment(NumRows, MessageUpdate, !Info) :-
     ;
         Start = Top
     ),
-    ( search_forward_limit(is_attachment, Scrollable0, Start, Bot, Cur, _) ->
+    ( search_forward_limit(is_highlightable, Scrollable0, Start, Bot, Cur, _) ->
         set_cursor(Cur, Scrollable0, Scrollable),
         !:Info = pager_info(Scrollable),
         MessageUpdate = clear_message
-    ; search_forward_limit(is_attachment, Scrollable0, Top, Bot, Cur, _) ->
+    ; search_forward_limit(is_highlightable, Scrollable0, Top, Bot, Cur, _) ->
         set_cursor(Cur, Scrollable0, Scrollable),
         !:Info = pager_info(Scrollable),
         MessageUpdate = clear_message
     ;
-        MessageUpdate = set_warning("No attachment visible.")
+        MessageUpdate = set_warning("No attachment or top of message visible.")
     ).
 
-:- pred is_attachment(pager_line::in) is semidet.
+:- pred is_highlightable(pager_line::in) is semidet.
 
-is_attachment(attachment(_)).
+is_highlightable(start_message_header(_, _, _)).
+is_highlightable(attachment(_)).
 
-get_highlighted_attachment(Info, Content) :-
+get_highlighted_part(Info, Part) :-
     Info = pager_info(Scrollable),
     get_cursor_line(Scrollable, _, Line),
-    Line = attachment(Content).
+    (
+        Line = start_message_header(Message, _, _),
+        MessageId = Message ^ m_id,
+        Part = part(MessageId, 0, "text/plain", unsupported, no)
+    ;
+        Line = attachment(Part)
+    ).
 
 %-----------------------------------------------------------------------------%
 
