@@ -53,7 +53,8 @@
                 tp_pager            :: pager_info,
                 tp_num_pager_rows   :: int,
                 tp_search           :: maybe(string),
-                tp_search_history   :: history
+                tp_search_history   :: history,
+                tp_need_refresh     :: bool
             ).
 
 :- type thread_line
@@ -129,8 +130,8 @@ open_thread_pager(Screen, ThreadId, NeedRefresh, SearchHistory0, SearchHistory,
     First = int.min(1, Count),
     string.format("Showing message %d of %d.", [i(First), i(Count)], Msg),
     update_message(Screen, set_info(Msg), !IO),
-    thread_pager_loop(Screen, NeedRefresh, ThreadPagerInfo0, ThreadPagerInfo,
-        !IO),
+    thread_pager_loop(Screen, ThreadPagerInfo0, ThreadPagerInfo, !IO),
+    NeedRefresh = ThreadPagerInfo ^ tp_need_refresh,
     SearchHistory = ThreadPagerInfo ^ tp_search_history.
 
 :- pred filter_unwanted_messages(message::in, message::out) is semidet.
@@ -158,7 +159,7 @@ setup_thread_pager(Nowish, Rows, Cols, Messages, SearchHistory,
     SepLine = 1,
     NumPagerRows = int.max(0, Rows - NumThreadRows - SepLine),
     ThreadPagerInfo1 = thread_pager_info(Scrollable, NumThreadRows,
-        PagerInfo, NumPagerRows, no, SearchHistory),
+        PagerInfo, NumPagerRows, no, SearchHistory, no),
     (
         get_cursor_line(Scrollable, _, FirstLine),
         is_unread_line(FirstLine)
@@ -278,11 +279,10 @@ is_reply_marker("SV:").
 
 %-----------------------------------------------------------------------------%
 
-:- pred thread_pager_loop(screen::in, bool::out,
-    thread_pager_info::in, thread_pager_info::out,
-    io::di, io::uo) is det.
+:- pred thread_pager_loop(screen::in,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
-thread_pager_loop(Screen, NeedRefresh, !Info, !IO) :-
+thread_pager_loop(Screen, !Info, !IO) :-
     draw_thread_pager(Screen, !.Info, !IO),
     draw_bar(Screen, !IO),
     panel.update_panels(!IO),
@@ -291,27 +291,29 @@ thread_pager_loop(Screen, NeedRefresh, !Info, !IO) :-
     update_message(Screen, MessageUpdate, !IO),
     (
         Action = continue,
-        thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
+        thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = start_reply(Message, ReplyKind),
         start_reply(Screen, Message, ReplyKind, !IO),
-        thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
+        % Don't really *need* to refresh if the reply is aborted.
+        !Info ^ tp_need_refresh := yes,
+        thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = prompt_save_attachment(Content),
         prompt_save_attachment(Screen, Content, !IO),
-        thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
+        thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = prompt_open_attachment(Content),
         prompt_open_attachment(Screen, Content, !IO),
-        thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
+        thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = prompt_search,
         prompt_search(Screen, !Info, !IO),
-        thread_pager_loop(Screen, NeedRefresh, !Info, !IO)
+        thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = leave(TagGroups),
         ( map.is_empty(TagGroups) ->
-            NeedRefresh = no
+            true
         ;
             map.foldl2(apply_tag_delta, TagGroups, yes, Res, !IO),
             (
@@ -322,7 +324,7 @@ thread_pager_loop(Screen, NeedRefresh, !Info, !IO) :-
                 Msg = "Encountered problems while applying tags.",
                 update_message(Screen, set_warning(Msg), !IO)
             ),
-            NeedRefresh = yes
+            !Info ^ tp_need_refresh := yes
         )
     ).
 
@@ -606,8 +608,9 @@ sync_thread_to_pager(!Info) :-
     thread_pager_info::in, thread_pager_info::out) is det.
 
 skip_to_unread(MessageUpdate, !Info) :-
-    !.Info = thread_pager_info(Scrollable0, NumThreadRows, PagerInfo0,
-        NumPagerRows, MaybeSearch, SearchHistory),
+    Scrollable0 = !.Info ^ tp_scrollable,
+    NumThreadRows = !.Info ^ tp_num_thread_rows,
+    PagerInfo0 = !.Info ^ tp_pager,
     (
         get_cursor(Scrollable0, Cursor0),
         search_forward(is_unread_line, Scrollable0, Cursor0 + 1, Cursor,
@@ -616,8 +619,8 @@ skip_to_unread(MessageUpdate, !Info) :-
         set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
         MessageId = ThreadLine ^ tp_message ^ m_id,
         skip_to_message(MessageId, PagerInfo0, PagerInfo),
-        !:Info = thread_pager_info(Scrollable, NumThreadRows, PagerInfo,
-            NumPagerRows, MaybeSearch, SearchHistory),
+        !Info ^ tp_scrollable := Scrollable,
+        !Info ^ tp_pager := PagerInfo,
         MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("No more unread messages.")
