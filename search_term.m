@@ -33,7 +33,13 @@ string_to_search_terms(String, Terms, !IO) :-
 :- pred expand_word(string::in, string::out, io::di, io::uo) is det.
 
 expand_word(Word0, Word, !IO) :-
-    ( Word0 = "~lw" ->
+    ( Word0 = "~D" ->
+        Word = "tag:deleted"
+    ; Word0 = "~F" ->
+        Word = "tag:flagged"
+    ; Word0 = "~U" ->
+        Word = "tag:unread"
+    ; Word0 = "~lw" ->
         call_date("last week", Time, !IO),
         Word = Time ++ ".."
     ; Word0 = "~lm" ->
