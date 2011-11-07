@@ -899,6 +899,7 @@ prompt_open_part(Screen, Part, !IO) :-
 
 press_enter(Screen, !IO) :-
     update_message(Screen, set_info("Press Enter to continue..."), !IO),
+    curs.redrawwin_stdscr(!IO),
     panel.update_panels(!IO),
     get_char(Char, !IO),
     ( Char = '\r' ->
