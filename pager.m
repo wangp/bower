@@ -136,11 +136,10 @@ setup_pager(Cols, Messages, Info) :-
 
 append_message(Cols, Message, !Lines) :-
     Headers = Message ^ m_headers,
-    Subject = Headers ^ h_subject,
-    StartMessage = start_message_header(Message, "Subject", Subject),
+    StartMessage = start_message_header(Message, "Date", Headers ^ h_date),
     snoc(StartMessage, !Lines),
-    append_header("Date", Headers ^ h_date, !Lines),
     append_header("From", Headers ^ h_from, !Lines),
+    append_header("Subject", Headers ^ h_subject, !Lines),
     append_header("To", Headers ^ h_to, !Lines),
     Cc = Headers ^ h_cc,
     ( Cc = "" ->
