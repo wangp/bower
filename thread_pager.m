@@ -871,8 +871,7 @@ prompt_open_part(Screen, Part, !IO) :-
                 ( ExitStatus = 0 ->
                     % Give the async process a chance to open the temporary
                     % file before we delete it.
-                    % XXX obviously this is a horrible hack
-                    sleep(2, !IO),
+                    press_enter(Screen, !IO),
                     MessageUpdate = clear_message
                 ;
                     string.format("%s returned with exit status %d",
@@ -896,15 +895,17 @@ prompt_open_part(Screen, Part, !IO) :-
     ),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred sleep(int::in, io::di, io::uo) is det.
+:- pred press_enter(screen::in, io::di, io::uo) is det.
 
-:- pragma foreign_proc("C",
-    sleep(N::in, IO0::di, IO::uo),
-    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io],
-"
-    sleep(N);
-    IO = IO0;
-").
+press_enter(Screen, !IO) :-
+    update_message(Screen, set_info("Press Enter to continue..."), !IO),
+    panel.update_panels(!IO),
+    get_char(Char, !IO),
+    ( Char = '\r' ->
+        true
+    ;
+        press_enter(Screen, !IO)
+    ).
 
 %-----------------------------------------------------------------------------%
 
