@@ -32,6 +32,7 @@
 :- import_module bool.
 :- import_module char.
 :- import_module dir.
+:- import_module int.
 :- import_module list.
 :- import_module string.
 
@@ -211,7 +212,7 @@ text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO) :-
         ->
             (
                 SubInfo ^ first_time = yes,
-                not_whitespace(Char)
+                not char.is_whitespace(Char)
             ->
                 Before1 = [Char],
                 get_history(SubInfo, Pre, Post),
@@ -270,8 +271,8 @@ delete_char([_ | Cs], Cs).
 :- pred delete_word(list(char)::in, list(char)::out) is det.
 
 delete_word(Cs0, Cs) :-
-    list.takewhile(is_whitespace, Cs0, _, Cs1),
-    list.takewhile(not_whitespace, Cs1, _, Cs).
+    list.takewhile(non_word_char, Cs0, _, Cs1),
+    list.takewhile(is_word_char, Cs1, _, Cs).
 
 :- pred move_char(list(char)::in, list(char)::out,
     list(char)::in, list(char)::out) is det.
@@ -283,16 +284,16 @@ move_char([C | Xs], Xs, Ys, [C | Ys]).
     list(char)::in, list(char)::out) is det.
 
 back_word(Before0, Before, After0, After) :-
-    list.takewhile(is_whitespace, Before0, Take0, Before1),
-    list.takewhile(not_whitespace, Before1, Take1, Before),
+    list.takewhile(non_word_char, Before0, Take0, Before1),
+    list.takewhile(is_word_char, Before1, Take1, Before),
     After = list.reverse(Take0 ++ Take1) ++ After0.
 
 :- pred forward_word(list(char)::in, list(char)::out,
     list(char)::in, list(char)::out) is det.
 
 forward_word(Before0, Before, After0, After) :-
-    list.takewhile(not_whitespace, After0, Take0, After1),
-    list.takewhile(is_whitespace, After1, Take1, After),
+    list.takewhile(is_word_char, After0, Take0, After1),
+    list.takewhile(non_word_char, After1, Take1, After),
     Before = list.reverse(Take0 ++ Take1) ++ Before0.
 
 :- pred bol_eol(list(char)::in, list(char)::in, list(char)::out) is det.
@@ -453,10 +454,22 @@ draw_text_entry(Screen, Prompt, Before, After, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred not_whitespace(char::in) is semidet.
+:- pred is_word_char(char::in) is semidet.
 
-not_whitespace(C) :-
-    not char.is_whitespace(C).
+is_word_char(C) :-
+    not non_word_char(C).
+
+:- pred non_word_char(char::in) is semidet.
+
+non_word_char(C) :-
+    char.to_int(C) =< 0x7f,
+    not (
+        char.is_alnum_or_underscore(C)
+    ;
+        C = ('-')
+    ;
+        C = ('.')
+    ).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
