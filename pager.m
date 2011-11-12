@@ -41,7 +41,7 @@
 
 :- pred goto_first_message(pager_info::in, pager_info::out) is det.
 
-:- pred goto_last_message(pager_info::in, pager_info::out) is det.
+:- pred goto_end(int::in, pager_info::in, pager_info::out) is det.
 
 :- pred skip_quoted_text(message_update::out, pager_info::in, pager_info::out)
     is det.
@@ -502,10 +502,16 @@ goto_first_message(!Info) :-
     set_top(0, Scrollable0, Scrollable),
     !:Info = pager_info(Scrollable).
 
-goto_last_message(!Info) :-
+goto_end(NumRows, !Info) :-
     !.Info = pager_info(Scrollable0),
-    Top0 = scrollable.get_num_lines(Scrollable0),
-    ( search_reverse(is_message_start, Scrollable0, Top0, Top) ->
+    Top0 = get_top(Scrollable0),
+    NumLines = scrollable.get_num_lines(Scrollable0),
+    ( search_reverse(is_message_start, Scrollable0, NumLines, TopMin) ->
+        ( Top0 < TopMin ->
+            Top = TopMin
+        ;
+            Top = max(TopMin, NumLines - NumRows)
+        ),
         set_top(Top, Scrollable0, Scrollable),
         !:Info = pager_info(Scrollable)
     ;

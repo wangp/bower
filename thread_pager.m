@@ -436,7 +436,7 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ;
         Key = code(key_end)
     ->
-        goto_last_message(!Info),
+        goto_end(!Info),
         MessageUpdate = clear_message,
         Action = continue
     ;
@@ -582,12 +582,12 @@ goto_first_message(!Info) :-
     !Info ^ tp_pager := PagerInfo,
     sync_thread_to_pager(!Info).
 
-:- pred goto_last_message(thread_pager_info::in, thread_pager_info::out)
-    is det.
+:- pred goto_end(thread_pager_info::in, thread_pager_info::out) is det.
 
-goto_last_message(!Info) :-
+goto_end(!Info) :-
     PagerInfo0 = !.Info ^ tp_pager,
-    pager.goto_last_message(PagerInfo0, PagerInfo),
+    NumRows = !.Info ^ tp_num_pager_rows,
+    pager.goto_end(NumRows, PagerInfo0, PagerInfo),
     !Info ^ tp_pager := PagerInfo,
     sync_thread_to_pager(!Info).
 
