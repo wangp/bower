@@ -199,9 +199,13 @@ move_cursor(NumRows, Delta, HitLimit, !Scrollable) :-
         ;
             HitLimit = no,
             ( Cursor < Top0 ->
-                Top = max(Cursor - NumRows + 1, 0)
-            ; Top0 + NumRows - 1 < Cursor ->
                 Top = Cursor
+            ; Top0 + NumRows - 1 < Cursor ->
+                ( Delta > 0 ->
+                    Top = int.max(0, Cursor - NumRows + 1)
+                ;
+                    Top = Cursor
+                )
             ;
                 Top = Top0
             ),
