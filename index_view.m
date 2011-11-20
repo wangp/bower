@@ -110,6 +110,7 @@
 
 :- type action
     --->    continue
+    ;       resize
     ;       open_pager(thread_id)
     ;       enter_limit
     ;       refresh_all
@@ -231,18 +232,24 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         maybe_poll(!IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
+        Action = resize,
+        recreate_screen(NewScreen, !IndexInfo, !IO),
+        index_loop(NewScreen, !.IndexInfo, !IO)
+    ;
         Action = open_pager(ThreadId),
         History0 = !.IndexInfo ^ i_search_history,
         open_thread_pager(Screen, ThreadId, NeedRefresh, History0, History,
             !IO),
+        % In case of resize.
+        recreate_screen(NewScreen, !IndexInfo, !IO),
         !IndexInfo ^ i_search_history := History,
         (
             NeedRefresh = yes,
-            refresh_index_line(Screen, ThreadId, !IndexInfo, !IO)
+            refresh_index_line(NewScreen, ThreadId, !IndexInfo, !IO)
         ;
             NeedRefresh = no
         ),
-        index_loop(Screen, !.IndexInfo, !IO)
+        index_loop(NewScreen, !.IndexInfo, !IO)
     ;
         Action = enter_limit,
         History0 = !.IndexInfo ^ i_limit_history,
@@ -376,6 +383,11 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = quit
         )
+    ;
+        KeyCode = code(key_resize)
+    ->
+        MessageUpdate = no_change,
+        Action = resize
     ;
         MessageUpdate = no_change,
         Action = continue
@@ -689,6 +701,23 @@ maybe_poll(!Info, !IO) :-
 :- func poll_period_secs = int.
 
 poll_period_secs = 60.
+
+%-----------------------------------------------------------------------------%
+
+:- pred recreate_screen(screen::out, index_info::in, index_info::out,
+    io::di, io::uo) is det.
+
+recreate_screen(Screen, !IndexInfo, !IO) :-
+    create_screen(Screen, !IO),
+    % Keep cursor visible.
+    Scrollable0 = !.IndexInfo ^ i_scrollable,
+    ( get_cursor(Scrollable0, Cursor) ->
+        NumRows = list.length(Screen ^ main_panels),
+        set_cursor_visible(Cursor, NumRows, Scrollable0, Scrollable),
+        !IndexInfo ^ i_scrollable := Scrollable
+    ;
+        true
+    ).
 
 %-----------------------------------------------------------------------------%
 

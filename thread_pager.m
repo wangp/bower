@@ -95,6 +95,7 @@
 
 :- type thread_pager_action
     --->    continue
+    ;       resize
     ;       start_reply(message, reply_kind)
     ;       prompt_save_part(part)
     ;       prompt_open_part(part)
@@ -154,12 +155,11 @@ setup_thread_pager(Nowish, Rows, Cols, Messages, SearchHistory,
     append_messages(Nowish, [], [], Messages, "", cord.init, ThreadCord),
     ThreadLines = list(ThreadCord),
     Scrollable = scrollable.init_with_cursor(ThreadLines),
+    NumThreadLines = get_num_lines(Scrollable),
     setup_pager(Cols, Messages, PagerInfo),
 
-    NumThreadLines = get_num_lines(Scrollable),
-    NumThreadRows = int.min(max_thread_lines, NumThreadLines),
-    SepLine = 1,
-    NumPagerRows = int.max(0, Rows - NumThreadRows - SepLine),
+    compute_num_rows(Rows, Scrollable, NumThreadRows,
+        NumPagerRows),
     ThreadPagerInfo1 = thread_pager_info(Scrollable, NumThreadRows,
         PagerInfo, NumPagerRows, no, SearchHistory, no),
     (
@@ -170,6 +170,34 @@ setup_thread_pager(Nowish, Rows, Cols, Messages, SearchHistory,
     ;
         skip_to_unread(_MessageUpdate, ThreadPagerInfo1, ThreadPagerInfo)
     ).
+
+:- pred resize_thread_pager(int::in, int::in,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+resize_thread_pager(Rows, _Cols, !Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    compute_num_rows(Rows, Scrollable0, NumThreadRows, NumPagerRows),
+    ( get_cursor(Scrollable0, Cursor) ->
+        set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
+        !Info ^ tp_scrollable := Scrollable
+    ;
+        true
+    ),
+    !Info ^ tp_num_thread_rows := NumThreadRows,
+    !Info ^ tp_num_pager_rows := NumPagerRows.
+
+:- pred compute_num_rows(int::in, scrollable(thread_line)::in,
+    int::out, int::out) is det.
+
+compute_num_rows(Rows, Scrollable, NumThreadRows, NumPagerRows) :-
+    NumThreadLines = get_num_lines(Scrollable),
+    SepLine = 1,
+    ExtraLines = SepLine + 2,
+    Y0 = int.max(1, (Rows - ExtraLines) // 3),
+    Y1 = int.min(Y0, NumThreadLines),
+    Y2 = int.min(Y1, max_thread_lines),
+    NumThreadRows = Y2,
+    NumPagerRows = int.max(0, Rows - NumThreadRows - SepLine).
 
 :- func max_thread_lines = int.
 
@@ -307,6 +335,13 @@ thread_pager_loop(Screen, !Info, !IO) :-
     (
         Action = continue,
         thread_pager_loop(Screen, !Info, !IO)
+    ;
+        Action = resize,
+        create_screen(NewScreen, !IO),
+        Rows = NewScreen ^ rows,
+        Cols = NewScreen ^ cols,
+        resize_thread_pager(Rows, Cols, !Info),
+        thread_pager_loop(NewScreen, !Info, !IO)
     ;
         Action = start_reply(Message, ReplyKind),
         start_reply(Screen, Message, ReplyKind, !IO),
@@ -529,6 +564,11 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Key = char('L')
     ->
         reply(!.Info, list_reply, Action, MessageUpdate)
+    ;
+        Key = code(key_resize)
+    ->
+        Action = resize,
+        MessageUpdate = no_change
     ;
         Action = continue,
         MessageUpdate = no_change
