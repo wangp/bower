@@ -875,7 +875,8 @@ send_mail(Screen, Headers, Text, Attachments, Res, !IO) :-
 call_send_mail(Screen, Filename, Res, !IO) :-
     update_message(Screen, set_info("Sending message..."), !IO),
     panel.update_panels(!IO),
-    args_to_quoted_command(["helper-send", Filename], Command),
+    args_to_quoted_command(["helper-send"], redirect_input(Filename), no,
+        Command),
     io.call_system(Command, ResSend, !IO),
     (
         ResSend = ok(ExitStatus),
