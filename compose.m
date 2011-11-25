@@ -51,6 +51,7 @@
 :- import_module mime_type.
 :- import_module pager.
 :- import_module popen.
+:- import_module prog_config.
 :- import_module quote_arg.
 :- import_module scrollable.
 :- import_module text_entry.
@@ -875,9 +876,8 @@ send_mail(Screen, Headers, Text, Attachments, Res, !IO) :-
 call_send_mail(Screen, Filename, Res, !IO) :-
     update_message(Screen, set_info("Sending message..."), !IO),
     panel.update_panels(!IO),
-    args_to_quoted_command(["helper-send"], redirect_input(Filename), no,
-        Command),
-    io.call_system(Command, ResSend, !IO),
+    get_sendmail_command(Command, !IO),
+    io.call_system(Command ++ " < " ++ quote_arg(Filename), ResSend, !IO),
     (
         ResSend = ok(ExitStatus),
         ( ExitStatus = 0 ->
@@ -893,14 +893,14 @@ call_send_mail(Screen, Filename, Res, !IO) :-
                 Res = no
             )
         ;
-            Msg = string.format("helper-send returned with exit status %d",
-                [i(ExitStatus)]),
+            Msg = string.format("%s: returned with exit status %d",
+                [s(Command), i(ExitStatus)]),
             update_message(Screen, set_warning(Msg), !IO),
             Res = no
         )
     ;
         ResSend = error(Error),
-        Msg = "helper-send: " ++ io.error_message(Error),
+        Msg = Command ++ ": " ++ io.error_message(Error),
         update_message(Screen, set_warning(Msg), !IO),
         Res = no
     ).

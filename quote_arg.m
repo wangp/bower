@@ -18,6 +18,8 @@
 :- pred args_to_quoted_command(list(string)::in,
     redirect_input::in, redirect_output::in, string::out) is det.
 
+:- func quote_arg(string) = string.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -49,8 +51,6 @@ args_to_quoted_command(Args, MaybeRedirectInput, MaybeRedirectOutput,
         QuotedArgs = QuotedArgs1
     ),
     Command = string.join_list(" ", QuotedArgs).
-
-:- func quote_arg(string) = string.
 
 quote_arg(String) = QuotedString :-
     string.foldr(quote_char, String, [], RevChars),
