@@ -1,4 +1,4 @@
-MAIN_TARGET = notmuch_frontend
+MAIN_TARGET = bower
 
 MCFLAGS-popen += --no-ansi-c
 MCFLAGS-string_util += --no-ansi-c
@@ -11,6 +11,6 @@ CFLAGS-time_util += -D_GNU_SOURCE
 CFLAGS-sys_util += -D_BSD_SOURCE
 CFLAGS-string_util += -D_GNU_SOURCE
 
-MLLIBS-notmuch_frontend += -lncursesw -lpanel
+MLLIBS-bower += -lncursesw -lpanel
 
 -include Mercury.params

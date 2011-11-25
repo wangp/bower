@@ -1,6 +1,6 @@
 %-----------------------------------------------------------------------------%
 
-:- module notmuch_frontend.
+:- module bower.
 :- interface.
 
 :- import_module io.
