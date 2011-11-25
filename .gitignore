@@ -1,0 +1,6 @@
+*.[oa]
+*~
+Mercury/
+*.err
+*.mh
+tags
