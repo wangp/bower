@@ -10,8 +10,13 @@
 
 :- type section == string.
 
+:- func init_config = config.
+
 :- pred load_config_file(string::in, io.res(config)::out, io::di, io::uo)
     is det.
+
+:- pred search_config(config::in, section::in, string::in, string::out)
+    is semidet.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -23,6 +28,8 @@
 :- import_module string.
 
 %-----------------------------------------------------------------------------%
+
+init_config = map.init.
 
 load_config_file(FileName, Res, !IO) :-
     io.open_input(FileName, OpenRes, !IO),
@@ -90,6 +97,10 @@ parse_line(Line, !Section, !Config) :-
         % Invalid line.
         true
     ).
+
+search_config(Config, Section, Key, Value) :-
+    map.search(Config, Section, SectionMap),
+    map.search(SectionMap, Key, Value).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
