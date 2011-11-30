@@ -11,10 +11,6 @@
 
 %-----------------------------------------------------------------------------%
 
-:- pred get_notmuch_prefix(string::out, io::di, io::uo) is det.
-
-:- pred get_notmuch_deliver_prefix(string::out, io::di, io::uo) is det.
-
 :- pred get_notmuch_config(string::in, io.res(string)::out, io::di, io::uo)
     is det.
 
@@ -44,55 +40,8 @@
 :- import_module string.
 
 :- import_module popen.
+:- import_module prog_config.
 :- import_module quote_arg.
-
-%-----------------------------------------------------------------------------%
-
-:- mutable(notmuch_var, maybe(string), no, ground,
-    [untrailed, attach_to_io_state]).
-
-:- mutable(notmuch_deliver_var, maybe(string), no, ground,
-    [untrailed, attach_to_io_state]).
-
-get_notmuch_prefix(Notmuch, !IO) :-
-    get_notmuch_var(MaybeVar, !IO),
-    (
-        MaybeVar = yes(Notmuch)
-    ;
-        MaybeVar = no,
-        io.get_environment_var("NOTMUCH", MaybeEnv, !IO),
-        (
-            MaybeEnv = yes(Env),
-            Notmuch = Env ++ " "
-        ;
-            MaybeEnv = no,
-            Notmuch = "notmuch " % trailing space is deliberate!
-        ),
-        set_notmuch_var(yes(Notmuch), !IO)
-    ).
-
-get_notmuch_deliver_prefix(NotmuchDeliver, !IO) :-
-    get_notmuch_deliver_var(MaybeVar, !IO),
-    (
-        MaybeVar = yes(NotmuchDeliver)
-    ;
-        MaybeVar = no,
-        io.get_environment_var("NOTMUCH_DELIVER", MaybeEnv, !IO),
-        (
-            MaybeEnv = yes(Env),
-            NotmuchDeliver = Env ++ " "
-        ;
-            MaybeEnv = no,
-            % Guess notmuch-deliver command from notmuch command if possible.
-            get_notmuch_prefix(Notmuch, !IO),
-            ( string.remove_suffix(Notmuch, "notmuch ", Prefix) ->
-                NotmuchDeliver = Prefix ++ "notmuch-deliver "
-            ;
-                NotmuchDeliver = "notmuch-deliver "
-            )
-        ),
-        set_notmuch_deliver_var(yes(NotmuchDeliver), !IO)
-    ).
 
 %-----------------------------------------------------------------------------%
 

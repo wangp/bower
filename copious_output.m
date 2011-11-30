@@ -18,8 +18,8 @@
 :- import_module list.
 :- import_module string.
 
-:- import_module callout.
 :- import_module popen.
+:- import_module prog_config.
 :- import_module quote_arg.
 :- import_module string_util.
 

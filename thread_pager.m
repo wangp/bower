@@ -40,6 +40,7 @@
 :- import_module curs.panel.
 :- import_module maildir.
 :- import_module pager.
+:- import_module prog_config.
 :- import_module quote_arg.
 :- import_module scrollable.
 :- import_module string_util.
