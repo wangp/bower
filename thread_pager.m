@@ -325,11 +325,19 @@ is_reply_marker("SV:").
 :- pred thread_pager_loop(screen::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
+:- pragma inline(thread_pager_loop/5). % force direct tail recursion
+
 thread_pager_loop(Screen, !Info, !IO) :-
     draw_thread_pager(Screen, !.Info, !IO),
     draw_bar(Screen, !IO),
     panel.update_panels(!IO),
     get_keycode(Key, !IO),
+    thread_pager_loop_2(Screen, Key, !Info, !IO).
+
+:- pred thread_pager_loop_2(screen::in, keycode::in,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+
+thread_pager_loop_2(Screen, Key, !Info, !IO) :-
     thread_pager_input(Key, Action, MessageUpdate, !Info),
     update_message(Screen, MessageUpdate, !IO),
     (
@@ -354,8 +362,14 @@ thread_pager_loop(Screen, !Info, !IO) :-
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = prompt_open_part(Part),
-        prompt_open_part(Screen, Part, !IO),
-        thread_pager_loop(Screen, !Info, !IO)
+        prompt_open_part(Screen, Part, MaybeNextKey, !IO),
+        (
+            MaybeNextKey = yes(NextKey),
+            thread_pager_loop_2(Screen, NextKey, !Info, !IO)
+        ;
+            MaybeNextKey = no,
+            thread_pager_loop(Screen, !Info, !IO)
+        )
     ;
         Action = prompt_search,
         prompt_search(Screen, !Info, !IO),
@@ -884,10 +898,10 @@ open_part(Action, MessageUpdate, !Info) :-
         MessageUpdate = set_warning("No message or attachment selected.")
     ).
 
-:- pred prompt_open_part(screen::in, part::in, io::di, io::uo)
-    is det.
+:- pred prompt_open_part(screen::in, part::in, maybe(keycode)::out,
+    io::di, io::uo) is det.
 
-prompt_open_part(Screen, Part, !IO) :-
+prompt_open_part(Screen, Part, MaybeNextKey, !IO) :-
     Initial = "xdg-open",
     text_entry_initial(Screen, "Open with command: ", init_history, Initial,
         complete_path, Return, !IO),
@@ -909,44 +923,38 @@ prompt_open_part(Screen, Part, !IO) :-
             (
                 CallRes = ok(ExitStatus),
                 ( ExitStatus = 0 ->
-                    % Give the async process a chance to open the temporary
-                    % file before we delete it.
-                    press_enter(Screen, !IO),
+                    ContMessage = set_info(
+                        "Press any key to continue (deletes temporary file)"),
+                    update_message(Screen, ContMessage, !IO),
+                    panel.update_panels(!IO),
+                    get_keycode(Key, !IO),
+                    MaybeNextKey = yes(Key),
                     MessageUpdate = clear_message
                 ;
                     string.format("%s returned with exit status %d",
                         [s(Command), i(ExitStatus)], Msg),
-                    MessageUpdate = set_warning(Msg)
+                    MessageUpdate = set_warning(Msg),
+                    MaybeNextKey = no
                 )
             ;
                 CallRes = error(Error),
                 Msg = "Error: " ++ io.error_message(Error),
-                MessageUpdate = set_warning(Msg)
+                MessageUpdate = set_warning(Msg),
+                MaybeNextKey = no
             )
         ;
             Res = error(Error),
             string.format("Error saving to %s: %s",
                 [s(FileName), s(io.error_message(Error))], Msg),
-            MessageUpdate = set_warning(Msg)
+            MessageUpdate = set_warning(Msg),
+            MaybeNextKey = no
         ),
         io.remove_file(FileName, _, !IO)
     ;
-        MessageUpdate = clear_message
+        MessageUpdate = clear_message,
+        MaybeNextKey = no
     ),
     update_message(Screen, MessageUpdate, !IO).
-
-:- pred press_enter(screen::in, io::di, io::uo) is det.
-
-press_enter(Screen, !IO) :-
-    update_message(Screen, set_info("Press Enter to continue..."), !IO),
-    curs.redrawwin_stdscr(!IO),
-    panel.update_panels(!IO),
-    get_char(Char, !IO),
-    ( Char = '\r' ->
-        true
-    ;
-        press_enter(Screen, !IO)
-    ).
 
 %-----------------------------------------------------------------------------%
 
