@@ -20,36 +20,45 @@
 
 %-----------------------------------------------------------------------------%
 
-get_sendmail_command(Command, !IO) :-
-    search_config_file(config_filename, MaybeConfigFile, !IO),
+:- mutable(prog_config_var, maybe(config), no, ground,
+    [untrailed, attach_to_io_state]).
+
+:- pred get_prog_config(config::out, io::di, io::uo) is det.
+
+get_prog_config(Config, !IO) :-
+    get_prog_config_var(MaybeConfig, !IO),
     (
-        MaybeConfigFile = yes(ConfigFile),
-        load_config_file(ConfigFile, LoadRes, !IO),
-        (
-            LoadRes = ok(Config),
-            search_default(Config, "command", "sendmail", Command,
-                default_sendmail_command)
-        ;
-            LoadRes = error(_),
-            Command = default_sendmail_command
-        )
+        MaybeConfig = yes(Config)
     ;
-        MaybeConfigFile = no,
+        MaybeConfig = no,
+        search_config_file(config_filename, MaybeConfigFile, !IO),
+        (
+            MaybeConfigFile = yes(ConfigFile),
+            load_config_file(ConfigFile, LoadRes, !IO),
+            (
+                LoadRes = ok(Config)
+            ;
+                LoadRes = error(_),
+                Config = init_config
+            )
+        ;
+            MaybeConfigFile = no,
+            Config = init_config
+        ),
+        set_prog_config_var(yes(Config), !IO)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+get_sendmail_command(Command, !IO) :-
+    get_prog_config(Config, !IO),
+    ( search_config(Config, "command", "sendmail", Value) ->
+        Command = Value
+    ;
         Command = default_sendmail_command
     ).
 
-:- pred search_default(config::in, section::in, string::in, string::out,
-    string::in) is det.
-
-search_default(Config, Section, Key, Value, Default) :-
-    (
-        map.search(Config, Section, SectionMap),
-        map.search(SectionMap, Key, ValuePrime)
-    ->
-        Value = ValuePrime
-    ;
-        Value = Default
-    ).
+%-----------------------------------------------------------------------------%
 
 :- func config_filename = string.
 
