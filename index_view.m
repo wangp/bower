@@ -148,8 +148,7 @@ open_index(Screen, Terms, !IO) :-
     list(thread)::out, io::di, io::uo) is det.
 
 search_terms_with_progress(Screen, Terms0, Threads, !IO) :-
-    update_message(Screen, set_info("Searching..."), !IO),
-    panel.update_panels(!IO),
+    update_message_immed(Screen, set_info("Searching..."), !IO),
     string_to_search_terms(Terms0, Terms, !IO),
     run_notmuch([
         "search", "--format=json", "--", Terms

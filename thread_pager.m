@@ -916,17 +916,15 @@ prompt_open_part(Screen, Part, MaybeNextKey, !IO) :-
         (
             Res = ok,
             args_to_quoted_command([Command, FileName], CommandString),
-            update_message(Screen, set_info("Calling " ++ Command ++ "..."),
-                !IO),
-            panel.update_panels(!IO),
+            CallMessage = set_info("Calling " ++ Command ++ "..."),
+            update_message_immed(Screen, CallMessage, !IO),
             io.call_system(CommandString, CallRes, !IO),
             (
                 CallRes = ok(ExitStatus),
                 ( ExitStatus = 0 ->
                     ContMessage = set_info(
                         "Press any key to continue (deletes temporary file)"),
-                    update_message(Screen, ContMessage, !IO),
-                    panel.update_panels(!IO),
+                    update_message_immed(Screen, ContMessage, !IO),
                     get_keycode(Key, !IO),
                     MaybeNextKey = yes(Key),
                     MessageUpdate = clear_message

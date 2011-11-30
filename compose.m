@@ -820,8 +820,7 @@ postpone(Screen, Headers, Text, Attachments, Res, !IO) :-
         ResFilename, !IO),
     (
         ResFilename = ok(Filename),
-        update_message(Screen, set_info("Postponing message..."), !IO),
-        panel.update_panels(!IO),
+        update_message_immed(Screen, set_info("Postponing message..."), !IO),
         add_draft(Filename, DraftRes, !IO),
         io.remove_file(Filename, _, !IO),
         (
@@ -874,8 +873,7 @@ send_mail(Screen, Headers, Text, Attachments, Res, !IO) :-
     is det.
 
 call_send_mail(Screen, Filename, Res, !IO) :-
-    update_message(Screen, set_info("Sending message..."), !IO),
-    panel.update_panels(!IO),
+    update_message_immed(Screen, set_info("Sending message..."), !IO),
     get_sendmail_command(Command, !IO),
     io.call_system(Command ++ " < " ++ quote_arg(Filename), ResSend, !IO),
     (
