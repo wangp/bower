@@ -335,51 +335,6 @@
 
 %----------------------------------------------------------------------------%
 
-    % Untimely ripp'd from Thomas Conway and Robert Jeschofnik's
-    % basics.m module in their ncurses interface.
-
-:- pragma foreign_code("C","
-
-#ifdef MR_CONSERVATIVE_GC
-
-/*      
-** The addresses of the closures that we pass to curses
-** will be stored by curses in malloc()'ed memory.
-** However, it is essential that these pointers be
-** visible to the garbage collector, otherwise it will
-** think that the closures are unreferenced and reuse the storage.
-** Hence we redefine malloc() and friends to call GC_malloc().
-*/
-
-void *malloc(size_t s)
-{
-        return GC_MALLOC(s);
-}
-
-void *calloc(size_t s, size_t n)
-{
-        void *t;
-        t = GC_MALLOC(s*n);
-        memset(t, 0, s*n);
-        return t;
-}
-
-void *realloc(void *ptr, size_t s)
-{
-        return GC_REALLOC(ptr, s);
-}
-
-void free(void *ptr)
-{
-        GC_FREE(ptr);
-}
-
-#endif
-
-").
-
-%----------------------------------------------------------------------------%
-
 :- pragma foreign_decl("C", "
 
 #include <ncurses.h>
