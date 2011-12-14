@@ -1128,8 +1128,9 @@ session(P, !IO) :-
         delete(Panel::in, IO0::di, IO::uo),
         [will_not_call_mercury, promise_pure],
     "
-        delwin(panel_window(Panel));
+        WINDOW *w = panel_window(Panel);
         del_panel(Panel);
+        delwin(w);
 
         IO = IO0;
     ").
