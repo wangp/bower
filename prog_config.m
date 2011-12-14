@@ -11,6 +11,8 @@
 
 :- pred get_sendmail_command(string::out, io::di, io::uo) is det.
 
+:- pred get_html_dump_command(string::out, io::di, io::uo) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -82,6 +84,14 @@ get_sendmail_command(Command, !IO) :-
         Command = default_sendmail_command
     ).
 
+get_html_dump_command(Command, !IO) :-
+    get_prog_config(Config, !IO),
+    ( search_config(Config, "command", "html_dump", Value) ->
+        Command = Value
+    ;
+        Command = default_html_dump_command
+    ).
+
 %-----------------------------------------------------------------------------%
 
 :- func config_filename = string.
@@ -99,6 +109,10 @@ default_notmuch_deliver_prefix = "notmuch-deliver ". % trailing space
 :- func default_sendmail_command = string.
 
 default_sendmail_command = "/usr/bin/sendmail -oi -oem".
+
+:- func default_html_dump_command = string.
+
+default_html_dump_command = "lynx -dump -force-html -stdin".
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

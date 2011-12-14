@@ -66,7 +66,13 @@ expand_html(MessageId, PartId, Content, !IO) :-
         "show", "--format=raw", "--part=" ++ from_int(PartId),
         message_id_to_search_term(MessageId)
     ], ShowCommand),
-    popen(Notmuch ++ ShowCommand ++ dump_pipe, CallRes, !IO),
+    get_html_dump_command(DumpCommand, !IO),
+    ( DumpCommand = "" ->
+        Command = Notmuch ++ ShowCommand
+    ;
+        Command = Notmuch ++ ShowCommand ++ " | " ++ DumpCommand
+    ),
+    popen(Command, CallRes, !IO),
     (
         CallRes = ok(ContentString),
         Content = text(ContentString)
@@ -74,11 +80,6 @@ expand_html(MessageId, PartId, Content, !IO) :-
         CallRes = error(_),
         Content = unsupported
     ).
-
-    % XXX we should use mailcap
-:- func dump_pipe = string.
-
-dump_pipe = "|lynx -dump -force-html -stdin".
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
