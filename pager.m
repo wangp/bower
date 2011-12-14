@@ -700,7 +700,7 @@ get_highlighted_part(Info, Part) :-
 %-----------------------------------------------------------------------------%
 
 draw_pager(Screen, Info, !IO) :-
-    MainPanels = Screen ^ main_panels,
+    get_main_panels(Screen, MainPanels),
     draw_pager_lines(MainPanels, Info, !IO).
 
 draw_pager_lines(Panels, Info, !IO) :-

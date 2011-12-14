@@ -127,8 +127,7 @@ open_thread_pager(Screen, ThreadId, NeedRefresh, SearchHistory0, SearchHistory,
     ),
     time(Time, !IO),
     Nowish = localtime(Time),
-    Rows = Screen ^ rows,
-    Cols = Screen ^ cols,
+    get_rows_cols(Screen, Rows, Cols),
     setup_thread_pager(Nowish, Rows - 2, Cols, Messages, SearchHistory0,
         ThreadPagerInfo0, Count),
     string.format("Showing %d messages.", [i(Count)], Msg),
@@ -346,8 +345,7 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
     ;
         Action = resize,
         create_screen(NewScreen, !IO),
-        Rows = NewScreen ^ rows,
-        Cols = NewScreen ^ cols,
+        get_rows_cols(NewScreen, Rows, Cols),
         resize_thread_pager(Rows, Cols, !Info),
         thread_pager_loop(NewScreen, !Info, !IO)
     ;
@@ -1104,7 +1102,8 @@ draw_thread_pager(Screen, Info, !IO) :-
     PagerInfo = Info ^ tp_pager,
     split_panels(Screen, Info, ThreadPanels, SepPanel, PagerPanels),
     scrollable.draw(ThreadPanels, Scrollable, !IO),
-    draw_sep(Screen ^ cols, SepPanel, !IO),
+    get_cols(Screen, Cols),
+    draw_sep(Cols, SepPanel, !IO),
     draw_pager_lines(PagerPanels, PagerInfo, !IO).
 
 :- pred draw_sep(int::in, maybe(panel)::in, io::di, io::uo) is det.
@@ -1214,7 +1213,7 @@ cond_attr_set(Panel, Attr, IsCursor, !IO) :-
 split_panels(Screen, Info, ThreadPanels, MaybeSepPanel, PagerPanels) :-
     NumThreadRows = Info ^ tp_num_thread_rows,
     NumPagerRows = Info ^ tp_num_pager_rows,
-    Panels0 = Screen ^ main_panels,
+    get_main_panels(Screen, Panels0),
     list.split_upto(NumThreadRows, Panels0, ThreadPanels, Panels1),
     (
         Panels1 = [SepPanel | Panels2],

@@ -111,8 +111,8 @@ recall_screen_loop(Screen, MaybeSelected, !Info, !IO) :-
     io::di, io::uo) is det.
 
 move_cursor(Screen, Delta, !Info, !IO) :-
-    NumRows = list.length(Screen ^ main_panels),
     !.Info ^ r_scrollable = Scrollable0,
+    get_main_rows(Screen, NumRows),
     scrollable.move_cursor(NumRows, Delta, HitLimit, Scrollable0, Scrollable),
     !Info ^ r_scrollable := Scrollable,
     (
@@ -144,7 +144,7 @@ enter(Info, MaybeSelected) :-
 :- pred draw_recall(screen::in, recall_info::in, io::di, io::uo) is det.
 
 draw_recall(Screen, Info, !IO) :-
-    Panels = Screen ^ main_panels,
+    get_main_panels(Screen, Panels),
     Info = recall_info(Scrollable),
     scrollable.draw(Panels, Scrollable, !IO).
 

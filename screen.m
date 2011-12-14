@@ -12,14 +12,7 @@
 
 %-----------------------------------------------------------------------------%
 
-:- type screen
-    --->    screen(
-                rows            :: int,
-                cols            :: int,
-                main_panels     :: list(panel),
-                bar_panel       :: panel,
-                msgentry_panel  :: panel
-            ).
+:- type screen.
 
 :- type message_update
     --->    no_change
@@ -28,6 +21,18 @@
     ;       set_warning(string).
 
 :- pred create_screen(screen::out, io::di, io::uo) is det.
+
+:- pred get_cols(screen::in, int::out) is det.
+
+:- pred get_rows_cols(screen::in, int::out, int::out) is det.
+
+:- pred get_main_panels(screen::in, list(panel)::out) is det.
+
+:- pred get_main_rows(screen::in, int::out) is det.
+
+:- pred get_bar_panel(screen::in, panel::out) is det.
+
+:- pred get_msgentry_panel(screen::in, panel::out) is det.
 
     % Like addstr but doesn't add the string if the cursor is already at the
     % end of the panel.
@@ -68,13 +73,21 @@
 
 :- import_module bool.
 :- import_module int.
-:- import_module list.
 :- import_module string.
 
 :- pragma foreign_decl("C", local,
 "
     #include <wchar.h>
 ").
+
+:- type screen
+    --->    screen(
+                rows            :: int,
+                cols            :: int,
+                main_panels     :: list(panel),
+                bar_panel       :: panel,
+                msgentry_panel  :: panel
+            ).
 
 %-----------------------------------------------------------------------------%
 
@@ -94,6 +107,21 @@ create_screen(Screen, !IO) :-
 create_row_panel(Cols, Row, Panel, !IO) :-
     panel.new(1, Cols, Row, 0, normal, Panel, !IO),
     panel.scrollok(Panel, no, !IO).
+
+%-----------------------------------------------------------------------------%
+
+get_cols(Screen, Screen ^ cols).
+
+get_rows_cols(Screen, Screen ^ rows, Screen ^ cols).
+
+get_main_panels(Screen, Screen ^ main_panels).
+
+get_main_rows(Screen, NumRows) :-
+    NumRows = list.length(Screen ^ main_panels).
+
+get_bar_panel(Screen, Screen ^ bar_panel).
+
+get_msgentry_panel(Screen, Screen ^ msgentry_panel).
 
 %-----------------------------------------------------------------------------%
 

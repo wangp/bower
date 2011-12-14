@@ -321,12 +321,12 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             Action = continue
         ;
             Binding = page_down,
-            NumRows = list.length(Screen ^ main_panels),
+            get_main_rows(Screen, NumRows),
             move_cursor(Screen, NumRows - 1, MessageUpdate, !IndexInfo),
             Action = continue
         ;
             Binding = page_up,
-            NumRows = list.length(Screen ^ main_panels),
+            get_main_rows(Screen, NumRows),
             move_cursor(Screen, -NumRows + 1, MessageUpdate, !IndexInfo),
             Action = continue
         ;
@@ -435,7 +435,7 @@ key_binding_char('q', quit).
 
 move_cursor(Screen, Delta, MessageUpdate, !Info) :-
     Scrollable0 = !.Info ^ i_scrollable,
-    NumRows = list.length(Screen ^ main_panels),
+    get_main_rows(Screen, NumRows),
     move_cursor(NumRows, Delta, HitLimit, Scrollable0, Scrollable),
     !Info ^ i_scrollable := Scrollable,
     (
@@ -455,7 +455,7 @@ move_cursor(Screen, Delta, MessageUpdate, !Info) :-
 
 skip_to_unread(Screen, MessageUpdate, !Info) :-
     Scrollable0 = !.Info ^ i_scrollable,
-    NumRows = list.length(Screen ^ main_panels),
+    get_main_rows(Screen, NumRows),
     ( get_cursor(Scrollable0, Cursor0) ->
         (
             search_forward(is_unread_line, Scrollable0, Cursor0 + 1, Cursor, _)
@@ -524,7 +524,7 @@ skip_to_search(Screen, MessageUpdate, !Info) :-
     (
         MaybeSearch = yes(Search),
         Scrollable0 = !.Info ^ i_scrollable,
-        NumRows = list.length(Screen ^ main_panels),
+        get_main_rows(Screen, NumRows),
         (
             get_cursor(Scrollable0, Cursor0),
             search_forward(line_matches_search(Search), Scrollable0,
@@ -618,7 +618,7 @@ refresh_all(Screen, !Info, !IO) :-
                 search_forward(line_matches_thread_id(ThreadId0),
                     !.Scrollable, 0, Cursor, _)
             ->
-                NumRows = list.length(Screen ^ main_panels),
+                get_main_rows(Screen, NumRows),
                 set_cursor_visible(Cursor, NumRows, !Scrollable)
             ;
                 true
@@ -711,7 +711,7 @@ recreate_screen(Screen, !IndexInfo, !IO) :-
     % Keep cursor visible.
     Scrollable0 = !.IndexInfo ^ i_scrollable,
     ( get_cursor(Scrollable0, Cursor) ->
-        NumRows = list.length(Screen ^ main_panels),
+        get_main_rows(Screen, NumRows),
         set_cursor_visible(Cursor, NumRows, Scrollable0, Scrollable),
         !IndexInfo ^ i_scrollable := Scrollable
     ;
@@ -723,7 +723,7 @@ recreate_screen(Screen, !IndexInfo, !IO) :-
 :- pred draw_index_view(screen::in, index_info::in, io::di, io::uo) is det.
 
 draw_index_view(Screen, Info, !IO) :-
-    MainPanels = Screen ^ main_panels,
+    get_main_panels(Screen, MainPanels),
     Scrollable = Info ^ i_scrollable,
     scrollable.draw(MainPanels, Scrollable, !IO).
 

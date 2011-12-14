@@ -433,7 +433,7 @@ filter_path_prefix(AddPrefix, MatchBaseNamePrefix, _DirName, BaseName,
     io::di, io::uo) is det.
 
 draw_text_entry(Screen, Prompt, Before, After, !IO) :-
-    Panel = Screen ^ msgentry_panel,
+    get_msgentry_panel(Screen, Panel),
     panel.erase(Panel, !IO),
     panel.attr_set(Panel, normal, !IO),
     my_addstr(Panel, Prompt, !IO),

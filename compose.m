@@ -325,7 +325,7 @@ create_edit_stage(Screen, Headers0, Text0, Attachments, MaybeOldDraft, !IO) :-
                 StagingInfo = staging_info(Headers, Text, MaybeOldDraft,
                     init_history),
                 AttachInfo = scrollable.init_with_cursor(Attachments),
-                Cols = Screen ^ cols,
+                get_cols(Screen, Cols),
                 setup_pager_for_staging(Cols, Text, PagerInfo),
                 staging_screen(Screen, StagingInfo, AttachInfo, PagerInfo, !IO)
             ;
@@ -713,7 +713,7 @@ delete_attachment(Screen, !AttachInfo, !IO) :-
 
 split_panels(Screen, HeaderPanels, AttachmentPanels, MaybeSepPanel,
         PagerPanels) :-
-    Panels0 = Screen ^ main_panels,
+    get_main_panels(Screen, Panels0),
     list.split_upto(6, Panels0, HeaderPanels, Panels1),
     list.split_upto(3, Panels1, AttachmentPanels, Panels2),
     (
@@ -793,7 +793,7 @@ draw_attachments_label([Panel | _], !IO) :-
 
 draw_sep_bar(_, no, !IO).
 draw_sep_bar(Screen, yes(Panel), !IO) :-
-    Cols = Screen ^ cols,
+    get_cols(Screen, Cols),
     panel.erase(Panel, !IO),
     panel.attr_set(Panel, fg_bg(white, blue), !IO),
     my_addstr(Panel, "-- (ftcbsr) edit fields; (a) attach, (d) detach", !IO),
@@ -802,8 +802,8 @@ draw_sep_bar(Screen, yes(Panel), !IO) :-
 :- pred draw_staging_bar(screen::in, io::di, io::uo) is det.
 
 draw_staging_bar(Screen, !IO) :-
-    Cols = Screen ^ cols,
-    Panel = Screen ^ bar_panel,
+    get_cols(Screen, Cols),
+    get_bar_panel(Screen, Panel),
     panel.erase(Panel, !IO),
     panel.attr_set(Panel, fg_bg(white, blue), !IO),
     my_addstr(Panel, "-- ", !IO),
