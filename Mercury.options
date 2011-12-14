@@ -1,5 +1,8 @@
 MAIN_TARGET = bower
 
+PARALLEL =
+MCFLAGS += $(PARALLEL)
+
 MCFLAGS-popen += --no-ansi-c
 MCFLAGS-string_util += --no-ansi-c
 
