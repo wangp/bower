@@ -344,6 +344,7 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = resize,
+        destroy_screen(Screen, !IO),
         create_screen(NewScreen, !IO),
         get_rows_cols(NewScreen, Rows, Cols),
         resize_thread_pager(Rows, Cols, !Info),

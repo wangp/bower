@@ -20,7 +20,9 @@
     ;       set_info(string)
     ;       set_warning(string).
 
-:- pred create_screen(screen::out, io::di, io::uo) is det.
+:- pred create_screen(screen::uo, io::di, io::uo) is det.
+
+:- pred destroy_screen(screen::in, io::di, io::uo) is det.
 
 :- pred get_cols(screen::in, int::out) is det.
 
@@ -73,6 +75,8 @@
 
 :- import_module bool.
 :- import_module int.
+:- import_module mutvar.
+:- import_module require.
 :- import_module string.
 
 :- pragma foreign_decl("C", local,
@@ -80,27 +84,39 @@
     #include <wchar.h>
 ").
 
-:- type screen
+:- type screen == mutvar(real_screen).
+
+:- type real_screen
     --->    screen(
                 rows            :: int,
                 cols            :: int,
                 main_panels     :: list(panel),
                 bar_panel       :: panel,
                 msgentry_panel  :: panel
-            ).
+            )
+    ;       destroyed_screen.
+
+:- inst real_screen
+    --->    screen(ground, ground, ground, ground, ground).
 
 %-----------------------------------------------------------------------------%
 
 create_screen(Screen, !IO) :-
-    curs.rows_cols(Rows, Cols, !IO),
-    MainRows = Rows - 2,
-    BarRow = MainRows,
-    MsgEntryRow = BarRow + 1,
+    promise_pure (
+        curs.rows_cols(Rows, Cols, !IO),
+        MainRows = Rows - 2,
+        BarRow = MainRows,
+        MsgEntryRow = BarRow + 1,
 
-    list.map_foldl(create_row_panel(Cols), 0..(MainRows - 1), MainPanels, !IO),
-    create_row_panel(Cols, BarRow, BarPanel, !IO),
-    create_row_panel(Cols, MsgEntryRow, MsgEntryPanel, !IO),
-    Screen = screen(Rows, Cols, MainPanels, BarPanel, MsgEntryPanel).
+        list.map_foldl(create_row_panel(Cols), 0..(MainRows - 1), MainPanels,
+            !IO),
+        create_row_panel(Cols, BarRow, BarPanel, !IO),
+        create_row_panel(Cols, MsgEntryRow, MsgEntryPanel, !IO),
+        RealScreen0 = screen(Rows, Cols, MainPanels, BarPanel, MsgEntryPanel),
+        % This is safe because RealScreen0 is definitely dynamically allocated.
+        unsafe_promise_unique(RealScreen0, RealScreen),
+        impure new_mutvar(RealScreen, Screen)
+    ).
 
 :- pred create_row_panel(int::in, int::in, panel::out, io::di, io::uo) is det.
 
@@ -110,18 +126,58 @@ create_row_panel(Cols, Row, Panel, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-get_cols(Screen, Screen ^ cols).
+destroy_screen(Screen, !IO) :-
+    promise_pure (
+        impure get_mutvar(Screen, RealScreen),
+        (
+            RealScreen = screen(_, _, MainPanels, BarPanel, MsgEntryPanel),
+            impure set_mutvar(Screen, destroyed_screen),
+            list.foldl(panel.delete, [BarPanel, MsgEntryPanel | MainPanels],
+                !IO)
+        ;
+            RealScreen = destroyed_screen
+        )
+    ).
 
-get_rows_cols(Screen, Screen ^ rows, Screen ^ cols).
+%-----------------------------------------------------------------------------%
 
-get_main_panels(Screen, Screen ^ main_panels).
+get_cols(Screen, Cols) :-
+    get_real_screen(Screen, RealScreen),
+    Cols = RealScreen ^ cols.
+
+get_rows_cols(Screen, Rows, Cols) :-
+    get_real_screen(Screen, RealScreen),
+    Rows = RealScreen ^ rows,
+    Cols = RealScreen ^ cols.
+
+get_main_panels(Screen, MainPanels) :-
+    get_real_screen(Screen, RealScreen),
+    MainPanels = RealScreen ^ main_panels.
 
 get_main_rows(Screen, NumRows) :-
-    NumRows = list.length(Screen ^ main_panels).
+    get_main_panels(Screen, MainPanels),
+    NumRows = list.length(MainPanels).
 
-get_bar_panel(Screen, Screen ^ bar_panel).
+get_bar_panel(Screen, BarPanel) :-
+    get_real_screen(Screen, RealScreen),
+    BarPanel = RealScreen ^ bar_panel.
 
-get_msgentry_panel(Screen, Screen ^ msgentry_panel).
+get_msgentry_panel(Screen, MsgEntryPanel) :-
+    get_real_screen(Screen, RealScreen),
+    MsgEntryPanel = RealScreen ^ msgentry_panel.
+
+:- pred get_real_screen(screen::in, real_screen::out(real_screen)) is det.
+
+get_real_screen(Screen, RealScreen) :-
+    promise_pure (
+        impure get_mutvar(Screen, RealScreen),
+        (
+            RealScreen = screen(_, _, _, _, _)
+        ;
+            RealScreen = destroyed_screen,
+            unexpected($module, $pred, "screen already destroyed")
+        )
+    ).
 
 %-----------------------------------------------------------------------------%
 
@@ -196,7 +252,7 @@ count_loop(String, RemCols, !Index) :-
 %-----------------------------------------------------------------------------%
 
 update_message(Screen, MessageUpdate, !IO) :-
-    Panel = Screen ^ msgentry_panel,
+    get_msgentry_panel(Screen, Panel),
     (
         MessageUpdate = no_change
     ;
@@ -221,15 +277,15 @@ update_message_immed(String, MessageUpdate, !IO) :-
 %-----------------------------------------------------------------------------%
 
 draw_bar(Screen, !IO) :-
-    Cols = Screen ^ cols,
-    Panel = Screen ^ bar_panel,
+    get_cols(Screen, Cols),
+    get_bar_panel(Screen, Panel),
     panel.erase(Panel, !IO),
     panel.attr_set(Panel, fg_bg(white, blue), !IO),
     hline(Panel, char.to_int('-'), Cols, !IO).
 
 draw_bar_with_text(Screen, Text, !IO) :-
-    Cols = Screen ^ cols,
-    Panel = Screen ^ bar_panel,
+    get_cols(Screen, Cols),
+    get_bar_panel(Screen, Panel),
     panel.erase(Panel, !IO),
     panel.attr_set(Panel, fg_bg(white, blue), !IO),
     my_addstr(Panel, "--- ", !IO),

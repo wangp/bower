@@ -232,7 +232,7 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = resize,
-        recreate_screen(NewScreen, !IndexInfo, !IO),
+        recreate_screen(Screen, NewScreen, !IndexInfo, !IO),
         index_loop(NewScreen, !.IndexInfo, !IO)
     ;
         Action = open_pager(ThreadId),
@@ -240,7 +240,7 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         open_thread_pager(Screen, ThreadId, NeedRefresh, History0, History,
             !IO),
         % In case of resize.
-        recreate_screen(NewScreen, !IndexInfo, !IO),
+        recreate_screen(Screen, NewScreen, !IndexInfo, !IO),
         !IndexInfo ^ i_search_history := History,
         (
             NeedRefresh = yes,
@@ -703,10 +703,11 @@ poll_period_secs = 60.
 
 %-----------------------------------------------------------------------------%
 
-:- pred recreate_screen(screen::out, index_info::in, index_info::out,
-    io::di, io::uo) is det.
+:- pred recreate_screen(screen::in, screen::out,
+    index_info::in, index_info::out, io::di, io::uo) is det.
 
-recreate_screen(Screen, !IndexInfo, !IO) :-
+recreate_screen(Screen0, Screen, !IndexInfo, !IO) :-
+    destroy_screen(Screen0, !IO),
     create_screen(Screen, !IO),
     % Keep cursor visible.
     Scrollable0 = !.IndexInfo ^ i_scrollable,
