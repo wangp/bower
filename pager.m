@@ -48,6 +48,8 @@
 
 :- pred get_top_message(pager_info::in, message::out) is semidet.
 
+:- pred get_top_offset(pager_info::in, int::out) is semidet.
+
 :- pred skip_to_message(message_id::in, pager_info::in, pager_info::out)
     is det.
 
@@ -559,22 +561,36 @@ get_top_message(Info, Message) :-
     Top = get_top(Scrollable),
     Lines = get_lines(Scrollable),
     ( Top < version_array.size(Lines) ->
-        get_top_message_2(Lines, Top, Message)
+        get_top_message_2(Lines, Top, _, Message)
     ;
         fail
     ).
 
-:- pred get_top_message_2(version_array(pager_line)::in, int::in, message::out)
-    is semidet.
+:- pred get_top_message_2(version_array(pager_line)::in, int::in, int::out,
+    message::out) is semidet.
 
-get_top_message_2(Lines, I, Message) :-
+get_top_message_2(Lines, I, J, Message) :-
     ( I >= 0 ->
         Line = version_array.lookup(Lines, I),
         ( Line = start_message_header(Message0, _, _) ->
+            J = I,
             Message = Message0
         ;
-            get_top_message_2(Lines, I - 1, Message)
+            get_top_message_2(Lines, I - 1, J, Message)
         )
+    ;
+        fail
+    ).
+
+%-----------------------------------------------------------------------------%
+
+get_top_offset(Info, Offset) :-
+    Info = pager_info(Scrollable),
+    Top = get_top(Scrollable),
+    Lines = get_lines(Scrollable),
+    ( Top < version_array.size(Lines) ->
+        get_top_message_2(Lines, Top, MessageLine, _Message),
+        Offset = Top - MessageLine
     ;
         fail
     ).

@@ -50,13 +50,14 @@
 
 :- type thread_pager_info
     --->    thread_pager_info(
+                tp_thread_id        :: thread_id,
                 tp_scrollable       :: scrollable(thread_line),
                 tp_num_thread_rows  :: int,
                 tp_pager            :: pager_info,
                 tp_num_pager_rows   :: int,
                 tp_search           :: maybe(string),
                 tp_search_history   :: history,
-                tp_need_refresh     :: bool
+                tp_need_refresh_index :: bool
             ).
 
 :- type thread_line
@@ -94,6 +95,13 @@
     --->    flagged
     ;       unflagged.
 
+:- type message_tag_deltas
+    --->    message_tag_deltas(
+                maybe(unread),
+                maybe(deleted),
+                maybe(flagged)
+            ).
+
 :- type thread_pager_action
     --->    continue
     ;       resize
@@ -101,6 +109,7 @@
     ;       prompt_save_part(part)
     ;       prompt_open_part(part)
     ;       prompt_search
+    ;       refresh_results
     ;       leave(
                 map(set(tag_delta), list(message_id))
                 % Group messages by the tag changes to be applied.
@@ -112,8 +121,63 @@
 
 %-----------------------------------------------------------------------------%
 
-open_thread_pager(Screen, ThreadId, NeedRefresh, SearchHistory0, SearchHistory,
-        !IO) :-
+open_thread_pager(Screen, ThreadId, NeedRefreshIndex,
+        SearchHistory0, SearchHistory, !IO) :-
+    create_thread_pager(Screen, ThreadId, Info0, Count, !IO),
+    Info1 = Info0 ^ tp_search_history := SearchHistory0,
+    string.format("Showing %d messages.", [i(Count)], Msg),
+    update_message(Screen, set_info(Msg), !IO),
+    thread_pager_loop(Screen, Info1, Info, !IO),
+    NeedRefreshIndex = Info ^ tp_need_refresh_index,
+    SearchHistory = Info ^ tp_search_history.
+
+:- pred reopen_thread_pager(screen::in,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+
+reopen_thread_pager(Screen, Info0, Info, !IO) :-
+    Info0 = thread_pager_info(ThreadId0, Scrollable0, _NumThreadRows, Pager0,
+        _NumPagerRows, Search, SearchHistory, NeedRefreshIndex),
+
+    % We recreate the entire pager.  This may seem a bit inefficient but it is
+    % much simpler and the time it takes to run the notmuch show command vastly
+    % exceeds the time to format the messages anyway.
+    create_thread_pager(Screen, ThreadId0, Info1, Count, !IO),
+
+    Info1 = thread_pager_info(ThreadId, Scrollable1, NumThreadRows, Pager1,
+        NumPagerRows, _Search1, _SearchHistory1, _NeedRefreshIndex),
+
+    % Reapply tag changes from previous state.
+    ThreadLines0 = get_lines_list(Scrollable0),
+    ThreadLines1 = get_lines_list(Scrollable1),
+    list.foldl(create_tag_delta_map, ThreadLines0, map.init, DeltaMap),
+    list.map(restore_tag_deltas(DeltaMap), ThreadLines1, ThreadLines),
+    Scrollable = scrollable.init(ThreadLines),
+
+    % Restore cursor and pager position.
+    ( get_cursor_line(Scrollable0, _Cursor, CursorLine0) ->
+        MessageId0 = CursorLine0 ^ tp_message ^ m_id,
+        pager.skip_to_message(MessageId0, Pager1, Pager2),
+        ( get_top_offset(Pager0, TopOffset) ->
+            pager.scroll_but_stop_at_message(NumPagerRows, TopOffset, _,
+                Pager2, Pager)
+        ;
+            Pager = Pager2
+        )
+    ;
+        Pager = Pager1
+    ),
+
+    Info2 = thread_pager_info(ThreadId, Scrollable, NumThreadRows, Pager,
+        NumPagerRows, Search, SearchHistory, NeedRefreshIndex),
+    sync_thread_to_pager(Info2, Info),
+
+    string.format("Showing %d messages.", [i(Count)], Msg),
+    update_message(Screen, set_info(Msg), !IO).
+
+:- pred create_thread_pager(screen::in, thread_id::in, thread_pager_info::out,
+    int::out, io::di, io::uo) is det.
+
+create_thread_pager(Screen, ThreadId, Info, Count, !IO) :-
     run_notmuch([
         "show", "--format=json", "--", thread_id_to_search_term(ThreadId)
     ], parse_messages_list, Result, !IO),
@@ -128,13 +192,9 @@ open_thread_pager(Screen, ThreadId, NeedRefresh, SearchHistory0, SearchHistory,
     time(Time, !IO),
     Nowish = localtime(Time),
     get_rows_cols(Screen, Rows, Cols),
-    setup_thread_pager(Nowish, Rows - 2, Cols, Messages, SearchHistory0,
-        ThreadPagerInfo0, Count),
-    string.format("Showing %d messages.", [i(Count)], Msg),
-    update_message(Screen, set_info(Msg), !IO),
-    thread_pager_loop(Screen, ThreadPagerInfo0, ThreadPagerInfo, !IO),
-    NeedRefresh = ThreadPagerInfo ^ tp_need_refresh,
-    SearchHistory = ThreadPagerInfo ^ tp_search_history.
+    SearchHistory = init_history,
+    setup_thread_pager(ThreadId, Nowish, Rows - 2, Cols, Messages,
+        SearchHistory, Info, Count).
 
 :- pred filter_unwanted_messages(message::in, message::out) is semidet.
 
@@ -146,10 +206,10 @@ filter_unwanted_messages(!Message) :-
     list.filter_map(filter_unwanted_messages, Replies0, Replies),
     !Message ^ m_replies := Replies.
 
-:- pred setup_thread_pager(tm::in, int::in, int::in, list(message)::in,
-    history::in, thread_pager_info::out, int::out) is det.
+:- pred setup_thread_pager(thread_id::in, tm::in, int::in, int::in,
+    list(message)::in, history::in, thread_pager_info::out, int::out) is det.
 
-setup_thread_pager(Nowish, Rows, Cols, Messages, SearchHistory,
+setup_thread_pager(ThreadId, Nowish, Rows, Cols, Messages, SearchHistory,
         ThreadPagerInfo, NumThreadLines) :-
     append_messages(Nowish, [], [], Messages, "", cord.init, ThreadCord),
     ThreadLines = list(ThreadCord),
@@ -157,9 +217,8 @@ setup_thread_pager(Nowish, Rows, Cols, Messages, SearchHistory,
     NumThreadLines = get_num_lines(Scrollable),
     setup_pager(Cols, Messages, PagerInfo),
 
-    compute_num_rows(Rows, Scrollable, NumThreadRows,
-        NumPagerRows),
-    ThreadPagerInfo1 = thread_pager_info(Scrollable, NumThreadRows,
+    compute_num_rows(Rows, Scrollable, NumThreadRows, NumPagerRows),
+    ThreadPagerInfo1 = thread_pager_info(ThreadId, Scrollable, NumThreadRows,
         PagerInfo, NumPagerRows, no, SearchHistory, no),
     (
         get_cursor_line(Scrollable, _, FirstLine),
@@ -321,6 +380,62 @@ is_reply_marker("SV:").
 
 %-----------------------------------------------------------------------------%
 
+:- pred create_tag_delta_map(thread_line::in,
+    map(message_id, message_tag_deltas)::in,
+    map(message_id, message_tag_deltas)::out) is det.
+
+create_tag_delta_map(ThreadLine, !DeltaMap) :-
+    MessageId = ThreadLine ^ tp_message ^ m_id,
+    ThreadLine ^ tp_unread = Unread,
+    ThreadLine ^ tp_deleted = Deleted,
+    ThreadLine ^ tp_flagged = Flagged,
+    Deltas = message_tag_deltas(maybe_changed(Unread), maybe_changed(Deleted),
+        maybe_changed(Flagged)),
+    ( Deltas = message_tag_deltas(no, no, no) ->
+        true
+    ;
+        map.det_insert(MessageId, Deltas, !DeltaMap)
+    ).
+
+:- pred restore_tag_deltas(map(message_id, message_tag_deltas)::in,
+    thread_line::in, thread_line::out) is det.
+
+restore_tag_deltas(DeltaMap, !ThreadLine) :-
+    Message = !.ThreadLine ^ tp_message,
+    MessageId = Message ^ m_id,
+    ( map.search(DeltaMap, MessageId, Deltas) ->
+        Deltas = message_tag_deltas(UnreadDelta, DeletedDelta, FlaggedDelta),
+        (
+            UnreadDelta = yes(UnreadB),
+            !.ThreadLine ^ tp_unread = UnreadA - _,
+            !ThreadLine ^ tp_unread := UnreadA - UnreadB
+        ;
+            UnreadDelta = no
+        ),
+        (
+            DeletedDelta = yes(DeletedB),
+            !.ThreadLine ^ tp_deleted = DeletedA - _,
+            !ThreadLine ^ tp_deleted := DeletedA - DeletedB
+        ;
+            DeletedDelta = no
+        ),
+        (
+            FlaggedDelta = yes(FlaggedB),
+            !.ThreadLine ^ tp_flagged = FlaggedA - _,
+            !ThreadLine ^ tp_flagged := FlaggedA - FlaggedB
+        ;
+            FlaggedDelta = no
+        )
+    ;
+        true
+    ).
+
+:- func maybe_changed(pair(T)) = maybe(T).
+
+maybe_changed(A - B) = ( A = B -> yes(B) ; no ).
+
+%-----------------------------------------------------------------------------%
+
 :- pred thread_pager_loop(screen::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
@@ -353,7 +468,9 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         Action = start_reply(Message, ReplyKind),
         start_reply(Screen, Message, ReplyKind, !IO),
         % Don't really *need* to refresh if the reply is aborted.
-        !Info ^ tp_need_refresh := yes,
+        !Info ^ tp_need_refresh_index := yes,
+        % XXX would be nice to move cursor to the sent message
+        reopen_thread_pager(Screen, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = prompt_save_part(Part),
@@ -374,6 +491,10 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         prompt_search(Screen, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
+        Action = refresh_results,
+        reopen_thread_pager(Screen, !Info, !IO),
+        thread_pager_loop(Screen, !Info, !IO)
+    ;
         Action = leave(TagGroups),
         ( map.is_empty(TagGroups) ->
             true
@@ -387,7 +508,7 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
                 Msg = "Encountered problems while applying tags.",
                 update_message(Screen, set_warning(Msg), !IO)
             ),
-            !Info ^ tp_need_refresh := yes
+            !Info ^ tp_need_refresh_index := yes
         )
     ).
 
@@ -550,6 +671,11 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ->
         skip_to_search(continue_search, MessageUpdate, !Info),
         Action = continue
+    ;
+        Key = char('=')
+    ->
+        Action = refresh_results,
+        MessageUpdate = clear_message
     ;
         ( Key = char('i')
         ; Key = char('q')
