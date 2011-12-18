@@ -1,4 +1,5 @@
-%-----------------------------------------------------------------------------%
+% Bower - a frontend for the Notmuch email system
+% Copyright (C) 2011 Peter Wang
 
 :- module sys_util.
 :- interface.
