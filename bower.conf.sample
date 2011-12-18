@@ -1,0 +1,24 @@
+# This configuration file belongs in ~/.config/bower/bower.conf
+
+[command]
+
+# How to run notmuch and notmuch-deliver.
+
+; notmuch=notmuch
+; notmuch_deliver=notmuch-deliver
+
+# I run bower locally but my mail and notmuch are on a remote machine.
+
+; notmuch=ssh_escape user@host notmuch
+; notmuch_deliver=ssh_escape user@host notmuch-deliver
+
+# How to send a message.
+# The default is to use sendmail (untested) but I use msmtp.
+
+; sendmail=/usr/bin/sendmail -oi -oem
+; sendmail=/usr/bin/msmtp -t
+
+# How to format HTML on stdin to plain text.
+
+; html_dump=lynx -dump -force-html -stdin
+
