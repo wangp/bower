@@ -66,6 +66,11 @@
 
 :- pred get_highlighted_part(pager_info::in, part::out) is semidet.
 
+:- pred highlight_url(int::in, message_update::out,
+    pager_info::in, pager_info::out) is det.
+
+:- pred get_highlighted_url(pager_info::in, string::out) is semidet.
+
 :- pred draw_pager(screen::in, pager_info::in, io::di, io::uo) is det.
 
 :- pred draw_pager_lines(list(panel)::in, pager_info::in, io::di, io::uo)
@@ -85,6 +90,7 @@
 
 :- import_module scrollable.
 :- import_module string_util.
+:- import_module uri.
 
 %-----------------------------------------------------------------------------%
 
@@ -96,13 +102,17 @@
 :- type pager_line
     --->    start_message_header(message, string, string)
     ;       header(string, string)
-    ;       text(string)
-    ;       quoted_text(quote_level, string)
+    ;       text(string, maybe_url)
+    ;       quoted_text(quote_level, string, maybe_url)
     ;       diff_text(diff_line, string)
     ;       attachment(part)
     ;       message_separator.
 
 :- type quote_level == int.
+
+:- type maybe_url
+    --->    url(int, int)   % (start, end] columns
+    ;       no_url.
 
 :- type diff_line
     --->    diff_add
@@ -283,7 +293,8 @@ append_substring(String, Start, End, MaybeLevel, ContQuoteLevel, !InDiff,
     ( Level = 0 ->
         append_unquoted_string(SubString, !InDiff, !Lines)
     ;
-        snoc(quoted_text(Level, SubString), !Lines)
+        MaybeUrl = detect_maybe_url(SubString),
+        snoc(quoted_text(Level, SubString, MaybeUrl), !Lines)
     ),
     ContQuoteLevel = Level.
 
@@ -295,7 +306,8 @@ append_unquoted_string(String, !InDiff, !Lines) :-
         !:InDiff = yes,
         snoc(diff_text(DiffLine, String), !Lines)
     ;
-        snoc(text(String), !Lines)
+        MaybeUrl = detect_maybe_url(String),
+        snoc(text(String, MaybeUrl), !Lines)
     ).
 
 :- func detect_quote_level(string, int) = int.
@@ -344,6 +356,15 @@ detect_diff(String, InDiff, Diff) :-
         fail
     ).
 
+:- func detect_maybe_url(string) = maybe_url.
+
+detect_maybe_url(String) = MaybeUrl :-
+    ( detect_url(String, Start, End) ->
+        MaybeUrl = url(Start, End)
+    ;
+        MaybeUrl = no_url
+    ).
+
 :- pred skip_whitespace(string::in, int::in, int::out) is det.
 
 skip_whitespace(String, I0, I) :-
@@ -359,7 +380,7 @@ skip_whitespace(String, I0, I) :-
 
 :- func blank_line = pager_line.
 
-blank_line = text("").
+blank_line = text("", no_url).
 
 %-----------------------------------------------------------------------------%
 
@@ -544,7 +565,7 @@ skip_quoted_text(MessageUpdate, !Info) :-
 
 is_quoted_text_or_message_start(Line) :-
     (
-        Line = quoted_text(_, _)
+        Line = quoted_text(_, _, _)
     ;
         Line = start_message_header(_, _, _)
     ).
@@ -552,7 +573,7 @@ is_quoted_text_or_message_start(Line) :-
 :- pred is_unquoted_text(pager_line::in) is semidet.
 
 is_unquoted_text(Line) :-
-    Line \= quoted_text(_, _).
+    Line \= quoted_text(_, _, _).
 
 %-----------------------------------------------------------------------------%
 
@@ -659,8 +680,8 @@ line_matches_search(Search, Line) :-
     (
         ( Line = start_message_header(_, _, String)
         ; Line = header(_, String)
-        ; Line = text(String)
-        ; Line = quoted_text(_, String)
+        ; Line = text(String, _)
+        ; Line = quoted_text(_, String, _)
         ; Line = diff_text(_, String)
         ),
         strcase_str(String, Search)
@@ -674,6 +695,23 @@ line_matches_search(Search, Line) :-
 %-----------------------------------------------------------------------------%
 
 highlight_part(NumRows, MessageUpdate, !Info) :-
+    ( do_highlight(is_highlightable_part, NumRows, !Info) ->
+        MessageUpdate = clear_message
+    ;
+        MessageUpdate = set_warning("No attachment or top of message visible.")
+    ).
+
+highlight_url(NumRows, MessageUpdate, !Info) :-
+    ( do_highlight(is_highlightable_url, NumRows, !Info) ->
+        MessageUpdate = clear_message
+    ;
+        MessageUpdate = set_warning("No URL visible.")
+    ).
+
+:- pred do_highlight(pred(pager_line)::in(pred(in) is semidet), int::in,
+    pager_info::in, pager_info::out) is semidet.
+
+do_highlight(Highlightable, NumRows, !Info) :-
     !.Info = pager_info(Scrollable0),
     Top = get_top(Scrollable0),
     Bot = Top + NumRows,
@@ -686,22 +724,24 @@ highlight_part(NumRows, MessageUpdate, !Info) :-
     ;
         Start = Top
     ),
-    ( search_forward_limit(is_highlightable, Scrollable0, Start, Bot, Cur, _) ->
-        set_cursor(Cur, Scrollable0, Scrollable),
-        !:Info = pager_info(Scrollable),
-        MessageUpdate = clear_message
-    ; search_forward_limit(is_highlightable, Scrollable0, Top, Bot, Cur, _) ->
-        set_cursor(Cur, Scrollable0, Scrollable),
-        !:Info = pager_info(Scrollable),
-        MessageUpdate = clear_message
+    ( search_forward_limit(Highlightable, Scrollable0, Start, Bot, Cur, _) ->
+        set_cursor(Cur, Scrollable0, Scrollable)
+    ; search_forward_limit(Highlightable, Scrollable0, Top, Bot, Cur, _) ->
+        set_cursor(Cur, Scrollable0, Scrollable)
     ;
-        MessageUpdate = set_warning("No attachment or top of message visible.")
-    ).
+        fail
+    ),
+    !:Info = pager_info(Scrollable).
 
-:- pred is_highlightable(pager_line::in) is semidet.
+:- pred is_highlightable_part(pager_line::in) is semidet.
 
-is_highlightable(start_message_header(_, _, _)).
-is_highlightable(attachment(_)).
+is_highlightable_part(start_message_header(_, _, _)).
+is_highlightable_part(attachment(_)).
+
+:- pred is_highlightable_url(pager_line::in) is semidet.
+
+is_highlightable_url(text(_, url(_, _))).
+is_highlightable_url(quoted_text(_, _, url(_, _))).
 
 get_highlighted_part(Info, Part) :-
     Info = pager_info(Scrollable),
@@ -713,6 +753,16 @@ get_highlighted_part(Info, Part) :-
     ;
         Line = attachment(Part)
     ).
+
+get_highlighted_url(Info, Url) :-
+    Info = pager_info(Scrollable),
+    get_cursor_line(Scrollable, _, Line),
+    (
+        Line = text(String, url(Start, End))
+    ;
+        Line = quoted_text(_, String, url(Start, End))
+    ),
+    string.between(String, Start, End, Url).
 
 %-----------------------------------------------------------------------------%
 
@@ -747,10 +797,10 @@ draw_pager_line(Panel, Line, IsCursor, !IO) :-
         my_addstr(Panel, Value, !IO)
     ;
         (
-            Line = text(Text),
+            Line = text(Text, _),
             Attr0 = normal
         ;
-            Line = quoted_text(QuoteLevel, Text),
+            Line = quoted_text(QuoteLevel, Text, _),
             Attr0 = quote_level_to_attr(QuoteLevel)
         ;
             Line = diff_text(DiffLine, Text),

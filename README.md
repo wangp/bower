@@ -124,8 +124,9 @@ This view pages through an entire thread.  The keys are:
     L               reply to list
 
     v               highlight next visible message or part
+    V               highlight next visible URL
     s               save highlighted message/part
-    o               open highlighted message/part with external program
+    o               open highlighted message/part/URL with external program
 
     i, q            return to index
     I               return to index, removing 'unread' tag on all messages

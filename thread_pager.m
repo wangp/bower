@@ -109,6 +109,7 @@
     ;       start_reply(message, reply_kind)
     ;       prompt_save_part(part)
     ;       prompt_open_part(part)
+    ;       prompt_open_url(string)
     ;       prompt_search
     ;       refresh_results
     ;       leave(
@@ -488,6 +489,10 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
             thread_pager_loop(Screen, !Info, !IO)
         )
     ;
+        Action = prompt_open_url(Url),
+        prompt_open_url(Screen, Url, !IO),
+        thread_pager_loop(Screen, !Info, !IO)
+    ;
         Action = prompt_search,
         prompt_search(Screen, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
@@ -653,6 +658,11 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Key = char('v')
     ->
         highlight_part(MessageUpdate, !Info),
+        Action = continue
+    ;
+        Key = char('V')
+    ->
+        highlight_url(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('s')
@@ -922,6 +932,17 @@ highlight_part(MessageUpdate, !Info) :-
     highlight_part(NumRows, MessageUpdate, Pager0, Pager),
     !Info ^ tp_pager := Pager.
 
+:- pred highlight_url(message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+highlight_url(MessageUpdate, !Info) :-
+    Pager0 = !.Info ^ tp_pager,
+    NumRows = !.Info ^ tp_num_pager_rows,
+    highlight_url(NumRows, MessageUpdate, Pager0, Pager),
+    !Info ^ tp_pager := Pager.
+
+%-----------------------------------------------------------------------------%
+
 :- pred save_part(thread_pager_action::out, message_update::out,
     thread_pager_info::in, thread_pager_info::out) is det.
 
@@ -1019,6 +1040,9 @@ open_part(Action, MessageUpdate, !Info) :-
     ( get_highlighted_part(Pager, Part) ->
         Action = prompt_open_part(Part),
         MessageUpdate = clear_message
+    ; get_highlighted_url(Pager, Url) ->
+        Action = prompt_open_url(Url),
+        MessageUpdate = clear_message
     ;
         Action = continue,
         MessageUpdate = set_warning("No message or attachment selected.")
@@ -1077,6 +1101,41 @@ prompt_open_part(Screen, Part, MaybeNextKey, !IO) :-
     ;
         MessageUpdate = clear_message,
         MaybeNextKey = no
+    ),
+    update_message(Screen, MessageUpdate, !IO).
+
+%-----------------------------------------------------------------------------%
+
+:- pred prompt_open_url(screen::in, string::in, io::di, io::uo) is det.
+
+prompt_open_url(Screen, Url, !IO) :-
+    Initial = "xdg-open",
+    text_entry_initial(Screen, "Open URL with command: ", init_history,
+        Initial, complete_path, Return, !IO),
+    (
+        Return = yes(Command),
+        Command \= ""
+    ->
+        args_to_quoted_command([Command, Url], CommandString),
+        CallMessage = set_info("Calling " ++ Command ++ "..."),
+        update_message_immed(Screen, CallMessage, !IO),
+        io.call_system(CommandString, CallRes, !IO),
+        (
+            CallRes = ok(ExitStatus),
+            ( ExitStatus = 0 ->
+                MessageUpdate = clear_message
+            ;
+                string.format("%s returned with exit status %d",
+                    [s(Command), i(ExitStatus)], Msg),
+                MessageUpdate = set_warning(Msg)
+            )
+        ;
+            CallRes = error(Error),
+            Msg = "Error: " ++ io.error_message(Error),
+            MessageUpdate = set_warning(Msg)
+        )
+    ;
+        MessageUpdate = clear_message
     ),
     update_message(Screen, MessageUpdate, !IO).
 
