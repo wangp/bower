@@ -64,6 +64,7 @@
 :- type thread_line
     --->    thread_line(
                 tp_message      :: message,
+                tp_parent       :: maybe(message_id),
                 tp_clean_from   :: string,
                 tp_unread       :: pair(unread),
                 tp_replied      :: replied,
@@ -213,7 +214,7 @@ filter_unwanted_messages(!Message) :-
 
 setup_thread_pager(ThreadId, Nowish, Rows, Cols, Messages, SearchHistory,
         ThreadPagerInfo, NumThreadLines) :-
-    append_messages(Nowish, [], [], Messages, "", cord.init, ThreadCord),
+    append_messages(Nowish, [], [], no, Messages, "", cord.init, ThreadCord),
     ThreadLines = list(ThreadCord),
     Scrollable = scrollable.init_with_cursor(ThreadLines),
     NumThreadLines = get_num_lines(Scrollable),
@@ -264,25 +265,28 @@ compute_num_rows(Rows, Scrollable, NumThreadRows, NumPagerRows) :-
 max_thread_lines = 8.
 
 :- pred append_messages(tm::in, list(graphic)::in, list(graphic)::in,
-    list(message)::in, string::in,
+    maybe(message_id)::in, list(message)::in, string::in,
     cord(thread_line)::in, cord(thread_line)::out) is det.
 
-append_messages(_Nowish, _Above, _Below, [], _PrevSubject, !Cord).
-append_messages(Nowish, Above0, Below0, [Message | Messages], PrevSubject,
-        !Cord) :-
+append_messages(_Nowish, _Above, _Below, _MaybeParentId, [], _PrevSubject,
+        !Cord).
+append_messages(Nowish, Above0, Below0, MaybeParentId, [Message | Messages],
+        PrevSubject, !Cord) :-
     (
         Messages = [],
-        make_thread_line(Nowish, Message, Above0 ++ [ell], PrevSubject, Line),
+        make_thread_line(Nowish, Message, MaybeParentId, Above0 ++ [ell],
+            PrevSubject, Line),
         snoc(Line, !Cord),
         MessagesCord = cord.empty,
         Below1 = Below0
     ;
         Messages = [_ | _],
-        make_thread_line(Nowish, Message, Above0 ++ [tee], PrevSubject, Line),
+        make_thread_line(Nowish, Message, MaybeParentId, Above0 ++ [tee],
+            PrevSubject, Line),
         snoc(Line, !Cord),
         get_last_subject(Message, LastSubject),
-        append_messages(Nowish, Above0, Below0, Messages, LastSubject,
-            cord.init, MessagesCord),
+        append_messages(Nowish, Above0, Below0, MaybeParentId, Messages,
+            LastSubject, cord.init, MessagesCord),
         ( get_first(MessagesCord, FollowingLine) ->
             Below1 = FollowingLine ^ tp_graphics
         ;
@@ -294,9 +298,11 @@ append_messages(Nowish, Above0, Below0, [Message | Messages], PrevSubject,
     ;
         Above1 = Above0 ++ [blank]
     ),
+    MessageId = Message ^ m_id,
     Replies = Message ^ m_replies,
     Subject = Message ^ m_headers ^ h_subject,
-    append_messages(Nowish, Above1, Below1, Replies, Subject, !Cord),
+    append_messages(Nowish, Above1, Below1, yes(MessageId), Replies, Subject,
+        !Cord),
     !:Cord = !.Cord ++ MessagesCord.
 
 :- pred get_last_subject(message::in, string::out) is det.
@@ -315,10 +321,11 @@ not_blank_at_column(Graphics, Col) :-
     list.index0(Graphics, Col, Graphic),
     Graphic \= blank.
 
-:- pred make_thread_line(tm::in, message::in, list(graphic)::in, string::in,
-    thread_line::out) is det.
+:- pred make_thread_line(tm::in, message::in, maybe(message_id)::in,
+    list(graphic)::in, string::in, thread_line::out) is det.
 
-make_thread_line(Nowish, Message, Graphics, PrevSubject, Line) :-
+make_thread_line(Nowish, Message, MaybeParentId, Graphics, PrevSubject,
+        Line) :-
     Timestamp = Message ^ m_timestamp,
     Tags = Message ^ m_tags,
     From = clean_email_address(Message ^ m_headers ^ h_from),
@@ -331,7 +338,7 @@ make_thread_line(Nowish, Message, Graphics, PrevSubject, Line) :-
     ;
         MaybeSubject = yes(Subject)
     ),
-    Line0 = thread_line(Message, From, read - read, not_replied,
+    Line0 = thread_line(Message, MaybeParentId, From, read - read, not_replied,
         not_deleted - not_deleted, unflagged - unflagged,
         Graphics, RelDate, MaybeSubject),
     list.foldl(apply_tag, Tags, Line0, Line).
@@ -1309,8 +1316,8 @@ draw_sep(Cols, MaybeSepPanel, !IO) :-
     io::di, io::uo) is det.
 
 draw_thread_line(Panel, Line, IsCursor, !IO) :-
-    Line = thread_line(_Message, From, UnreadPair, Replied, DeletedPair,
-        FlaggedPair, Graphics, RelDate, MaybeSubject),
+    Line = thread_line(_Message, _ParentId, From, UnreadPair, Replied,
+        DeletedPair, FlaggedPair, Graphics, RelDate, MaybeSubject),
     UnreadPair = _ - Unread,
     DeletedPair = _ - Deleted,
     FlaggedPair = _ - Flagged,
