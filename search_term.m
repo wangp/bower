@@ -40,17 +40,8 @@ expand_word(Word0, Word, !IO) :-
         Word = "tag:flagged"
     ; Word0 = "~U" ->
         Word = "tag:unread"
-    ; Word0 = "~lw" ->
-        call_date("last week", Time, !IO),
-        Word = Time ++ ".."
-    ; Word0 = "~lm" ->
-        call_date("last month", Time, !IO),
-        Word = Time ++ ".."
-    ; Word0 = "~yesterday" ->
-        call_date("yesterday", Time, !IO),
-        Word = Time ++ ".."
-    ; Word0 = "~today" ->
-        call_date("today", Time, !IO),
+    ; date_macro(Word0, DateSpec) ->
+        call_date(DateSpec, Time, !IO),
         Word = Time ++ ".."
     ; string.remove_prefix("~d", Word0, Suffix) ->
         SplitWords = string.split_at_string("..", Suffix),
@@ -73,6 +64,20 @@ expand_word(Word0, Word, !IO) :-
     ;
         Word = Word0
     ).
+
+:- pred date_macro(string::in, string::out) is semidet.
+
+date_macro("~lw", "last week").
+date_macro("~1w", "last week").
+date_macro("~2w", "2 weeks ago").
+date_macro("~3w", "3 weeks ago").
+date_macro("~lm", "last month").
+date_macro("~1m", "last month").
+date_macro("~2m", "2 months ago").
+date_macro("~3m", "3 months ago").
+date_macro("~ly", "last year").
+date_macro("~yesterday", "yesterday").
+date_macro("~today", "today").
 
 :- pred should_apply_default_filter(list(string)::in) is semidet.
 

@@ -84,8 +84,11 @@ macros:
     ~F              tag:flagged
     ~U              tag:unread
     ~D              tag:deleted
-    ~lw             last week
-    ~lm             last month
+    ~lw, ~1w        last week
+    ~2w, ~3w        last two or three weeks
+    ~lm, ~1m        last month
+    ~2m, ~3m        last two or three months
+    ~ly             last year
     ~yesterday
     ~today
     ~dDATE..DATE    (no spaces)
