@@ -622,6 +622,11 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         MessageUpdate = clear_message,
         Action = continue
     ;
+        Key = char('p')
+    ->
+        goto_parent_message(MessageUpdate, !Info),
+        Action = continue
+    ;
         Key = char('S')
     ->
         skip_quoted_text(MessageUpdate, !Info),
@@ -787,6 +792,30 @@ goto_end(!Info) :-
     pager.goto_end(NumRows, PagerInfo0, PagerInfo),
     !Info ^ tp_pager := PagerInfo,
     sync_thread_to_pager(!Info).
+
+:- pred goto_parent_message(message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+goto_parent_message(MessageUpdate, !Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    NumThreadRows = !.Info ^ tp_num_thread_rows,
+    PagerInfo0 = !.Info ^ tp_pager,
+    ( get_cursor_line(Scrollable0, Cursor0, ThreadLine) ->
+        (
+            ThreadLine ^ tp_parent = yes(ParentId),
+            search_reverse(is_message(ParentId), Scrollable0, Cursor0, Cursor)
+        ->
+            set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
+            skip_to_message(ParentId, PagerInfo0, PagerInfo),
+            !Info ^ tp_scrollable := Scrollable,
+            !Info ^ tp_pager := PagerInfo,
+            MessageUpdate = clear_message
+        ;
+            MessageUpdate = set_warning("Message has no parent.")
+        )
+    ;
+        MessageUpdate = clear_message
+    ).
 
 :- pred skip_quoted_text(message_update::out,
     thread_pager_info::in, thread_pager_info::out) is det.

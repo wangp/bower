@@ -110,6 +110,7 @@ This view pages through an entire thread.  The keys are:
     b, space        previous, next page
     \, Enter        previous, next line
     [, ]            previous, next half page
+    p               go to parent message
     S               skip quoted text
     /, n            search, next
     =               refresh search results
