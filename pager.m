@@ -797,24 +797,37 @@ draw_pager_line(Panel, Line, IsCursor, !IO) :-
         my_addstr(Panel, Value, !IO)
     ;
         (
-            Line = text(Text, _),
+            Line = text(Text, MaybeUrl),
             Attr0 = normal
         ;
-            Line = quoted_text(QuoteLevel, Text, _),
+            Line = quoted_text(QuoteLevel, Text, MaybeUrl),
             Attr0 = quote_level_to_attr(QuoteLevel)
         ;
             Line = diff_text(DiffLine, Text),
+            MaybeUrl = no_url,
             Attr0 = diff_line_to_attr(DiffLine)
         ),
         (
             IsCursor = yes,
-            Attr = Attr0 + reverse
+            Attr1 = reverse
         ;
             IsCursor = no,
-            Attr = Attr0
+            Attr1 = normal
         ),
-        panel.attr_set(Panel, Attr, !IO),
-        my_addstr(Panel, Text, !IO)
+        (
+            MaybeUrl = no_url,
+            panel.attr_set(Panel, Attr0 + Attr1, !IO),
+            my_addstr(Panel, Text, !IO)
+        ;
+            MaybeUrl = url(UrlStart, UrlEnd),
+            End = string.length(Text),
+            panel.attr_set(Panel, Attr0 + Attr1, !IO),
+            my_addstr(Panel, string.between(Text, 0, UrlStart), !IO),
+            panel.attr_set(Panel, fg_bg(magenta, black) + Attr1, !IO),
+            my_addstr(Panel, string.between(Text, UrlStart, UrlEnd), !IO),
+            panel.attr_set(Panel, Attr0 + Attr1, !IO),
+            my_addstr(Panel, string.between(Text, UrlEnd, End), !IO)
+        )
     ;
         Line = attachment(Part),
         Part ^ pt_type = ContentType,
