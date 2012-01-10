@@ -441,7 +441,7 @@ restore_tag_deltas(DeltaMap, !ThreadLine) :-
 
 :- func maybe_changed(pair(T)) = maybe(T).
 
-maybe_changed(A - B) = ( A = B -> yes(B) ; no ).
+maybe_changed(A - B) = ( A = B -> no ; yes(B) ).
 
 %-----------------------------------------------------------------------------%
 
