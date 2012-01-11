@@ -687,7 +687,8 @@ maybe_poll(!Info, !IO) :-
         SearchTime = !.Info ^ i_search_time,
         time_to_int(SearchTime, SearchTimeInt),
         string_to_search_terms(Terms0, Terms1, !IO),
-        string.format("( %s ) %d..", [s(Terms1), i(SearchTimeInt)], Terms),
+        string.format("( %s ) %d.. AND NOT tag:sent",
+            [s(Terms1), i(SearchTimeInt)], Terms),
         run_notmuch_count(Terms, ResCount, !IO),
         (
             ResCount = ok(Count),
