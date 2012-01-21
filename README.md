@@ -119,6 +119,7 @@ This view pages through an entire thread.  The keys are:
     =               refresh search results
 
     N               toggle 'unread' tag on current message
+    ^R              remove 'unread' tag on preceding messages
     F               toggle 'flagged' tag on current message
     d               add 'deleted' tag on current message
     u               remove 'deleted' tag on current message

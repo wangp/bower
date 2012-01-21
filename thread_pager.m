@@ -639,8 +639,8 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ;
         Key = char('\x12\') % ^R
     ->
-        mark_all_read(!Info),
-        MessageUpdate = clear_message,
+        mark_preceding_read(!Info),
+        next_message(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('N')
@@ -886,6 +886,33 @@ set_current_line_read(!Info) :-
         set_line_read(Line0, Line),
         set_cursor_line(Line, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
+    ;
+        true
+    ).
+
+:- pred mark_preceding_read(thread_pager_info::in, thread_pager_info::out)
+    is det.
+
+mark_preceding_read(!Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    ( get_cursor(Scrollable0, Cursor) ->
+        mark_preceding_read_2(Cursor, Scrollable0, Scrollable),
+        !Info ^ tp_scrollable := Scrollable
+    ;
+        true
+    ).
+
+:- pred mark_preceding_read_2(int::in,
+    scrollable(thread_line)::in, scrollable(thread_line)::out) is det.
+
+mark_preceding_read_2(LineNum, !Scrollable) :-
+    (
+        get_line(!.Scrollable, LineNum, Line0),
+        Line0 ^ tp_unread = OrigUnread - unread
+    ->
+        Line = Line0 ^ tp_unread := OrigUnread - read,
+        set_line(LineNum, Line, !Scrollable),
+        mark_preceding_read_2(LineNum - 1, !Scrollable)
     ;
         true
     ).

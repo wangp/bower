@@ -30,6 +30,10 @@
 
 :- func get_num_lines(scrollable(T)) = int.
 
+:- pred get_line(scrollable(T)::in, int::in, T::out) is semidet.
+
+:- pred set_line(int::in, T::in, scrollable(T)::in, scrollable(T)::out) is det.
+
 :- func get_top(scrollable(T)) = int.
 
 :- pred set_top(int::in, scrollable(T)::in, scrollable(T)::out) is det.
@@ -119,6 +123,22 @@ get_lines(Scrollable) = Scrollable ^ s_lines.
 get_lines_list(Scrollable) = version_array.to_list(get_lines(Scrollable)).
 
 get_num_lines(Scrollable) = size(Scrollable ^ s_lines).
+
+get_line(Scrollable, LineNum, Line) :-
+    Lines = Scrollable ^ s_lines,
+    (
+        LineNum >= 0,
+        LineNum < size(Lines)
+    ->
+        Line = version_array.lookup(Lines, LineNum)
+    ;
+        fail
+    ).
+
+set_line(LineNum, Line, !Scrollable) :-
+    Lines0 = !.Scrollable ^ s_lines,
+    version_array.set(LineNum, Line, Lines0, Lines),
+    !Scrollable ^ s_lines := Lines.
 
 get_top(Scrollable) = Scrollable ^ s_top.
 
