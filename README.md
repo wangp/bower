@@ -92,13 +92,14 @@ macros:
     ~yesterday
     ~today
     ~dDATE..DATE    (no spaces)
-    ~dDATE
     ~dDATE..
     ~d..DATE
 
 Date strings are passed to the date(1) utility so you can write any date that
 it understands, e.g. "~d2011-06-01..", as long as it doesn't require spaces.
 This is an interim solution until notmuch gains a date parser.
+
+You can add your own search term expansions; see below.
 
 bower will call notmuch count every minute to check for new results.
 This is pretty crude.
@@ -137,6 +138,19 @@ This view pages through an entire thread.  The keys are:
     I               return to index, removing 'unread' tag on all messages
 
 Tag updates are only applied when returning to the index.
+
+
+Search term aliases
+-------------------
+
+Bower will try to expand search terms written with the syntax `~WORD`.
+The expansions should be added to the notmuch config file `~/.notmuch-config`
+in a section called `[search_alias]`.  Expansions may make use of other
+(non-recursive) expansions, e.g.
+
+    [search_alias]
+    bower = to:notmuch AND bower
+    bower_recent = ~lm ~bower
 
 
 Simple addressbook

@@ -14,16 +14,19 @@
 :- implementation.
 
 :- import_module list.
+:- import_module set.
 :- import_module string.
 
+:- import_module callout.
 :- import_module popen.
 :- import_module quote_arg.
 
 %-----------------------------------------------------------------------------%
 
 string_to_search_terms(String, Terms, !IO) :-
+    Seen = set.init,
     Words0 = string.words(String),
-    list.map_foldl(expand_word, Words0, Words1, !IO),
+    expand_words(Seen, Words0, Words1, !IO),
     ( should_apply_default_filter(Words1) ->
         add_default_filters(Words1, Words2)
     ;
@@ -31,38 +34,66 @@ string_to_search_terms(String, Terms, !IO) :-
     ),
     Terms = string.join_list(" ", Words2).
 
-:- pred expand_word(string::in, string::out, io::di, io::uo) is det.
+:- pred expand_words(set(string)::in, list(string)::in, list(string)::out,
+    io::di, io::uo) is det.
 
-expand_word(Word0, Word, !IO) :-
+expand_words(Seen, Words0, Words, !IO) :-
+    list.map_foldl(expand_word(Seen), Words0, Words1, !IO),
+    list.condense(Words1, Words).
+
+:- pred expand_word(set(string)::in, string::in, list(string)::out,
+    io::di, io::uo) is det.
+
+expand_word(Seen, Word0, Words, !IO) :-
+    expand_fixed_alias(Word0, Words1, !IO),
+    (
+        Words1 = [_ | _],
+        Words = Words1
+    ;
+        Words1 = [],
+        expand_config_alias(Seen, Word0, Words2, !IO),
+        (
+            Words2 = [_ | _],
+            Words = Words2
+        ;
+            Words2 = [],
+            Words = [Word0]
+        )
+    ).
+
+:- pred expand_fixed_alias(string::in, list(string)::out, io::di, io::uo)
+    is det.
+
+expand_fixed_alias(Word0, Words, !IO) :-
     ( Word0 = "~D" ->
-        Word = "tag:deleted"
+        Words = ["tag:deleted"]
     ; Word0 = "~F" ->
-        Word = "tag:flagged"
+        Words = ["tag:flagged"]
     ; Word0 = "~U" ->
-        Word = "tag:unread"
+        Words = ["tag:unread"]
     ; date_macro(Word0, DateSpec) ->
         call_date(DateSpec, Time, !IO),
-        Word = Time ++ ".."
-    ; string.remove_prefix("~d", Word0, Suffix) ->
+        Words = [Time ++ ".."]
+    ;
+        string.remove_prefix("~d", Word0, Suffix),
         SplitWords = string.split_at_string("..", Suffix),
-        ( SplitWords = [Word1] ->
-            call_date(Word1, Time, !IO),
-            Word = Time ++ ".."
-        ; SplitWords = ["", Word2] ->
+        SplitWords \= [_]
+    ->
+        ( SplitWords = ["", Word2] ->
             call_date(Word2, Time2, !IO),
-            Word = ".." ++ Time2
+            Words = [".." ++ Time2]
         ; SplitWords = [Word1, ""] ->
             call_date(Word1, Time1, !IO),
-            Word = Time1 ++ ".."
+            Words = [Time1 ++ ".."]
         ; SplitWords = [Word1, Word2] ->
             call_date(Word1, Time1, !IO),
             call_date(Word2, Time2, !IO),
-            Word = Time1 ++ ".." ++ Time2
+            Words = [Time1 ++ ".." ++ Time2]
         ;
-            Word = Word0
+            Words = [] % fail
         )
     ;
-        Word = Word0
+        Words = [] % fail
     ).
 
 :- pred date_macro(string::in, string::out) is semidet.
@@ -78,6 +109,29 @@ date_macro("~3m", "3 months ago").
 date_macro("~ly", "last year").
 date_macro("~yesterday", "yesterday").
 date_macro("~today", "today").
+
+:- pred expand_config_alias(set(string)::in, string::in, list(string)::out,
+    io::di, io::uo) is det.
+
+expand_config_alias(Seen0, Word0, Words, !IO) :-
+    (
+        string.remove_prefix("~", Word0, Key),
+        not set.contains(Seen0, Key)
+    ->
+        get_notmuch_config("search_alias", Key, Res, !IO),
+        (
+            Res = ok(Expansion),
+            set.insert(Key, Seen0, Seen),
+            ExpansionWords = ["("] ++ string.words(Expansion) ++ [")"],
+            list.map_foldl(expand_word(Seen), ExpansionWords, Wordss, !IO),
+            list.condense(Wordss, Words)
+        ;
+            Res = error(_),
+            Words = [] % fail
+        )
+    ;
+        Words = [] % fail
+    ).
 
 :- pred should_apply_default_filter(list(string)::in) is semidet.
 

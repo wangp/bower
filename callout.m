@@ -15,6 +15,9 @@
 :- pred get_notmuch_config(string::in, io.res(string)::out, io::di, io::uo)
     is det.
 
+:- pred get_notmuch_config(string::in, string::in, io.res(string)::out,
+    io::di, io::uo) is det.
+
 :- pred run_notmuch_count(string::in, io.res(int)::out, io::di, io::uo)
     is det.
 
@@ -48,6 +51,7 @@
 
 get_notmuch_config(Key, Res, !IO) :-
     get_notmuch_prefix(Notmuch, !IO),
+    % Key is assumed to be quoted already.
     popen(Notmuch ++ "config get " ++ Key ++ " 2>/dev/null", Res0, !IO),
     (
         Res0 = ok(Value0),
@@ -57,6 +61,9 @@ get_notmuch_config(Key, Res, !IO) :-
         Res0 = error(_),
         Res = Res0
     ).
+
+get_notmuch_config(Section, Key, Res, !IO) :-
+    get_notmuch_config(quote_arg(Section ++ "." ++ Key), Res, !IO).
 
 %-----------------------------------------------------------------------------%
 
