@@ -76,6 +76,11 @@ The keys are:
     Enter           open thread
     m               compose new message
     R               recall postponed message
+    /               search for string within results
+    n               skip to next search result
+    N               toggle unread tag on current thread
+    d               set deleted tag on current thread
+    u               unset deleted tag on current thread
     q               quit
 
 The `l` command slightly extends the notmuch search term syntax with these
