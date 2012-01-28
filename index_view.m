@@ -107,6 +107,8 @@
     ;       prompt_search
     ;       skip_to_search
     ;       toggle_unread
+    ;       set_deleted
+    ;       unset_deleted
     ;       quit.
 
 :- type action
@@ -119,6 +121,8 @@
     ;       start_recall
     ;       prompt_search
     ;       toggle_unread
+    ;       set_deleted
+    ;       unset_deleted
     ;       quit.
 
 :- instance scrollable.line(index_line) where [
@@ -302,6 +306,14 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         modify_tag_cursor_line(toggle_unread, Screen, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
+        Action = set_deleted,
+        modify_tag_cursor_line(set_deleted, Screen, !IndexInfo, !IO),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
+        Action = unset_deleted,
+        modify_tag_cursor_line(unset_deleted, Screen, !IndexInfo, !IO),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
         Action = quit
     ).
 
@@ -379,6 +391,14 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = toggle_unread
         ;
+            Binding = set_deleted,
+            MessageUpdate = no_change,
+            Action = set_deleted
+        ;
+            Binding = unset_deleted,
+            MessageUpdate = no_change,
+            Action = unset_deleted
+        ;
             Binding = quit,
             MessageUpdate = no_change,
             Action = quit
@@ -429,6 +449,8 @@ key_binding_char('R', start_recall).
 key_binding_char('/', prompt_search).
 key_binding_char('n', skip_to_search).
 key_binding_char('N', toggle_unread).
+key_binding_char('d', set_deleted).
+key_binding_char('u', unset_deleted).
 key_binding_char('q', quit).
 
 :- pred move_cursor(screen::in, int::in, message_update::out,
@@ -601,6 +623,18 @@ toggle_unread(Line0, Line, TagDelta) :-
         Unread = unread
     ),
     Line = Line0 ^ i_unread := Unread.
+
+:- pred set_deleted(index_line::in, index_line::out, tag_delta::out) is det.
+
+set_deleted(Line0, Line, TagDelta) :-
+    Line = Line0 ^ i_deleted := deleted,
+    TagDelta = "+deleted".
+
+:- pred unset_deleted(index_line::in, index_line::out, tag_delta::out) is det.
+
+unset_deleted(Line0, Line, TagDelta) :-
+    Line = Line0 ^ i_deleted := not_deleted,
+    TagDelta = "-deleted".
 
 %-----------------------------------------------------------------------------%
 
