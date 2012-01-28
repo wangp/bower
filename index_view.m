@@ -299,7 +299,7 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = toggle_unread,
-        toggle_unread(Screen, !IndexInfo, !IO),
+        modify_tag_cursor_line(toggle_unread, Screen, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = quit
@@ -562,27 +562,19 @@ line_matches_search(Search, Line) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred toggle_unread(screen::in, index_info::in, index_info::out,
+:- pred modify_tag_cursor_line(
+    pred(index_line, index_line, tag_delta)::in(pred(in, out, out) is det),
+    screen::in, index_info::in, index_info::out,
     io::di, io::uo) is det.
 
-toggle_unread(Screen, !Info, !IO) :-
+modify_tag_cursor_line(ModifyPred, Screen, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
         ThreadId = CursorLine0 ^ i_id,
-        Unread0 = CursorLine0 ^ i_unread,
-        (
-            Unread0 = unread,
-            TagDelta = "-unread",
-            Unread = read
-        ;
-            Unread0 = read,
-            TagDelta = "+unread",
-            Unread = unread
-        ),
+        ModifyPred(CursorLine0, CursorLine, TagDelta),
         tag_thread([TagDelta], ThreadId, Res, !IO),
         (
             Res = ok,
-            CursorLine = CursorLine0 ^ i_unread := Unread,
             set_cursor_line(CursorLine, Scrollable0, Scrollable),
             !Info ^ i_scrollable := Scrollable,
             move_cursor(Screen, 1, _MessageUpdate, !Info)
@@ -594,6 +586,21 @@ toggle_unread(Screen, !Info, !IO) :-
     ;
         update_message(Screen, set_warning("No thread."), !IO)
     ).
+
+:- pred toggle_unread(index_line::in, index_line::out, tag_delta::out) is det.
+
+toggle_unread(Line0, Line, TagDelta) :-
+    Unread0 = Line0 ^ i_unread,
+    (
+        Unread0 = unread,
+        TagDelta = "-unread",
+        Unread = read
+    ;
+        Unread0 = read,
+        TagDelta = "+unread",
+        Unread = unread
+    ),
+    Line = Line0 ^ i_unread := Unread.
 
 %-----------------------------------------------------------------------------%
 
