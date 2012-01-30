@@ -18,7 +18,7 @@ require some work to work on other systems.
 
 At compile time:
 
-* Mercury compiler (11.07 beta or release-of-the-day)
+* Mercury compiler (11.07 or release-of-the-day)
 
 At run time:
 
