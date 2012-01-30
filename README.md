@@ -7,7 +7,7 @@ I wrote it for me, but you might like it, too.
 bower is written in [Mercury].
 
 [Notmuch]: http://notmuchmail.org/
-[Mercury]: http://www.cs.mu.oz.au/research/mercury/
+[Mercury]: http://www.mercury.csse.unimelb.edu.au/
 
 
 Requirements
