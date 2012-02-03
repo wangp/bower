@@ -37,6 +37,7 @@
 :- import_module scrollable.
 :- import_module search_term.
 :- import_module string_util.
+:- import_module tags.
 :- import_module text_entry.
 :- import_module thread_pager.
 :- import_module time_util.
@@ -67,6 +68,7 @@
                 i_date      :: string,
                 i_authors   :: string,
                 i_subject   :: string,
+                i_tags      :: list(string),
                 i_matched   :: int,
                 i_total     :: int
             ).
@@ -200,7 +202,7 @@ thread_to_index_line(Nowish, Thread, Line) :-
     Shorter = yes,
     make_reldate(Nowish, TM, Shorter, Date),
     Line0 = index_line(Id, old, read, not_replied, not_deleted, unflagged,
-        Date, Authors, Subject, Matched, Total),
+        Date, Authors, Subject, Tags, Matched, Total),
     list.foldl(apply_tag, Tags, Line0, Line).
 
 :- pred apply_tag(string::in, index_line::in, index_line::out) is det.
@@ -575,7 +577,7 @@ skip_to_search(Screen, MessageUpdate, !Info) :-
 
 line_matches_search(Search, Line) :-
     Line = index_line(_Id, _New, _Unread, _Replied, _Flagged, _Deleted, _Date,
-        Authors, Subject, _Matched, _Total),
+        Authors, Subject, _Tags, _Matched, _Total),
     (
         strcase_str(Authors, Search)
     ;
@@ -776,7 +778,7 @@ draw_index_view(Screen, Info, !IO) :-
 
 draw_index_line(Panel, Line, IsCursor, !IO) :-
     Line = index_line(_Id, _New, Unread, Replied, Deleted, Flagged,
-        Date, Authors, Subject, Matched, Total),
+        Date, Authors, Subject, Tags, Matched, Total),
     (
         IsCursor = yes,
         panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
@@ -827,7 +829,19 @@ draw_index_line(Panel, Line, IsCursor, !IO) :-
     ),
     my_addstr(Panel, CountStr, !IO),
     cond_attr_set(Panel, normal, IsCursor, !IO),
-    my_addstr(Panel, Subject, !IO).
+    my_addstr(Panel, Subject, !IO),
+    attr_set(Panel, fg_bg(red, black) + bold, !IO),
+    list.foldl(draw_nonstandard_tag(Panel), Tags, !IO).
+
+:- pred draw_nonstandard_tag(panel::in, string::in, io::di, io::uo) is det.
+
+draw_nonstandard_tag(Panel, Tag, !IO) :-
+    ( standard_tag(Tag) ->
+        true
+    ;
+        my_addstr(Panel, " ", !IO),
+        my_addstr(Panel, Tag, !IO)
+    ).
 
 :- pred draw_index_bar(screen::in, index_info::in, io::di, io::uo) is det.
 
