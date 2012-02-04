@@ -58,6 +58,7 @@
                 tp_num_pager_rows   :: int,
                 tp_search           :: maybe(string),
                 tp_search_history   :: history,
+                tp_tag_history      :: history,
                 tp_need_refresh_index :: bool
             ).
 
@@ -109,6 +110,7 @@
     --->    continue
     ;       resize
     ;       start_reply(message, reply_kind)
+    ;       prompt_tag(string)
     ;       prompt_save_part(part)
     ;       prompt_open_part(part)
     ;       prompt_open_url(string)
@@ -140,7 +142,7 @@ open_thread_pager(Screen, ThreadId, NeedRefreshIndex,
 
 reopen_thread_pager(Screen, Info0, Info, !IO) :-
     Info0 = thread_pager_info(ThreadId0, Scrollable0, _NumThreadRows, Pager0,
-        _NumPagerRows, Search, SearchHistory, NeedRefreshIndex),
+        _NumPagerRows, Search, SearchHistory, TagHistory, NeedRefreshIndex),
 
     % We recreate the entire pager.  This may seem a bit inefficient but it is
     % much simpler and the time it takes to run the notmuch show command vastly
@@ -148,7 +150,8 @@ reopen_thread_pager(Screen, Info0, Info, !IO) :-
     create_thread_pager(Screen, ThreadId0, Info1, Count, !IO),
 
     Info1 = thread_pager_info(ThreadId, Scrollable1, NumThreadRows, Pager1,
-        NumPagerRows, _Search1, _SearchHistory1, _NeedRefreshIndex),
+        NumPagerRows, _Search1, _SearchHistory1, _TagHistory1,
+        _NeedRefreshIndex),
 
     % Reapply tag changes from previous state.
     ThreadLines0 = get_lines_list(Scrollable0),
@@ -172,7 +175,7 @@ reopen_thread_pager(Screen, Info0, Info, !IO) :-
     ),
 
     Info2 = thread_pager_info(ThreadId, Scrollable, NumThreadRows, Pager,
-        NumPagerRows, Search, SearchHistory, NeedRefreshIndex),
+        NumPagerRows, Search, SearchHistory, TagHistory, NeedRefreshIndex),
     sync_thread_to_pager(Info2, Info),
 
     string.format("Showing %d messages.", [i(Count)], Msg),
@@ -197,8 +200,9 @@ create_thread_pager(Screen, ThreadId, Info, Count, !IO) :-
     Nowish = localtime(Time),
     get_rows_cols(Screen, Rows, Cols),
     SearchHistory = init_history,
+    TagHistory = init_history,
     setup_thread_pager(ThreadId, Nowish, Rows - 2, Cols, Messages,
-        SearchHistory, Info, Count).
+        SearchHistory, TagHistory, Info, Count).
 
 :- pred filter_unwanted_messages(message::in, message::out) is semidet.
 
@@ -211,10 +215,11 @@ filter_unwanted_messages(!Message) :-
     !Message ^ m_replies := Replies.
 
 :- pred setup_thread_pager(thread_id::in, tm::in, int::in, int::in,
-    list(message)::in, history::in, thread_pager_info::out, int::out) is det.
+    list(message)::in, history::in, history::in, thread_pager_info::out,
+    int::out) is det.
 
 setup_thread_pager(ThreadId, Nowish, Rows, Cols, Messages, SearchHistory,
-        ThreadPagerInfo, NumThreadLines) :-
+        TagHistory, ThreadPagerInfo, NumThreadLines) :-
     append_messages(Nowish, [], [], no, Messages, "", cord.init, ThreadCord),
     ThreadLines = list(ThreadCord),
     Scrollable = scrollable.init_with_cursor(ThreadLines),
@@ -223,7 +228,7 @@ setup_thread_pager(ThreadId, Nowish, Rows, Cols, Messages, SearchHistory,
 
     compute_num_rows(Rows, Scrollable, NumThreadRows, NumPagerRows),
     ThreadPagerInfo1 = thread_pager_info(ThreadId, Scrollable, NumThreadRows,
-        PagerInfo, NumPagerRows, no, SearchHistory, no),
+        PagerInfo, NumPagerRows, no, SearchHistory, TagHistory, no),
     (
         get_cursor_line(Scrollable, _, FirstLine),
         is_unread_line(FirstLine)
@@ -463,6 +468,10 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         reopen_thread_pager(Screen, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
+        Action = prompt_tag(Initial),
+        prompt_tag(Screen, Initial, !Info, !IO),
+        thread_pager_loop(Screen, !Info, !IO)
+    ;
         Action = prompt_save_part(Part),
         prompt_save_part(Screen, Part, !IO),
         thread_pager_loop(Screen, !Info, !IO)
@@ -647,6 +656,16 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         toggle_flagged(!Info),
         MessageUpdate = clear_message,
         Action = continue
+    ;
+        Key = char('+')
+    ->
+        Action = prompt_tag("+"),
+        MessageUpdate = clear_message
+    ;
+        Key = char('-')
+    ->
+        Action = prompt_tag("-"),
+        MessageUpdate = clear_message
     ;
         Key = char('v')
     ->
@@ -980,6 +999,53 @@ toggle_deleted(Deleted, !Info) :-
         Line = (Line0 ^ tp_curr_tags := TagSet) ^ tp_deleted := Deleted,
         set_cursor_line(Line, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
+    ;
+        true
+    ).
+
+:- pred prompt_tag(screen::in, string::in,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+
+prompt_tag(Screen, Initial, !Info, !IO) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    History0 = !.Info ^ tp_tag_history,
+    ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
+        FirstTime = no,
+        text_entry_full(Screen, "Change tags: ", History0, Initial,
+            complete_none, FirstTime, Return, !IO),
+        (
+            Return = yes(String),
+            (
+                TagDeltas = string.words(String),
+                TagDeltas = [_ | _]
+            ->
+                add_history_nodup(String, History0, History),
+                !Info ^ tp_tag_history := History,
+                ( divide_tag_deltas(TagDeltas, AddTags, RemoveTags) ->
+                    CursorLine0 = thread_line(Message, ParentId, From,
+                        PrevTags, CurrTags0, _Unread, _Replied, _Deleted,
+                        _Flagged, Graphics, RelDate, MaybeSubject),
+                    % Notmuch performs tag removals before addition.
+                    set.difference(CurrTags0, RemoveTags, CurrTags1),
+                    set.union(CurrTags1, AddTags, CurrTags),
+                    get_cached_tags(CurrTags, Unread, Replied, Deleted,
+                        Flagged),
+                    CursorLine = thread_line(Message, ParentId, From,
+                        PrevTags, CurrTags, Unread, Replied, Deleted, Flagged,
+                        Graphics, RelDate, MaybeSubject),
+                    set_cursor_line(CursorLine, Scrollable0, Scrollable),
+                    !Info ^ tp_scrollable := Scrollable
+                ;
+                    update_message(Screen,
+                        set_warning("Tags must be of the form +tag or -tag."),
+                        !IO)
+                )
+            ;
+                true
+            )
+        ;
+            Return = no
+        )
     ;
         true
     ).

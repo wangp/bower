@@ -130,6 +130,7 @@ This view pages through an entire thread.  The keys are:
     F               toggle 'flagged' tag on current message
     d               add 'deleted' tag on current message
     u               remove 'deleted' tag on current message
+    +, -            add/remove arbitrary tags
 
     r               reply to sender
     g               reply to group
