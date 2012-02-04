@@ -27,7 +27,6 @@
 :- import_module list.
 :- import_module map.
 :- import_module maybe.
-:- import_module pair.
 :- import_module require.
 :- import_module set.
 :- import_module string.
@@ -67,10 +66,12 @@
                 tp_message      :: message,
                 tp_parent       :: maybe(message_id),
                 tp_clean_from   :: string,
-                tp_unread       :: pair(unread),
-                tp_replied      :: replied,
-                tp_deleted      :: pair(deleted),
-                tp_flagged      :: pair(flagged),
+                tp_prev_tags    :: set(string),
+                tp_curr_tags    :: set(string),
+                tp_unread       :: unread,          % cached from tp_curr_tags
+                tp_replied      :: replied,         % cached from tp_curr_tags
+                tp_deleted      :: deleted,         % cached from tp_curr_tags
+                tp_flagged      :: flagged,         % cached from tp_curr_tags
                 tp_graphics     :: list(graphic),
                 tp_reldate      :: string,
                 tp_subject      :: maybe(string)
@@ -100,9 +101,8 @@
 
 :- type message_tag_deltas
     --->    message_tag_deltas(
-                maybe(unread),
-                maybe(deleted),
-                maybe(flagged)
+                mtd_add_tags    :: set(string),
+                mtd_remove_tags :: set(string)
             ).
 
 :- type thread_pager_action
@@ -330,6 +330,8 @@ make_thread_line(Nowish, Message, MaybeParentId, Graphics, PrevSubject,
     Timestamp = Message ^ m_timestamp,
     Tags = Message ^ m_tags,
     From = clean_email_address(Message ^ m_headers ^ h_from),
+    TagSet = set.from_list(Tags),
+    get_cached_tags(TagSet, Unread, Replied, Deleted, Flagged),
     Subject = Message ^ m_headers ^ h_subject,
     timestamp_to_tm(Timestamp, TM),
     Shorter = no,
@@ -339,10 +341,8 @@ make_thread_line(Nowish, Message, MaybeParentId, Graphics, PrevSubject,
     ;
         MaybeSubject = yes(Subject)
     ),
-    Line0 = thread_line(Message, MaybeParentId, From, read - read, not_replied,
-        not_deleted - not_deleted, unflagged - unflagged,
-        Graphics, RelDate, MaybeSubject),
-    list.foldl(apply_tag, Tags, Line0, Line).
+    Line = thread_line(Message, MaybeParentId, From, TagSet, TagSet,
+        Unread, Replied, Deleted, Flagged, Graphics, RelDate, MaybeSubject).
 
 :- func clean_email_address(string) = string.
 
@@ -356,20 +356,14 @@ clean_email_address(Orig) = Clean :-
         Clean = Orig
     ).
 
-:- pred apply_tag(string::in, thread_line::in, thread_line::out) is det.
+:- pred get_cached_tags(set(string)::in,
+    unread::out, replied::out, deleted::out, flagged::out) is det.
 
-apply_tag(Tag, !Line) :-
-    ( Tag = "unread" ->
-        !Line ^ tp_unread := unread - unread
-    ; Tag = "replied" ->
-        !Line ^ tp_replied := replied
-    ; Tag = "deleted" ->
-        !Line ^ tp_deleted := deleted - deleted
-    ; Tag = "flagged" ->
-        !Line ^ tp_flagged := flagged - flagged
-    ;
-        true
-    ).
+get_cached_tags(Tags, Unread, Replied, Deleted, Flagged) :-
+    Unread = ( set.contains(Tags, "unread") -> unread ; read ),
+    Replied = ( set.contains(Tags, "replied") -> replied ; not_replied ),
+    Deleted = ( set.contains(Tags, "deleted") -> deleted ; not_deleted ),
+    Flagged = ( set.contains(Tags, "flagged") -> flagged ; unflagged ).
 
 :- func canonicalise_subject(string) = list(string).
 
@@ -396,53 +390,39 @@ is_reply_marker("SV:").
 
 create_tag_delta_map(ThreadLine, !DeltaMap) :-
     MessageId = ThreadLine ^ tp_message ^ m_id,
-    ThreadLine ^ tp_unread = Unread,
-    ThreadLine ^ tp_deleted = Deleted,
-    ThreadLine ^ tp_flagged = Flagged,
-    Deltas = message_tag_deltas(maybe_changed(Unread), maybe_changed(Deleted),
-        maybe_changed(Flagged)),
-    ( Deltas = message_tag_deltas(no, no, no) ->
+    PrevTags = ThreadLine ^ tp_prev_tags,
+    CurrTags = ThreadLine ^ tp_curr_tags,
+    set.difference(CurrTags, PrevTags, AddTags),
+    set.difference(PrevTags, CurrTags, RemoveTags),
+    (
+        set.is_empty(AddTags),
+        set.is_empty(RemoveTags)
+    ->
         true
     ;
+        Deltas = message_tag_deltas(AddTags, RemoveTags),
         map.det_insert(MessageId, Deltas, !DeltaMap)
     ).
 
 :- pred restore_tag_deltas(map(message_id, message_tag_deltas)::in,
     thread_line::in, thread_line::out) is det.
 
-restore_tag_deltas(DeltaMap, !ThreadLine) :-
-    Message = !.ThreadLine ^ tp_message,
+restore_tag_deltas(DeltaMap, ThreadLine0, ThreadLine) :-
+    ThreadLine0 = thread_line(Message, ParentId, From, PrevTags, CurrTags0,
+        _Unread, _Replied, _Deleted, _Flagged, Graphics, RelDate,
+        MaybeSubject),
     MessageId = Message ^ m_id,
     ( map.search(DeltaMap, MessageId, Deltas) ->
-        Deltas = message_tag_deltas(UnreadDelta, DeletedDelta, FlaggedDelta),
-        (
-            UnreadDelta = yes(UnreadB),
-            !.ThreadLine ^ tp_unread = UnreadA - _,
-            !ThreadLine ^ tp_unread := UnreadA - UnreadB
-        ;
-            UnreadDelta = no
-        ),
-        (
-            DeletedDelta = yes(DeletedB),
-            !.ThreadLine ^ tp_deleted = DeletedA - _,
-            !ThreadLine ^ tp_deleted := DeletedA - DeletedB
-        ;
-            DeletedDelta = no
-        ),
-        (
-            FlaggedDelta = yes(FlaggedB),
-            !.ThreadLine ^ tp_flagged = FlaggedA - _,
-            !ThreadLine ^ tp_flagged := FlaggedA - FlaggedB
-        ;
-            FlaggedDelta = no
-        )
+        Deltas = message_tag_deltas(AddTags, RemoveTags),
+        set.difference(CurrTags0, RemoveTags, CurrTags1),
+        set.union(CurrTags1, AddTags, CurrTags),
+        get_cached_tags(CurrTags, Unread, Replied, Deleted, Flagged),
+        ThreadLine = thread_line(Message, ParentId, From, PrevTags, CurrTags,
+            Unread, Replied, Deleted, Flagged, Graphics, RelDate,
+            MaybeSubject)
     ;
-        true
+        ThreadLine = ThreadLine0
     ).
-
-:- func maybe_changed(pair(T)) = maybe(T).
-
-maybe_changed(A - B) = ( A = B -> no ; yes(B) ).
 
 %-----------------------------------------------------------------------------%
 
@@ -876,7 +856,7 @@ is_message(MessageId, Line) :-
 :- pred is_unread_line(thread_line::in) is semidet.
 
 is_unread_line(Line) :-
-    Line ^ tp_unread = _ - unread.
+    Line ^ tp_unread = unread.
 
 :- pred set_current_line_read(thread_pager_info::in, thread_pager_info::out)
     is det.
@@ -909,9 +889,9 @@ mark_preceding_read(!Info) :-
 mark_preceding_read_2(LineNum, !Scrollable) :-
     (
         get_line(!.Scrollable, LineNum, Line0),
-        Line0 ^ tp_unread = OrigUnread - unread
+        is_unread_line(Line0)
     ->
-        Line = Line0 ^ tp_unread := OrigUnread - read,
+        set_line_read(Line0, Line),
         set_line(LineNum, Line, !Scrollable),
         mark_preceding_read_2(LineNum - 1, !Scrollable)
     ;
@@ -927,24 +907,33 @@ mark_all_read(!Info) :-
 
 :- pred set_line_read(thread_line::in, thread_line::out) is det.
 
-set_line_read(Line0, Line) :-
-    Line0 ^ tp_unread = OrigUnread - _,
-    Line = Line0 ^ tp_unread := OrigUnread - read.
+set_line_read(!Line) :-
+    Tags0 = !.Line ^ tp_curr_tags,
+    set.delete("unread", Tags0, Tags),
+    !Line ^ tp_curr_tags := Tags,
+    !Line ^ tp_unread := read.
+
+:- pred set_line_unread(thread_line::in, thread_line::out) is det.
+
+set_line_unread(!Line) :-
+    Tags0 = !.Line ^ tp_curr_tags,
+    set.insert("unread", Tags0, Tags),
+    !Line ^ tp_curr_tags := Tags,
+    !Line ^ tp_unread := unread.
 
 :- pred toggle_unread(thread_pager_info::in, thread_pager_info::out) is det.
 
 toggle_unread(!Info) :-
     Scrollable0 = !.Info ^ tp_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
-        Line0 ^ tp_unread = OrigUnread - Unread0,
+        Unread0 = Line0 ^ tp_unread,
         (
             Unread0 = unread,
-            Unread = read
+            set_line_read(Line0, Line)
         ;
             Unread0 = read,
-            Unread = unread
+            set_line_unread(Line0, Line)
         ),
-        Line = Line0 ^ tp_unread := OrigUnread - Unread,
         set_cursor_line(Line, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
     ;
@@ -956,15 +945,18 @@ toggle_unread(!Info) :-
 toggle_flagged(!Info) :-
     Scrollable0 = !.Info ^ tp_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
-        Line0 ^ tp_flagged = OrigFlag - Flag0,
+        TagSet0 = Line0 ^ tp_curr_tags,
+        Flagged0 = Line0 ^ tp_flagged,
         (
-            Flag0 = flagged,
-            Flag = unflagged
+            Flagged0 = flagged,
+            set.delete("flagged", TagSet0, TagSet),
+            Flagged = unflagged
         ;
-            Flag0 = unflagged,
-            Flag = flagged
+            Flagged0 = unflagged,
+            set.insert("flagged", TagSet0, TagSet),
+            Flagged = flagged
         ),
-        Line = Line0 ^ tp_flagged := OrigFlag - Flag,
+        Line = (Line0 ^ tp_curr_tags := TagSet) ^ tp_flagged := Flagged,
         set_cursor_line(Line, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
     ;
@@ -977,8 +969,15 @@ toggle_flagged(!Info) :-
 toggle_deleted(Deleted, !Info) :-
     Scrollable0 = !.Info ^ tp_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
-        Line0 ^ tp_deleted = OrigDeleted - _,
-        Line = Line0 ^ tp_deleted := OrigDeleted - Deleted,
+        TagSet0 = Line0 ^ tp_curr_tags,
+        (
+            Deleted = not_deleted,
+            set.delete("deleted", TagSet0, TagSet)
+        ;
+            Deleted = deleted,
+            set.insert("deleted", TagSet0, TagSet)
+        ),
+        Line = (Line0 ^ tp_curr_tags := TagSet) ^ tp_deleted := Deleted,
         set_cursor_line(Line, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
     ;
@@ -1274,59 +1273,14 @@ get_changed_status_messages_2(Line, !TagGroups) :-
 
 :- func get_tag_delta_set(thread_line) = set(tag_delta).
 
-get_tag_delta_set(Line) = TagSet :-
-    Line ^ tp_unread = Unread0 - Unread,
-    Line ^ tp_flagged = Flag0 - Flag,
-    Line ^ tp_deleted = Deleted0 - Deleted,
-    some [!TagSet] (
-        !:TagSet = set.init,
-        (
-            Unread = read,
-            Unread0 = unread,
-            set.insert("-unread", !TagSet)
-        ;
-            Unread = unread,
-            Unread0 = read,
-            set.insert("+unread", !TagSet)
-        ;
-            Unread = read,
-            Unread0 = read
-        ;
-            Unread = unread,
-            Unread0 = unread
-        ),
-        (
-            Flag = flagged,
-            Flag0 = unflagged,
-            set.insert("+flagged", !TagSet)
-        ;
-            Flag = unflagged,
-            Flag0 = flagged,
-            set.insert("-flagged", !TagSet)
-        ;
-            Flag = unflagged,
-            Flag0 = unflagged
-        ;
-            Flag = flagged,
-            Flag0 = flagged
-        ),
-        (
-            Deleted = deleted,
-            Deleted0 = not_deleted,
-            set.insert("+deleted", !TagSet)
-        ;
-            Deleted = not_deleted,
-            Deleted0 = deleted,
-            set.insert("-deleted", !TagSet)
-        ;
-            Deleted = not_deleted,
-            Deleted0 = not_deleted
-        ;
-            Deleted = deleted,
-            Deleted0 = deleted
-        ),
-        TagSet = !.TagSet
-    ).
+get_tag_delta_set(Line) = TagDeltaSet :-
+    PrevTags = Line ^ tp_prev_tags,
+    CurrTags = Line ^ tp_curr_tags,
+    set.difference(CurrTags, PrevTags, AddTags),
+    set.difference(PrevTags, CurrTags, RemoveTags),
+    set.map(string.append("+"), AddTags) = AddTagDeltas,
+    set.map(string.append("-"), RemoveTags) = RemoveTagDeltas,
+    set.union(AddTagDeltas, RemoveTagDeltas, TagDeltaSet).
 
 %-----------------------------------------------------------------------------%
 
@@ -1373,11 +1327,8 @@ draw_sep(Cols, MaybeSepPanel, !IO) :-
     io::di, io::uo) is det.
 
 draw_thread_line(Panel, Line, IsCursor, !IO) :-
-    Line = thread_line(Message, _ParentId, From, UnreadPair, Replied,
-        DeletedPair, FlaggedPair, Graphics, RelDate, MaybeSubject),
-    UnreadPair = _ - Unread,
-    DeletedPair = _ - Deleted,
-    FlaggedPair = _ - Flagged,
+    Line = thread_line(_Message, _ParentId, From, _PrevTags, CurrTags,
+        Unread, Replied, Deleted, Flagged, Graphics, RelDate, MaybeSubject),
     (
         IsCursor = yes,
         panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
@@ -1435,9 +1386,8 @@ draw_thread_line(Panel, Line, IsCursor, !IO) :-
     ;
         MaybeSubject = no
     ),
-    Tags = Message ^ m_tags,
     attr_set(Panel, fg_bg(red, black) + bold, !IO),
-    list.foldl(draw_nonstandard_tag(Panel), Tags, !IO).
+    set.fold(draw_nonstandard_tag(Panel), CurrTags, !IO).
 
 :- pred draw_nonstandard_tag(panel::in, string::in, io::di, io::uo) is det.
 
