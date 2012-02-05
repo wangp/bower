@@ -10,7 +10,8 @@
     --->    common_history(
                 ch_limit_history    :: history,
                 ch_search_history   :: history,
-                ch_tag_history      :: history
+                ch_tag_history      :: history,
+                ch_prog_history     :: history
             ).
 
 %-----------------------------------------------------------------------------%

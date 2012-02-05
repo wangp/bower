@@ -447,7 +447,7 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = prompt_open_part(Part),
-        prompt_open_part(Screen, Part, MaybeNextKey, !IO),
+        prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO),
         (
             MaybeNextKey = yes(NextKey),
             thread_pager_loop_2(Screen, NextKey, !Info, !IO)
@@ -457,7 +457,7 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         )
     ;
         Action = prompt_open_url(Url),
-        prompt_open_url(Screen, Url, !IO),
+        prompt_open_url(Screen, Url, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = prompt_search,
@@ -1150,16 +1150,19 @@ open_part(Action, MessageUpdate, !Info) :-
     ).
 
 :- pred prompt_open_part(screen::in, part::in, maybe(keycode)::out,
-    io::di, io::uo) is det.
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
-prompt_open_part(Screen, Part, MaybeNextKey, !IO) :-
+prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
+    History0 = !.Info ^ tp_common_history ^ ch_prog_history,
     Initial = "xdg-open",
-    text_entry_initial(Screen, "Open with command: ", init_history, Initial,
+    text_entry_initial(Screen, "Open with command: ", History0, Initial,
         complete_path, Return, !IO),
     (
         Return = yes(Command),
         Command \= ""
     ->
+        add_history_nodup(Command, History0, History),
+        !Info ^ tp_common_history ^ ch_prog_history := History,
         io.make_temp(FileName, !IO),
         MessageId = Part ^ pt_msgid,
         PartId = Part ^ pt_part,
@@ -1207,16 +1210,20 @@ prompt_open_part(Screen, Part, MaybeNextKey, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred prompt_open_url(screen::in, string::in, io::di, io::uo) is det.
+:- pred prompt_open_url(screen::in, string::in,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
-prompt_open_url(Screen, Url, !IO) :-
+prompt_open_url(Screen, Url, !Info, !IO) :-
+    History0 = !.Info ^ tp_common_history ^ ch_prog_history,
     Initial = "xdg-open",
-    text_entry_initial(Screen, "Open URL with command: ", init_history,
+    text_entry_initial(Screen, "Open URL with command: ", History0,
         Initial, complete_path, Return, !IO),
     (
         Return = yes(Command),
         Command \= ""
     ->
+        add_history_nodup(Command, History0, History),
+        !Info ^ tp_common_history ^ ch_prog_history := History,
         args_to_quoted_command([Command, Url], CommandString),
         CallMessage = set_info("Calling " ++ Command ++ "..."),
         update_message_immed(Screen, CallMessage, !IO),
