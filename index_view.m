@@ -62,7 +62,6 @@
 :- type index_line
     --->    index_line(
                 i_id        :: thread_id,
-                i_new       :: new,
                 i_unread    :: unread,
                 i_replied   :: replied,
                 i_deleted   :: deleted,
@@ -206,7 +205,7 @@ thread_to_index_line(Nowish, Thread, Line) :-
     timestamp_to_tm(Timestamp, TM),
     Shorter = yes,
     make_reldate(Nowish, TM, Shorter, Date),
-    Line0 = index_line(Id, old, read, not_replied, not_deleted, unflagged,
+    Line0 = index_line(Id, read, not_replied, not_deleted, unflagged,
         Date, Authors, Subject, Tags, Matched, Total),
     apply_tags(Tags, Line0, Line).
 
@@ -218,9 +217,7 @@ apply_tags(Tags, !Line) :-
 :- pred apply_tag(string::in, index_line::in, index_line::out) is det.
 
 apply_tag(Tag, !Line) :-
-    ( Tag = "new" ->
-        !Line ^ i_new := new
-    ; Tag = "unread" ->
+    ( Tag = "unread" ->
         !Line ^ i_unread := unread
     ; Tag = "replied" ->
         !Line ^ i_replied := replied
@@ -596,7 +593,7 @@ skip_to_search(Screen, MessageUpdate, !Info) :-
 :- pred line_matches_search(string::in, index_line::in) is semidet.
 
 line_matches_search(Search, Line) :-
-    Line = index_line(_Id, _New, _Unread, _Replied, _Flagged, _Deleted, _Date,
+    Line = index_line(_Id, _Unread, _Replied, _Flagged, _Deleted, _Date,
         Authors, Subject, _Tags, _Matched, _Total),
     (
         strcase_str(Authors, Search)
@@ -715,9 +712,9 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
 :- pred update_standard_tags(index_line::in, index_line::out) is det.
 
 update_standard_tags(Line0, Line) :-
-    Line0 = index_line(Id, _old, _read, _not_replied, _not_deleted, _unflagged,
+    Line0 = index_line(Id, _read, _not_replied, _not_deleted, _unflagged,
         Date, Authors, Subject, Tags, Matched, Total),
-    Line1 = index_line(Id, old, read, not_replied, not_deleted, unflagged,
+    Line1 = index_line(Id, read, not_replied, not_deleted, unflagged,
         Date, Authors, Subject, Tags, Matched, Total),
     apply_tags(Tags, Line1, Line).
 
@@ -860,7 +857,7 @@ draw_index_view(Screen, Info, !IO) :-
     io::di, io::uo) is det.
 
 draw_index_line(Panel, Line, IsCursor, !IO) :-
-    Line = index_line(_Id, _New, Unread, Replied, Deleted, Flagged,
+    Line = index_line(_Id, Unread, Replied, Deleted, Flagged,
         Date, Authors, Subject, Tags, Matched, Total),
     (
         IsCursor = yes,
