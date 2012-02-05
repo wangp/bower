@@ -130,7 +130,7 @@ open_index(Screen, Terms, !IO) :-
     PollCount = 0,
     MaybeSearch = no,
     CommonHistory = common_history(LimitHistory, init_history, init_history,
-        init_history),
+        init_history, init_history),
     IndexInfo = index_info(Scrollable, Terms, SearchTime, PollTime,
         PollCount, MaybeSearch, CommonHistory, init_compose_history),
     index_loop(Screen, IndexInfo, !IO).

@@ -443,7 +443,7 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = prompt_save_part(Part),
-        prompt_save_part(Screen, Part, !IO),
+        prompt_save_part(Screen, Part, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = prompt_open_part(Part),
@@ -1057,10 +1057,10 @@ save_part(Action, MessageUpdate, !Info) :-
         MessageUpdate = set_warning("No message or attachment selected.")
     ).
 
-:- pred prompt_save_part(screen::in, part::in, io::di, io::uo)
-    is det.
+:- pred prompt_save_part(screen::in, part::in,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
-prompt_save_part(Screen, Part, !IO) :-
+prompt_save_part(Screen, Part, !Info, !IO) :-
     MessageId = Part ^ pt_msgid,
     PartId = Part ^ pt_part,
     MaybeInitial = Part ^ pt_filename,
@@ -1071,12 +1071,15 @@ prompt_save_part(Screen, Part, !IO) :-
         MessageId = message_id(IdStr),
         Initial = string.format("%s.part_%d", [s(IdStr), i(PartId)])
     ),
-    text_entry_initial(Screen, "Save to file: ", init_history, Initial,
+    History0 = !.Info ^ tp_common_history ^ ch_save_history,
+    text_entry_initial(Screen, "Save to file: ", History0, Initial,
         complete_path, Return, !IO),
     (
         Return = yes(FileName),
         FileName \= ""
     ->
+        add_history_nodup(FileName, History0, History),
+        !Info ^ tp_common_history ^ ch_save_history := History,
         FollowSymLinks = no,
         io.file_type(FollowSymLinks, FileName, ResType, !IO),
         (
