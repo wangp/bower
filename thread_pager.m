@@ -45,6 +45,7 @@
 :- import_module quote_arg.
 :- import_module scrollable.
 :- import_module string_util.
+:- import_module tags.
 :- import_module time_util.
 
 %-----------------------------------------------------------------------------%
@@ -1372,7 +1373,7 @@ draw_sep(Cols, MaybeSepPanel, !IO) :-
     io::di, io::uo) is det.
 
 draw_thread_line(Panel, Line, IsCursor, !IO) :-
-    Line = thread_line(_Message, _ParentId, From, UnreadPair, Replied,
+    Line = thread_line(Message, _ParentId, From, UnreadPair, Replied,
         DeletedPair, FlaggedPair, Graphics, RelDate, MaybeSubject),
     UnreadPair = _ - Unread,
     DeletedPair = _ - Deleted,
@@ -1433,6 +1434,19 @@ draw_thread_line(Panel, Line, IsCursor, !IO) :-
         my_addstr(Panel, Subject, !IO)
     ;
         MaybeSubject = no
+    ),
+    Tags = Message ^ m_tags,
+    attr_set(Panel, fg_bg(red, black) + bold, !IO),
+    list.foldl(draw_nonstandard_tag(Panel), Tags, !IO).
+
+:- pred draw_nonstandard_tag(panel::in, string::in, io::di, io::uo) is det.
+
+draw_nonstandard_tag(Panel, Tag, !IO) :-
+    ( standard_tag(Tag) ->
+        true
+    ;
+        my_addstr(Panel, " ", !IO),
+        my_addstr(Panel, Tag, !IO)
     ).
 
 :- pred draw_graphic(panel::in, graphic::in, io::di, io::uo) is det.
