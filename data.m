@@ -8,6 +8,7 @@
 :- import_module list.
 :- import_module map.
 :- import_module maybe.
+:- import_module set.
 
 %-----------------------------------------------------------------------------%
 
@@ -17,7 +18,7 @@
                 t_timestamp :: int,
                 t_authors   :: string,
                 t_subject   :: string,
-                t_tags      :: list(string),
+                t_tags      :: set(string),
                 t_matched   :: int,
                 t_total     :: int
             ).
@@ -30,7 +31,7 @@
                 m_id        :: message_id,
                 m_timestamp :: int,
                 m_headers   :: headers,
-                m_tags      :: list(string),
+                m_tags      :: set(string),
                 m_body      :: list(part),
                 m_replies   :: list(message)
             ).

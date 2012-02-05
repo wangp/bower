@@ -181,8 +181,7 @@ add_thread(Nowish, Thread, !Lines) :-
 :- pred thread_to_index_line(tm::in, thread::in, index_line::out) is det.
 
 thread_to_index_line(Nowish, Thread, Line) :-
-    Thread = thread(Id, Timestamp, Authors, Subject, TagsList, Matched, Total),
-    Tags = set.from_list(TagsList),
+    Thread = thread(Id, Timestamp, Authors, Subject, Tags, Matched, Total),
     timestamp_to_tm(Timestamp, TM),
     Shorter = yes,
     make_reldate(Nowish, TM, Shorter, Date),

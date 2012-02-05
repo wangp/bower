@@ -192,7 +192,7 @@ create_thread_pager(Screen, ThreadId, Info, Count, !IO) :-
 
 filter_unwanted_messages(!Message) :-
     Tags = !.Message ^ m_tags,
-    not list.contains(Tags, "draft"),
+    not set.contains(Tags, "draft"),
 
     Replies0 = !.Message ^ m_replies,
     list.filter_map(filter_unwanted_messages, Replies0, Replies),
@@ -319,8 +319,7 @@ make_thread_line(Nowish, Message, MaybeParentId, Graphics, PrevSubject,
     Timestamp = Message ^ m_timestamp,
     Tags = Message ^ m_tags,
     From = clean_email_address(Message ^ m_headers ^ h_from),
-    TagSet = set.from_list(Tags),
-    get_standard_tag_state(TagSet, Unread, Replied, Deleted, Flagged),
+    get_standard_tag_state(Tags, Unread, Replied, Deleted, Flagged),
     Subject = Message ^ m_headers ^ h_subject,
     timestamp_to_tm(Timestamp, TM),
     Shorter = no,
@@ -330,7 +329,7 @@ make_thread_line(Nowish, Message, MaybeParentId, Graphics, PrevSubject,
     ;
         MaybeSubject = yes(Subject)
     ),
-    Line = thread_line(Message, MaybeParentId, From, TagSet, TagSet,
+    Line = thread_line(Message, MaybeParentId, From, Tags, Tags,
         Unread, Replied, Deleted, Flagged, Graphics, RelDate, MaybeSubject).
 
 :- func clean_email_address(string) = string.

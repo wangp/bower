@@ -41,6 +41,7 @@
 :- import_module maybe.
 :- import_module parsing_utils.
 :- import_module require.
+:- import_module set.
 :- import_module string.
 
 :- import_module popen.
@@ -156,7 +157,8 @@ parse_message_details(JSON, Replies, Message) :-
         JSON/"body" = array(BodyList),
         list.map(parse_part(MessageId), BodyList, Body)
     ->
-        Message = message(MessageId, Timestamp, Headers, Tags, Body, Replies)
+        TagSet = set.from_list(Tags),
+        Message = message(MessageId, Timestamp, Headers, TagSet, Body, Replies)
     ;
         notmuch_json_error
     ).
@@ -237,7 +239,8 @@ parse_thread(Json, Thread) :-
         Json/"total" = int(Total),
         list.map(parse_tag, TagsList, Tags)
     ->
-        Thread = thread(thread_id(Id), Timestamp, Authors, Subject, Tags,
+        TagSet = set.from_list(Tags),
+        Thread = thread(thread_id(Id), Timestamp, Authors, Subject, TagSet,
             Matched, Total)
     ;
         notmuch_json_error
