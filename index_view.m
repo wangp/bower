@@ -594,11 +594,11 @@ toggle_unread(Line0, Line, TagDelta) :-
     Unread0 = Line0 ^ i_unread,
     (
         Unread0 = unread,
-        TagDelta = "-unread",
+        TagDelta = tag_delta("-unread"),
         Unread = read
     ;
         Unread0 = read,
-        TagDelta = "+unread",
+        TagDelta = tag_delta("+unread"),
         Unread = unread
     ),
     Line = Line0 ^ i_unread := Unread.
@@ -607,13 +607,13 @@ toggle_unread(Line0, Line, TagDelta) :-
 
 set_deleted(Line0, Line, TagDelta) :-
     Line = Line0 ^ i_deleted := deleted,
-    TagDelta = "+deleted".
+    TagDelta = tag_delta("+deleted").
 
 :- pred unset_deleted(index_line::in, index_line::out, tag_delta::out) is det.
 
 unset_deleted(Line0, Line, TagDelta) :-
     Line = Line0 ^ i_deleted := not_deleted,
-    TagDelta = "-deleted".
+    TagDelta = tag_delta("-deleted").
 
 %-----------------------------------------------------------------------------%
 
@@ -631,12 +631,12 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
         (
             Return = yes(String),
             (
-                TagDeltas = string.words(String),
-                TagDeltas = [_ | _]
+                Words = string.words(String),
+                Words = [_ | _]
             ->
                 add_history_nodup(String, History0, History),
                 !Info ^ i_tag_history := History,
-                ( divide_tag_deltas(TagDeltas, AddTags, RemoveTags) ->
+                ( validate_tag_deltas(Words, TagDeltas, AddTags, RemoveTags) ->
                     tag_thread(TagDeltas, ThreadId, Res, !IO),
                     (
                         Res = ok,

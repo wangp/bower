@@ -29,13 +29,16 @@
     --->    flagged
     ;       unflagged.
 
+:- type tag_delta
+    --->    tag_delta(string). % +tag or -tag
+
 :- pred standard_tag(tag::in) is semidet.
 
 :- pred get_standard_tag_state(set(tag)::in,
     unread::out, replied::out, deleted::out, flagged::out) is det.
 
-:- pred divide_tag_deltas(list(string)::in, set(tag)::out, set(tag)::out)
-    is semidet.
+:- pred validate_tag_deltas(list(string)::in, list(tag_delta)::out,
+    set(tag)::out, set(tag)::out) is semidet.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -65,21 +68,21 @@ get_standard_tag_state(Tags, Unread, Replied, Deleted, Flagged) :-
 
 %-----------------------------------------------------------------------------%
 
-divide_tag_deltas(TagDeltas, AddTags, RemoveTags) :-
-    list.foldl2(divide_tag_delta, TagDeltas,
+validate_tag_deltas(Words, TagDeltas, AddTags, RemoveTags) :-
+    list.map_foldl2(validate_tag_delta, Words, TagDeltas,
         set.init, AddTags, set.init, RemoveTags).
 
-:- pred divide_tag_delta(string::in, set(tag)::in, set(tag)::out,
-    set(tag)::in, set(tag)::out) is semidet.
+:- pred validate_tag_delta(string::in, tag_delta::out,
+    set(tag)::in, set(tag)::out, set(tag)::in, set(tag)::out) is semidet.
 
-divide_tag_delta(TagDelta, !AddTags, !RemoveTags) :-
+validate_tag_delta(Word, tag_delta(Word), !AddTags, !RemoveTags) :-
     (
-        string.remove_prefix("+", TagDelta, Tag),
+        string.remove_prefix("+", Word, Tag),
         not blacklist_tag(Tag)
     ->
         set.insert(tag(Tag), !AddTags)
     ;
-        string.remove_prefix("-", TagDelta, Tag),
+        string.remove_prefix("-", Word, Tag),
         not blacklist_tag(Tag)
     ->
         set.insert(tag(Tag), !RemoveTags)

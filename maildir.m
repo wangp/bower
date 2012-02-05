@@ -8,10 +8,9 @@
 :- import_module list.
 
 :- import_module data.
+:- import_module tags.
 
 %-----------------------------------------------------------------------------%
-
-:- type tag_delta == string. % +tag or -tag
 
 :- pred add_sent(string::in, io.res::out, io::di, io::uo) is det.
 
@@ -106,7 +105,8 @@ tag_thread(TagDeltas, ThreadId, Res, !IO) :-
 
 do_tag(TagDeltas, SearchTerms, Res, !IO) :-
     get_notmuch_prefix(Notmuch, !IO),
-    Args = list.condense([["tag"], TagDeltas, ["--"], SearchTerms]),
+    TagDeltaStrings = list.map(tag_delta_to_string, TagDeltas),
+    Args = list.condense([["tag"], TagDeltaStrings, ["--"], SearchTerms]),
     args_to_quoted_command(Args, Command),
     io.call_system(Notmuch ++ Command, CallRes, !IO),
     (
@@ -122,6 +122,10 @@ do_tag(TagDeltas, SearchTerms, Res, !IO) :-
         CallRes = error(Error),
         Res = error(Error)
     ).
+
+:- func tag_delta_to_string(tag_delta) = string.
+
+tag_delta_to_string(tag_delta(String)) = String.
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

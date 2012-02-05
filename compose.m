@@ -58,6 +58,7 @@
 :- import_module text_entry.
 :- import_module string_util.
 :- import_module sys_util.
+:- import_module tags.
 :- import_module time_util.
 
 :- type header_type
@@ -846,7 +847,7 @@ maybe_remove_draft(StagingInfo, !IO) :-
     MaybeOldDraft = StagingInfo ^ si_old_msgid,
     (
         MaybeOldDraft = yes(MessageId),
-        tag_messages(["+deleted"], [MessageId], _Res, !IO)
+        tag_messages([tag_delta("+deleted")], [MessageId], _Res, !IO)
     ;
         MaybeOldDraft = no
     ).
@@ -916,7 +917,8 @@ tag_replied_message(Screen, Headers, !IO) :-
     ->
         string.between(InReplyTo0, 1, LastPos, Id),
         MessageId = message_id(Id),
-        tag_messages(["+replied", "-unread"], [MessageId], TagRes, !IO),
+        tag_messages([tag_delta("+replied"), tag_delta("-unread")],
+            [MessageId], TagRes, !IO),
         (
             TagRes = ok
         ;

@@ -990,12 +990,14 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
         (
             Return = yes(String),
             (
-                TagDeltas = string.words(String),
-                TagDeltas = [_ | _]
+                Words = string.words(String),
+                Words = [_ | _]
             ->
                 add_history_nodup(String, History0, History),
                 !Info ^ tp_tag_history := History,
-                ( divide_tag_deltas(TagDeltas, AddTags, RemoveTags) ->
+                (
+                    validate_tag_deltas(Words, _TagDeltas, AddTags, RemoveTags)
+                ->
                     CursorLine0 = thread_line(Message, ParentId, From,
                         PrevTags, CurrTags0, _Unread, _Replied, _Deleted,
                         _Flagged, Graphics, RelDate, MaybeSubject),
@@ -1324,7 +1326,7 @@ get_tag_delta_set(Line) = TagDeltaSet :-
 
 :- func make_tag_delta(string, tag) = tag_delta.
 
-make_tag_delta(Op, tag(Tag)) = Op ++ Tag.
+make_tag_delta(Op, tag(Tag)) = tag_delta(Op ++ Tag).
 
 %-----------------------------------------------------------------------------%
 
