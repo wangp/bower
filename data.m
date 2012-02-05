@@ -18,7 +18,7 @@
                 t_timestamp :: int,
                 t_authors   :: string,
                 t_subject   :: string,
-                t_tags      :: set(string),
+                t_tags      :: set(tag),
                 t_matched   :: int,
                 t_total     :: int
             ).
@@ -31,7 +31,7 @@
                 m_id        :: message_id,
                 m_timestamp :: int,
                 m_headers   :: headers,
-                m_tags      :: set(string),
+                m_tags      :: set(tag),
                 m_body      :: list(part),
                 m_replies   :: list(message)
             ).
@@ -53,6 +53,9 @@
                 h_inreplyto     :: string,
                 h_rest          :: map(string, string)
             ).
+
+:- type tag
+    --->    tag(string).
 
 :- type part
     --->    part(

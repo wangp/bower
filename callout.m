@@ -246,9 +246,9 @@ parse_thread(Json, Thread) :-
         notmuch_json_error
     ).
 
-:- pred parse_tag(json::in, string::out) is semidet.
+:- pred parse_tag(json::in, tag::out) is semidet.
 
-parse_tag(Json, Tag) :-
+parse_tag(Json, tag(Tag)) :-
     Json = unesc_string(Tag).
 
 %-----------------------------------------------------------------------------%

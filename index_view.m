@@ -69,7 +69,7 @@
                 i_date      :: string,
                 i_authors   :: string,
                 i_subject   :: string,
-                i_tags      :: set(string),
+                i_tags      :: set(tag),
                 i_matched   :: int,
                 i_total     :: int
             ).
@@ -872,14 +872,15 @@ draw_index_line(Panel, Line, IsCursor, !IO) :-
     attr_set(Panel, fg_bg(red, black) + bold, !IO),
     set.fold(draw_nonstandard_tag(Panel), Tags, !IO).
 
-:- pred draw_nonstandard_tag(panel::in, string::in, io::di, io::uo) is det.
+:- pred draw_nonstandard_tag(panel::in, tag::in, io::di, io::uo) is det.
 
 draw_nonstandard_tag(Panel, Tag, !IO) :-
     ( standard_tag(Tag) ->
         true
     ;
+        Tag = tag(TagName),
         my_addstr(Panel, " ", !IO),
-        my_addstr(Panel, Tag, !IO)
+        my_addstr(Panel, TagName, !IO)
     ).
 
 :- pred draw_index_bar(screen::in, index_info::in, io::di, io::uo) is det.

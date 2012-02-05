@@ -67,8 +67,8 @@
                 tp_message      :: message,
                 tp_parent       :: maybe(message_id),
                 tp_clean_from   :: string,
-                tp_prev_tags    :: set(string),
-                tp_curr_tags    :: set(string),
+                tp_prev_tags    :: set(tag),
+                tp_curr_tags    :: set(tag),
                 tp_unread       :: unread,          % cached from tp_curr_tags
                 tp_replied      :: replied,         % cached from tp_curr_tags
                 tp_deleted      :: deleted,         % cached from tp_curr_tags
@@ -86,8 +86,8 @@
 
 :- type message_tag_deltas
     --->    message_tag_deltas(
-                mtd_add_tags    :: set(string),
-                mtd_remove_tags :: set(string)
+                mtd_add_tags    :: set(tag),
+                mtd_remove_tags :: set(tag)
             ).
 
 :- type thread_pager_action
@@ -192,7 +192,7 @@ create_thread_pager(Screen, ThreadId, Info, Count, !IO) :-
 
 filter_unwanted_messages(!Message) :-
     Tags = !.Message ^ m_tags,
-    not set.contains(Tags, "draft"),
+    not set.contains(Tags, tag("draft")),
 
     Replies0 = !.Message ^ m_replies,
     list.filter_map(filter_unwanted_messages, Replies0, Replies),
@@ -902,7 +902,7 @@ mark_all_read(!Info) :-
 
 set_line_read(!Line) :-
     Tags0 = !.Line ^ tp_curr_tags,
-    set.delete("unread", Tags0, Tags),
+    set.delete(tag("unread"), Tags0, Tags),
     !Line ^ tp_curr_tags := Tags,
     !Line ^ tp_unread := read.
 
@@ -910,7 +910,7 @@ set_line_read(!Line) :-
 
 set_line_unread(!Line) :-
     Tags0 = !.Line ^ tp_curr_tags,
-    set.insert("unread", Tags0, Tags),
+    set.insert(tag("unread"), Tags0, Tags),
     !Line ^ tp_curr_tags := Tags,
     !Line ^ tp_unread := unread.
 
@@ -942,11 +942,11 @@ toggle_flagged(!Info) :-
         Flagged0 = Line0 ^ tp_flagged,
         (
             Flagged0 = flagged,
-            set.delete("flagged", TagSet0, TagSet),
+            set.delete(tag("flagged"), TagSet0, TagSet),
             Flagged = unflagged
         ;
             Flagged0 = unflagged,
-            set.insert("flagged", TagSet0, TagSet),
+            set.insert(tag("flagged"), TagSet0, TagSet),
             Flagged = flagged
         ),
         Line = (Line0 ^ tp_curr_tags := TagSet) ^ tp_flagged := Flagged,
@@ -965,10 +965,10 @@ toggle_deleted(Deleted, !Info) :-
         TagSet0 = Line0 ^ tp_curr_tags,
         (
             Deleted = not_deleted,
-            set.delete("deleted", TagSet0, TagSet)
+            set.delete(tag("deleted"), TagSet0, TagSet)
         ;
             Deleted = deleted,
-            set.insert("deleted", TagSet0, TagSet)
+            set.insert(tag("deleted"), TagSet0, TagSet)
         ),
         Line = (Line0 ^ tp_curr_tags := TagSet) ^ tp_deleted := Deleted,
         set_cursor_line(Line, Scrollable0, Scrollable),
@@ -1318,9 +1318,13 @@ get_tag_delta_set(Line) = TagDeltaSet :-
     CurrTags = Line ^ tp_curr_tags,
     set.difference(CurrTags, PrevTags, AddTags),
     set.difference(PrevTags, CurrTags, RemoveTags),
-    set.map(string.append("+"), AddTags) = AddTagDeltas,
-    set.map(string.append("-"), RemoveTags) = RemoveTagDeltas,
+    set.map(make_tag_delta("+"), AddTags) = AddTagDeltas,
+    set.map(make_tag_delta("-"), RemoveTags) = RemoveTagDeltas,
     set.union(AddTagDeltas, RemoveTagDeltas, TagDeltaSet).
+
+:- func make_tag_delta(string, tag) = tag_delta.
+
+make_tag_delta(Op, tag(Tag)) = Op ++ Tag.
 
 %-----------------------------------------------------------------------------%
 
@@ -1429,14 +1433,15 @@ draw_thread_line(Panel, Line, IsCursor, !IO) :-
     attr_set(Panel, fg_bg(red, black) + bold, !IO),
     set.fold(draw_nonstandard_tag(Panel), CurrTags, !IO).
 
-:- pred draw_nonstandard_tag(panel::in, string::in, io::di, io::uo) is det.
+:- pred draw_nonstandard_tag(panel::in, tag::in, io::di, io::uo) is det.
 
 draw_nonstandard_tag(Panel, Tag, !IO) :-
     ( standard_tag(Tag) ->
         true
     ;
+        Tag = tag(TagName),
         my_addstr(Panel, " ", !IO),
-        my_addstr(Panel, Tag, !IO)
+        my_addstr(Panel, TagName, !IO)
     ).
 
 :- pred draw_graphic(panel::in, graphic::in, io::di, io::uo) is det.
