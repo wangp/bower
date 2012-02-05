@@ -1154,7 +1154,7 @@ open_part(Action, MessageUpdate, !Info) :-
 
 prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
     History0 = !.Info ^ tp_common_history ^ ch_prog_history,
-    Initial = "xdg-open",
+    choose_text_initial(History0, "xdg-open", Initial),
     text_entry_initial(Screen, "Open with command: ", History0, Initial,
         complete_path, Return, !IO),
     (
@@ -1215,7 +1215,7 @@ prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
 
 prompt_open_url(Screen, Url, !Info, !IO) :-
     History0 = !.Info ^ tp_common_history ^ ch_prog_history,
-    Initial = "xdg-open",
+    choose_text_initial(History0, "xdg-open", Initial),
     text_entry_initial(Screen, "Open URL with command: ", History0,
         Initial, complete_path, Return, !IO),
     (

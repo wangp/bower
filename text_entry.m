@@ -20,6 +20,8 @@
 
 :- pred add_history_nodup(string::in, history::in, history::out) is det.
 
+:- pred choose_text_initial(history::in, string::in, string::out) is det.
+
 :- pred text_entry(screen::in, string::in, history::in, completion_type::in,
     maybe(string)::out, io::di, io::uo) is det.
 
@@ -64,6 +66,9 @@ add_history_nodup(Candidate, Hist0, Hist) :-
     ;
         Hist = [Candidate | Hist0]
     ).
+
+choose_text_initial([], Default, Default).
+choose_text_initial([Last | _], _, Last).
 
 %-----------------------------------------------------------------------------%
 
