@@ -320,7 +320,7 @@ make_thread_line(Nowish, Message, MaybeParentId, Graphics, PrevSubject,
     Tags = Message ^ m_tags,
     From = clean_email_address(Message ^ m_headers ^ h_from),
     TagSet = set.from_list(Tags),
-    get_cached_tags(TagSet, Unread, Replied, Deleted, Flagged),
+    get_standard_tag_state(TagSet, Unread, Replied, Deleted, Flagged),
     Subject = Message ^ m_headers ^ h_subject,
     timestamp_to_tm(Timestamp, TM),
     Shorter = no,
@@ -344,15 +344,6 @@ clean_email_address(Orig) = Clean :-
     ;
         Clean = Orig
     ).
-
-:- pred get_cached_tags(set(string)::in,
-    unread::out, replied::out, deleted::out, flagged::out) is det.
-
-get_cached_tags(Tags, Unread, Replied, Deleted, Flagged) :-
-    Unread = ( set.contains(Tags, "unread") -> unread ; read ),
-    Replied = ( set.contains(Tags, "replied") -> replied ; not_replied ),
-    Deleted = ( set.contains(Tags, "deleted") -> deleted ; not_deleted ),
-    Flagged = ( set.contains(Tags, "flagged") -> flagged ; unflagged ).
 
 :- func canonicalise_subject(string) = list(string).
 
@@ -405,7 +396,7 @@ restore_tag_deltas(DeltaMap, ThreadLine0, ThreadLine) :-
         Deltas = message_tag_deltas(AddTags, RemoveTags),
         set.difference(CurrTags0, RemoveTags, CurrTags1),
         set.union(CurrTags1, AddTags, CurrTags),
-        get_cached_tags(CurrTags, Unread, Replied, Deleted, Flagged),
+        get_standard_tag_state(CurrTags, Unread, Replied, Deleted, Flagged),
         ThreadLine = thread_line(Message, ParentId, From, PrevTags, CurrTags,
             Unread, Replied, Deleted, Flagged, Graphics, RelDate,
             MaybeSubject)
@@ -1012,7 +1003,7 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
                     % Notmuch performs tag removals before addition.
                     set.difference(CurrTags0, RemoveTags, CurrTags1),
                     set.union(CurrTags1, AddTags, CurrTags),
-                    get_cached_tags(CurrTags, Unread, Replied, Deleted,
+                    get_standard_tag_state(CurrTags, Unread, Replied, Deleted,
                         Flagged),
                     CursorLine = thread_line(Message, ParentId, From,
                         PrevTags, CurrTags, Unread, Replied, Deleted, Flagged,

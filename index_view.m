@@ -69,7 +69,7 @@
                 i_date      :: string,
                 i_authors   :: string,
                 i_subject   :: string,
-                i_tags      :: list(string),
+                i_tags      :: set(string),
                 i_matched   :: int,
                 i_total     :: int
             ).
@@ -181,33 +181,14 @@ add_thread(Nowish, Thread, !Lines) :-
 :- pred thread_to_index_line(tm::in, thread::in, index_line::out) is det.
 
 thread_to_index_line(Nowish, Thread, Line) :-
-    Thread = thread(Id, Timestamp, Authors, Subject, Tags, Matched, Total),
+    Thread = thread(Id, Timestamp, Authors, Subject, TagsList, Matched, Total),
+    Tags = set.from_list(TagsList),
     timestamp_to_tm(Timestamp, TM),
     Shorter = yes,
     make_reldate(Nowish, TM, Shorter, Date),
-    Line0 = index_line(Id, read, not_replied, not_deleted, unflagged,
-        Date, Authors, Subject, Tags, Matched, Total),
-    apply_tags(Tags, Line0, Line).
-
-:- pred apply_tags(list(string)::in, index_line::in, index_line::out) is det.
-
-apply_tags(Tags, !Line) :-
-    list.foldl(apply_tag, Tags, !Line).
-
-:- pred apply_tag(string::in, index_line::in, index_line::out) is det.
-
-apply_tag(Tag, !Line) :-
-    ( Tag = "unread" ->
-        !Line ^ i_unread := unread
-    ; Tag = "replied" ->
-        !Line ^ i_replied := replied
-    ; Tag = "deleted" ->
-        !Line ^ i_deleted := deleted
-    ; Tag = "flagged" ->
-        !Line ^ i_flagged := flagged
-    ;
-        true
-    ).
+    get_standard_tag_state(Tags, Unread, Replied, Deleted, Flagged),
+    Line = index_line(Id, Unread, Replied, Deleted, Flagged,
+        Date, Authors, Subject, Tags, Matched, Total).
 
 %-----------------------------------------------------------------------------%
 
@@ -661,11 +642,10 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
                     (
                         Res = ok,
                         % Notmuch performs tag removals before addition.
-                        TagSet0 = set.from_list(CursorLine0 ^ i_tags),
+                        TagSet0 = CursorLine0 ^ i_tags,
                         set.difference(TagSet0, RemoveTags, TagSet1),
                         set.union(TagSet1, AddTags, TagSet),
-                        set.to_sorted_list(TagSet, Tags),
-                        CursorLine1 = CursorLine0 ^ i_tags := Tags,
+                        CursorLine1 = CursorLine0 ^ i_tags := TagSet,
                         update_standard_tags(CursorLine1, CursorLine),
                         set_cursor_line(CursorLine, Scrollable0, Scrollable),
                         !Info ^ i_scrollable := Scrollable
@@ -694,9 +674,9 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
 update_standard_tags(Line0, Line) :-
     Line0 = index_line(Id, _read, _not_replied, _not_deleted, _unflagged,
         Date, Authors, Subject, Tags, Matched, Total),
-    Line1 = index_line(Id, read, not_replied, not_deleted, unflagged,
-        Date, Authors, Subject, Tags, Matched, Total),
-    apply_tags(Tags, Line1, Line).
+    get_standard_tag_state(Tags, Unread, Replied, Deleted, Flagged),
+    Line = index_line(Id, Unread, Replied, Deleted, Flagged,
+        Date, Authors, Subject, Tags, Matched, Total).
 
 %-----------------------------------------------------------------------------%
 
@@ -891,7 +871,7 @@ draw_index_line(Panel, Line, IsCursor, !IO) :-
     cond_attr_set(Panel, normal, IsCursor, !IO),
     my_addstr(Panel, Subject, !IO),
     attr_set(Panel, fg_bg(red, black) + bold, !IO),
-    list.foldl(draw_nonstandard_tag(Panel), Tags, !IO).
+    set.fold(draw_nonstandard_tag(Panel), Tags, !IO).
 
 :- pred draw_nonstandard_tag(panel::in, string::in, io::di, io::uo) is det.
 
