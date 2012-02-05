@@ -4,6 +4,7 @@
 :- module text_entry.
 :- interface.
 
+:- import_module bool.
 :- import_module io.
 :- import_module maybe.
 
@@ -25,12 +26,14 @@
 :- pred text_entry_initial(screen::in, string::in, history::in, string::in,
     completion_type::in, maybe(string)::out, io::di, io::uo) is det.
 
+:- pred text_entry_full(screen::in, string::in, history::in, string::in,
+    completion_type::in, bool::in, maybe(string)::out, io::di, io::uo) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
-:- import_module bool.
 :- import_module char.
 :- import_module dir.
 :- import_module int.
@@ -72,14 +75,21 @@ text_entry(Screen, Prompt, History0, CompleteType, Return, !IO) :-
     ;
         History0 = [Initial | History]
     ),
-    text_entry_initial(Screen, Prompt, History, Initial, CompleteType, Return,
-        !IO).
+    FirstTime = yes,
+    text_entry_full(Screen, Prompt, History, Initial, CompleteType, FirstTime,
+        Return, !IO).
 
-text_entry_initial(Screen, Prompt, History, Initial, CompleteType, Return, !IO) :-
+text_entry_initial(Screen, Prompt, History, Initial, CompleteType, Return,
+        !IO) :-
+    FirstTime = yes,
+    text_entry_full(Screen, Prompt, History, Initial, CompleteType, FirstTime,
+        Return, !IO).
+
+text_entry_full(Screen, Prompt, History, Initial, CompleteType, FirstTime,
+        Return, !IO) :-
     string.to_char_list(Initial, Before0),
     list.reverse(Before0, Before),
     After = [],
-    FirstTime = yes,
     SubInfo = sub_info(FirstTime, History, [], CompleteType, []),
     text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO),
     update_message(Screen, clear_message, !IO).

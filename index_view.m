@@ -24,6 +24,7 @@
 :- import_module maybe.
 :- import_module int.
 :- import_module require.
+:- import_module set.
 :- import_module string.
 :- import_module time.
 
@@ -54,7 +55,8 @@
                 i_search            :: maybe(string),
                 i_limit_history     :: history,
                 i_search_history    :: history,
-                i_compose_history   :: compose_history
+                i_compose_history   :: compose_history,
+                i_tag_history       :: history
             ).
 
 :- type index_line
@@ -111,6 +113,7 @@
     ;       toggle_unread
     ;       set_deleted
     ;       unset_deleted
+    ;       prompt_tag(string)
     ;       quit.
 
 :- type action
@@ -125,6 +128,7 @@
     ;       toggle_unread
     ;       set_deleted
     ;       unset_deleted
+    ;       prompt_tag(string)
     ;       quit.
 
 :- instance scrollable.line(index_line) where [
@@ -148,7 +152,8 @@ open_index(Screen, Terms, !IO) :-
     PollCount = 0,
     MaybeSearch = no,
     IndexInfo = index_info(Scrollable, Terms, SearchTime, PollTime,
-        PollCount, MaybeSearch, History, init_history, init_compose_history),
+        PollCount, MaybeSearch, History, init_history, init_compose_history,
+        init_history),
     index_loop(Screen, IndexInfo, !IO).
 
 :- pred search_terms_with_progress(screen::in, string::in,
@@ -203,7 +208,12 @@ thread_to_index_line(Nowish, Thread, Line) :-
     make_reldate(Nowish, TM, Shorter, Date),
     Line0 = index_line(Id, old, read, not_replied, not_deleted, unflagged,
         Date, Authors, Subject, Tags, Matched, Total),
-    list.foldl(apply_tag, Tags, Line0, Line).
+    apply_tags(Tags, Line0, Line).
+
+:- pred apply_tags(list(string)::in, index_line::in, index_line::out) is det.
+
+apply_tags(Tags, !Line) :-
+    list.foldl(apply_tag, Tags, !Line).
 
 :- pred apply_tag(string::in, index_line::in, index_line::out) is det.
 
@@ -316,6 +326,10 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         modify_tag_cursor_line(unset_deleted, Screen, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
+        Action = prompt_tag(Initial),
+        prompt_tag(Screen, Initial, !IndexInfo, !IO),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
         Action = quit
     ).
 
@@ -401,6 +415,10 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = unset_deleted
         ;
+            Binding = prompt_tag(Initial),
+            MessageUpdate = no_change,
+            Action = prompt_tag(Initial)
+        ;
             Binding = quit,
             MessageUpdate = no_change,
             Action = quit
@@ -453,6 +471,8 @@ key_binding_char('n', skip_to_search).
 key_binding_char('N', toggle_unread).
 key_binding_char('d', set_deleted).
 key_binding_char('u', unset_deleted).
+key_binding_char('+', prompt_tag("+")).
+key_binding_char('-', prompt_tag("-")).
 key_binding_char('q', quit).
 
 :- pred move_cursor(screen::in, int::in, message_update::out,
@@ -637,6 +657,69 @@ set_deleted(Line0, Line, TagDelta) :-
 unset_deleted(Line0, Line, TagDelta) :-
     Line = Line0 ^ i_deleted := not_deleted,
     TagDelta = "-deleted".
+
+%-----------------------------------------------------------------------------%
+
+:- pred prompt_tag(screen::in, string::in, index_info::in, index_info::out,
+    io::di, io::uo) is det.
+
+prompt_tag(Screen, Initial, !Info, !IO) :-
+    Scrollable0 = !.Info ^ i_scrollable,
+    History0 = !.Info ^ i_tag_history,
+    ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
+        ThreadId = CursorLine0 ^ i_id,
+        FirstTime = no,
+        text_entry_full(Screen, "Change tags: ", History0, Initial,
+            complete_none, FirstTime, Return, !IO),
+        (
+            Return = yes(String),
+            (
+                TagDeltas = string.words(String),
+                TagDeltas = [_ | _]
+            ->
+                add_history_nodup(String, History0, History),
+                !Info ^ i_tag_history := History,
+                ( divide_tag_deltas(TagDeltas, AddTags, RemoveTags) ->
+                    tag_thread(TagDeltas, ThreadId, Res, !IO),
+                    (
+                        Res = ok,
+                        % Notmuch performs tag removals before addition.
+                        TagSet0 = set.from_list(CursorLine0 ^ i_tags),
+                        set.difference(TagSet0, RemoveTags, TagSet1),
+                        set.union(TagSet1, AddTags, TagSet),
+                        set.to_sorted_list(TagSet, Tags),
+                        CursorLine1 = CursorLine0 ^ i_tags := Tags,
+                        update_standard_tags(CursorLine1, CursorLine),
+                        set_cursor_line(CursorLine, Scrollable0, Scrollable),
+                        !Info ^ i_scrollable := Scrollable
+                    ;
+                        Res = error(Error),
+                        MessageUpdate = set_warning(io.error_message(Error)),
+                        update_message(Screen, MessageUpdate, !IO)
+                    )
+                ;
+                    update_message(Screen,
+                        set_warning("Tags must be of the form +tag or -tag."),
+                        !IO)
+                )
+            ;
+                true
+            )
+        ;
+            Return = no
+        )
+    ;
+        update_message(Screen, set_warning("No thread."), !IO)
+    ).
+
+:- pred update_standard_tags(index_line::in, index_line::out) is det.
+
+update_standard_tags(Line0, Line) :-
+    Line0 = index_line(Id, _old, _read, _not_replied, _not_deleted, _unflagged,
+        Date, Authors, Subject, Tags, Matched, Total),
+    Line1 = index_line(Id, old, read, not_replied, not_deleted, unflagged,
+        Date, Authors, Subject, Tags, Matched, Total),
+    apply_tags(Tags, Line1, Line).
 
 %-----------------------------------------------------------------------------%
 
