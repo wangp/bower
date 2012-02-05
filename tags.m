@@ -7,6 +7,26 @@
 :- import_module list.
 :- import_module set.
 
+:- type new
+    --->    new
+    ;       old.
+
+:- type unread
+    --->    unread
+    ;       read.
+
+:- type replied
+    --->    replied
+    ;       not_replied.
+
+:- type deleted
+    --->    deleted
+    ;       not_deleted.
+
+:- type flagged
+    --->    flagged
+    ;       unflagged.
+
 :- pred standard_tag(string::in) is semidet.
 
 :- pred divide_tag_deltas(list(string)::in, set(string)::out, set(string)::out)

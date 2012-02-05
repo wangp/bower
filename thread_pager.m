@@ -84,22 +84,6 @@
     ;       tee
     ;       ell.
 
-:- type unread
-    --->    unread
-    ;       read.
-
-:- type replied
-    --->    replied
-    ;       not_replied.
-
-:- type deleted
-    --->    deleted
-    ;       not_deleted.
-
-:- type flagged
-    --->    flagged
-    ;       unflagged.
-
 :- type message_tag_deltas
     --->    message_tag_deltas(
                 mtd_add_tags    :: set(string),

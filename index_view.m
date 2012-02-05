@@ -74,26 +74,6 @@
                 i_total     :: int
             ).
 
-:- type new
-    --->    new
-    ;       old.
-
-:- type unread
-    --->    unread
-    ;       read.
-
-:- type replied
-    --->    replied
-    ;       not_replied.
-
-:- type deleted
-    --->    deleted
-    ;       not_deleted.
-
-:- type flagged
-    --->    flagged
-    ;       unflagged.
-
 :- type binding
     --->    scroll_down
     ;       scroll_up
