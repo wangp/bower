@@ -9,12 +9,12 @@
 
 :- import_module data.
 :- import_module screen.
-:- import_module text_entry.
+:- import_module view_common.
 
 %-----------------------------------------------------------------------------%
 
 :- pred open_thread_pager(screen::in, thread_id::in, bool::out,
-    history::in, history::out, io::di, io::uo) is det.
+    common_history::in, common_history::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -45,6 +45,7 @@
 :- import_module scrollable.
 :- import_module string_util.
 :- import_module tags.
+:- import_module text_entry.
 :- import_module time_util.
 
 %-----------------------------------------------------------------------------%
@@ -57,8 +58,7 @@
                 tp_pager            :: pager_info,
                 tp_num_pager_rows   :: int,
                 tp_search           :: maybe(string),
-                tp_search_history   :: history,
-                tp_tag_history      :: history,
+                tp_common_history   :: common_history,
                 tp_need_refresh_index :: bool
             ).
 
@@ -112,30 +112,28 @@
 %-----------------------------------------------------------------------------%
 
 open_thread_pager(Screen, ThreadId, NeedRefreshIndex,
-        SearchHistory0, SearchHistory, !IO) :-
-    create_thread_pager(Screen, ThreadId, Info0, Count, !IO),
-    Info1 = Info0 ^ tp_search_history := SearchHistory0,
+        CommonHistory0, CommonHistory, !IO) :-
+    create_thread_pager(Screen, ThreadId, CommonHistory0, Info0, Count, !IO),
     string.format("Showing %d messages.", [i(Count)], Msg),
     update_message(Screen, set_info(Msg), !IO),
-    thread_pager_loop(Screen, Info1, Info, !IO),
+    thread_pager_loop(Screen, Info0, Info, !IO),
     NeedRefreshIndex = Info ^ tp_need_refresh_index,
-    SearchHistory = Info ^ tp_search_history.
+    CommonHistory = Info ^ tp_common_history.
 
 :- pred reopen_thread_pager(screen::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 reopen_thread_pager(Screen, Info0, Info, !IO) :-
     Info0 = thread_pager_info(ThreadId0, Scrollable0, _NumThreadRows, Pager0,
-        _NumPagerRows, Search, SearchHistory, TagHistory, NeedRefreshIndex),
+        _NumPagerRows, Search, CommonHistory, NeedRefreshIndex),
 
     % We recreate the entire pager.  This may seem a bit inefficient but it is
     % much simpler and the time it takes to run the notmuch show command vastly
     % exceeds the time to format the messages anyway.
-    create_thread_pager(Screen, ThreadId0, Info1, Count, !IO),
+    create_thread_pager(Screen, ThreadId0, CommonHistory, Info1, Count, !IO),
 
     Info1 = thread_pager_info(ThreadId, Scrollable1, NumThreadRows, Pager1,
-        NumPagerRows, _Search1, _SearchHistory1, _TagHistory1,
-        _NeedRefreshIndex),
+        NumPagerRows, _Search1, _CommonHistory1, _NeedRefreshIndex),
 
     % Reapply tag changes from previous state.
     ThreadLines0 = get_lines_list(Scrollable0),
@@ -159,16 +157,16 @@ reopen_thread_pager(Screen, Info0, Info, !IO) :-
     ),
 
     Info2 = thread_pager_info(ThreadId, Scrollable, NumThreadRows, Pager,
-        NumPagerRows, Search, SearchHistory, TagHistory, NeedRefreshIndex),
+        NumPagerRows, Search, CommonHistory, NeedRefreshIndex),
     sync_thread_to_pager(Info2, Info),
 
     string.format("Showing %d messages.", [i(Count)], Msg),
     update_message(Screen, set_info(Msg), !IO).
 
-:- pred create_thread_pager(screen::in, thread_id::in, thread_pager_info::out,
-    int::out, io::di, io::uo) is det.
+:- pred create_thread_pager(screen::in, thread_id::in, common_history::in,
+    thread_pager_info::out, int::out, io::di, io::uo) is det.
 
-create_thread_pager(Screen, ThreadId, Info, Count, !IO) :-
+create_thread_pager(Screen, ThreadId, CommonHistory, Info, Count, !IO) :-
     run_notmuch([
         "show", "--format=json", "--", thread_id_to_search_term(ThreadId)
     ], parse_messages_list, Result, !IO),
@@ -183,10 +181,8 @@ create_thread_pager(Screen, ThreadId, Info, Count, !IO) :-
     time(Time, !IO),
     Nowish = localtime(Time),
     get_rows_cols(Screen, Rows, Cols),
-    SearchHistory = init_history,
-    TagHistory = init_history,
     setup_thread_pager(ThreadId, Nowish, Rows - 2, Cols, Messages,
-        SearchHistory, TagHistory, Info, Count).
+        CommonHistory, Info, Count).
 
 :- pred filter_unwanted_messages(message::in, message::out) is semidet.
 
@@ -199,11 +195,11 @@ filter_unwanted_messages(!Message) :-
     !Message ^ m_replies := Replies.
 
 :- pred setup_thread_pager(thread_id::in, tm::in, int::in, int::in,
-    list(message)::in, history::in, history::in, thread_pager_info::out,
-    int::out) is det.
+    list(message)::in, common_history::in, thread_pager_info::out, int::out)
+    is det.
 
-setup_thread_pager(ThreadId, Nowish, Rows, Cols, Messages, SearchHistory,
-        TagHistory, ThreadPagerInfo, NumThreadLines) :-
+setup_thread_pager(ThreadId, Nowish, Rows, Cols, Messages, CommonHistory,
+        ThreadPagerInfo, NumThreadLines) :-
     append_messages(Nowish, [], [], no, Messages, "", cord.init, ThreadCord),
     ThreadLines = list(ThreadCord),
     Scrollable = scrollable.init_with_cursor(ThreadLines),
@@ -212,7 +208,7 @@ setup_thread_pager(ThreadId, Nowish, Rows, Cols, Messages, SearchHistory,
 
     compute_num_rows(Rows, Scrollable, NumThreadRows, NumPagerRows),
     ThreadPagerInfo1 = thread_pager_info(ThreadId, Scrollable, NumThreadRows,
-        PagerInfo, NumPagerRows, no, SearchHistory, TagHistory, no),
+        PagerInfo, NumPagerRows, no, CommonHistory, no),
     (
         get_cursor_line(Scrollable, _, FirstLine),
         is_unread_line(FirstLine)
@@ -982,7 +978,7 @@ toggle_deleted(Deleted, !Info) :-
 
 prompt_tag(Screen, Initial, !Info, !IO) :-
     Scrollable0 = !.Info ^ tp_scrollable,
-    History0 = !.Info ^ tp_tag_history,
+    History0 = !.Info ^ tp_common_history ^ ch_tag_history,
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
         FirstTime = no,
         text_entry_full(Screen, "Change tags: ", History0, Initial,
@@ -994,7 +990,7 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
                 Words = [_ | _]
             ->
                 add_history_nodup(String, History0, History),
-                !Info ^ tp_tag_history := History,
+                !Info ^ tp_common_history ^ ch_tag_history := History,
                 (
                     validate_tag_deltas(Words, _TagDeltas, AddTags, RemoveTags)
                 ->
@@ -1250,7 +1246,7 @@ prompt_open_url(Screen, Url, !IO) :-
     thread_pager_info::out, io::di, io::uo) is det.
 
 prompt_search(Screen, !Info, !IO) :-
-    History0 = !.Info ^ tp_search_history,
+    History0 = !.Info ^ tp_common_history ^ ch_search_history,
     text_entry(Screen, "Search for: ", History0, complete_none, Return, !IO),
     (
         Return = yes(Search),
@@ -1259,7 +1255,7 @@ prompt_search(Screen, !Info, !IO) :-
         ;
             add_history_nodup(Search, History0, History),
             !Info ^ tp_search := yes(Search),
-            !Info ^ tp_search_history := History,
+            !Info ^ tp_common_history ^ ch_search_history := History,
             skip_to_search(new_search, MessageUpdate, !Info),
             update_message(Screen, MessageUpdate, !IO)
         )

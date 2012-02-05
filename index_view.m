@@ -42,6 +42,7 @@
 :- import_module text_entry.
 :- import_module thread_pager.
 :- import_module time_util.
+:- import_module view_common.
 
 %-----------------------------------------------------------------------------%
 
@@ -53,10 +54,8 @@
                 i_poll_time         :: time_t,
                 i_poll_count        :: int,
                 i_search            :: maybe(string),
-                i_limit_history     :: history,
-                i_search_history    :: history,
-                i_compose_history   :: compose_history,
-                i_tag_history       :: history
+                i_common_history    :: common_history,
+                i_compose_history   :: compose_history
             ).
 
 :- type index_line
@@ -120,19 +119,19 @@ open_index(Screen, Terms, !IO) :-
     time(Time, !IO),
     ( Terms = "" ->
         Threads = [],
-        History = init_history
+        LimitHistory = init_history
     ;
         search_terms_with_progress(Screen, Terms, Threads, !IO),
-        add_history_nodup(Terms, init_history, History)
+        add_history_nodup(Terms, init_history, LimitHistory)
     ),
     setup_index_scrollable(Time, Threads, Scrollable),
     SearchTime = Time,
     PollTime = Time,
     PollCount = 0,
     MaybeSearch = no,
+    CommonHistory = common_history(LimitHistory, init_history, init_history),
     IndexInfo = index_info(Scrollable, Terms, SearchTime, PollTime,
-        PollCount, MaybeSearch, History, init_history, init_compose_history,
-        init_history),
+        PollCount, MaybeSearch, CommonHistory, init_compose_history),
     index_loop(Screen, IndexInfo, !IO).
 
 :- pred search_terms_with_progress(screen::in, string::in,
@@ -210,12 +209,12 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         index_loop(NewScreen, !.IndexInfo, !IO)
     ;
         Action = open_pager(ThreadId),
-        History0 = !.IndexInfo ^ i_search_history,
-        open_thread_pager(Screen, ThreadId, NeedRefresh, History0, History,
-            !IO),
+        CommonHistory0 = !.IndexInfo ^ i_common_history,
+        open_thread_pager(Screen, ThreadId, NeedRefresh,
+            CommonHistory0, CommonHistory, !IO),
         % In case of resize.
         recreate_screen(Screen, NewScreen, !IndexInfo, !IO),
-        !IndexInfo ^ i_search_history := History,
+        !IndexInfo ^ i_common_history := CommonHistory,
         (
             NeedRefresh = yes,
             refresh_index_line(NewScreen, ThreadId, !IndexInfo, !IO)
@@ -225,7 +224,7 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         index_loop(NewScreen, !.IndexInfo, !IO)
     ;
         Action = enter_limit,
-        History0 = !.IndexInfo ^ i_limit_history,
+        History0 = !.IndexInfo ^ i_common_history ^ ch_limit_history,
         text_entry(Screen, "Limit to messages matching: ", History0,
             complete_none, Return, !IO),
         (
@@ -239,7 +238,7 @@ index_loop(Screen, !.IndexInfo, !IO) :-
             !IndexInfo ^ i_search_time := Time,
             !IndexInfo ^ i_poll_time := Time,
             !IndexInfo ^ i_poll_count := 0,
-            !IndexInfo ^ i_limit_history := History,
+            !IndexInfo ^ i_common_history ^ ch_limit_history := History,
             index_loop(Screen, !.IndexInfo, !IO)
         ;
             Return = no,
@@ -501,7 +500,7 @@ enter(Info, Action) :-
     io::di, io::uo) is det.
 
 prompt_search(Screen, !Info, !IO) :-
-    History0 = !.Info ^ i_search_history,
+    History0 = !.Info ^ i_common_history ^ ch_search_history,
     text_entry(Screen, "Search for: ", History0, complete_none, Return, !IO),
     (
         Return = yes(Search),
@@ -510,7 +509,7 @@ prompt_search(Screen, !Info, !IO) :-
         ;
             add_history_nodup(Search, History0, History),
             !Info ^ i_search := yes(Search),
-            !Info ^ i_search_history := History,
+            !Info ^ i_common_history ^ ch_search_history := History,
             skip_to_search(Screen, MessageUpdate, !Info),
             update_message(Screen, MessageUpdate, !IO)
         )
@@ -622,7 +621,7 @@ unset_deleted(Line0, Line, TagDelta) :-
 
 prompt_tag(Screen, Initial, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,
-    History0 = !.Info ^ i_tag_history,
+    History0 = !.Info ^ i_common_history ^ ch_tag_history,
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
         ThreadId = CursorLine0 ^ i_id,
         FirstTime = no,
@@ -635,7 +634,7 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
                 Words = [_ | _]
             ->
                 add_history_nodup(String, History0, History),
-                !Info ^ i_tag_history := History,
+                !Info ^ i_common_history ^ ch_tag_history := History,
                 ( validate_tag_deltas(Words, TagDeltas, AddTags, RemoveTags) ->
                     tag_thread(TagDeltas, ThreadId, Res, !IO),
                     (
