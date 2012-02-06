@@ -30,12 +30,8 @@ detect_url_2(String, BeginAt, Start, End) :-
         detect_url_end(String, AfterSlashSlash, End0)
     ->
         Start = Http,
-        % Smartly handle bracketed URLs.
-        (
-            string.unsafe_prev_index(String, End0, End1, ')'),
-            string.unsafe_prev_index(String, Start, _, '(')
-        ->
-            End = End1
+        ( detect_bracketed_url_end(String, Start, End0, UrlEnd) ->
+            End = UrlEnd
         ;
             End = End0
         )
@@ -162,6 +158,24 @@ valid_uri_char('-').
 valid_uri_char('_').
 valid_uri_char('.').
 valid_uri_char('~').
+
+:- pred detect_bracketed_url_end(string::in, int::in, int::in, int::out)
+    is semidet.
+
+detect_bracketed_url_end(String, Start, End0, UrlEnd) :-
+    % Smartly handle bracketed URLs.
+    string.unsafe_prev_index(String, Start, _, '('),
+    string.unsafe_prev_index(String, End0, End1, LastChar),
+    (
+        LastChar = (')'),
+        UrlEnd = End1
+    ;
+        ( LastChar = ('!')
+        ; LastChar = ('.')
+        ; LastChar = ('?')
+        ),
+        string.unsafe_prev_index(String, End1, UrlEnd, ')')
+    ).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
