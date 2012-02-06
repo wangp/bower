@@ -87,6 +87,7 @@ The keys are:
 The `l` command slightly extends the notmuch search term syntax with these
 macros:
 
+    ~A              disable default cap on number of search results
     ~F              tag:flagged
     ~U              tag:unread
     ~D              tag:deleted

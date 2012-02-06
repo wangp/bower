@@ -4,9 +4,11 @@
 :- module search_term.
 :- interface.
 
+:- import_module bool.
 :- import_module io.
 
-:- pred string_to_search_terms(string::in, string::out, io::di, io::uo) is det.
+:- pred string_to_search_terms(string::in, string::out, bool::out,
+    io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -23,16 +25,31 @@
 
 %-----------------------------------------------------------------------------%
 
-string_to_search_terms(String, Terms, !IO) :-
-    Seen = set.init,
-    Words0 = string.words(String),
-    expand_words(Seen, Words0, Words1, !IO),
-    ( should_apply_default_filter(Words1) ->
-        add_default_filters(Words1, Words2)
+string_to_search_terms(String, Terms, ApplyLimit, !IO) :-
+    some [!Words] (
+        !:Words = string.words(String),
+        check_apply_default_limit(!Words, ApplyLimit),
+        Seen = set.init,
+        expand_words(Seen, !Words, !IO),
+        ( should_apply_default_filter(!.Words) ->
+            add_default_filters(!Words)
+        ;
+            true
+        ),
+        Terms = string.join_list(" ", !.Words)
+    ).
+
+:- pred check_apply_default_limit(list(string)::in, list(string)::out,
+    bool::out) is det.
+
+check_apply_default_limit(Words0, Words, ApplyLimit) :-
+    ( list.contains(Words0, "~A") ->
+        Words = list.delete_all(Words0, "~A"),
+        ApplyLimit = no
     ;
-        Words2 = Words1
-    ),
-    Terms = string.join_list(" ", Words2).
+        Words = Words0,
+        ApplyLimit = yes
+    ).
 
 :- pred expand_words(set(string)::in, list(string)::in, list(string)::out,
     io::di, io::uo) is det.

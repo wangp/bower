@@ -23,6 +23,7 @@
 :- import_module list.
 :- import_module maybe.
 :- import_module int.
+:- import_module list.
 :- import_module require.
 :- import_module set.
 :- import_module string.
@@ -140,13 +141,28 @@ open_index(Screen, Terms, !IO) :-
 
 search_terms_with_progress(Screen, Terms0, Threads, !IO) :-
     update_message_immed(Screen, set_info("Searching..."), !IO),
-    string_to_search_terms(Terms0, Terms, !IO),
-    run_notmuch([
-        "search", "--format=json", "--", Terms
-    ], parse_threads_list, ResThreads, !IO),
+    string_to_search_terms(Terms0, Terms, ApplyCap, !IO),
+    (
+        ApplyCap = yes,
+        LimitOption = ["--limit=" ++ from_int(default_max_threads)]
+    ;
+        ApplyCap = no,
+        LimitOption = []
+    ),
+    run_notmuch(["search", "--format=json" | LimitOption] ++ ["--", Terms],
+        parse_threads_list, ResThreads, !IO),
     (
         ResThreads = ok(Threads),
-        string.format("Found %d threads.", [i(length(Threads))], Message),
+        NumThreads = list.length(Threads),
+        (
+            ApplyCap = yes,
+            NumThreads = default_max_threads
+        ->
+            string.format("Found %d threads (capped). Use ~A to disable cap.",
+                [i(NumThreads)], Message)
+        ;
+            string.format("Found %d threads.", [i(NumThreads)], Message)
+        ),
         MessageUpdate = set_info(Message)
     ;
         ResThreads = error(Error),
@@ -188,6 +204,10 @@ thread_to_index_line(Nowish, Thread, Line) :-
     get_standard_tag_state(Tags, Unread, Replied, Deleted, Flagged),
     Line = index_line(Id, Unread, Replied, Deleted, Flagged,
         Date, Authors, Subject, Tags, Matched, Total).
+
+:- func default_max_threads = int.
+
+default_max_threads = 300.
 
 %-----------------------------------------------------------------------------%
 
@@ -768,7 +788,7 @@ maybe_poll(!Info, !IO) :-
         Terms0 = !.Info ^ i_search_terms,
         SearchTime = !.Info ^ i_search_time,
         time_to_int(SearchTime, SearchTimeInt),
-        string_to_search_terms(Terms0, Terms1, !IO),
+        string_to_search_terms(Terms0, Terms1, _ApplyCap, !IO),
         string.format("( %s ) %d.. AND NOT tag:sent",
             [s(Terms1), i(SearchTimeInt)], Terms),
         run_notmuch_count(Terms, ResCount, !IO),
