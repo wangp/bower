@@ -15,7 +15,11 @@
 
 :- implementation.
 
+:- import_module char.
+:- import_module int.
 :- import_module list.
+:- import_module parsing_utils.
+:- import_module require.
 :- import_module set.
 :- import_module string.
 
@@ -26,8 +30,12 @@
 %-----------------------------------------------------------------------------%
 
 string_to_search_terms(String, Terms, ApplyLimit, !IO) :-
-    some [!Words] (
-        !:Words = string.words(String),
+    promise_equivalent_solutions [ParseResult] (
+        parsing_utils.parse(String, tokens, ParseResult)
+    ),
+    some [!Words]
+    (
+        ParseResult = ok(!:Words),
         check_apply_default_limit(!Words, ApplyLimit),
         Seen = set.init,
         expand_words(Seen, !Words, !IO),
@@ -37,7 +45,52 @@ string_to_search_terms(String, Terms, ApplyLimit, !IO) :-
             true
         ),
         Terms = string.join_list(" ", !.Words)
+    ;
+        ParseResult = error(_MaybeError, _Line, Column),
+        unexpected($module, $pred,
+            "parse error at column " ++ string.from_int(Column))
     ).
+
+:- pred tokens(src::in, list(string)::out, ps::in, ps::out) is semidet.
+
+tokens(Src, Words, !PS) :-
+    whitespace(Src, _, !PS),
+    zero_or_more(token, Src, Words, !PS),
+    eof(Src, _, !PS).
+
+:- pred token(src::in, string::out, ps::in, ps::out) is semidet.
+
+token(Src, Word, !PS) :-
+    ( char_in_class("()", Src, Char, !PS) ->
+        Word = string.from_char(Char)
+    ;
+        current_offset(Src, Start, !PS),
+        word_chars(Src, !PS),
+        current_offset(Src, End, !PS),
+        End > Start,
+        input_substring(Src, Start, End, Word)
+    ),
+    whitespace(Src, _, !PS).
+
+:- pred word_chars(src::in, ps::in, ps::out) is semidet.
+
+word_chars(Src, PS0, PS) :-
+    ( next_char(Src, Char, PS0, PS1) ->
+        ( is_word_char(Char) ->
+            word_chars(Src, PS1, PS)
+        ;
+            PS = PS0
+        )
+    ;
+        eof(Src, _, PS0, PS)
+    ).
+
+:- pred is_word_char(char::in) is semidet.
+
+is_word_char(C) :-
+    C \= '(',
+    C \= ')',
+    not char.is_whitespace(C).
 
 :- pred check_apply_default_limit(list(string)::in, list(string)::out,
     bool::out) is det.
