@@ -27,48 +27,74 @@
 :- import_module popen.
 :- import_module quote_arg.
 
+:- type token
+    --->    literal(string)
+    ;       macro(string)   % includes ~ prefix
+    ;       date_range(string, string).
+
+:- inst macro
+    --->    macro(ground).
+
 %-----------------------------------------------------------------------------%
 
 string_to_search_terms(String, Terms, ApplyLimit, !IO) :-
-    promise_equivalent_solutions [ParseResult] (
-        parsing_utils.parse(String, tokens, ParseResult)
+    det_parse(String, tokens, Tokens0),
+    check_apply_default_limit(Tokens0, Tokens1, ApplyLimit),
+    Seen = set.init,
+    expand_words(Seen, Tokens1, Words2, !IO),
+    ( should_apply_default_filter(Words2) ->
+        add_default_filters(Words2, Words)
+    ;
+        Words = Words2
     ),
-    some [!Words]
+    Terms = string.join_list(" ", Words).
+
+:- pred det_parse(string::in, parser(T)::in(parser), T::out) is det.
+
+det_parse(Input, Parser, X) :-
+    promise_equivalent_solutions [ParseResult] (
+        parsing_utils.parse(Input, Parser, ParseResult)
+    ),
     (
-        ParseResult = ok(!:Words),
-        check_apply_default_limit(!Words, ApplyLimit),
-        Seen = set.init,
-        expand_words(Seen, !Words, !IO),
-        ( should_apply_default_filter(!.Words) ->
-            add_default_filters(!Words)
-        ;
-            true
-        ),
-        Terms = string.join_list(" ", !.Words)
+        ParseResult = ok(X)
     ;
         ParseResult = error(_MaybeError, _Line, Column),
         unexpected($module, $pred,
             "parse error at column " ++ string.from_int(Column))
     ).
 
-:- pred tokens(src::in, list(string)::out, ps::in, ps::out) is semidet.
+:- pred tokens(src::in, list(token)::out, ps::in, ps::out) is semidet.
 
 tokens(Src, Words, !PS) :-
     whitespace(Src, _, !PS),
     zero_or_more(token, Src, Words, !PS),
     eof(Src, _, !PS).
 
-:- pred token(src::in, string::out, ps::in, ps::out) is semidet.
+:- pred token(src::in, token::out, ps::in, ps::out) is semidet.
 
-token(Src, Word, !PS) :-
+token(Src, Token, !PS) :-
     ( char_in_class("()", Src, Char, !PS) ->
-        Word = string.from_char(Char)
+        Word = string.from_char(Char),
+        Token = literal(Word)
     ;
         current_offset(Src, Start, !PS),
         word_chars(Src, !PS),
         current_offset(Src, End, !PS),
         End > Start,
-        input_substring(Src, Start, End, Word)
+        input_substring(Src, Start, End, Word),
+        (
+            string.remove_prefix("~d", Word, Suffix),
+            Words = string.split_at_string("..", Suffix),
+            Words = [FromWord, ToWord]
+        ->
+            Token = date_range(FromWord, ToWord)
+        ;
+            string.prefix(Word, "~")
+        ->
+            Token = macro(Word)
+        ;
+            Token = literal(Word)
+        )
     ),
     whitespace(Src, _, !PS).
 
@@ -92,49 +118,60 @@ is_word_char(C) :-
     C \= ')',
     not char.is_whitespace(C).
 
-:- pred check_apply_default_limit(list(string)::in, list(string)::out,
+:- pred check_apply_default_limit(list(token)::in, list(token)::out,
     bool::out) is det.
 
-check_apply_default_limit(Words0, Words, ApplyLimit) :-
-    ( list.contains(Words0, "~A") ->
-        Words = list.delete_all(Words0, "~A"),
+check_apply_default_limit(Tokens0, Tokens, ApplyLimit) :-
+    ( list.contains(Tokens0, macro("~A")) ->
+        Tokens = list.delete_all(Tokens0, macro("~A")),
         ApplyLimit = no
     ;
-        Words = Words0,
+        Tokens = Tokens0,
         ApplyLimit = yes
     ).
 
-:- pred expand_words(set(string)::in, list(string)::in, list(string)::out,
+:- pred expand_words(set(string)::in, list(token)::in, list(string)::out,
     io::di, io::uo) is det.
 
-expand_words(Seen, Words0, Words, !IO) :-
-    list.map_foldl(expand_word(Seen), Words0, Words1, !IO),
+expand_words(Seen, Tokens0, Words, !IO) :-
+    list.map_foldl(expand_word(Seen), Tokens0, Words1, !IO),
     list.condense(Words1, Words).
 
-:- pred expand_word(set(string)::in, string::in, list(string)::out,
+:- pred expand_word(set(string)::in, token::in, list(string)::out,
     io::di, io::uo) is det.
 
-expand_word(Seen, Word0, Words, !IO) :-
-    expand_fixed_alias(Word0, Words1, !IO),
+expand_word(Seen, Token0, Words, !IO) :-
     (
-        Words1 = [_ | _],
-        Words = Words1
+        Token0 = literal(Word),
+        Words = [Word]
     ;
-        Words1 = [],
-        expand_config_alias(Seen, Word0, Words2, !IO),
+        Token0 = macro(Word0),
+        expand_fixed_alias(Token0, Words1, !IO),
         (
-            Words2 = [_ | _],
-            Words = Words2
+            Words1 = [_ | _],
+            Words = Words1
         ;
-            Words2 = [],
-            Words = [Word0]
+            Words1 = [],
+            expand_config_alias(Seen, Token0, Words2, !IO),
+            (
+                Words2 = [_ | _],
+                Words = Words2
+            ;
+                Words2 = [],
+                Words = [Word0]
+            )
         )
+    ;
+        Token0 = date_range(FromString, ToString),
+        maybe_call_date(FromString, FromTime, !IO),
+        maybe_call_date(ToString, ToTime, !IO),
+        Words = [FromTime ++ ".." ++ ToTime]
     ).
 
-:- pred expand_fixed_alias(string::in, list(string)::out, io::di, io::uo)
+:- pred expand_fixed_alias(token::in(macro), list(string)::out, io::di, io::uo)
     is det.
 
-expand_fixed_alias(Word0, Words, !IO) :-
+expand_fixed_alias(macro(Word0), Words, !IO) :-
     ( Word0 = "~D" ->
         Words = ["tag:deleted"]
     ; Word0 = "~F" ->
@@ -144,24 +181,6 @@ expand_fixed_alias(Word0, Words, !IO) :-
     ; date_macro(Word0, DateSpec) ->
         call_date(DateSpec, Time, !IO),
         Words = [Time ++ ".."]
-    ;
-        string.remove_prefix("~d", Word0, Suffix),
-        SplitWords = string.split_at_string("..", Suffix),
-        SplitWords \= [_]
-    ->
-        ( SplitWords = ["", Word2] ->
-            call_date(Word2, Time2, !IO),
-            Words = [".." ++ Time2]
-        ; SplitWords = [Word1, ""] ->
-            call_date(Word1, Time1, !IO),
-            Words = [Time1 ++ ".."]
-        ; SplitWords = [Word1, Word2] ->
-            call_date(Word1, Time1, !IO),
-            call_date(Word2, Time2, !IO),
-            Words = [Time1 ++ ".." ++ Time2]
-        ;
-            Words = [] % fail
-        )
     ;
         Words = [] % fail
     ).
@@ -180,21 +199,22 @@ date_macro("~ly", "last year").
 date_macro("~yesterday", "yesterday").
 date_macro("~today", "today").
 
-:- pred expand_config_alias(set(string)::in, string::in, list(string)::out,
-    io::di, io::uo) is det.
+:- pred expand_config_alias(set(string)::in, token::in(macro),
+    list(string)::out, io::di, io::uo) is det.
 
-expand_config_alias(Seen0, Word0, Words, !IO) :-
+expand_config_alias(Seen0, macro(Word), Words, !IO) :-
     (
-        string.remove_prefix("~", Word0, Key),
-        not set.contains(Seen0, Key)
+        string.remove_prefix("~", Word, MacroName),
+        not set.contains(Seen0, MacroName)
     ->
-        get_notmuch_config("search_alias", Key, Res, !IO),
+        get_notmuch_config("search_alias", MacroName, Res, !IO),
         (
             Res = ok(Expansion),
-            set.insert(Key, Seen0, Seen),
-            ExpansionWords = ["("] ++ string.words(Expansion) ++ [")"],
-            list.map_foldl(expand_word(Seen), ExpansionWords, Wordss, !IO),
-            list.condense(Wordss, Words)
+            set.insert(MacroName, Seen0, Seen),
+            det_parse(Expansion, tokens, ExpansionTokens),
+            list.map_foldl(expand_word(Seen), ExpansionTokens, Wordss, !IO),
+            list.condense(Wordss, Words0),
+            Words = ["(" | Words0 ++ [")"]]
         ;
             Res = error(_),
             Words = [] % fail
@@ -231,6 +251,15 @@ call_date(Arg, Res, !IO) :-
     ;
         CallRes = error(_),
         Res = Arg
+    ).
+
+:- pred maybe_call_date(string::in, string::out, io::di, io::uo) is det.
+
+maybe_call_date(Arg, Res, !IO) :-
+    ( Arg = "" ->
+        Res = ""
+    ;
+        call_date(Arg, Res, !IO)
     ).
 
 %-----------------------------------------------------------------------------%
