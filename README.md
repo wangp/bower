@@ -98,13 +98,20 @@ macros:
     ~ly             last year
     ~yesterday
     ~today
-    ~dDATE..DATE    (no spaces)
-    ~dDATE..
-    ~d..DATE
+    ~d DATE..DATE   (optional space)
+    ~d DATE..
+    ~d ..DATE
 
-Date strings are passed to the date(1) utility so you can write any date that
-it understands, e.g. "~d2011-06-01..", as long as it doesn't require spaces.
-This is an interim solution until notmuch gains a date parser.
+By default, a maximum of 300 search results will be displayed.
+Add ~A to the search string to get all results.
+
+Until notmuch gains a date parser, bower implements one by passing date strings
+to the date(1) utility, so you can write any date that it understands.  You may
+use curly brackets to surround any date strings containing spaces.
+Some examples:
+
+    ~d 2011-06-01..
+    ~d {2 weeks ago}..{last week}
 
 You can add your own search term expansions; see below.
 
