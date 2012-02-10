@@ -51,6 +51,7 @@
     --->    index_info(
                 i_scrollable        :: scrollable(index_line),
                 i_search_terms      :: string,
+                i_search_tokens     :: list(token),
                 i_search_time       :: time_t,
                 i_poll_time         :: time_t,
                 i_poll_count        :: int,
@@ -116,14 +117,16 @@
 
 %-----------------------------------------------------------------------------%
 
-open_index(Screen, Terms, !IO) :-
+open_index(Screen, SearchString, !IO) :-
     time(Time, !IO),
-    ( Terms = "" ->
+    ( SearchString = "" ->
+        SearchTokens = [],
         Threads = [],
         LimitHistory = init_history
     ;
-        search_terms_with_progress(Screen, Terms, Threads, !IO),
-        add_history_nodup(Terms, init_history, LimitHistory)
+        predigest_search_string(SearchString, SearchTokens, !IO),
+        search_terms_with_progress(Screen, SearchTokens, Threads, !IO),
+        add_history_nodup(SearchString, init_history, LimitHistory)
     ),
     setup_index_scrollable(Time, Threads, Scrollable),
     SearchTime = Time,
@@ -132,16 +135,15 @@ open_index(Screen, Terms, !IO) :-
     MaybeSearch = no,
     CommonHistory = common_history(LimitHistory, init_history, init_history,
         init_history, init_history),
-    IndexInfo = index_info(Scrollable, Terms, SearchTime, PollTime,
-        PollCount, MaybeSearch, CommonHistory, init_compose_history),
+    IndexInfo = index_info(Scrollable, SearchString, SearchTokens, SearchTime,
+        PollTime, PollCount, MaybeSearch, CommonHistory, init_compose_history),
     index_loop(Screen, IndexInfo, !IO).
 
-:- pred search_terms_with_progress(screen::in, string::in,
+:- pred search_terms_with_progress(screen::in, list(token)::in,
     list(thread)::out, io::di, io::uo) is det.
 
-search_terms_with_progress(Screen, Terms0, Threads, !IO) :-
+search_terms_with_progress(Screen, Tokens, Threads, !IO) :-
     update_message_immed(Screen, set_info("Searching..."), !IO),
-    predigest_search_string(Terms0, Tokens, !IO),
     tokens_to_search_terms(Tokens, Terms, ApplyCap, !IO),
     (
         ApplyCap = yes,
@@ -250,13 +252,15 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         text_entry(Screen, "Limit to messages matching: ", History0,
             complete_none, Return, !IO),
         (
-            Return = yes(Terms),
+            Return = yes(LimitString),
             time(Time, !IO),
-            search_terms_with_progress(Screen, Terms, Threads, !IO),
+            predigest_search_string(LimitString, Tokens, !IO),
+            search_terms_with_progress(Screen, Tokens, Threads, !IO),
             setup_index_scrollable(Time, Threads, Scrollable),
-            add_history_nodup(Terms, History0, History),
+            add_history_nodup(LimitString, History0, History),
             !IndexInfo ^ i_scrollable := Scrollable,
-            !IndexInfo ^ i_search_terms := Terms,
+            !IndexInfo ^ i_search_terms := LimitString,
+            !IndexInfo ^ i_search_tokens := Tokens,
             !IndexInfo ^ i_search_time := Time,
             !IndexInfo ^ i_poll_time := Time,
             !IndexInfo ^ i_poll_count := 0,
@@ -704,9 +708,12 @@ update_standard_tags(Line0, Line) :-
     io::di, io::uo) is det.
 
 refresh_all(Screen, !Info, !IO) :-
-    Terms = !.Info ^ i_search_terms,
     time(Time, !IO),
-    search_terms_with_progress(Screen, Terms, Threads, !IO),
+    % The user might have changed search aliases and is trying to force a
+    % refresh, so expand the search terms from the beginning.
+    Terms = !.Info ^ i_search_terms,
+    predigest_search_string(Terms, Tokens, !IO),
+    search_terms_with_progress(Screen, Tokens, Threads, !IO),
     some [!Scrollable] (
         Scrollable0 = !.Info ^ i_scrollable,
         Top0 = get_top(Scrollable0),
@@ -731,6 +738,7 @@ refresh_all(Screen, !Info, !IO) :-
             true
         ),
         !Info ^ i_scrollable := !.Scrollable,
+        !Info ^ i_search_tokens := Tokens,
         !Info ^ i_search_time := Time,
         !Info ^ i_poll_time := Time,
         !Info ^ i_poll_count := 0
@@ -786,10 +794,9 @@ maybe_poll(!Info, !IO) :-
         true
     ;
         !Info ^ i_poll_time := Time,
-        Terms0 = !.Info ^ i_search_terms,
+        Tokens = !.Info ^ i_search_tokens,
         SearchTime = !.Info ^ i_search_time,
         time_to_int(SearchTime, SearchTimeInt),
-        predigest_search_string(Terms0, Tokens, !IO),
         tokens_to_search_terms(Tokens, Terms1, _ApplyCap, !IO),
         string.format("( %s ) %d.. AND NOT tag:sent",
             [s(Terms1), i(SearchTimeInt)], Terms),
