@@ -141,7 +141,8 @@ open_index(Screen, Terms, !IO) :-
 
 search_terms_with_progress(Screen, Terms0, Threads, !IO) :-
     update_message_immed(Screen, set_info("Searching..."), !IO),
-    string_to_search_terms(Terms0, Terms, ApplyCap, !IO),
+    predigest_search_string(Terms0, Tokens, !IO),
+    tokens_to_search_terms(Tokens, Terms, ApplyCap, !IO),
     (
         ApplyCap = yes,
         LimitOption = ["--limit=" ++ from_int(default_max_threads)]
@@ -788,7 +789,8 @@ maybe_poll(!Info, !IO) :-
         Terms0 = !.Info ^ i_search_terms,
         SearchTime = !.Info ^ i_search_time,
         time_to_int(SearchTime, SearchTimeInt),
-        string_to_search_terms(Terms0, Terms1, _ApplyCap, !IO),
+        predigest_search_string(Terms0, Tokens, !IO),
+        tokens_to_search_terms(Tokens, Terms1, _ApplyCap, !IO),
         string.format("( %s ) %d.. AND NOT tag:sent",
             [s(Terms1), i(SearchTimeInt)], Terms),
         run_notmuch_count(Terms, ResCount, !IO),

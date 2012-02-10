@@ -6,8 +6,14 @@
 
 :- import_module bool.
 :- import_module io.
+:- import_module list.
 
-:- pred string_to_search_terms(string::in, string::out, bool::out,
+:- type token.
+
+:- pred predigest_search_string(string::in, list(token)::out, io::di, io::uo)
+    is det.
+
+:- pred tokens_to_search_terms(list(token)::in, string::out, bool::out,
     io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
@@ -28,26 +34,27 @@
 :- import_module quote_arg.
 
 :- type token
-    --->    literal(string)
-    ;       macro(string)   % includes ~ prefix
-    ;       date_range(string, string).
+    --->    literal(string)             % pass through to notmuch
+    ;       macro(string)               % includes ~ prefix
+    ;       date_range(string, string)  % ~d FROM..TO
+    ;       do_not_apply_limit.         % ~A
 
 :- inst macro
     --->    macro(ground).
 
 %-----------------------------------------------------------------------------%
 
-string_to_search_terms(String, Terms, ApplyLimit, !IO) :-
+predigest_search_string(String, Tokens, !IO) :-
     det_parse(String, tokens, Tokens0),
-    check_apply_default_limit(Tokens0, Tokens1, ApplyLimit),
     Seen = set.init,
-    expand_words(Seen, Tokens1, Words2, !IO),
-    ( should_apply_default_filter(Words2) ->
-        add_default_filters(Words2, Words)
+    expand_config_aliases(Seen, Tokens0, Tokens1, !IO),
+    ( list.all_true(should_apply_default_filter, Tokens1) ->
+        add_default_filters(Tokens1, Tokens)
     ;
-        Words = Words2
-    ),
-    Terms = string.join_list(" ", Words).
+        Tokens = Tokens1
+    ).
+
+%-----------------------------------------------------------------------------%
 
 :- pred det_parse(string::in, parser(T)::in(parser), T::out) is det.
 
@@ -77,26 +84,82 @@ token(Src, Token, !PS) :-
         Word = string.from_char(Char),
         Token = literal(Word)
     ;
-        current_offset(Src, Start, !PS),
-        word_chars(Src, !PS),
-        current_offset(Src, End, !PS),
-        End > Start,
-        input_substring(Src, Start, End, Word),
-        (
-            string.remove_prefix("~d", Word, Suffix),
-            Words = string.split_at_string("..", Suffix),
-            Words = [FromWord, ToWord]
-        ->
-            Token = date_range(FromWord, ToWord)
-        ;
-            string.prefix(Word, "~")
-        ->
-            Token = macro(Word)
-        ;
-            Token = literal(Word)
-        )
+        next_char(Src, '~', !PS),
+        next_char(Src, 'd', !PS),
+        whitespace(Src, _, !PS),
+        date_range(Src, DateRangeToken, !PS)
+    ->
+        Token = DateRangeToken
+    ;
+        macro_or_literal(Src, Token, !PS)
     ),
     whitespace(Src, _, !PS).
+
+:- pred date_range(src::in, token::out, ps::in, ps::out) is semidet.
+
+date_range(Src, date_range(FromString, ToString), !PS) :-
+    date_string(Src, FromString, !PS),
+    next_char(Src, '.', !PS),
+    next_char(Src, '.', !PS),
+    date_string(Src, ToString, !PS).
+
+:- pred date_string(src::in, string::out, ps::in, ps::out) is semidet.
+
+date_string(Src, DateString, !PS) :-
+    ( next_char(Src, '{', !PS) ->
+        current_offset(Src, Start, !PS),
+        date_string_2(unify('}'), Src, Start, DateString, !PS),
+        next_char(Src, '}', !PS)
+    ;
+        current_offset(Src, Start, !PS),
+        date_string_2(not_unbracketed_date_char, Src, Start, DateString, !PS)
+    ).
+
+:- pred date_string_2(pred(char)::in(pred(in) is semidet),
+    src::in, int::in, string::out, ps::in, ps::out) is semidet.
+
+date_string_2(EndPred, Src, Start, DateString, PS0, PS) :-
+    ( next_char(Src, C_prime, PS0, PS1_prime) ->
+        C = C_prime,
+        PS1 = PS1_prime
+    ;
+        % Treat eof as whitespace.
+        eof(Src, _, PS0, PS1),
+        C = ' '
+    ),
+    ( EndPred(C) ->
+        current_offset(Src, Prev, PS0, PS), % backtrack one char
+        input_substring(Src, Start, Prev, DateString)
+    ;
+        date_string_2(EndPred, Src, Start, DateString, PS1, PS)
+    ).
+
+:- pred not_unbracketed_date_char(char::in) is semidet.
+
+not_unbracketed_date_char(C) :-
+    (
+        char.is_whitespace(C)
+    ;
+        C = ('.')
+    ).
+
+:- pred macro_or_literal(src::in, token::out, ps::in, ps::out) is semidet.
+
+macro_or_literal(Src, Token, !PS) :-
+    current_offset(Src, Start, !PS),
+    word_chars(Src, !PS),
+    current_offset(Src, End, !PS),
+    End > Start,
+    input_substring(Src, Start, End, Word),
+    ( string.prefix(Word, "~") ->
+        ( simple_alias(Word, AliasToken) ->
+            Token = AliasToken
+        ;
+            Token = macro(Word)
+        )
+    ;
+        Token = literal(Word)
+    ).
 
 :- pred word_chars(src::in, ps::in, ps::out) is semidet.
 
@@ -118,125 +181,131 @@ is_word_char(C) :-
     C \= ')',
     not char.is_whitespace(C).
 
-:- pred check_apply_default_limit(list(token)::in, list(token)::out,
-    bool::out) is det.
+:- pred simple_alias(string::in, token::out) is semidet.
 
-check_apply_default_limit(Tokens0, Tokens, ApplyLimit) :-
-    ( list.contains(Tokens0, macro("~A")) ->
-        Tokens = list.delete_all(Tokens0, macro("~A")),
-        ApplyLimit = no
-    ;
-        Tokens = Tokens0,
-        ApplyLimit = yes
-    ).
+simple_alias("~D", literal("tag:deleted")).
+simple_alias("~F", literal("tag:flagged")).
+simple_alias("~U", literal("tag:unread")).
+simple_alias("~lw", date_range("last week", "")).
+simple_alias("~1w", date_range("last week", "")).
+simple_alias("~2w", date_range("2 weeks ago", "")).
+simple_alias("~3w", date_range("3 weeks ago", "")).
+simple_alias("~lm", date_range("last month", "")).
+simple_alias("~1m", date_range("last month", "")).
+simple_alias("~2m", date_range("2 months ago", "")).
+simple_alias("~3m", date_range("3 months ago", "")).
+simple_alias("~ly", date_range("last year", "")).
+simple_alias("~yesterday", date_range("yesterday", "")).
+simple_alias("~today", date_range("today", "")).
+simple_alias("~A", do_not_apply_limit).
 
-:- pred expand_words(set(string)::in, list(token)::in, list(string)::out,
+%-----------------------------------------------------------------------------%
+
+:- pred expand_config_aliases(set(string)::in, list(token)::in,
+    list(token)::out, io::di, io::uo) is det.
+
+expand_config_aliases(Seen, Tokens0, Tokens, !IO) :-
+    list.map_foldl(expand_config_alias(Seen), Tokens0, Tokens1, !IO),
+    list.condense(Tokens1, Tokens).
+
+:- pred expand_config_alias(set(string)::in, token::in, list(token)::out,
     io::di, io::uo) is det.
 
-expand_words(Seen, Tokens0, Words, !IO) :-
-    list.map_foldl(expand_word(Seen), Tokens0, Words1, !IO),
-    list.condense(Words1, Words).
-
-:- pred expand_word(set(string)::in, token::in, list(string)::out,
-    io::di, io::uo) is det.
-
-expand_word(Seen, Token0, Words, !IO) :-
+expand_config_alias(Seen, Token0, Tokens, !IO) :-
     (
-        Token0 = literal(Word),
-        Words = [Word]
-    ;
         Token0 = macro(Word0),
-        expand_fixed_alias(Token0, Words1, !IO),
+        expand_config_alias_macro(Seen, Token0, Tokens1, !IO),
         (
-            Words1 = [_ | _],
-            Words = Words1
+            Tokens1 = [_ | _],
+            Tokens = Tokens1
         ;
-            Words1 = [],
-            expand_config_alias(Seen, Token0, Words2, !IO),
-            (
-                Words2 = [_ | _],
-                Words = Words2
-            ;
-                Words2 = [],
-                Words = [Word0]
-            )
+            Tokens1 = [],
+            Tokens = [literal(Word0)]
         )
     ;
-        Token0 = date_range(FromString, ToString),
-        maybe_call_date(FromString, FromTime, !IO),
-        maybe_call_date(ToString, ToTime, !IO),
-        Words = [FromTime ++ ".." ++ ToTime]
+        ( Token0 = literal(_)
+        ; Token0 = date_range(_, _)
+        ; Token0 = do_not_apply_limit
+        ),
+        Tokens = [Token0]
     ).
 
-:- pred expand_fixed_alias(token::in(macro), list(string)::out, io::di, io::uo)
-    is det.
+:- pred expand_config_alias_macro(set(string)::in, token::in(macro),
+    list(token)::out, io::di, io::uo) is det.
 
-expand_fixed_alias(macro(Word0), Words, !IO) :-
-    ( Word0 = "~D" ->
-        Words = ["tag:deleted"]
-    ; Word0 = "~F" ->
-        Words = ["tag:flagged"]
-    ; Word0 = "~U" ->
-        Words = ["tag:unread"]
-    ; date_macro(Word0, DateSpec) ->
-        call_date(DateSpec, Time, !IO),
-        Words = [Time ++ ".."]
-    ;
-        Words = [] % fail
-    ).
-
-:- pred date_macro(string::in, string::out) is semidet.
-
-date_macro("~lw", "last week").
-date_macro("~1w", "last week").
-date_macro("~2w", "2 weeks ago").
-date_macro("~3w", "3 weeks ago").
-date_macro("~lm", "last month").
-date_macro("~1m", "last month").
-date_macro("~2m", "2 months ago").
-date_macro("~3m", "3 months ago").
-date_macro("~ly", "last year").
-date_macro("~yesterday", "yesterday").
-date_macro("~today", "today").
-
-:- pred expand_config_alias(set(string)::in, token::in(macro),
-    list(string)::out, io::di, io::uo) is det.
-
-expand_config_alias(Seen0, macro(Word), Words, !IO) :-
+expand_config_alias_macro(Seen0, macro(MacroName), Tokens, !IO) :-
     (
-        string.remove_prefix("~", Word, MacroName),
-        not set.contains(Seen0, MacroName)
+        string.remove_prefix("~", MacroName, Key),
+        not set.contains(Seen0, Key)
     ->
-        get_notmuch_config("search_alias", MacroName, Res, !IO),
+        get_notmuch_config("search_alias", Key, Res, !IO),
         (
             Res = ok(Expansion),
-            set.insert(MacroName, Seen0, Seen),
-            det_parse(Expansion, tokens, ExpansionTokens),
-            list.map_foldl(expand_word(Seen), ExpansionTokens, Wordss, !IO),
-            list.condense(Wordss, Words0),
-            Words = ["(" | Words0 ++ [")"]]
+            set.insert(Key, Seen0, Seen),
+            det_parse(Expansion, tokens, Tokens0),
+            expand_config_aliases(Seen, Tokens0, Tokens1, !IO),
+            Tokens = [literal("(")] ++ Tokens1 ++ [literal(")")]
         ;
             Res = error(_),
-            Words = [] % fail
+            Tokens = [] % fail
         )
     ;
-        Words = [] % fail
+        Tokens = [] % fail
     ).
 
-:- pred should_apply_default_filter(list(string)::in) is semidet.
+%-----------------------------------------------------------------------------%
 
-should_apply_default_filter(Words) :-
-    all [Word] (
-        list.member(Word, Words)
-    => (
-        Word \= "tag:deleted",
-        Word \= "tag:draft"
-    )).
+:- pred should_apply_default_filter(token::in) is semidet.
 
-:- pred add_default_filters(list(string)::in, list(string)::out) is det.
+should_apply_default_filter(Token) :-
+    Token \= literal("tag:deleted"),
+    Token \= literal("tag:draft").
 
-add_default_filters(Words0, Words) :-
-    Words = ["("] ++ Words0 ++ [") AND NOT ( tag:deleted OR tag:draft )"].
+:- pred add_default_filters(list(token)::in, list(token)::out) is det.
+
+add_default_filters(Tokens0, Tokens) :-
+    Tokens = [literal("(")] ++ Tokens0 ++
+        [literal(") AND NOT ( tag:deleted OR tag:draft )")].
+
+%-----------------------------------------------------------------------------%
+
+tokens_to_search_terms(Tokens0, Terms, ApplyLimit, !IO) :-
+    ( list.contains(Tokens0, do_not_apply_limit) ->
+        ApplyLimit = no
+    ;
+        ApplyLimit = yes
+    ),
+    list.map_foldl(token_to_search_term, Tokens0, TermList, !IO),
+    Terms = string.join_list(" ", TermList).
+
+:- pred token_to_search_term(token::in, string::out, io::di, io::uo) is det.
+
+token_to_search_term(Token, Term, !IO) :-
+    (
+        Token = literal(Term)
+    ;
+        Token = date_range(FromString, ToString),
+        date_string_to_time(FromString, FromTime, !IO),
+        date_string_to_time(ToString, ToTime, !IO),
+        Term = FromTime ++ ".." ++ ToTime
+    ;
+        Token = do_not_apply_limit,
+        Term = ""
+    ;
+        Token = macro(_),
+        % At this stage all macros have been expanded out.
+        unexpected($module, $pred, "macro should have been expanded")
+    ).
+
+:- pred date_string_to_time(string::in, string::out, io::di, io::uo)
+    is det.
+
+date_string_to_time(DateString, Time, !IO) :-
+    ( DateString = "" ->
+        Time = ""
+    ;
+        call_date(DateString, Time, !IO)
+    ).
 
     % Lazy man's date parser, at least until notmuch implements one.
     %
@@ -251,15 +320,6 @@ call_date(Arg, Res, !IO) :-
     ;
         CallRes = error(_),
         Res = Arg
-    ).
-
-:- pred maybe_call_date(string::in, string::out, io::di, io::uo) is det.
-
-maybe_call_date(Arg, Res, !IO) :-
-    ( Arg = "" ->
-        Res = ""
-    ;
-        call_date(Arg, Res, !IO)
     ).
 
 %-----------------------------------------------------------------------------%
