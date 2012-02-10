@@ -55,7 +55,7 @@
                 i_search_time       :: time_t,
                 i_poll_time         :: time_t,
                 i_poll_count        :: int,
-                i_search            :: maybe(string),
+                i_internal_search   :: maybe(string),
                 i_common_history    :: common_history,
                 i_compose_history   :: compose_history
             ).
@@ -88,8 +88,8 @@
     ;       refresh_all
     ;       start_compose
     ;       start_recall
-    ;       prompt_search
-    ;       skip_to_search
+    ;       prompt_internal_search
+    ;       skip_to_internal_search
     ;       toggle_unread
     ;       set_deleted
     ;       unset_deleted
@@ -104,7 +104,7 @@
     ;       refresh_all
     ;       start_compose
     ;       start_recall
-    ;       prompt_search
+    ;       prompt_internal_search
     ;       toggle_unread
     ;       set_deleted
     ;       unset_deleted
@@ -292,8 +292,8 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         ),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
-        Action = prompt_search,
-        prompt_search(Screen, !IndexInfo, !IO),
+        Action = prompt_internal_search,
+        prompt_internal_search(Screen, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = toggle_unread,
@@ -377,12 +377,12 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = start_recall
         ;
-            Binding = prompt_search,
+            Binding = prompt_internal_search,
             MessageUpdate = no_change,
-            Action = prompt_search
+            Action = prompt_internal_search
         ;
-            Binding = skip_to_search,
-            skip_to_search(Screen, MessageUpdate, !IndexInfo),
+            Binding = skip_to_internal_search,
+            skip_to_internal_search(Screen, MessageUpdate, !IndexInfo),
             Action = continue
         ;
             Binding = toggle_unread,
@@ -448,8 +448,8 @@ key_binding_char('\r', enter).
 key_binding_char('l', enter_limit).
 key_binding_char('m', start_compose).
 key_binding_char('R', start_recall).
-key_binding_char('/', prompt_search).
-key_binding_char('n', skip_to_search).
+key_binding_char('/', prompt_internal_search).
+key_binding_char('n', skip_to_internal_search).
 key_binding_char('N', toggle_unread).
 key_binding_char('d', set_deleted).
 key_binding_char('u', unset_deleted).
@@ -522,45 +522,45 @@ enter(Info, Action) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred prompt_search(screen::in, index_info::in, index_info::out,
+:- pred prompt_internal_search(screen::in, index_info::in, index_info::out,
     io::di, io::uo) is det.
 
-prompt_search(Screen, !Info, !IO) :-
-    History0 = !.Info ^ i_common_history ^ ch_search_history,
+prompt_internal_search(Screen, !Info, !IO) :-
+    History0 = !.Info ^ i_common_history ^ ch_internal_search_history,
     text_entry(Screen, "Search for: ", History0, complete_none, Return, !IO),
     (
         Return = yes(Search),
         ( Search = "" ->
-            !Info ^ i_search := no
+            !Info ^ i_internal_search := no
         ;
             add_history_nodup(Search, History0, History),
-            !Info ^ i_search := yes(Search),
-            !Info ^ i_common_history ^ ch_search_history := History,
-            skip_to_search(Screen, MessageUpdate, !Info),
+            !Info ^ i_internal_search := yes(Search),
+            !Info ^ i_common_history ^ ch_internal_search_history := History,
+            skip_to_internal_search(Screen, MessageUpdate, !Info),
             update_message(Screen, MessageUpdate, !IO)
         )
     ;
         Return = no
     ).
 
-:- pred skip_to_search(screen::in, message_update::out,
+:- pred skip_to_internal_search(screen::in, message_update::out,
     index_info::in, index_info::out) is det.
 
-skip_to_search(Screen, MessageUpdate, !Info) :-
-    MaybeSearch = !.Info ^ i_search,
+skip_to_internal_search(Screen, MessageUpdate, !Info) :-
+    MaybeSearch = !.Info ^ i_internal_search,
     (
         MaybeSearch = yes(Search),
         Scrollable0 = !.Info ^ i_scrollable,
         get_main_rows(Screen, NumRows),
         (
             get_cursor(Scrollable0, Cursor0),
-            search_forward(line_matches_search(Search), Scrollable0,
+            search_forward(line_contains_substring(Search), Scrollable0,
                 Cursor0 + 1, Cursor, _)
         ->
             set_cursor_visible(Cursor, NumRows, Scrollable0, Scrollable),
             MessageUpdate = clear_message
         ;
-            search_forward(line_matches_search(Search), Scrollable0,
+            search_forward(line_contains_substring(Search), Scrollable0,
                 0, Cursor, _)
         ->
             set_cursor_visible(Cursor, NumRows, Scrollable0, Scrollable),
@@ -575,9 +575,9 @@ skip_to_search(Screen, MessageUpdate, !Info) :-
         MessageUpdate = set_warning("No search string.")
     ).
 
-:- pred line_matches_search(string::in, index_line::in) is semidet.
+:- pred line_contains_substring(string::in, index_line::in) is semidet.
 
-line_matches_search(Search, Line) :-
+line_contains_substring(Search, Line) :-
     Line = index_line(_Id, _Unread, _Replied, _Flagged, _Deleted, _Date,
         Authors, Subject, _Tags, _Matched, _Total),
     (

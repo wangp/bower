@@ -1256,7 +1256,7 @@ prompt_open_url(Screen, Url, !Info, !IO) :-
     thread_pager_info::out, io::di, io::uo) is det.
 
 prompt_search(Screen, !Info, !IO) :-
-    History0 = !.Info ^ tp_common_history ^ ch_search_history,
+    History0 = !.Info ^ tp_common_history ^ ch_internal_search_history,
     text_entry(Screen, "Search for: ", History0, complete_none, Return, !IO),
     (
         Return = yes(Search),
@@ -1265,7 +1265,7 @@ prompt_search(Screen, !Info, !IO) :-
         ;
             add_history_nodup(Search, History0, History),
             !Info ^ tp_search := yes(Search),
-            !Info ^ tp_common_history ^ ch_search_history := History,
+            !Info ^ tp_common_history ^ ch_internal_search_history := History,
             skip_to_search(new_search, MessageUpdate, !Info),
             update_message(Screen, MessageUpdate, !IO)
         )
