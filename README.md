@@ -160,10 +160,10 @@ Search term aliases
 
 Bower will try to expand search terms written with the syntax `~WORD`.
 The expansions should be added to the notmuch config file `~/.notmuch-config`
-in a section called `[search_alias]`.  Expansions may make use of other
+in a section called `[bower:search_alias]`.  Expansions may make use of other
 (non-recursive) expansions, e.g.
 
-    [search_alias]
+    [bower:search_alias]
     bower = to:notmuch AND bower
     bower_recent = ~lm ~bower
 
@@ -176,7 +176,7 @@ containing only alphanumeric, underscore or '-' or '+' characters.
 The expansions should be added to the notmuch config file `~/.notmuch-config`
 in a section called [addressbook], e.g.
 
-    [addressbook]
+    [bower:addressbook]
     someone = Someone <someone@example.org>
     someoneelse = someoneelse@example.org
 

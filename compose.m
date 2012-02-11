@@ -547,7 +547,7 @@ expand_aliases(String0, String, !IO) :-
 expand_aliases_2(Word0, Expansion, !IO) :-
     Word1 = string.strip(Word0),
     ( string.all_match(is_alias_char, Word1) ->
-        Key = "addressbook." ++ Word1,
+        Key = "bower:addressbook." ++ Word1,
         get_notmuch_config(Key, MaybeValue, !IO),
         (
             MaybeValue = ok(Expansion)

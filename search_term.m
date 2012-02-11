@@ -238,7 +238,7 @@ expand_config_alias_macro(Seen0, macro(MacroName), Tokens, !IO) :-
         string.remove_prefix("~", MacroName, Key),
         not set.contains(Seen0, Key)
     ->
-        get_notmuch_config("search_alias", Key, Res, !IO),
+        get_notmuch_config("bower:search_alias", Key, Res, !IO),
         (
             Res = ok(Expansion),
             set.insert(Key, Seen0, Seen),
