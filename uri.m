@@ -158,6 +158,7 @@ valid_uri_char('-').
 valid_uri_char('_').
 valid_uri_char('.').
 valid_uri_char('~').
+valid_uri_char('%').
 
 :- pred detect_bracketed_url_end(string::in, int::in, int::in, int::out)
     is semidet.
