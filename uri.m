@@ -14,6 +14,8 @@
 :- import_module int.
 :- import_module string.
 
+:- import_module string_util.
+
 %-----------------------------------------------------------------------------%
 
 detect_url(String, Start, End) :-
@@ -22,7 +24,8 @@ detect_url(String, Start, End) :-
 :- pred detect_url_2(string::in, int::in, int::out, int::out) is semidet.
 
 detect_url_2(String, BeginAt, Start, End) :-
-    string.sub_string_search_start(String, "http", BeginAt, Http),
+    % string.sub_string_search_start is unnecessarily safe.
+    string_util.unsafe_strstr(String, "http", BeginAt, Http),
     AfterHttp = Http + 4,
     (
         is_start_of_word(String, Http),

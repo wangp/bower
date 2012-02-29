@@ -12,6 +12,8 @@
 
 :- pred strrchr(string::in, char::in, int::out) is semidet.
 
+:- pred unsafe_strstr(string::in, string::in, int::in, int::out) is semidet.
+
 :- pred verify_utf8(string::in) is semidet.
 
 :- type pieces
@@ -57,6 +59,22 @@
     } else {
         SUCCESS_INDICATOR = MR_FALSE;
         I = -1;
+    }
+").
+
+:- pragma foreign_proc("C",
+    unsafe_strstr(Haystack::in, Needle::in, BeginAt::in, Index::out),
+    [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
+"
+    const char *p;
+
+    p = strstr(Haystack + BeginAt, Needle);
+    if (p != NULL) {
+        SUCCESS_INDICATOR = MR_TRUE;
+        Index = (p - Haystack);
+    } else {
+        SUCCESS_INDICATOR = MR_FALSE;
+        Index = -1;
     }
 ").
 
