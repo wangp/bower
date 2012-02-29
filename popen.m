@@ -72,7 +72,7 @@ popen(Command, Res, !IO) :-
             } else {
                 buf[n] = '\\0';
                 MR_make_aligned_string_copy(s, buf);
-                RevList = MR_list_cons(s, RevList); 
+                RevList = MR_list_cons((MR_Word)s, RevList);
             }
         }
         ExitStatus = pclose(fp);
