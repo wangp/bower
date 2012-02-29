@@ -39,6 +39,8 @@
 :- import_module pair.
 :- import_module string.
 
+:- import_module string_util.
+
 :- type esc_string
     --->    esc_string(string).
 
@@ -116,8 +118,8 @@ id_chars = "abcdefghijklmnopqrstuvwxyz".
 
 unescape(esc_string(S0)) = S :-
     ( contains_backslash(S0) ->
-        unescape_loop(S0, 0, _, [], RevChars),
-        string.from_rev_char_list(RevChars, S)
+        unescape_loop(S0, 0, 0, empty, RevPieces),
+        string_from_rev_pieces(RevPieces, S)
     ;
         S = S0
     ).
@@ -131,60 +133,77 @@ unescape(esc_string(S0)) = S :-
     SUCCESS_INDICATOR = (strchr(Str, '\\\\') != NULL);
 ").
 
-:- pred unescape_loop(string::in, int::in, int::out,
-    list(char)::in, list(char)::out) is det.
+:- pred unescape_loop(string::in, int::in, int::in,
+    pieces::in, pieces::out) is det.
 
-unescape_loop(S, !I, !RevChars) :-
-    ( string.unsafe_index_next(S, !I, C0) ->
+unescape_loop(S, AnchorPos, Pos0, !RevPieces) :-
+    ( string.unsafe_index_next(S, Pos0, Pos1, C0) ->
         ( C0 = ('\\') ->
-            ( string.unsafe_index_next(S, !I, C1) ->
-                ( simple_escape(C1, RealChar) ->
-                    !:RevChars = [RealChar | !.RevChars]
-                ; C1 = 'u' ->
-                    (
-                        hex_digit(S, !I, U1),
-                        hex_digit(S, !I, U2),
-                        hex_digit(S, !I, U3),
-                        hex_digit(S, !I, U4)
-                    ->
-                        Int = (U1 << 12) \/ (U2 << 8) \/ (U3 << 4) \/ U4,
-                        (
-                            char.from_int(Int, Unichar),
-                            not char.is_surrogate(Unichar),
-                            not char.is_noncharacter(Unichar)
-                        ->
-                            !:RevChars = [Unichar | !.RevChars]
-                        ;
-                            !:RevChars = [replacement_char | !.RevChars]
-                        )
-                    ;
-                        !:RevChars = [replacement_char | !.RevChars]
-                    )
-                ;
-                    !:RevChars = [replacement_char | !.RevChars]
-                )
-            ;
-                !:RevChars = [replacement_char | !.RevChars]
-            ),
-            unescape_loop(S, !I, !RevChars)
+            add_substring_piece(S, AnchorPos, Pos0, !RevPieces),
+            unescape_sequence(S, Pos1, Pos2, !RevPieces),
+            unescape_loop(S, Pos2, Pos2, !RevPieces)
         ;
-            !:RevChars = [C0 | !.RevChars],
-            unescape_loop(S, !I, !RevChars)
+            unescape_loop(S, AnchorPos, Pos1, !RevPieces)
         )
     ;
-        true
+        add_substring_piece(S, AnchorPos, Pos0, !RevPieces)
     ).
 
-:- pred simple_escape(char::in, char::out) is semidet.
+:- pred add_substring_piece(string::in, int::in, int::in,
+    pieces::in, pieces::out) is det.
 
-simple_escape('"', '"').
-simple_escape('\\', '\\').
-simple_escape('/', '/').
-simple_escape('b', '\b').
-simple_escape('f', '\f').
-simple_escape('n', '\n').
-simple_escape('r', '\r').
-simple_escape('t', '\t').
+add_substring_piece(S, AnchorPos, Pos, RevPieces0, RevPieces) :-
+    ( AnchorPos < Pos ->
+        RevPieces = substring(S, AnchorPos, Pos, RevPieces0)
+    ;
+        RevPieces = RevPieces0
+    ).
+
+:- pred unescape_sequence(string::in, int::in, int::out,
+    pieces::in, pieces::out) is det.
+
+unescape_sequence(S, !I, !RevPieces) :-
+    ( string.unsafe_index_next(S, !I, C1) ->
+        ( simple_escape(C1, RealChar) ->
+            !:RevPieces = literal(RealChar, !.RevPieces)
+        ; C1 = 'u' ->
+            (
+                hex_digit(S, !I, U1),
+                hex_digit(S, !I, U2),
+                hex_digit(S, !I, U3),
+                hex_digit(S, !I, U4)
+            ->
+                Int = (U1 << 12) \/ (U2 << 8) \/ (U3 << 4) \/ U4,
+                (
+                    char.from_int(Int, Unichar),
+                    not char.is_surrogate(Unichar),
+                    not char.is_noncharacter(Unichar)
+                ->
+                    UnicharString = string.from_char(Unichar),
+                    !:RevPieces = literal(UnicharString, !.RevPieces)
+                ;
+                    !:RevPieces = literal(replacement_char, !.RevPieces)
+                )
+            ;
+                !:RevPieces = literal(replacement_char, !.RevPieces)
+            )
+        ;
+            !:RevPieces = literal(replacement_char, !.RevPieces)
+        )
+    ;
+        !:RevPieces = literal(replacement_char, !.RevPieces)
+    ).
+
+:- pred simple_escape(char::in, string::out) is semidet.
+
+simple_escape('"', "\"").
+simple_escape('\\', "\\").
+simple_escape('/', "/").
+simple_escape('b', "\b").
+simple_escape('f', "\f").
+simple_escape('n', "\n").
+simple_escape('r', "\r").
+simple_escape('t', "\t").
 
 :- pred hex_digit(string::in, int::in, int::out, int::out) is semidet.
 
@@ -192,9 +211,9 @@ hex_digit(S, !I, Int) :-
     string.unsafe_index_next(S, !I, C),
     char.is_hex_digit(C, Int).
 
-:- func replacement_char = char.
+:- func replacement_char = string.
 
-replacement_char = '\ufffd'.
+replacement_char = "\ufffd".
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
