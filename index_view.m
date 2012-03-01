@@ -663,28 +663,8 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
                 add_history_nodup(String, History0, History),
                 !Info ^ i_common_history ^ ch_tag_history := History,
                 ( validate_tag_deltas(Words, TagDeltas, AddTags, RemoveTags) ->
-                    CursorLine0 = index_line(ThreadId, _Unread, _Replied,
-                        _Deleted, _Flagged, Date, Authors, Subject, TagSet0,
-                        _NonstdTagsWidth, Matched, Total),
-                    tag_thread(TagDeltas, ThreadId, Res, !IO),
-                    (
-                        Res = ok,
-                        % Notmuch performs tag removals before addition.
-                        set.difference(TagSet0, RemoveTags, TagSet1),
-                        set.union(TagSet1, AddTags, TagSet),
-                        get_standard_tag_state(TagSet, Unread, Replied,
-                            Deleted, Flagged),
-                        get_nonstandard_tags_width(TagSet, NonstdTagsWidth),
-                        CursorLine = index_line(ThreadId, Unread, Replied,
-                            Deleted, Flagged, Date, Authors, Subject, TagSet,
-                            NonstdTagsWidth, Matched, Total),
-                        set_cursor_line(CursorLine, Scrollable0, Scrollable),
-                        !Info ^ i_scrollable := Scrollable
-                    ;
-                        Res = error(Error),
-                        MessageUpdate = set_warning(io.error_message(Error)),
-                        update_message(Screen, MessageUpdate, !IO)
-                    )
+                    apply_tag_changes(Screen, CursorLine0, TagDeltas,
+                        AddTags, RemoveTags, !Info, !IO)
                 ;
                     update_message(Screen,
                         set_warning("Tags must be of the form +tag or -tag."),
@@ -698,6 +678,34 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
         )
     ;
         update_message(Screen, set_warning("No thread."), !IO)
+    ).
+
+:- pred apply_tag_changes(screen::in, index_line::in, list(tag_delta)::in,
+    set(tag)::in, set(tag)::in, index_info::in, index_info::out,
+    io::di, io::uo) is det.
+
+apply_tag_changes(Screen, CursorLine0, TagDeltas, AddTags, RemoveTags,
+        !Info, !IO) :-
+    CursorLine0 = index_line(ThreadId, _Unread, _Replied, _Deleted, _Flagged,
+        Date, Authors, Subject, TagSet0, _NonstdTagsWidth, Matched, Total),
+    tag_thread(TagDeltas, ThreadId, Res, !IO),
+    (
+        Res = ok,
+        % Notmuch performs tag removals before addition.
+        set.difference(TagSet0, RemoveTags, TagSet1),
+        set.union(TagSet1, AddTags, TagSet),
+        get_standard_tag_state(TagSet, Unread, Replied,
+            Deleted, Flagged),
+        get_nonstandard_tags_width(TagSet, NonstdTagsWidth),
+        CursorLine = index_line(ThreadId, Unread, Replied, Deleted, Flagged,
+            Date, Authors, Subject, TagSet, NonstdTagsWidth, Matched, Total),
+        Scrollable0 = !.Info ^ i_scrollable,
+        set_cursor_line(CursorLine, Scrollable0, Scrollable),
+        !Info ^ i_scrollable := Scrollable
+    ;
+        Res = error(Error),
+        MessageUpdate = set_warning(io.error_message(Error)),
+        update_message(Screen, MessageUpdate, !IO)
     ).
 
 %-----------------------------------------------------------------------------%
