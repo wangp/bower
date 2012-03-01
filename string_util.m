@@ -6,6 +6,10 @@
 
 :- import_module char.
 
+:- func wcwidth(char) = int.
+
+:- func string_wcwidth(string) = int.
+
 :- pred strcase_equal(string::in, string::in) is semidet.
 
 :- pred strcase_str(string::in, string::in) is semidet.
@@ -31,6 +35,29 @@
 :- import_module int.
 :- import_module require.
 :- import_module string.
+
+%-----------------------------------------------------------------------------%
+
+:- pragma foreign_decl("C", local,
+"
+    #include <wchar.h>
+").
+
+:- pragma foreign_proc("C",
+    wcwidth(C::in) = (Width::out),
+    [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
+"
+    Width = (C < 256) ? 1 : wcwidth(C);
+").
+
+string_wcwidth(S) = Width :-
+    string.foldl(string_wcwidth_2, S, 0, Width).
+
+:- pred string_wcwidth_2(char::in, int::in, int::out) is det.
+
+string_wcwidth_2(C, Width, Width + wcwidth(C)).
+
+%-----------------------------------------------------------------------------%
 
 :- pragma foreign_proc("C",
     strcase_equal(SA::in, SB::in),
@@ -78,6 +105,8 @@
     }
 ").
 
+%-----------------------------------------------------------------------------%
+
 verify_utf8(String) :-
     verify_utf8_2(String, 0, string.count_codepoints(String)).
 
@@ -91,6 +120,8 @@ verify_utf8_2(String, Cur, End) :-
     ;
         fail
     ).
+
+%-----------------------------------------------------------------------------%
 
 string_from_rev_pieces(Pieces, String) :-
     pieces_length(Pieces, 0, Length),

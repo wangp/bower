@@ -80,10 +80,7 @@
 :- import_module require.
 :- import_module string.
 
-:- pragma foreign_decl("C", local,
-"
-    #include <wchar.h>
-").
+:- import_module string_util.
 
 :- type screen == mutvar(real_screen).
 
@@ -232,23 +229,13 @@ count_loop(String, RemCols, !Index) :-
     (
         RemCols > 0,
         string.unsafe_index_next(String, !Index, Char),
-        wcwidth(Char, CharWidth),
-        RemCols1 = RemCols - CharWidth,
+        RemCols1 = RemCols - wcwidth(Char),
         RemCols1 >= 0
     ->
         count_loop(String, RemCols1, !Index)
     ;
         true
     ).
-
-:- pred wcwidth(char::in, int::out) is det.
-
-:- pragma foreign_proc("C",
-    wcwidth(C::in, Width::out),
-    [will_not_call_mercury, promise_pure, thread_safe],
-"
-    Width = (C < 256) ? 1 : wcwidth(C);
-").
 
 %-----------------------------------------------------------------------------%
 
