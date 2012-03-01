@@ -71,6 +71,7 @@
                 i_authors   :: string,
                 i_subject   :: string,
                 i_tags      :: set(tag),
+                i_nonstd_tags_width :: int,
                 i_matched   :: int,
                 i_total     :: int
             ).
@@ -205,8 +206,9 @@ thread_to_index_line(Nowish, Thread, Line) :-
     Shorter = yes,
     make_reldate(Nowish, TM, Shorter, Date),
     get_standard_tag_state(Tags, Unread, Replied, Deleted, Flagged),
+    get_nonstandard_tags_width(Tags, NonstdTagsWidth),
     Line = index_line(Id, Unread, Replied, Deleted, Flagged,
-        Date, Authors, Subject, Tags, Matched, Total).
+        Date, Authors, Subject, Tags, NonstdTagsWidth, Matched, Total).
 
 :- func default_max_threads = int.
 
@@ -579,7 +581,7 @@ skip_to_internal_search(Screen, MessageUpdate, !Info) :-
 
 line_contains_substring(Search, Line) :-
     Line = index_line(_Id, _Unread, _Replied, _Flagged, _Deleted, _Date,
-        Authors, Subject, _Tags, _Matched, _Total),
+        Authors, Subject, _Tags, _TagsWidth, _Matched, _Total),
     (
         strcase_str(Authors, Search)
     ;
@@ -649,7 +651,6 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,
     History0 = !.Info ^ i_common_history ^ ch_tag_history,
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
-        ThreadId = CursorLine0 ^ i_id,
         FirstTime = no,
         text_entry_full(Screen, "Change tags: ", History0, Initial,
             complete_none, FirstTime, Return, !IO),
@@ -662,15 +663,21 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
                 add_history_nodup(String, History0, History),
                 !Info ^ i_common_history ^ ch_tag_history := History,
                 ( validate_tag_deltas(Words, TagDeltas, AddTags, RemoveTags) ->
+                    CursorLine0 = index_line(ThreadId, _Unread, _Replied,
+                        _Deleted, _Flagged, Date, Authors, Subject, TagSet0,
+                        _NonstdTagsWidth, Matched, Total),
                     tag_thread(TagDeltas, ThreadId, Res, !IO),
                     (
                         Res = ok,
                         % Notmuch performs tag removals before addition.
-                        TagSet0 = CursorLine0 ^ i_tags,
                         set.difference(TagSet0, RemoveTags, TagSet1),
                         set.union(TagSet1, AddTags, TagSet),
-                        CursorLine1 = CursorLine0 ^ i_tags := TagSet,
-                        update_standard_tags(CursorLine1, CursorLine),
+                        get_standard_tag_state(TagSet, Unread, Replied,
+                            Deleted, Flagged),
+                        get_nonstandard_tags_width(TagSet, NonstdTagsWidth),
+                        CursorLine = index_line(ThreadId, Unread, Replied,
+                            Deleted, Flagged, Date, Authors, Subject, TagSet,
+                            NonstdTagsWidth, Matched, Total),
                         set_cursor_line(CursorLine, Scrollable0, Scrollable),
                         !Info ^ i_scrollable := Scrollable
                     ;
@@ -692,15 +699,6 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
     ;
         update_message(Screen, set_warning("No thread."), !IO)
     ).
-
-:- pred update_standard_tags(index_line::in, index_line::out) is det.
-
-update_standard_tags(Line0, Line) :-
-    Line0 = index_line(Id, _read, _not_replied, _not_deleted, _unflagged,
-        Date, Authors, Subject, Tags, Matched, Total),
-    get_standard_tag_state(Tags, Unread, Replied, Deleted, Flagged),
-    Line = index_line(Id, Unread, Replied, Deleted, Flagged,
-        Date, Authors, Subject, Tags, Matched, Total).
 
 %-----------------------------------------------------------------------------%
 
@@ -846,7 +844,7 @@ draw_index_view(Screen, Info, !IO) :-
 
 draw_index_line(Panel, Line, IsCursor, !IO) :-
     Line = index_line(_Id, Unread, Replied, Deleted, Flagged,
-        Date, Authors, Subject, Tags, Matched, Total),
+        Date, Authors, Subject, Tags, NonstdTagsWidth, Matched, Total),
     (
         IsCursor = yes,
         panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
@@ -897,9 +895,24 @@ draw_index_line(Panel, Line, IsCursor, !IO) :-
     ),
     my_addstr(Panel, CountStr, !IO),
     cond_attr_set(Panel, normal, IsCursor, !IO),
+    panel.getyx(Panel, Row, SubjectX0, !IO),
     my_addstr(Panel, Subject, !IO),
-    attr_set(Panel, fg_bg(red, black) + bold, !IO),
-    set.fold(draw_nonstandard_tag(Panel), Tags, !IO).
+    % Draw non-standard tags, overlapping up to half of the subject.
+    ( NonstdTagsWidth > 0 ->
+        panel.getyx(Panel, _, SubjectX, !IO),
+        panel.getmaxyx(Panel, _, MaxX, !IO),
+        ( MaxX - SubjectX < NonstdTagsWidth ->
+            SubjectMidX = (MaxX + SubjectX0)/2,
+            MoveX = max(SubjectMidX, MaxX - NonstdTagsWidth),
+            panel.move(Panel, Row, MoveX, !IO)
+        ;
+            true
+        ),
+        attr_set(Panel, fg_bg(red, black) + bold, !IO),
+        set.fold(draw_nonstandard_tag(Panel), Tags, !IO)
+    ;
+        true
+    ).
 
 :- pred draw_nonstandard_tag(panel::in, tag::in, io::di, io::uo) is det.
 

@@ -37,6 +37,8 @@
 :- pred get_standard_tag_state(set(tag)::in,
     unread::out, replied::out, deleted::out, flagged::out) is det.
 
+:- pred get_nonstandard_tags_width(set(tag)::in, int::out) is det.
+
 :- pred validate_tag_deltas(list(string)::in, list(tag_delta)::out,
     set(tag)::out, set(tag)::out) is semidet.
 
@@ -45,7 +47,10 @@
 
 :- implementation.
 
+:- import_module int.
 :- import_module string.
+
+:- import_module string_util.
 
 %-----------------------------------------------------------------------------%
 
@@ -65,6 +70,23 @@ get_standard_tag_state(Tags, Unread, Replied, Deleted, Flagged) :-
     Replied = ( set.contains(Tags, tag("replied")) -> replied ; not_replied ),
     Deleted = ( set.contains(Tags, tag("deleted")) -> deleted ; not_deleted ),
     Flagged = ( set.contains(Tags, tag("flagged")) -> flagged ; unflagged ).
+
+%-----------------------------------------------------------------------------%
+
+get_nonstandard_tags_width(Tags, Length) :-
+    set.to_sorted_list(Tags, TagList),
+    list.negated_filter(standard_tag, TagList, NonstdTags),
+    list.length(NonstdTags, NumNonstdTags),
+    ( NumNonstdTags > 0 ->
+        SepLength = NumNonstdTags,
+        list.foldl(sum_tag_length, NonstdTags, SepLength, Length)
+    ;
+        Length = 0
+    ).
+
+:- pred sum_tag_length(tag::in, int::in, int::out) is det.
+
+sum_tag_length(tag(TagName), Len, Len + string_wcwidth(TagName)).
 
 %-----------------------------------------------------------------------------%
 
