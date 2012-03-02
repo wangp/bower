@@ -197,20 +197,31 @@ parse_part(MessageId, JSON, Part) :-
         JSON/"id" = int(PartId),
         JSON/"content-type" = unesc_string(ContentType)
     ->
-        ( JSON/"filename" = unesc_string(Filename) ->
-            MaybeFilename = yes(Filename)
-        ;
+        ( string.prefix(ContentType, "multipart/") ->
+            ( JSON/"content" = array(SubParts0) ->
+                list.map(parse_part(MessageId), SubParts0, SubParts),
+                Content = subparts(SubParts),
+                MaybeFilename = no
+            ;
+                notmuch_json_error
+            )
+        ; ContentType = "message/rfc822" ->
+            Content = unsupported,
             MaybeFilename = no
-        ),
-        ( JSON/"content" = unesc_string(ContentString) ->
-            Content = text(ContentString)
-        ; JSON/"content" = array(SubParts0) ->
-            list.map(parse_part(MessageId), SubParts0, SubParts),
-            Content = subparts(SubParts)
         ;
-            % "content" is unavailable for non-text parts.
-            % We can those by running notmuch show --part=N id:NNN
-            Content = unsupported
+            % Leaf part.
+            ( JSON/"filename" = unesc_string(Filename) ->
+                MaybeFilename = yes(Filename)
+            ;
+                MaybeFilename = no
+            ),
+            ( JSON/"content" = unesc_string(ContentString) ->
+                Content = text(ContentString)
+            ;
+                % "content" is unavailable for non-text parts.
+                % We can those by running notmuch show --part=N id:NNN
+                Content = unsupported
+            )
         ),
         Part = part(MessageId, PartId, ContentType, Content, MaybeFilename)
     ;
