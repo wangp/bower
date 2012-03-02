@@ -144,8 +144,8 @@ This view pages through an entire thread.  The keys are:
     g               reply to group
     L               reply to list
 
-    v               highlight next visible message or part
-    V               highlight next visible URL
+    v               highlight next visible attachment or URL
+    V               highlight next visible attachment or top of message
     s               save highlighted message/part
     o               open highlighted message/part/URL with external program
 

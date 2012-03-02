@@ -61,12 +61,12 @@
 :- pred skip_to_search(int::in, search_kind::in, string::in,
     message_update::out, pager_info::in, pager_info::out) is det.
 
-:- pred highlight_part(int::in, message_update::out,
+:- pred highlight_part_or_url(int::in, message_update::out,
     pager_info::in, pager_info::out) is det.
 
 :- pred get_highlighted_part(pager_info::in, part::out) is semidet.
 
-:- pred highlight_url(int::in, message_update::out,
+:- pred highlight_part_or_message(int::in, message_update::out,
     pager_info::in, pager_info::out) is det.
 
 :- pred get_highlighted_url(pager_info::in, string::out) is semidet.
@@ -694,18 +694,18 @@ line_matches_search(Search, Line) :-
 
 %-----------------------------------------------------------------------------%
 
-highlight_part(NumRows, MessageUpdate, !Info) :-
-    ( do_highlight(is_highlightable_part, NumRows, !Info) ->
+highlight_part_or_url(NumRows, MessageUpdate, !Info) :-
+    ( do_highlight(is_highlightable_part_or_url, NumRows, !Info) ->
+        MessageUpdate = clear_message
+    ;
+        MessageUpdate = set_warning("No attachment or URL visible.")
+    ).
+
+highlight_part_or_message(NumRows, MessageUpdate, !Info) :-
+    ( do_highlight(is_highlightable_part_or_message, NumRows, !Info) ->
         MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("No attachment or top of message visible.")
-    ).
-
-highlight_url(NumRows, MessageUpdate, !Info) :-
-    ( do_highlight(is_highlightable_url, NumRows, !Info) ->
-        MessageUpdate = clear_message
-    ;
-        MessageUpdate = set_warning("No URL visible.")
     ).
 
 :- pred do_highlight(pred(pager_line)::in(pred(in) is semidet), int::in,
@@ -733,15 +733,16 @@ do_highlight(Highlightable, NumRows, !Info) :-
     ),
     !:Info = pager_info(Scrollable).
 
-:- pred is_highlightable_part(pager_line::in) is semidet.
+:- pred is_highlightable_part_or_url(pager_line::in) is semidet.
 
-is_highlightable_part(start_message_header(_, _, _)).
-is_highlightable_part(attachment(_)).
+is_highlightable_part_or_url(attachment(_)).
+is_highlightable_part_or_url(text(_, url(_, _))).
+is_highlightable_part_or_url(quoted_text(_, _, url(_, _))).
 
-:- pred is_highlightable_url(pager_line::in) is semidet.
+:- pred is_highlightable_part_or_message(pager_line::in) is semidet.
 
-is_highlightable_url(text(_, url(_, _))).
-is_highlightable_url(quoted_text(_, _, url(_, _))).
+is_highlightable_part_or_message(start_message_header(_, _, _)).
+is_highlightable_part_or_message(attachment(_)).
 
 get_highlighted_part(Info, Part) :-
     Info = pager_info(Scrollable),

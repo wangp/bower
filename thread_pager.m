@@ -639,12 +639,12 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ;
         Key = char('v')
     ->
-        highlight_part(MessageUpdate, !Info),
+        highlight_part_or_url(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('V')
     ->
-        highlight_url(MessageUpdate, !Info),
+        highlight_part_or_message(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('s')
@@ -1024,22 +1024,22 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred highlight_part(message_update::out,
+:- pred highlight_part_or_url(message_update::out,
     thread_pager_info::in, thread_pager_info::out) is det.
 
-highlight_part(MessageUpdate, !Info) :-
+highlight_part_or_url(MessageUpdate, !Info) :-
     Pager0 = !.Info ^ tp_pager,
     NumRows = !.Info ^ tp_num_pager_rows,
-    highlight_part(NumRows, MessageUpdate, Pager0, Pager),
+    highlight_part_or_url(NumRows, MessageUpdate, Pager0, Pager),
     !Info ^ tp_pager := Pager.
 
-:- pred highlight_url(message_update::out,
+:- pred highlight_part_or_message(message_update::out,
     thread_pager_info::in, thread_pager_info::out) is det.
 
-highlight_url(MessageUpdate, !Info) :-
+highlight_part_or_message(MessageUpdate, !Info) :-
     Pager0 = !.Info ^ tp_pager,
     NumRows = !.Info ^ tp_num_pager_rows,
-    highlight_url(NumRows, MessageUpdate, Pager0, Pager),
+    highlight_part_or_message(NumRows, MessageUpdate, Pager0, Pager),
     !Info ^ tp_pager := Pager.
 
 %-----------------------------------------------------------------------------%
