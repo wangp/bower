@@ -47,6 +47,7 @@
 :- import_module popen.
 :- import_module prog_config.
 :- import_module quote_arg.
+:- import_module string_util.
 
 %-----------------------------------------------------------------------------%
 
@@ -95,7 +96,8 @@ run_notmuch(Args, P, Result, !IO) :-
     get_notmuch_prefix(Notmuch, !IO),
     popen(Notmuch ++ Command, CommandResult, !IO),
     (
-        CommandResult = ok(String),
+        CommandResult = ok(String0),
+        fix_utf8(String0, String),
         parse_json(String, ParseResult),
         (
             ParseResult = ok(JSON),
