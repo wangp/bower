@@ -96,7 +96,7 @@
     ;       resize
     ;       start_reply(message, reply_kind)
     ;       prompt_tag(string)
-    ;       prompt_save_part(part)
+    ;       prompt_save_part(part, maybe(string))
     ;       prompt_open_part(part)
     ;       prompt_open_url(string)
     ;       prompt_search
@@ -443,8 +443,8 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         prompt_tag(Screen, Initial, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
-        Action = prompt_save_part(Part),
-        prompt_save_part(Screen, Part, !Info, !IO),
+        Action = prompt_save_part(Part, MaybeSubject),
+        prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = prompt_open_part(Part),
@@ -1050,18 +1050,18 @@ highlight_part_or_message(MessageUpdate, !Info) :-
 
 save_part(Action, MessageUpdate, !Info) :-
     Pager = !.Info ^ tp_pager,
-    ( get_highlighted_part(Pager, Part) ->
-        Action = prompt_save_part(Part),
+    ( get_highlighted_part(Pager, Part, MaybeSubject) ->
+        Action = prompt_save_part(Part, MaybeSubject),
         MessageUpdate = clear_message
     ;
         Action = continue,
         MessageUpdate = set_warning("No message or attachment selected.")
     ).
 
-:- pred prompt_save_part(screen::in, part::in,
+:- pred prompt_save_part(screen::in, part::in, maybe(string)::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
-prompt_save_part(Screen, Part, !Info, !IO) :-
+prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
     MessageId = Part ^ pt_msgid,
     PartId = Part ^ pt_part,
     MaybePartFilename = Part ^ pt_filename,
@@ -1069,6 +1069,11 @@ prompt_save_part(Screen, Part, !Info, !IO) :-
         MaybePartFilename = yes(PartFilename)
     ;
         MaybePartFilename = no,
+        MaybeSubject = yes(Subject),
+        make_filename_from_subject(Subject, PartFilename)
+    ;
+        MaybePartFilename = no,
+        MaybeSubject = no,
         MessageId = message_id(IdStr),
         PartFilename = string.format("%s.part_%d", [s(IdStr), i(PartId)])
     ),
@@ -1110,6 +1115,34 @@ prompt_save_part(Screen, Part, !Info, !IO) :-
         MessageUpdate = clear_message
     ),
     update_message(Screen, MessageUpdate, !IO).
+
+:- pred make_filename_from_subject(string::in, string::out) is det.
+
+make_filename_from_subject(Subject, Filename) :-
+    string.to_char_list(Subject, CharList0),
+    list.filter_map(replace_subject_char, CharList0, CharList),
+    string.from_char_list(CharList, Filename).
+
+:- pred replace_subject_char(char::in, char::out) is semidet.
+
+replace_subject_char(C0, C) :-
+    (
+        ( char.is_alnum_or_underscore(C0)
+        ; C0 = ('+')
+        ; C0 = ('-')
+        ; C0 = ('.')
+        ; C0 = (':')
+        ; char.to_int(C0) >= 0x80
+        )
+    ->
+        C = C0
+    ;
+        ( C0 = (' ')
+        ; C0 = ('/')
+        ; C0 = ('\\')
+        ),
+        C = ('-')
+    ).
 
 :- pred make_save_part_initial_prompt(history::in, string::in, string::out)
     is det.
@@ -1155,7 +1188,7 @@ do_save_part(MessageId, Part, FileName, Res, !IO) :-
 
 open_part(Action, MessageUpdate, !Info) :-
     Pager = !.Info ^ tp_pager,
-    ( get_highlighted_part(Pager, Part) ->
+    ( get_highlighted_part(Pager, Part, _MaybeFilename) ->
         Action = prompt_open_part(Part),
         MessageUpdate = clear_message
     ; get_highlighted_url(Pager, Url) ->

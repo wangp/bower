@@ -7,6 +7,7 @@
 :- import_module char.
 :- import_module io.
 :- import_module list.
+:- import_module maybe.
 
 :- import_module curs.
 :- import_module curs.panel.
@@ -64,7 +65,8 @@
 :- pred highlight_part_or_url(int::in, message_update::out,
     pager_info::in, pager_info::out) is det.
 
-:- pred get_highlighted_part(pager_info::in, part::out) is semidet.
+:- pred get_highlighted_part(pager_info::in, part::out, maybe(string)::out)
+    is semidet.
 
 :- pred highlight_part_or_message(int::in, message_update::out,
     pager_info::in, pager_info::out) is det.
@@ -84,7 +86,6 @@
 :- import_module bool.
 :- import_module cord.
 :- import_module int.
-:- import_module maybe.
 :- import_module string.
 :- import_module version_array.
 
@@ -744,15 +745,18 @@ is_highlightable_part_or_url(quoted_text(_, _, url(_, _))).
 is_highlightable_part_or_message(start_message_header(_, _, _)).
 is_highlightable_part_or_message(attachment(_)).
 
-get_highlighted_part(Info, Part) :-
+get_highlighted_part(Info, Part, MaybeSubject) :-
     Info = pager_info(Scrollable),
     get_cursor_line(Scrollable, _, Line),
     (
         Line = start_message_header(Message, _, _),
         MessageId = Message ^ m_id,
-        Part = part(MessageId, 0, "text/plain", unsupported, no)
+        Subject = Message ^ m_headers ^ h_subject,
+        Part = part(MessageId, 0, "text/plain", unsupported, no),
+        MaybeSubject = yes(Subject)
     ;
-        Line = attachment(Part)
+        Line = attachment(Part),
+        MaybeSubject = no
     ).
 
 get_highlighted_url(Info, Url) :-
