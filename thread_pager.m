@@ -23,6 +23,7 @@
 
 :- import_module char.
 :- import_module cord.
+:- import_module dir.
 :- import_module int.
 :- import_module list.
 :- import_module map.
@@ -1063,15 +1064,16 @@ save_part(Action, MessageUpdate, !Info) :-
 prompt_save_part(Screen, Part, !Info, !IO) :-
     MessageId = Part ^ pt_msgid,
     PartId = Part ^ pt_part,
-    MaybeInitial = Part ^ pt_filename,
+    MaybePartFilename = Part ^ pt_filename,
     (
-        MaybeInitial = yes(Initial)
+        MaybePartFilename = yes(PartFilename)
     ;
-        MaybeInitial = no,
+        MaybePartFilename = no,
         MessageId = message_id(IdStr),
-        Initial = string.format("%s.part_%d", [s(IdStr), i(PartId)])
+        PartFilename = string.format("%s.part_%d", [s(IdStr), i(PartId)])
     ),
     History0 = !.Info ^ tp_common_history ^ ch_save_history,
+    make_save_part_initial_prompt(History0, PartFilename, Initial),
     text_entry_initial(Screen, "Save to file: ", History0, Initial,
         complete_path, Return, !IO),
     (
@@ -1108,6 +1110,18 @@ prompt_save_part(Screen, Part, !Info, !IO) :-
         MessageUpdate = clear_message
     ),
     update_message(Screen, MessageUpdate, !IO).
+
+:- pred make_save_part_initial_prompt(history::in, string::in, string::out)
+    is det.
+
+make_save_part_initial_prompt(History, PartFilename, Initial) :-
+    choose_text_initial(History, "", PrevFilename),
+    dir.dirname(PrevFilename, PrevDirName),
+    ( PrevDirName = "." ->
+        Initial = PartFilename
+    ;
+        Initial = PrevDirName / PartFilename
+    ).
 
 :- pred do_save_part(message_id::in, int::in, string::in,
     io.res::out, io::di, io::uo) is det.
