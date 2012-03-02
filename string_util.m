@@ -18,8 +18,6 @@
 
 :- pred unsafe_strstr(string::in, string::in, int::in, int::out) is semidet.
 
-:- pred verify_utf8(string::in) is semidet.
-
 :- type pieces
     --->    empty
     ;       literal(string, pieces)
@@ -104,22 +102,6 @@ string_wcwidth_2(C, Width, Width + wcwidth(C)).
         Index = -1;
     }
 ").
-
-%-----------------------------------------------------------------------------%
-
-verify_utf8(String) :-
-    verify_utf8_2(String, 0, string.count_codepoints(String)).
-
-:- pred verify_utf8_2(string::in, int::in, int::in) is semidet.
-
-verify_utf8_2(String, Cur, End) :-
-    ( Cur = End ->
-        true
-    ; string.unsafe_index_next(String, Cur, Next, _) ->
-        verify_utf8_2(String, Next, End)
-    ;
-        fail
-    ).
 
 %-----------------------------------------------------------------------------%
 
