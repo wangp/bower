@@ -186,17 +186,6 @@ is_word_char(C) :-
 simple_alias("~D", literal("tag:deleted")).
 simple_alias("~F", literal("tag:flagged")).
 simple_alias("~U", literal("tag:unread")).
-simple_alias("~lw", date_range("last week", "")).
-simple_alias("~1w", date_range("last week", "")).
-simple_alias("~2w", date_range("2 weeks ago", "")).
-simple_alias("~3w", date_range("3 weeks ago", "")).
-simple_alias("~lm", date_range("last month", "")).
-simple_alias("~1m", date_range("last month", "")).
-simple_alias("~2m", date_range("2 months ago", "")).
-simple_alias("~3m", date_range("3 months ago", "")).
-simple_alias("~ly", date_range("last year", "")).
-simple_alias("~yesterday", date_range("yesterday", "")).
-simple_alias("~today", date_range("today", "")).
 simple_alias("~A", do_not_apply_limit).
 
 %-----------------------------------------------------------------------------%

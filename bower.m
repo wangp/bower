@@ -34,7 +34,7 @@ main(!IO) :-
     io.command_line_arguments(Args, !IO),
     (
         Args = [],
-        Terms = "~lw"
+        Terms = "~d {last week}.."
     ;
         Args = [_ | _],
         Terms = string.join_list(" ", Args)

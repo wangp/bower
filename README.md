@@ -91,13 +91,6 @@ macros:
     ~F              tag:flagged
     ~U              tag:unread
     ~D              tag:deleted
-    ~lw, ~1w        last week
-    ~2w, ~3w        last two or three weeks
-    ~lm, ~1m        last month
-    ~2m, ~3m        last two or three months
-    ~ly             last year
-    ~yesterday
-    ~today
     ~d DATE..DATE   (optional space)
     ~d DATE..
     ~d ..DATE
@@ -161,10 +154,15 @@ Search term aliases
 Bower will try to expand search terms written with the syntax `~WORD`.
 The expansions should be added to the notmuch config file `~/.notmuch-config`
 in a section called `[bower:search_alias]`.  Expansions may make use of other
-(non-recursive) expansions, e.g.
+(non-recursive) expansions.  For example:
 
     [bower:search_alias]
-    bower = to:notmuch AND bower
+    lw = ~d {last week}..
+    2w = ~d {2 weeks ago}..
+    lm = ~d {last month}..
+    ly = ~d {last year}..
+    notmuch = to:notmuch
+    bower = ~notmuch AND bower
     bower_recent = ~lm ~bower
 
 
