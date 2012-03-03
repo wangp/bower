@@ -195,6 +195,11 @@ text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO) :-
     ->
         text_entry(Screen, Prompt, Before, [], SubInfo, Return, !IO)
     ;
+        Key = char('\x14\') % ^T
+    ->
+        transpose(Before, Before1, After, After1),
+        text_entry(Screen, Prompt, Before1, After1, SubInfo, Return, !IO)
+    ;
         ( Key = char('\x10\') % ^P
         ; Key = code(key_up)
         )
@@ -320,6 +325,27 @@ forward_word(Before0, Before, After0, After) :-
 :- pred bol_eol(list(char)::in, list(char)::in, list(char)::out) is det.
 
 bol_eol(Xs, Ys, reverse(Xs) ++ Ys).
+
+:- pred transpose(list(char)::in, list(char)::out,
+    list(char)::in, list(char)::out) is det.
+
+transpose(Before0, Before, After0, After) :-
+    (
+        After0 = [],
+        Before0 = [B1, B2 | Bs]
+    ->
+        After = [],
+        Before = [B2, B1 | Bs]
+    ;
+        After0 = [A | As],
+        Before0 = [B | Bs]
+    ->
+        After = As,
+        Before = [B, A | Bs]
+    ;
+        Before = Before0,
+        After = After0
+    ).
 
 :- pred get_history(sub_info::in, history::out, history::out) is det.
 
