@@ -251,8 +251,9 @@ index_loop(Screen, !.IndexInfo, !IO) :-
     ;
         Action = enter_limit,
         History0 = !.IndexInfo ^ i_common_history ^ ch_limit_history,
+        Completion = complete_tags(["tag:", "is:"]),
         text_entry(Screen, "Limit to messages matching: ", History0,
-            complete_none, Return, !IO),
+            Completion, Return, !IO),
         (
             Return = yes(LimitString),
             time(Time, !IO),
@@ -651,9 +652,10 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,
     History0 = !.Info ^ i_common_history ^ ch_tag_history,
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
+        Completion = complete_tags(["+", "-"]),
         FirstTime = no,
         text_entry_full(Screen, "Change tags: ", History0, Initial,
-            complete_none, FirstTime, Return, !IO),
+            Completion, FirstTime, Return, !IO),
         (
             Return = yes(String),
             (

@@ -981,9 +981,10 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
     Scrollable0 = !.Info ^ tp_scrollable,
     History0 = !.Info ^ tp_common_history ^ ch_tag_history,
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
+        Completion = complete_tags(["+", "-"]),
         FirstTime = no,
         text_entry_full(Screen, "Change tags: ", History0, Initial,
-            complete_none, FirstTime, Return, !IO),
+            Completion, FirstTime, Return, !IO),
         (
             Return = yes(String),
             (

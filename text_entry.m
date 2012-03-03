@@ -6,6 +6,7 @@
 
 :- import_module bool.
 :- import_module io.
+:- import_module list.
 :- import_module maybe.
 
 :- import_module screen.
@@ -14,7 +15,8 @@
 
 :- type completion_type
     --->    complete_none
-    ;       complete_path.
+    ;       complete_path
+    ;       complete_tags(list(string)). % prefixes to trigger completion
 
 :- func init_history = history.
 
@@ -44,6 +46,9 @@
 
 :- import_module curs.
 :- import_module curs.panel.
+:- import_module popen.
+:- import_module prog_config.
+:- import_module quote_arg.
 
 :- type history == list(string). % reverse
 
@@ -366,6 +371,11 @@ do_completion(Orig, Replacement, SubInfo0, MaybeSubInfo, !IO) :-
         string.from_rev_char_list(Orig, OrigString),
         generate_path_choices(OrigString, Choices, !IO)
     ;
+        Choices0 = [],
+        Type = complete_tags(CompletionTriggers),
+        string.from_rev_char_list(Orig, OrigString),
+        generate_tag_choices(CompletionTriggers, OrigString, Choices, !IO)
+    ;
         Choices0 = [_ | _],
         Choices = Choices0
     ),
@@ -442,6 +452,37 @@ filter_path_prefix(AddPrefix, MatchBaseNamePrefix, _DirName, BaseName,
     ;
         true
     ).
+
+:- pred generate_tag_choices(list(string)::in, string::in, list(string)::out,
+    io::di, io::uo) is det.
+
+generate_tag_choices([], _OrigString, [], !IO).
+generate_tag_choices(CompletionTriggers, OrigString, Choices, !IO) :-
+    CompletionTriggers = [Trigger | Triggers],
+    ( string.remove_prefix(Trigger, OrigString, TagPrefix) ->
+        get_notmuch_prefix(Notmuch, !IO),
+        args_to_quoted_command(["search", "--output=tags", "--", "*"],
+            Command),
+        popen(Notmuch ++ Command, CallRes, !IO),
+        (
+            CallRes = ok(TagListString),
+            TagsList = string.split_at_char('\n', TagListString),
+            list.filter_map(filter_tag_choice(Trigger, TagPrefix),
+                TagsList, Choices)
+        ;
+            CallRes = error(_),
+            Choices = []
+        )
+    ;
+        generate_tag_choices(Triggers, OrigString, Choices, !IO)
+    ).
+
+:- pred filter_tag_choice(string::in, string::in, string::in, string::out)
+    is semidet.
+
+filter_tag_choice(Trigger, TagPrefix, Tag, Choice) :-
+    string.prefix(Tag, TagPrefix),
+    Choice = Trigger ++ Tag.
 
 %-----------------------------------------------------------------------------%
 
