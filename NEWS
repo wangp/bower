@@ -1,3 +1,23 @@
+Bower 0.2 (2012-03-04)
+======================
+
+* Renamed addressbook section to [bower:addressbook].
+* Support for configurable search aliases in [bower:search_alias].
+* Improved date range syntax, e.g. `~d {last week}..`
+* Removed builtin date range macros: ~lw, ~ly, ~yesterday, ~today.
+* Cap number of search results by default; override with ~A.
+* Display non-standard tags.
+* '+'/'-' changes arbitrary tags.
+* 'd'/'u' now also works in the index view; modifies 'deleted' tag.
+* Tab completion for entering tag names.
+* ^R removes 'unread' tag on preceding messages in thread view.
+* 'p' jumps to parent message in thread view.
+* 'v' now also highlights URLs; 'o' opens with an external program.
+* Ignore 'sent' messages when polling for new messages.
+* Retain history of save filenames and external program commands.
+* Work around non-UTF-8 JSON output from notmuch.
+* Bug fixes.
+
 Bower 0.1 (2011-12-18)
 ======================
 This is the first release of the bower email client.
