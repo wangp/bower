@@ -63,6 +63,7 @@
 :- type index_line
     --->    index_line(
                 i_id        :: thread_id,
+                i_selected  :: selected,
                 i_unread    :: unread,
                 i_replied   :: replied,
                 i_deleted   :: deleted,
@@ -75,6 +76,10 @@
                 i_matched   :: int,
                 i_total     :: int
             ).
+
+:- type selected
+    --->    not_selected
+    ;       selected.
 
 :- type binding
     --->    scroll_down
@@ -95,6 +100,8 @@
     ;       set_deleted
     ;       unset_deleted
     ;       prompt_tag(string)
+    ;       toggle_select
+    ;       unselect_all
     ;       quit.
 
 :- type action
@@ -207,7 +214,7 @@ thread_to_index_line(Nowish, Thread, Line) :-
     make_reldate(Nowish, TM, Shorter, Date),
     get_standard_tag_state(Tags, Unread, Replied, Deleted, Flagged),
     get_nonstandard_tags_width(Tags, NonstdTagsWidth),
-    Line = index_line(Id, Unread, Replied, Deleted, Flagged,
+    Line = index_line(Id, not_selected, Unread, Replied, Deleted, Flagged,
         Date, Authors, Subject, Tags, NonstdTagsWidth, Matched, Total).
 
 :- func default_max_threads = int.
@@ -404,6 +411,14 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = prompt_tag(Initial)
         ;
+            Binding = toggle_select,
+            toggle_select(Screen, MessageUpdate, !IndexInfo),
+            Action = continue
+        ;
+            Binding = unselect_all,
+            unselect_all(MessageUpdate, !IndexInfo),
+            Action = continue
+        ;
             Binding = quit,
             MessageUpdate = no_change,
             Action = quit
@@ -458,6 +473,8 @@ key_binding_char('d', set_deleted).
 key_binding_char('u', unset_deleted).
 key_binding_char('+', prompt_tag("+")).
 key_binding_char('-', prompt_tag("-")).
+key_binding_char('t', toggle_select).
+key_binding_char('T', unselect_all).
 key_binding_char('q', quit).
 
 :- pred move_cursor(screen::in, int::in, message_update::out,
@@ -581,8 +598,8 @@ skip_to_internal_search(Screen, MessageUpdate, !Info) :-
 :- pred line_contains_substring(string::in, index_line::in) is semidet.
 
 line_contains_substring(Search, Line) :-
-    Line = index_line(_Id, _Unread, _Replied, _Flagged, _Deleted, _Date,
-        Authors, Subject, _Tags, _TagsWidth, _Matched, _Total),
+    Line = index_line(_Id, _Selected, _Unread, _Replied, _Flagged, _Deleted,
+        _Date, Authors, Subject, _Tags, _TagsWidth, _Matched, _Total),
     (
         strcase_str(Authors, Search)
     ;
@@ -688,8 +705,9 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
 
 apply_tag_changes(Screen, CursorLine0, TagDeltas, AddTags, RemoveTags,
         !Info, !IO) :-
-    CursorLine0 = index_line(ThreadId, _Unread, _Replied, _Deleted, _Flagged,
-        Date, Authors, Subject, TagSet0, _NonstdTagsWidth, Matched, Total),
+    CursorLine0 = index_line(ThreadId, Selected,
+        _Unread, _Replied, _Deleted, _Flagged, Date, Authors, Subject,
+        TagSet0, _NonstdTagsWidth, Matched, Total),
     tag_thread(TagDeltas, ThreadId, Res, !IO),
     (
         Res = ok,
@@ -699,8 +717,9 @@ apply_tag_changes(Screen, CursorLine0, TagDeltas, AddTags, RemoveTags,
         get_standard_tag_state(TagSet, Unread, Replied,
             Deleted, Flagged),
         get_nonstandard_tags_width(TagSet, NonstdTagsWidth),
-        CursorLine = index_line(ThreadId, Unread, Replied, Deleted, Flagged,
-            Date, Authors, Subject, TagSet, NonstdTagsWidth, Matched, Total),
+        CursorLine = index_line(ThreadId, Selected,
+            Unread, Replied, Deleted, Flagged, Date, Authors, Subject,
+            TagSet, NonstdTagsWidth, Matched, Total),
         Scrollable0 = !.Info ^ i_scrollable,
         set_cursor_line(CursorLine, Scrollable0, Scrollable),
         !Info ^ i_scrollable := Scrollable
@@ -709,6 +728,44 @@ apply_tag_changes(Screen, CursorLine0, TagDeltas, AddTags, RemoveTags,
         MessageUpdate = set_warning(io.error_message(Error)),
         update_message(Screen, MessageUpdate, !IO)
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred toggle_select(screen::in, message_update::out,
+    index_info::in, index_info::out) is det.
+
+toggle_select(Screen, MessageUpdate, !Info) :-
+    Scrollable0 = !.Info ^ i_scrollable,
+    ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
+        Selected0 = CursorLine0 ^ i_selected,
+        (
+            Selected0 = selected,
+            Selected = not_selected
+        ;
+            Selected0 = not_selected,
+            Selected = selected
+        ),
+        CursorLine = CursorLine0 ^ i_selected := Selected,
+        set_cursor_line(CursorLine, Scrollable0, Scrollable),
+        !Info ^ i_scrollable := Scrollable,
+        move_cursor(Screen, 1, MessageUpdate, !Info)
+    ;
+        MessageUpdate = set_warning("No thread.")
+    ).
+
+:- pred unselect_all(message_update::out, index_info::in, index_info::out)
+    is det.
+
+unselect_all(MessageUpdate, !Info) :-
+    Scrollable0 = !.Info ^ i_scrollable,
+    map_lines(unselect_line, Scrollable0, Scrollable),
+    !Info ^ i_scrollable := Scrollable,
+    MessageUpdate = set_info("Unselected all threads.").
+
+:- pred unselect_line(index_line::in, index_line::out) is det.
+
+unselect_line(!Line) :-
+    !Line ^ i_selected := not_selected.
 
 %-----------------------------------------------------------------------------%
 
@@ -853,7 +910,7 @@ draw_index_view(Screen, Info, !IO) :-
     io::di, io::uo) is det.
 
 draw_index_line(Panel, Line, IsCursor, !IO) :-
-    Line = index_line(_Id, Unread, Replied, Deleted, Flagged,
+    Line = index_line(_Id, Selected, Unread, Replied, Deleted, Flagged,
         Date, Authors, Subject, Tags, NonstdTagsWidth, Matched, Total),
     (
         IsCursor = yes,
@@ -862,7 +919,15 @@ draw_index_line(Panel, Line, IsCursor, !IO) :-
         IsCursor = no,
         panel.attr_set(Panel, fg(blue) + bold, !IO)
     ),
-    my_addstr_fixed(Panel, 11, Date, ' ', !IO),
+    my_addstr_fixed(Panel, 10, Date, ' ', !IO),
+    (
+        Selected = selected,
+        cond_attr_set(Panel, fg_bg(magenta, black) + bold, IsCursor, !IO),
+        my_addstr(Panel, "*", !IO)
+    ;
+        Selected = not_selected,
+        my_addstr(Panel, " ", !IO)
+    ),
     cond_attr_set(Panel, normal, IsCursor, !IO),
     (
         Unread = unread,
