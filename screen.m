@@ -19,7 +19,8 @@
     --->    no_change
     ;       clear_message
     ;       set_info(string)
-    ;       set_warning(string).
+    ;       set_warning(string)
+    ;       set_prompt(string).
 
 :- pred create_screen(screen::uo, io::di, io::uo) is det.
 
@@ -255,6 +256,11 @@ update_message(Screen, MessageUpdate, !IO) :-
         MessageUpdate = set_warning(String),
         panel.erase(Panel, !IO),
         panel.attr_set(Panel, fg_bg(red, black) + bold, !IO),
+        my_addstr(Panel, String, !IO)
+    ;
+        MessageUpdate = set_prompt(String),
+        panel.erase(Panel, !IO),
+        panel.attr_set(Panel, normal, !IO),
         my_addstr(Panel, String, !IO)
     ).
 

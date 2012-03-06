@@ -21,7 +21,7 @@
 :- pred tag_messages(list(tag_delta)::in, list(message_id)::in, io.res::out,
     io::di, io::uo) is det.
 
-:- pred tag_thread(list(tag_delta)::in, thread_id::in, io.res::out,
+:- pred tag_threads(list(tag_delta)::in, list(thread_id)::in, io.res::out,
     io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
@@ -97,8 +97,9 @@ tag_messages(TagDeltas, MessageIds, Res, !IO) :-
         do_tag(TagDeltas, IdStrings, Res, !IO)
     ).
 
-tag_thread(TagDeltas, ThreadId, Res, !IO) :-
-    do_tag(TagDeltas, [thread_id_to_search_term(ThreadId)], Res, !IO).
+tag_threads(TagDeltas, ThreadIds, Res, !IO) :-
+    SearchTerms = list.map(thread_id_to_search_term, ThreadIds),
+    do_tag(TagDeltas, SearchTerms, Res, !IO).
 
 :- pred do_tag(list(tag_delta)::in, list(string)::in, io.res::out,
     io::di, io::uo) is det.

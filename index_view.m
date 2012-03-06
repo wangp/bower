@@ -102,6 +102,7 @@
     ;       prompt_tag(string)
     ;       toggle_select
     ;       unselect_all
+    ;       bulk_tag
     ;       quit.
 
 :- type action
@@ -117,7 +118,16 @@
     ;       set_deleted
     ;       unset_deleted
     ;       prompt_tag(string)
+    ;       bulk_tag
     ;       quit.
+
+:- type arbitrary_tag_changes
+    --->    no
+    ;       yes(
+                tag_deltas  :: list(tag_delta),
+                add_tags    :: set(tag),
+                remove_tags :: set(tag)
+            ).
 
 :- instance scrollable.line(index_line) where [
     pred(draw_line/5) is draw_index_line
@@ -322,6 +332,10 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         prompt_tag(Screen, Initial, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
+        Action = bulk_tag,
+        bulk_tag(Screen, !IndexInfo, !IO),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
         Action = quit
     ).
 
@@ -419,6 +433,10 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             unselect_all(MessageUpdate, !IndexInfo),
             Action = continue
         ;
+            Binding = bulk_tag,
+            MessageUpdate = no_change,
+            Action = bulk_tag
+        ;
             Binding = quit,
             MessageUpdate = no_change,
             Action = quit
@@ -475,6 +493,7 @@ key_binding_char('+', prompt_tag("+")).
 key_binding_char('-', prompt_tag("-")).
 key_binding_char('t', toggle_select).
 key_binding_char('T', unselect_all).
+key_binding_char(';', bulk_tag).
 key_binding_char('q', quit).
 
 :- pred move_cursor(screen::in, int::in, message_update::out,
@@ -618,7 +637,7 @@ modify_tag_cursor_line(ModifyPred, Screen, !Info, !IO) :-
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
         ThreadId = CursorLine0 ^ i_id,
         ModifyPred(CursorLine0, CursorLine, TagDelta),
-        tag_thread([TagDelta], ThreadId, Res, !IO),
+        tag_threads([TagDelta], [ThreadId], Res, !IO),
         (
             Res = ok,
             set_cursor_line(CursorLine, Scrollable0, Scrollable),
@@ -667,36 +686,51 @@ unset_deleted(Line0, Line, TagDelta) :-
 
 prompt_tag(Screen, Initial, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,
-    History0 = !.Info ^ i_common_history ^ ch_tag_history,
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
-        Completion = complete_tags(["+", "-"]),
-        FirstTime = no,
-        text_entry_full(Screen, "Change tags: ", History0, Initial,
-            Completion, FirstTime, Return, !IO),
+        prompt_arbitrary_tag_changes(Screen, Initial, TagChanges,
+            !Info, !IO),
         (
-            Return = yes(String),
-            (
-                Words = string.words(String),
-                Words = [_ | _]
-            ->
-                add_history_nodup(String, History0, History),
-                !Info ^ i_common_history ^ ch_tag_history := History,
-                ( validate_tag_deltas(Words, TagDeltas, AddTags, RemoveTags) ->
-                    apply_tag_changes(Screen, CursorLine0, TagDeltas,
-                        AddTags, RemoveTags, !Info, !IO)
-                ;
-                    update_message(Screen,
-                        set_warning("Tags must be of the form +tag or -tag."),
-                        !IO)
-                )
-            ;
-                true
-            )
+            TagChanges = yes(TagDeltas, AddTags, RemoveTags),
+            apply_tag_changes(Screen, CursorLine0, TagDeltas, AddTags,
+                RemoveTags, !Info, !IO)
         ;
-            Return = no
+            TagChanges = no
         )
     ;
         update_message(Screen, set_warning("No thread."), !IO)
+    ).
+
+:- pred prompt_arbitrary_tag_changes(screen::in, string::in,
+    arbitrary_tag_changes::out, index_info::in, index_info::out,
+    io::di, io::uo) is det.
+
+prompt_arbitrary_tag_changes(Screen, Initial, TagChanges, !Info, !IO) :-
+    History0 = !.Info ^ i_common_history ^ ch_tag_history,
+    Completion = complete_tags(["+", "-"]),
+    FirstTime = no,
+    text_entry_full(Screen, "Change tags: ", History0, Initial, Completion,
+        FirstTime, Return, !IO),
+    (
+        Return = yes(String),
+        (
+            Words = string.words(String),
+            Words = [_ | _]
+        ->
+            add_history_nodup(String, History0, History),
+            !Info ^ i_common_history ^ ch_tag_history := History,
+            ( validate_tag_deltas(Words, TagDeltas, AddTags, RemoveTags) ->
+                TagChanges = yes(TagDeltas, AddTags, RemoveTags)
+            ;
+                TagChanges = no,
+                update_message(Screen,
+                    set_warning("Tags must be of the form +tag or -tag."), !IO)
+            )
+        ;
+            TagChanges = no
+        )
+    ;
+        Return = no,
+        TagChanges = no
     ).
 
 :- pred apply_tag_changes(screen::in, index_line::in, list(tag_delta)::in,
@@ -708,14 +742,13 @@ apply_tag_changes(Screen, CursorLine0, TagDeltas, AddTags, RemoveTags,
     CursorLine0 = index_line(ThreadId, Selected,
         _Unread, _Replied, _Deleted, _Flagged, Date, Authors, Subject,
         TagSet0, _NonstdTagsWidth, Matched, Total),
-    tag_thread(TagDeltas, ThreadId, Res, !IO),
+    tag_threads(TagDeltas, [ThreadId], Res, !IO),
     (
         Res = ok,
         % Notmuch performs tag removals before addition.
         set.difference(TagSet0, RemoveTags, TagSet1),
         set.union(TagSet1, AddTags, TagSet),
-        get_standard_tag_state(TagSet, Unread, Replied,
-            Deleted, Flagged),
+        get_standard_tag_state(TagSet, Unread, Replied, Deleted, Flagged),
         get_nonstandard_tags_width(TagSet, NonstdTagsWidth),
         CursorLine = index_line(ThreadId, Selected,
             Unread, Replied, Deleted, Flagged, Date, Authors, Subject,
@@ -766,6 +799,99 @@ unselect_all(MessageUpdate, !Info) :-
 
 unselect_line(!Line) :-
     !Line ^ i_selected := not_selected.
+
+%-----------------------------------------------------------------------------%
+
+:- pred bulk_tag(screen::in, index_info::in, index_info::out,
+    io::di, io::uo) is det.
+
+bulk_tag(Screen, !Info, !IO) :-
+    Scrollable0 = !.Info ^ i_scrollable,
+    Lines0 = get_lines_list(Scrollable0),
+    ( any_selected_line(Lines0) ->
+        Prompt = "Action: (+/-) change tags",
+        update_message_immed(Screen, set_prompt(Prompt), !IO),
+        get_keycode(KeyCode, !IO),
+        ( KeyCode = char('-') ->
+            bulk_arbitrary_tag_changes(Screen, "-", MessageUpdate, !Info, !IO)
+        ; KeyCode = char('+') ->
+            bulk_arbitrary_tag_changes(Screen, "+", MessageUpdate, !Info, !IO)
+        ;
+            MessageUpdate = set_info("No changes.")
+        )
+    ;
+        MessageUpdate = set_warning("No threads selected.")
+    ),
+    update_message(Screen, MessageUpdate, !IO).
+
+:- pred any_selected_line(list(index_line)::in) is semidet.
+
+any_selected_line(Lines) :-
+    list.member(Line, Lines),
+    Line ^ i_selected = selected.
+
+:- pred bulk_arbitrary_tag_changes(screen::in, string::in, message_update::out,
+    index_info::in, index_info::out, io::di, io::uo) is det.
+
+bulk_arbitrary_tag_changes(Screen, Initial, MessageUpdate, !Info, !IO) :-
+    prompt_arbitrary_tag_changes(Screen, Initial, TagChanges, !Info, !IO),
+    (
+        TagChanges = yes(TagDeltas, AddTags, RemoveTags),
+        Scrollable0 = !.Info ^ i_scrollable,
+        Lines0 = get_lines_list(Scrollable0),
+        list.map_foldl(
+            update_selected_line_for_tag_changes(AddTags, RemoveTags),
+            Lines0, Lines, [], SelectedThreadIds),
+        (
+            SelectedThreadIds = [_ | _],
+            tag_threads(TagDeltas, SelectedThreadIds, Res, !IO),
+            (
+                Res = ok,
+                set_lines_list(Lines, Scrollable0, Scrollable),
+                !Info ^ i_scrollable := Scrollable,
+                list.length(SelectedThreadIds, NumThreads),
+                string.format("Modified tags in %d threads.", [i(NumThreads)],
+                    Message),
+                MessageUpdate = set_info(Message)
+            ;
+                Res = error(Error),
+                MessageUpdate = set_warning(io.error_message(Error))
+            )
+        ;
+            SelectedThreadIds = [],
+            MessageUpdate = set_info("No changes.")
+        )
+    ;
+        TagChanges = no,
+        MessageUpdate = clear_message
+    ).
+
+:- pred update_selected_line_for_tag_changes(set(tag)::in, set(tag)::in,
+    index_line::in, index_line::out, list(thread_id)::in, list(thread_id)::out)
+    is det.
+
+update_selected_line_for_tag_changes(AddTags, RemoveTags, Line0, Line,
+        !ThreadIds) :-
+    Line0 = index_line(ThreadId, Selected,
+        _Unread, _Replied, _Deleted, _Flagged, Date, Authors, Subject,
+        TagSet0, _NonstdTagsWidth, Matched, Total),
+    (
+        Selected = selected,
+        % Notmuch performs tag removals before addition.
+        TagSet0 = Line0 ^ i_tags,
+        set.difference(TagSet0, RemoveTags, TagSet1),
+        set.union(TagSet1, AddTags, TagSet),
+        TagSet \= TagSet0
+    ->
+        get_standard_tag_state(TagSet, Unread, Replied, Deleted, Flagged),
+        get_nonstandard_tags_width(TagSet, NonstdTagsWidth),
+        Line = index_line(ThreadId, Selected,
+            Unread, Replied, Deleted, Flagged, Date, Authors, Subject,
+            TagSet, NonstdTagsWidth, Matched, Total),
+        list.cons(ThreadId, !ThreadIds)
+    ;
+        Line = Line0
+    ).
 
 %-----------------------------------------------------------------------------%
 

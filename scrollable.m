@@ -34,6 +34,9 @@
 
 :- pred set_line(int::in, T::in, scrollable(T)::in, scrollable(T)::out) is det.
 
+:- pred set_lines_list(list(T)::in, scrollable(T)::in, scrollable(T)::out)
+    is det.
+
 :- func get_top(scrollable(T)) = int.
 
 :- pred set_top(int::in, scrollable(T)::in, scrollable(T)::out) is det.
@@ -139,6 +142,15 @@ set_line(LineNum, Line, !Scrollable) :-
     Lines0 = !.Scrollable ^ s_lines,
     version_array.set(LineNum, Line, Lines0, Lines),
     !Scrollable ^ s_lines := Lines.
+
+set_lines_list(List, !Scrollable) :-
+    OldArray = !.Scrollable ^ s_lines,
+    NewArray = version_array.from_list(List),
+    ( version_array.size(OldArray) = version_array.size(NewArray) ->
+        !Scrollable ^ s_lines := NewArray
+    ;
+        unexpected($module, $pred, "changed size")
+    ).
 
 get_top(Scrollable) = Scrollable ^ s_top.
 
