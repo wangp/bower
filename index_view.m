@@ -809,13 +809,25 @@ bulk_tag(Screen, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,
     Lines0 = get_lines_list(Scrollable0),
     ( any_selected_line(Lines0) ->
-        Prompt = "Action: (+/-) change tags",
+        Prompt = "Action: (d)elete, (u)ndelete, (+/-) change tags",
         update_message_immed(Screen, set_prompt(Prompt), !IO),
         get_keycode(KeyCode, !IO),
         ( KeyCode = char('-') ->
             bulk_arbitrary_tag_changes(Screen, "-", MessageUpdate, !Info, !IO)
         ; KeyCode = char('+') ->
             bulk_arbitrary_tag_changes(Screen, "+", MessageUpdate, !Info, !IO)
+        ; KeyCode = char('d') ->
+            TagDeltas = [tag_delta("+deleted")],
+            AddTags = set.make_singleton_set(tag("deleted")),
+            RemoveTags = set.init,
+            bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate,
+                !Info, !IO)
+        ; KeyCode = char('u') ->
+            TagDeltas = [tag_delta("-deleted")],
+            AddTags = set.init,
+            RemoveTags = set.make_singleton_set(tag("deleted")),
+            bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate,
+                !Info, !IO)
         ;
             MessageUpdate = set_info("No changes.")
         )
@@ -837,33 +849,40 @@ bulk_arbitrary_tag_changes(Screen, Initial, MessageUpdate, !Info, !IO) :-
     prompt_arbitrary_tag_changes(Screen, Initial, TagChanges, !Info, !IO),
     (
         TagChanges = yes(TagDeltas, AddTags, RemoveTags),
-        Scrollable0 = !.Info ^ i_scrollable,
-        Lines0 = get_lines_list(Scrollable0),
-        list.map_foldl(
-            update_selected_line_for_tag_changes(AddTags, RemoveTags),
-            Lines0, Lines, [], SelectedThreadIds),
-        (
-            SelectedThreadIds = [_ | _],
-            tag_threads(TagDeltas, SelectedThreadIds, Res, !IO),
-            (
-                Res = ok,
-                set_lines_list(Lines, Scrollable0, Scrollable),
-                !Info ^ i_scrollable := Scrollable,
-                list.length(SelectedThreadIds, NumThreads),
-                string.format("Modified tags in %d threads.", [i(NumThreads)],
-                    Message),
-                MessageUpdate = set_info(Message)
-            ;
-                Res = error(Error),
-                MessageUpdate = set_warning(io.error_message(Error))
-            )
-        ;
-            SelectedThreadIds = [],
-            MessageUpdate = set_info("No changes.")
-        )
+        bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate,
+            !Info, !IO)
     ;
         TagChanges = no,
         MessageUpdate = clear_message
+    ).
+
+:- pred bulk_tag_changes(list(tag_delta)::in, set(tag)::in, set(tag)::in,
+    message_update::out, index_info::in, index_info::out, io::di, io::uo) is det.
+
+bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate, !Info, !IO) :-
+    Scrollable0 = !.Info ^ i_scrollable,
+    Lines0 = get_lines_list(Scrollable0),
+    list.map_foldl(
+        update_selected_line_for_tag_changes(AddTags, RemoveTags),
+        Lines0, Lines, [], SelectedThreadIds),
+    (
+        SelectedThreadIds = [_ | _],
+        tag_threads(TagDeltas, SelectedThreadIds, Res, !IO),
+        (
+            Res = ok,
+            set_lines_list(Lines, Scrollable0, Scrollable),
+            !Info ^ i_scrollable := Scrollable,
+            list.length(SelectedThreadIds, NumThreads),
+            string.format("Modified tags in %d threads.", [i(NumThreads)],
+                Message),
+            MessageUpdate = set_info(Message)
+        ;
+            Res = error(Error),
+            MessageUpdate = set_warning(io.error_message(Error))
+        )
+    ;
+        SelectedThreadIds = [],
+        MessageUpdate = set_info("No changes.")
     ).
 
 :- pred update_selected_line_for_tag_changes(set(tag)::in, set(tag)::in,
