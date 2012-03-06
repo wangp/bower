@@ -82,6 +82,9 @@ The keys are:
     d               set deleted tag on current thread
     u               unset deleted tag on current thread
     +, -            add/remove arbitrary tags
+    t               select/unselect thread
+    T               unselect all threads
+    ;               bulk tag changes on selected threads
     q               quit
 
 The `l` command slightly extends the notmuch search term syntax with these
