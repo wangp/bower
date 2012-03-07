@@ -809,7 +809,8 @@ bulk_tag(Screen, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,
     Lines0 = get_lines_list(Scrollable0),
     ( any_selected_line(Lines0) ->
-        Prompt = "Action: (d)elete, (u)ndelete, (+/-) change tags",
+        Prompt = "Action: (d)elete, (u)ndelete, (N) toggle unread, " ++
+            "(+/-) change tags",
         update_message_immed(Screen, set_prompt(Prompt), !IO),
         get_keycode(KeyCode, !IO),
         ( KeyCode = char('-') ->
@@ -828,6 +829,8 @@ bulk_tag(Screen, !Info, !IO) :-
             RemoveTags = set.make_singleton_set(tag("deleted")),
             bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate,
                 !Info, !IO)
+        ; KeyCode = char('N') ->
+            bulk_toggle_unread(MessageUpdate, !Info, !IO)
         ;
             MessageUpdate = set_info("No changes.")
         )
@@ -910,6 +913,51 @@ update_selected_line_for_tag_changes(AddTags, RemoveTags, Line0, Line,
         list.cons(ThreadId, !ThreadIds)
     ;
         Line = Line0
+    ).
+
+:- pred bulk_toggle_unread(message_update::out,
+    index_info::in, index_info::out, io::di, io::uo) is det.
+
+bulk_toggle_unread(MessageUpdate, !Info, !IO) :-
+    Scrollable0 = !.Info ^ i_scrollable,
+    Lines0 = get_lines_list(Scrollable0),
+    ( common_unread_state(Lines0, no, yes(CommonUnreadState)) ->
+        (
+            CommonUnreadState = read,
+            TagDelta = tag_delta("+unread"),
+            AddTags = set.make_singleton_set(tag("unread")),
+            RemoveTags = set.init
+        ;
+            CommonUnreadState = unread,
+            TagDelta = tag_delta("-unread"),
+            AddTags = set.init,
+            RemoveTags = set.make_singleton_set(tag("unread"))
+        ),
+        bulk_tag_changes([TagDelta], AddTags, RemoveTags, MessageUpdate,
+            !Info, !IO)
+    ;
+        Message = "Selected threads differ in unread state.",
+        MessageUpdate = set_info(Message)
+    ).
+
+:- pred common_unread_state(list(index_line)::in,
+    maybe(unread)::in, maybe(unread)::out) is semidet.
+
+common_unread_state([], State, State).
+common_unread_state([H | T], State0, State) :-
+    Selected = H ^ i_selected,
+    (
+        Selected = selected,
+        State0 = no,
+        State1 = yes(H ^ i_unread),
+        common_unread_state(T, State1, State)
+    ;
+        Selected = selected,
+        State0 = yes(H ^ i_unread),
+        common_unread_state(T, State0, State)
+    ;
+        Selected = not_selected,
+        common_unread_state(T, State0, State)
     ).
 
 %-----------------------------------------------------------------------------%
