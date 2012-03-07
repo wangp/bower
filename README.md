@@ -79,6 +79,7 @@ The keys are:
     /               search for string within results
     n               skip to next search result
     N               toggle unread tag on current thread
+    F               toggle flagged tag on current thread
     d               set deleted tag on current thread
     u               unset deleted tag on current thread
     +, -            add/remove arbitrary tags

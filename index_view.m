@@ -97,6 +97,7 @@
     ;       prompt_internal_search
     ;       skip_to_internal_search
     ;       toggle_unread
+    ;       toggle_flagged
     ;       set_deleted
     ;       unset_deleted
     ;       prompt_tag(string)
@@ -115,6 +116,7 @@
     ;       start_recall
     ;       prompt_internal_search
     ;       toggle_unread
+    ;       toggle_flagged
     ;       set_deleted
     ;       unset_deleted
     ;       prompt_tag(string)
@@ -320,6 +322,10 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         modify_tag_cursor_line(toggle_unread, Screen, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
+        Action = toggle_flagged,
+        modify_tag_cursor_line(toggle_flagged, Screen, !IndexInfo, !IO),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
         Action = set_deleted,
         modify_tag_cursor_line(set_deleted, Screen, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
@@ -413,6 +419,10 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = toggle_unread
         ;
+            Binding = toggle_flagged,
+            MessageUpdate = no_change,
+            Action = toggle_flagged
+        ;
             Binding = set_deleted,
             MessageUpdate = no_change,
             Action = set_deleted
@@ -487,6 +497,7 @@ key_binding_char('R', start_recall).
 key_binding_char('/', prompt_internal_search).
 key_binding_char('n', skip_to_internal_search).
 key_binding_char('N', toggle_unread).
+key_binding_char('F', toggle_flagged).
 key_binding_char('d', set_deleted).
 key_binding_char('u', unset_deleted).
 key_binding_char('+', prompt_tag("+")).
@@ -627,30 +638,36 @@ line_contains_substring(Search, Line) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred modify_tag_cursor_line(
-    pred(index_line, index_line, tag_delta)::in(pred(in, out, out) is det),
-    screen::in, index_info::in, index_info::out,
-    io::di, io::uo) is det.
+:- pred modify_tag_cursor_line(pred(index_line, index_line, tag_delta),
+    screen, index_info, index_info, io, io).
+:- mode modify_tag_cursor_line(in(pred(in, out, out) is det),
+    in, in, out, di, uo) is det.
+:- mode modify_tag_cursor_line(in(pred(in, out, out) is semidet),
+    in, in, out, di, uo) is det.
 
 modify_tag_cursor_line(ModifyPred, Screen, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
         ThreadId = CursorLine0 ^ i_id,
-        ModifyPred(CursorLine0, CursorLine, TagDelta),
-        tag_threads([TagDelta], [ThreadId], Res, !IO),
-        (
-            Res = ok,
-            set_cursor_line(CursorLine, Scrollable0, Scrollable),
-            !Info ^ i_scrollable := Scrollable,
-            move_cursor(Screen, 1, _MessageUpdate, !Info)
+        ( ModifyPred(CursorLine0, CursorLine, TagDelta) ->
+            tag_threads([TagDelta], [ThreadId], Res, !IO),
+            (
+                Res = ok,
+                set_cursor_line(CursorLine, Scrollable0, Scrollable),
+                !Info ^ i_scrollable := Scrollable,
+                move_cursor(Screen, 1, _MessageUpdate, !Info),
+                MessageUpdate = clear_message
+            ;
+                Res = error(Error),
+                MessageUpdate = set_warning(io.error_message(Error))
+            )
         ;
-            Res = error(Error),
-            MessageUpdate = set_warning(io.error_message(Error)),
-            update_message(Screen, MessageUpdate, !IO)
+            MessageUpdate = set_warning("Refusing to tag multiple messages.")
         )
     ;
-        update_message(Screen, set_warning("No thread."), !IO)
-    ).
+        MessageUpdate = set_warning("No thread.")
+    ),
+    update_message(Screen, MessageUpdate, !IO).
 
 :- pred toggle_unread(index_line::in, index_line::out, tag_delta::out) is det.
 
@@ -666,6 +683,25 @@ toggle_unread(Line0, Line, TagDelta) :-
         Unread = unread
     ),
     Line = Line0 ^ i_unread := Unread.
+
+:- pred toggle_flagged(index_line::in, index_line::out, tag_delta::out)
+    is semidet.
+
+toggle_flagged(Line0, Line, TagDelta) :-
+    Flagged0 = Line0 ^ i_flagged,
+    (
+        Flagged0 = flagged,
+        TagDelta = tag_delta("-flagged"),
+        Flagged = unflagged
+    ;
+        Flagged0 = unflagged,
+        TagDelta = tag_delta("+flagged"),
+        Flagged = flagged,
+        % Refuse to flag multiple messages.
+        NumMessages = Line0 ^ i_total,
+        NumMessages = 1
+    ),
+    Line = Line0 ^ i_flagged := Flagged.
 
 :- pred set_deleted(index_line::in, index_line::out, tag_delta::out) is det.
 
