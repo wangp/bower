@@ -71,6 +71,7 @@ This view shows the notmuch search results for the current query.
 The keys are:
 
     j,k,g,G, etc.   move around
+    [, ]            scroll half page up, down
     l               change search terms ("limit")
     =               refresh search results
     Enter           open thread

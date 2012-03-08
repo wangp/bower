@@ -88,6 +88,8 @@
     ;       end
     ;       page_up
     ;       page_down
+    ;       half_page_up
+    ;       half_page_down
     ;       skip_to_unread
     ;       enter
     ;       enter_limit
@@ -371,6 +373,18 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             move_cursor(Screen, -NumRows + 1, MessageUpdate, !IndexInfo),
             Action = continue
         ;
+            Binding = half_page_down,
+            get_main_rows(Screen, NumRows),
+            Delta = int.max(15, NumRows / 2),
+            move_cursor(Screen, Delta, MessageUpdate, !IndexInfo),
+            Action = continue
+        ;
+            Binding = half_page_up,
+            get_main_rows(Screen, NumRows),
+            Delta = int.max(15, NumRows / 2),
+            move_cursor(Screen, -Delta, MessageUpdate, !IndexInfo),
+            Action = continue
+        ;
             Binding = home,
             Scrollable0 = !.IndexInfo ^ i_scrollable,
             NumLines = get_num_lines(Scrollable0),
@@ -489,6 +503,8 @@ key_binding_char('j', scroll_down).
 key_binding_char('k', scroll_up).
 key_binding_char('g', home).
 key_binding_char('G', end).
+key_binding_char('[', half_page_up).
+key_binding_char(']', half_page_down).
 key_binding_char('\t', skip_to_unread).
 key_binding_char('\r', enter).
 key_binding_char('l', enter_limit).
