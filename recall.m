@@ -29,6 +29,7 @@
 :- import_module data.
 :- import_module maildir.
 :- import_module scrollable.
+:- import_module tags.
 
 %-----------------------------------------------------------------------------%
 
@@ -104,6 +105,14 @@ recall_screen_loop(Screen, MaybeSelected, !Info, !IO) :-
         MaybeSelected = no
     ; Char = '\r' ->
         enter(!.Info, MaybeSelected)
+    ; Char = 'd' ->
+        delete_draft(Screen, !Info, !IO),
+        NumLines = get_num_lines(!.Info ^ r_scrollable),
+        ( NumLines = 0 ->
+            MaybeSelected = no
+        ;
+            recall_screen_loop(Screen, MaybeSelected, !Info, !IO)
+        )
     ;
         recall_screen_loop(Screen, MaybeSelected, !Info, !IO)
     ).
@@ -138,6 +147,30 @@ enter(Info, MaybeSelected) :-
         MaybeSelected = yes(Message)
     ;
         MaybeSelected = no
+    ).
+
+:- pred delete_draft(screen::in, recall_info::in, recall_info::out,
+    io::di, io::uo) is det.
+
+delete_draft(Screen, !Info, !IO) :-
+    Scrollable0 = !.Info ^ r_scrollable,
+    (
+        get_cursor_line(Scrollable0, _, CursorLine0),
+        delete_cursor_line(Scrollable0, Scrollable)
+    ->
+        MessageId = CursorLine0 ^ r_message ^ m_id,
+        tag_messages([tag_delta("+deleted")], [MessageId], Res, !IO),
+        (
+            Res = ok,
+            !Info ^ r_scrollable := Scrollable,
+            MessageUpdate = set_info("Draft message deleted.")
+        ;
+            Res = error(Error),
+            MessageUpdate = set_warning(io.error_message(Error))
+        ),
+        update_message(Screen, MessageUpdate, !IO)
+    ;
+        true
     ).
 
 %-----------------------------------------------------------------------------%
