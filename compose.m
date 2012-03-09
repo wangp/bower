@@ -363,6 +363,7 @@ call_editor(Screen, Filename, Res, !IO) :-
     ),
     args_to_quoted_command(Args, Command),
     io.call_system(Command, CallRes, !IO),
+    curs.reset_prog_mode(!IO),
     curs.refresh(!IO),
     (
         CallRes = ok(ExitStatus),
