@@ -800,7 +800,7 @@ draw_header_line([Panel | Panels], Panels, FieldName, Value, !IO) :-
 :- pred draw_attachment_line(panel::in, attachment::in, int::in, bool::in,
     io::di, io::uo) is det.
 
-draw_attachment_line(Panel, Attachment, _LineNr, IsCursor, !IO) :-
+draw_attachment_line(Panel, Attachment, LineNr, IsCursor, !IO) :-
     (
         Attachment = old_attachment(Part),
         Type = Part ^ pt_type,
@@ -819,6 +819,8 @@ draw_attachment_line(Panel, Attachment, _LineNr, IsCursor, !IO) :-
     ),
     panel.erase(Panel, !IO),
     panel.move(Panel, 0, 13, !IO),
+    panel.attr_set(Panel, normal, !IO),
+    my_addstr(Panel, format("%d. ", [i(LineNr + 1)]), !IO),
     (
         IsCursor = yes,
         panel.attr_set(Panel, reverse, !IO)
