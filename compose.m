@@ -88,18 +88,16 @@
 
 :- type attachment
     --->    old_attachment(part)
-    ;       new_text_attachment(
-                txt_type        :: string,
-                txt_content     :: string,
-                txt_filename    :: string,
-                txt_size        :: int
-            )
-    ;       new_binary_attachment(
-                bin_type        :: string,
-                bin_base64      :: string,
-                bin_filename    :: string,
-                bin_size        :: int
+    ;       new_attachment(
+                att_type        :: string,
+                att_content     :: attachment_content,
+                att_filename    :: string,
+                att_size        :: int
             ).
+
+:- type attachment_content
+    --->    text(string)
+    ;       binary_base64(string).
 
 :- instance scrollable.line(attachment) where [
     pred(draw_line/6) is draw_attachment_line
@@ -699,7 +697,8 @@ do_attach_text_file(FileName, BaseName, Type, NumRows, MessageUpdate,
         (
             ResRead = ok(Content),
             string.length(Content, Size),
-            NewAttachment = new_text_attachment(Type, Content, BaseName, Size),
+            NewAttachment = new_attachment(Type, text(Content), BaseName,
+                Size),
             append_attachment(NewAttachment, NumRows, !AttachInfo),
             MessageUpdate = clear_message
         ;
@@ -726,7 +725,8 @@ do_attach_binary_file(FileName, BaseName, Type, NumRows, MessageUpdate,
     (
         CallRes = ok(Content),
         string.length(Content, Size),
-        NewAttachment = new_binary_attachment(Type, Content, BaseName, Size),
+        NewAttachment = new_attachment(Type, binary_base64(Content), BaseName,
+            Size),
         append_attachment(NewAttachment, NumRows, !AttachInfo),
         MessageUpdate = clear_message
     ;
@@ -813,9 +813,7 @@ draw_attachment_line(Panel, Attachment, LineNr, IsCursor, !IO) :-
         ),
         Size = -1
     ;
-        Attachment = new_text_attachment(Type, _, Filename, Size)
-    ;
-        Attachment = new_binary_attachment(Type, _, Filename, Size)
+        Attachment = new_attachment(Type, _, Filename, Size)
     ),
     panel.erase(Panel, !IO),
     panel.move(Panel, 0, 13, !IO),
@@ -1271,15 +1269,15 @@ write_mime_part_attachment(Stream, Boundary, Attachment, !IO) :-
         ),
         MaybeFileName = Part ^ pt_filename
     ;
-        Attachment = new_text_attachment(Type, ContentString, FileName,
-            _Size),
+        Attachment = new_attachment(Type, Content, FileName, _Size),
         MaybeFileName = yes(FileName),
-        CTE = "8bit"
-    ;
-        Attachment = new_binary_attachment(Type, ContentString, FileName,
-            _Size),
-        MaybeFileName = yes(FileName),
-        CTE = "base64"
+        (
+            Content = text(ContentString),
+            CTE = "8bit"
+        ;
+            Content = binary_base64(ContentString),
+            CTE = "base64"
+        )
     ),
 
     write_mime_part_boundary(Stream, Boundary, !IO),
