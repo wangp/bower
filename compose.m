@@ -102,7 +102,7 @@
             ).
 
 :- instance scrollable.line(attachment) where [
-    pred(draw_line/5) is draw_attachment_line
+    pred(draw_line/6) is draw_attachment_line
 ].
 
 %-----------------------------------------------------------------------------%
@@ -797,10 +797,10 @@ draw_header_line([Panel | Panels], Panels, FieldName, Value, !IO) :-
     panel.attr_set(Panel, normal, !IO),
     my_addstr(Panel, Value, !IO).
 
-:- pred draw_attachment_line(panel::in, attachment::in, bool::in,
+:- pred draw_attachment_line(panel::in, attachment::in, int::in, bool::in,
     io::di, io::uo) is det.
 
-draw_attachment_line(Panel, Attachment, IsCursor, !IO) :-
+draw_attachment_line(Panel, Attachment, _LineNr, IsCursor, !IO) :-
     (
         Attachment = old_attachment(Part),
         Type = Part ^ pt_type,

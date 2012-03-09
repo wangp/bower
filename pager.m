@@ -134,7 +134,7 @@
     ;       skip_quoted_text.
 
 :- instance scrollable.line(pager_line) where [
-    pred(draw_line/5) is draw_pager_line
+    pred(draw_line/6) is draw_pager_line
 ].
 
 %-----------------------------------------------------------------------------%
@@ -779,10 +779,10 @@ draw_pager_lines(Panels, Info, !IO) :-
     Info = pager_info(Scrollable),
     scrollable.draw(Panels, Scrollable, !IO).
 
-:- pred draw_pager_line(panel::in, pager_line::in, bool::in,
+:- pred draw_pager_line(panel::in, pager_line::in, int::in, bool::in,
     io::di, io::uo) is det.
 
-draw_pager_line(Panel, Line, IsCursor, !IO) :-
+draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
     (
         ( Line = start_message_header(_Message, Header, Value)
         ; Line = header(Header, Value)

@@ -17,7 +17,7 @@
 :- type scrollable(T).
 
 :- typeclass line(T) where [
-    pred draw_line(panel::in, T::in, bool::in, io::di, io::uo) is det
+    pred draw_line(panel::in, T::in, int::in, bool::in, io::di, io::uo) is det
 ].
 
 :- func init(list(T)) = scrollable(T).
@@ -350,7 +350,7 @@ draw_lines([Panel | Panels], Lines, I, Cursor, !IO) :-
     ( I < Size ->
         Line = version_array.lookup(Lines, I),
         IsCursor = (I = Cursor -> yes ; no),
-        draw_line(Panel, Line, IsCursor, !IO)
+        draw_line(Panel, Line, I, IsCursor, !IO)
     ;
         true
     ),

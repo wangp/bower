@@ -107,7 +107,7 @@
             ).
 
 :- instance scrollable.line(thread_line) where [
-    pred(draw_line/5) is draw_thread_line
+    pred(draw_line/6) is draw_thread_line
 ].
 
 %-----------------------------------------------------------------------------%
@@ -1423,10 +1423,10 @@ draw_sep(Cols, MaybeSepPanel, !IO) :-
         MaybeSepPanel = no
     ).
 
-:- pred draw_thread_line(panel::in, thread_line::in, bool::in,
+:- pred draw_thread_line(panel::in, thread_line::in, int::in, bool::in,
     io::di, io::uo) is det.
 
-draw_thread_line(Panel, Line, IsCursor, !IO) :-
+draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
     Line = thread_line(_Message, _ParentId, From, _PrevTags, CurrTags,
         Unread, Replied, Deleted, Flagged, Graphics, RelDate, MaybeSubject),
     (

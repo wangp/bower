@@ -134,7 +134,7 @@
             ).
 
 :- instance scrollable.line(index_line) where [
-    pred(draw_line/5) is draw_index_line
+    pred(draw_line/6) is draw_index_line
 ].
 
 %-----------------------------------------------------------------------------%
@@ -1151,10 +1151,10 @@ draw_index_view(Screen, Info, !IO) :-
     Scrollable = Info ^ i_scrollable,
     scrollable.draw(MainPanels, Scrollable, !IO).
 
-:- pred draw_index_line(panel::in, index_line::in, bool::in,
+:- pred draw_index_line(panel::in, index_line::in, int::in, bool::in,
     io::di, io::uo) is det.
 
-draw_index_line(Panel, Line, IsCursor, !IO) :-
+draw_index_line(Panel, Line, _LineNr, IsCursor, !IO) :-
     Line = index_line(_Id, Selected, Unread, Replied, Deleted, Flagged,
         Date, Authors, Subject, Tags, NonstdTagsWidth, Matched, Total),
     (

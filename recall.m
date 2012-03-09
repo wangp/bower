@@ -46,7 +46,7 @@
             ).
 
 :- instance scrollable.line(recall_line) where [
-    pred(draw_line/5) is draw_recall_line
+    pred(draw_line/6) is draw_recall_line
 ].
 
 %-----------------------------------------------------------------------------%
@@ -182,10 +182,10 @@ draw_recall(Screen, Info, !IO) :-
     Info = recall_info(Scrollable),
     scrollable.draw(Panels, Scrollable, !IO).
 
-:- pred draw_recall_line(panel::in, recall_line::in, bool::in,
+:- pred draw_recall_line(panel::in, recall_line::in, int::in, bool::in,
     io::di, io::uo) is det.
 
-draw_recall_line(Panel, Line, IsCursor, !IO) :-
+draw_recall_line(Panel, Line, _LineNr, IsCursor, !IO) :-
     Line = recall_line(_FileName, To, Subject),
     (
         IsCursor = yes,
