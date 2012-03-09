@@ -610,6 +610,45 @@ add_attachment(Screen, NumRows, !StagingInfo, !AttachInfo, !IO) :-
     attach_info::in, attach_info::out, io::di, io::uo) is det.
 
 do_attach_file(FileName, NumRows, MessageUpdate, !AttachInfo, !IO) :-
+    FollowSymLinks = yes,
+    io.file_type(FollowSymLinks, FileName, ResFileType, !IO),
+    (
+        ResFileType = ok(FileType),
+        (
+            ( FileType = regular_file
+            ; FileType = unknown
+            ),
+            io.check_file_accessibility(FileName, [read], ResAccess, !IO),
+            (
+                ResAccess = ok,
+                do_attach_file_2(FileName, NumRows, MessageUpdate,
+                    !AttachInfo, !IO)
+            ;
+                ResAccess = error(Error),
+                MessageUpdate = set_warning(io.error_message(Error))
+            )
+        ;
+            ( FileType = directory
+            ; FileType = symbolic_link
+            ; FileType = named_pipe
+            ; FileType = socket
+            ; FileType = character_device
+            ; FileType = block_device
+            ; FileType = message_queue
+            ; FileType = semaphore
+            ; FileType = shared_memory
+            ),
+            MessageUpdate = set_warning("Not a regular file.")
+        )
+    ;
+        ResFileType = error(Error),
+        MessageUpdate = set_warning(io.error_message(Error))
+    ).
+
+:- pred do_attach_file_2(string::in, int::in, message_update::out,
+    attach_info::in, attach_info::out, io::di, io::uo) is det.
+
+do_attach_file_2(FileName, NumRows, MessageUpdate, !AttachInfo, !IO) :-
     lookup_mime_type(FileName, ResMimeType, !IO),
     (
         ResMimeType = ok(MimeType),
