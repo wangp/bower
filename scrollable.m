@@ -310,15 +310,22 @@ delete_cursor_line(Scrollable0, Scrollable) :-
     list.split_list(Cursor0, List0, Start, [_ | End]),
     (
         End = [],
+        Start = [],
+        Top = 0,
+        MaybeCursor = no
+    ;
+        End = [],
+        Start = [_ | _],
         Cursor = int.max(0, Cursor0 - 1),
-        Top = int.min(Top0, Cursor)
+        Top = int.min(Top0, Cursor),
+        MaybeCursor = yes(Cursor)
     ;
         End = [_ | _],
-        Cursor = Cursor0,
+        MaybeCursor = yes(Cursor0),
         Top = Top0
     ),
     Array = version_array.from_list(Start ++ End),
-    Scrollable = scrollable(Array, Top, yes(Cursor)).
+    Scrollable = scrollable(Array, Top, MaybeCursor).
 
 %-----------------------------------------------------------------------------%
 
