@@ -596,11 +596,12 @@ add_attachment(Screen, NumRows, !StagingInfo, !AttachInfo, !IO) :-
         !IO),
     (
         Return = yes(FileName),
+        FileName \= ""
+    ->
         add_history_nodup(FileName, AttachHistory0, AttachHistory),
         !StagingInfo ^ si_attach_hist := AttachHistory,
         do_attach_file(FileName, NumRows, MessageUpdate, !AttachInfo, !IO)
     ;
-        Return = no,
         MessageUpdate = clear_message
     ),
     update_message(Screen, MessageUpdate, !IO).
