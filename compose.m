@@ -293,14 +293,15 @@ continue_postponed(Screen, Message, !IO) :-
 
 first_text_part([], "", []).
 first_text_part([Part | Parts], Text, AttachmentParts) :-
-    MaybeContent = Part ^ pt_content,
+    PartContent = Part ^ pt_content,
     (
-        MaybeContent = text(Text),
+        PartContent = text(Text),
         AttachmentParts = Parts
     ;
-        ( MaybeContent = subparts(_)
-        ; MaybeContent = unsupported
-        ),
+        PartContent = subparts(SubParts),
+        first_text_part(SubParts, Text, AttachmentParts)
+    ;
+        PartContent = unsupported,
         first_text_part(Parts, Text, AttachmentParts0),
         AttachmentParts = [Part | AttachmentParts0]
     ).
