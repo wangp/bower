@@ -452,6 +452,9 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO) :-
     ; Char = 'd' ->
         delete_attachment(Screen, !AttachInfo, !IO),
         staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
+    ; Char = 'T' ->
+        edit_attachment_type(Screen, !AttachInfo, !IO),
+        staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
     ; Char = 'p' ->
         Attachments = get_lines_list(!.AttachInfo),
         postpone(Screen, Headers, Text, Attachments, Res, !IO),
@@ -755,6 +758,92 @@ delete_attachment(Screen, !AttachInfo, !IO) :-
     ),
     update_message(Screen, MessageUpdate, !IO).
 
+:- pred edit_attachment_type(screen::in, attach_info::in, attach_info::out,
+    io::di, io::uo) is det.
+
+edit_attachment_type(Screen, !AttachInfo, !IO) :-
+    ( scrollable.get_cursor_line(!.AttachInfo, _Line, Attachment0) ->
+        (
+            Attachment0 = new_attachment(Type0, Content, FileName, Size),
+            % Supply some useful media types.
+            History0 = init_history,
+            add_history_nodup("application/octet-stream", History0, History1),
+            add_history_nodup("text/plain", History1, History),
+            text_entry_initial(Screen, "Media type: ", History, Type0,
+                complete_none, Return, !IO),
+            (
+                Return = yes(Type),
+                Type \= ""
+            ->
+                ( accept_media_type(Type) ->
+                    Attachment = new_attachment(Type, Content, FileName, Size),
+                    scrollable.set_cursor_line(Attachment, !AttachInfo),
+                    MessageUpdate = clear_message
+                ;
+                    Msg = "Refusing to set media type: " ++ Type,
+                    MessageUpdate = set_warning(Msg)
+                )
+            ;
+                MessageUpdate = clear_message
+            )
+        ;
+            Attachment0 = old_attachment(_),
+            Msg = "Modifying type of old attachments is not yet supported.",
+            MessageUpdate = set_warning(Msg)
+        )
+    ;
+        MessageUpdate = set_warning("There are no attachments.")
+    ),
+    update_message(Screen, MessageUpdate, !IO).
+
+:- pred accept_media_type(string::in) is semidet.
+
+accept_media_type(String) :-
+    [Type, SubType] = string.split_at_char('/', String),
+    string.to_lower(Type, LowerType),
+    ( LowerType = "application"
+    ; LowerType = "audio"
+    ; LowerType = "image"
+   %; LowerType = "message"
+    ; LowerType = "model"
+   %; LowerType = "multipart"
+    ; LowerType = "text"
+    ; LowerType = "video"
+    ),
+    SubType \= "",
+    string.all_match(token_char, SubType).
+
+% RFC 2616, Section 2.2 Basic Rules.
+
+:- pred token_char(char::in) is semidet.
+
+token_char(C) :-
+    char.to_int(C, Int),
+    31 < Int, Int < 127,    % not CTL
+    not separator_char(C).
+
+:- pred separator_char(char::in) is semidet.
+
+separator_char('(').
+separator_char(')').
+separator_char('<').
+separator_char('>').
+separator_char('@').
+separator_char(',').
+separator_char(';').
+separator_char(':').
+separator_char('\\').
+separator_char('"').
+separator_char('/').
+separator_char('[').
+separator_char(']').
+separator_char('?').
+separator_char('=').
+separator_char('{').
+separator_char('}').
+separator_char(' ').
+separator_char('\t').
+
 %-----------------------------------------------------------------------------%
 
 :- pred split_panels(screen::in, list(panel)::out, list(panel)::out,
@@ -858,7 +947,8 @@ draw_sep_bar(Screen, yes(Panel), !IO) :-
     get_cols(Screen, Cols),
     panel.erase(Panel, !IO),
     panel.attr_set(Panel, fg_bg(white, blue), !IO),
-    my_addstr(Panel, "-- (ftcbsr) edit fields; (a) attach, (d) detach", !IO),
+    my_addstr(Panel, "-- (ftcbsr) edit fields; (a) attach, (d) detach, "
+        ++ "(T) edit attachment type ", !IO),
     hline(Panel, char.to_int('-'), Cols, !IO).
 
 :- pred draw_staging_bar(screen::in, io::di, io::uo) is det.
