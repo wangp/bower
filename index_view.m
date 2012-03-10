@@ -620,13 +620,13 @@ skip_to_internal_search(Screen, MessageUpdate, !Info) :-
         get_main_rows(Screen, NumRows),
         (
             get_cursor(Scrollable0, Cursor0),
-            search_forward(line_contains_substring(Search), Scrollable0,
+            search_forward(line_matches_internal_search(Search), Scrollable0,
                 Cursor0 + 1, Cursor, _)
         ->
             set_cursor_visible(Cursor, NumRows, Scrollable0, Scrollable),
             MessageUpdate = clear_message
         ;
-            search_forward(line_contains_substring(Search), Scrollable0,
+            search_forward(line_matches_internal_search(Search), Scrollable0,
                 0, Cursor, _)
         ->
             set_cursor_visible(Cursor, NumRows, Scrollable0, Scrollable),
@@ -641,15 +641,18 @@ skip_to_internal_search(Screen, MessageUpdate, !Info) :-
         MessageUpdate = set_warning("No search string.")
     ).
 
-:- pred line_contains_substring(string::in, index_line::in) is semidet.
+:- pred line_matches_internal_search(string::in, index_line::in) is semidet.
 
-line_contains_substring(Search, Line) :-
+line_matches_internal_search(Search, Line) :-
     Line = index_line(_Id, _Selected, _Unread, _Replied, _Flagged, _Deleted,
-        _Date, Authors, Subject, _Tags, _TagsWidth, _Matched, _Total),
+        _Date, Authors, Subject, Tags, _TagsWidth, _Matched, _Total),
     (
         strcase_str(Authors, Search)
     ;
         strcase_str(Subject, Search)
+    ;
+        set.member(tag(TagName), Tags),
+        strcase_str(TagName, Search)
     ).
 
 %-----------------------------------------------------------------------------%
