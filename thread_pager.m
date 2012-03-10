@@ -574,13 +574,17 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         scroll_but_stop_at_message(-Delta, MessageUpdate, !Info),
         Action = continue
     ;
-        Key = code(key_home)
+        ( Key = code(key_home)
+        ; Key = char('g')
+        )
     ->
         goto_first_message(!Info),
         MessageUpdate = clear_message,
         Action = continue
     ;
-        Key = code(key_end)
+        ( Key = code(key_end)
+        ; Key = char('G')
+        )
     ->
         goto_end(!Info),
         MessageUpdate = clear_message,
@@ -698,7 +702,7 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ->
         reply(!.Info, direct_reply, Action, MessageUpdate)
     ;
-        Key = char('g')
+        Key = char('e')
     ->
         reply(!.Info, group_reply, Action, MessageUpdate)
     ;

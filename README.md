@@ -123,6 +123,7 @@ Thread/pager view
 This view pages through an entire thread.  The keys are:
 
     j, k            next, previous message
+    g, G            first, last message
     b, space        previous, next page
     \, Enter        previous, next line
     [, ]            previous, next half page
@@ -139,7 +140,7 @@ This view pages through an entire thread.  The keys are:
     +, -            add/remove arbitrary tags
 
     r               reply to sender
-    g               reply to group
+    e               reply to everyone
     L               reply to list
 
     v               highlight next visible attachment or URL
