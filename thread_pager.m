@@ -59,6 +59,7 @@
                 tp_pager            :: pager_info,
                 tp_num_pager_rows   :: int,
                 tp_search           :: maybe(string),
+                tp_search_dir       :: search_direction,
                 tp_common_history   :: common_history,
                 tp_need_refresh_index :: bool
             ).
@@ -99,7 +100,7 @@
     ;       prompt_save_part(part, maybe(string))
     ;       prompt_open_part(part)
     ;       prompt_open_url(string)
-    ;       prompt_search
+    ;       prompt_search(search_direction)
     ;       refresh_results
     ;       leave(
                 map(set(tag_delta), list(message_id))
@@ -127,7 +128,7 @@ open_thread_pager(Screen, ThreadId, MaybeSearch, NeedRefreshIndex,
 
 reopen_thread_pager(Screen, Info0, Info, !IO) :-
     Info0 = thread_pager_info(ThreadId0, Scrollable0, _NumThreadRows, Pager0,
-        _NumPagerRows, Search, CommonHistory, NeedRefreshIndex),
+        _NumPagerRows, Search, SearchDir, CommonHistory, NeedRefreshIndex),
 
     % We recreate the entire pager.  This may seem a bit inefficient but it is
     % much simpler and the time it takes to run the notmuch show command vastly
@@ -135,7 +136,8 @@ reopen_thread_pager(Screen, Info0, Info, !IO) :-
     create_thread_pager(Screen, ThreadId0, CommonHistory, Info1, Count, !IO),
 
     Info1 = thread_pager_info(ThreadId, Scrollable1, NumThreadRows, Pager1,
-        NumPagerRows, _Search1, _CommonHistory1, _NeedRefreshIndex),
+        NumPagerRows, _Search1, _SearchDir1, _CommonHistory1,
+        _NeedRefreshIndex),
 
     % Reapply tag changes from previous state.
     ThreadLines0 = get_lines_list(Scrollable0),
@@ -159,7 +161,7 @@ reopen_thread_pager(Screen, Info0, Info, !IO) :-
     ),
 
     Info2 = thread_pager_info(ThreadId, Scrollable, NumThreadRows, Pager,
-        NumPagerRows, Search, CommonHistory, NeedRefreshIndex),
+        NumPagerRows, Search, SearchDir, CommonHistory, NeedRefreshIndex),
     sync_thread_to_pager(Info2, Info),
 
     string.format("Showing %d messages.", [i(Count)], Msg),
@@ -210,7 +212,7 @@ setup_thread_pager(ThreadId, Nowish, Rows, Cols, Messages, CommonHistory,
 
     compute_num_rows(Rows, Scrollable, NumThreadRows, NumPagerRows),
     ThreadPagerInfo1 = thread_pager_info(ThreadId, Scrollable, NumThreadRows,
-        PagerInfo, NumPagerRows, no, CommonHistory, no),
+        PagerInfo, NumPagerRows, no, dir_forward, CommonHistory, no),
     (
         get_cursor_line(Scrollable, _, FirstLine),
         is_unread_line(FirstLine)
@@ -462,8 +464,8 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         prompt_open_url(Screen, Url, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
-        Action = prompt_search,
-        prompt_search(Screen, !Info, !IO),
+        Action = prompt_search(SearchDir),
+        prompt_search(Screen, SearchDir, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = refresh_results,
@@ -659,7 +661,12 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ;
         Key = char('/')
     ->
-        Action = prompt_search,
+        Action = prompt_search(dir_forward),
+        MessageUpdate = clear_message
+    ;
+        Key = char('?')
+    ->
+        Action = prompt_search(dir_reverse),
         MessageUpdate = clear_message
     ;
         Key = char('n')
@@ -1301,10 +1308,10 @@ prompt_open_url(Screen, Url, !Info, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred prompt_search(screen::in, thread_pager_info::in,
+:- pred prompt_search(screen::in, search_direction::in, thread_pager_info::in,
     thread_pager_info::out, io::di, io::uo) is det.
 
-prompt_search(Screen, !Info, !IO) :-
+prompt_search(Screen, SearchDir, !Info, !IO) :-
     History0 = !.Info ^ tp_common_history ^ ch_internal_search_history,
     text_entry(Screen, "Search for: ", History0, complete_none, Return, !IO),
     (
@@ -1314,6 +1321,7 @@ prompt_search(Screen, !Info, !IO) :-
         ;
             add_history_nodup(Search, History0, History),
             !Info ^ tp_search := yes(Search),
+            !Info ^ tp_search_dir := SearchDir,
             !Info ^ tp_common_history ^ ch_internal_search_history := History,
             skip_to_search(new_search, MessageUpdate, !Info),
             update_message(Screen, MessageUpdate, !IO)
@@ -1331,8 +1339,9 @@ skip_to_search(SearchKind, MessageUpdate, !Info) :-
         MaybeSearch = yes(Search),
         Pager0 = !.Info ^ tp_pager,
         NumRows = !.Info ^ tp_num_pager_rows,
-        pager.skip_to_search(NumRows, SearchKind, Search, MessageUpdate,
-            Pager0, Pager),
+        SearchDir = !.Info ^ tp_search_dir,
+        pager.skip_to_search(NumRows, SearchKind, Search, SearchDir,
+            MessageUpdate, Pager0, Pager),
         !Info ^ tp_pager := Pager,
         sync_thread_to_pager(!Info)
     ;

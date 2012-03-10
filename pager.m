@@ -13,6 +13,7 @@
 :- import_module curs.panel.
 :- import_module data.
 :- import_module screen.
+:- import_module scrollable.
 
 %-----------------------------------------------------------------------------%
 
@@ -60,7 +61,8 @@
     ;       continue_search.
 
 :- pred skip_to_search(int::in, search_kind::in, string::in,
-    message_update::out, pager_info::in, pager_info::out) is det.
+    search_direction::in, message_update::out, pager_info::in, pager_info::out)
+    is det.
 
 :- pred highlight_part_or_url(int::in, message_update::out,
     pager_info::in, pager_info::out) is det.
@@ -90,7 +92,6 @@
 :- import_module string.
 :- import_module version_array.
 
-:- import_module scrollable.
 :- import_module string_util.
 :- import_module uri.
 
@@ -637,26 +638,18 @@ is_message_start(MessageId, start_message_header(Message, _, _)) :-
 
 %-----------------------------------------------------------------------------%
 
-skip_to_search(NumRows, SearchKind, Search, MessageUpdate, !Info) :-
-    !.Info = pager_info(Scrollable0),
+skip_to_search(NumRows, SearchKind, Search, SearchDir, MessageUpdate,
+        pager_info(Scrollable0), pager_info(Scrollable)) :-
     Top0 = get_top(Scrollable0),
     Bot = Top0 + NumRows,
+    choose_search_start(Scrollable0, Top0, Bot, SearchKind, SearchDir, Start),
     (
-        SearchKind = continue_search,
-        get_cursor(Scrollable0, Cursor0),
-        Cursor0 >= Top0,
-        Cursor0 < Bot
-    ->
-        Cursor1 = Cursor0 + 1
-    ;
-        Cursor1 = Top0
-    ),
-    (
-        search_forward(line_matches_search(Search), Scrollable0,
-            Cursor1, Cursor, _MatchLine)
+        search(line_matches_search(Search), SearchDir, Scrollable0,
+            Start, Cursor)
     ->
         (
             % Jump to the message containing the match, if it wasn't already.
+            SearchDir = dir_forward,
             search_reverse(is_message_start, Scrollable0, Cursor + 1,
                 NewMsgStart),
             search_reverse(is_message_start, Scrollable0, Top0 + 1,
@@ -672,8 +665,35 @@ skip_to_search(NumRows, SearchKind, Search, MessageUpdate, !Info) :-
     ;
         set_cursor_none(Scrollable0, Scrollable),
         MessageUpdate = set_warning("Not found.")
-    ),
-    !:Info = pager_info(Scrollable).
+    ).
+
+:- pred choose_search_start(scrollable(T)::in, int::in, int::in,
+    search_kind::in, search_direction::in, int::out) is det.
+
+choose_search_start(Scrollable, Top, Bot, new_search, SearchDir, Start) :-
+    (
+        SearchDir = dir_forward,
+        Start = Top
+    ;
+        SearchDir = dir_reverse,
+        Start = min(Bot, get_num_lines(Scrollable))
+    ).
+choose_search_start(Scrollable, Top, Bot, continue_search, SearchDir, Start) :-
+    (
+        get_cursor(Scrollable, Cursor),
+        Cursor >= Top,
+        Cursor < Bot
+    ->
+        (
+            SearchDir = dir_forward,
+            Start = Cursor + 1
+        ;
+            SearchDir = dir_reverse,
+            Start = Cursor
+        )
+    ;
+        choose_search_start(Scrollable, Top, Bot, new_search, SearchDir, Start)
+    ).
 
 :- pred line_matches_search(string::in, pager_line::in) is semidet.
 
