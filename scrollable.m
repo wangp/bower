@@ -20,6 +20,10 @@
     pred draw_line(panel::in, T::in, int::in, bool::in, io::di, io::uo) is det
 ].
 
+:- type search_direction
+    --->    dir_forward
+    ;       dir_reverse.
+
 :- func init(list(T)) = scrollable(T).
 
 :- func init_with_cursor(list(T)) = scrollable(T).
@@ -65,6 +69,9 @@
 
 :- pred move_cursor(int::in, int::in, bool::out,
     scrollable(T)::in, scrollable(T)::out) is det.
+
+:- pred search(pred(T)::in(pred(in) is semidet), search_direction::in,
+    scrollable(T)::in, int::in, int::out) is semidet.
 
 :- pred search_forward(pred(T)::in(pred(in) is semidet),
     scrollable(T)::in, int::in, int::out, T::out) is semidet.
@@ -248,6 +255,11 @@ move_cursor(NumRows, Delta, HitLimit, !Scrollable) :-
         MaybeCursor0 = no,
         HitLimit = no
     ).
+
+search(P, dir_forward, Scrollable, I0, I) :-
+    search_forward(P, Scrollable, I0, I, _MatchLine).
+search(P, dir_reverse, Scrollable, I0, I) :-
+    search_reverse(P, Scrollable, I0, I).
 
 search_forward(P, Scrollable, I0, I, MatchLine) :-
     search_forward_limit(P, Scrollable, I0, int.max_int, I, MatchLine).

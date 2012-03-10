@@ -56,6 +56,7 @@
                 i_poll_time         :: time_t,
                 i_poll_count        :: int,
                 i_internal_search   :: maybe(string),
+                i_internal_search_dir :: search_direction,
                 i_common_history    :: common_history,
                 i_compose_history   :: compose_history
             ).
@@ -96,7 +97,7 @@
     ;       refresh_all
     ;       start_compose
     ;       start_recall
-    ;       prompt_internal_search
+    ;       prompt_internal_search(search_direction)
     ;       skip_to_internal_search
     ;       toggle_unread
     ;       toggle_flagged
@@ -116,7 +117,7 @@
     ;       refresh_all
     ;       start_compose
     ;       start_recall
-    ;       prompt_internal_search
+    ;       prompt_internal_search(search_direction)
     ;       toggle_unread
     ;       toggle_flagged
     ;       set_deleted
@@ -158,7 +159,8 @@ open_index(Screen, SearchString, !IO) :-
     CommonHistory = common_history(LimitHistory, init_history, init_history,
         init_history, init_history),
     IndexInfo = index_info(Scrollable, SearchString, SearchTokens, SearchTime,
-        PollTime, PollCount, MaybeSearch, CommonHistory, init_compose_history),
+        PollTime, PollCount, MaybeSearch, dir_forward, CommonHistory,
+        init_compose_history),
     index_loop(Screen, IndexInfo, !IO).
 
 :- pred search_terms_with_progress(screen::in, list(token)::in,
@@ -317,8 +319,8 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         ),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
-        Action = prompt_internal_search,
-        prompt_internal_search(Screen, !IndexInfo, !IO),
+        Action = prompt_internal_search(SearchDir),
+        prompt_internal_search(Screen, SearchDir, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = toggle_unread,
@@ -422,9 +424,9 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = start_recall
         ;
-            Binding = prompt_internal_search,
+            Binding = prompt_internal_search(SearchDir),
             MessageUpdate = no_change,
-            Action = prompt_internal_search
+            Action = prompt_internal_search(SearchDir)
         ;
             Binding = skip_to_internal_search,
             skip_to_internal_search(Screen, MessageUpdate, !IndexInfo),
@@ -511,7 +513,8 @@ key_binding_char('\r', enter).
 key_binding_char('l', enter_limit).
 key_binding_char('m', start_compose).
 key_binding_char('R', start_recall).
-key_binding_char('/', prompt_internal_search).
+key_binding_char('/', prompt_internal_search(dir_forward)).
+key_binding_char('?', prompt_internal_search(dir_reverse)).
 key_binding_char('n', skip_to_internal_search).
 key_binding_char('N', toggle_unread).
 key_binding_char('F', toggle_flagged).
@@ -589,10 +592,10 @@ enter(Info, Action) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred prompt_internal_search(screen::in, index_info::in, index_info::out,
-    io::di, io::uo) is det.
+:- pred prompt_internal_search(screen::in, search_direction::in,
+    index_info::in, index_info::out, io::di, io::uo) is det.
 
-prompt_internal_search(Screen, !Info, !IO) :-
+prompt_internal_search(Screen, SearchDir, !Info, !IO) :-
     History0 = !.Info ^ i_common_history ^ ch_internal_search_history,
     text_entry(Screen, "Search for: ", History0, complete_none, Return, !IO),
     (
@@ -602,6 +605,7 @@ prompt_internal_search(Screen, !Info, !IO) :-
         ;
             add_history_nodup(Search, History0, History),
             !Info ^ i_internal_search := yes(Search),
+            !Info ^ i_internal_search_dir := SearchDir,
             !Info ^ i_common_history ^ ch_internal_search_history := History,
             skip_to_internal_search(Screen, MessageUpdate, !Info),
             update_message(Screen, MessageUpdate, !IO)
@@ -617,29 +621,53 @@ skip_to_internal_search(Screen, MessageUpdate, !Info) :-
     MaybeSearch = !.Info ^ i_internal_search,
     (
         MaybeSearch = yes(Search),
+        SearchDir = !.Info ^ i_internal_search_dir,
         Scrollable0 = !.Info ^ i_scrollable,
-        get_main_rows(Screen, NumRows),
-        (
-            get_cursor(Scrollable0, Cursor0),
-            search_forward(line_matches_internal_search(Search), Scrollable0,
-                Cursor0 + 1, Cursor, _)
-        ->
-            set_cursor_visible(Cursor, NumRows, Scrollable0, Scrollable),
-            MessageUpdate = clear_message
+        ( get_cursor(Scrollable0, Cursor0) ->
+            get_main_rows(Screen, NumRows),
+            (
+                SearchDir = dir_forward,
+                Start = Cursor0 + 1,
+                WrapStart = 0,
+                WrapMessage = "Search wrapped to top."
+            ;
+                SearchDir = dir_reverse,
+                Start = Cursor0,
+                WrapStart = get_num_lines(Scrollable0),
+                WrapMessage = "Search wrapped to bottom."
+            ),
+            skip_to_internal_search_2(Search, SearchDir, Start, WrapStart,
+                WrapMessage, NumRows, MessageUpdate, Scrollable0, Scrollable),
+            !Info ^ i_scrollable := Scrollable
         ;
-            search_forward(line_matches_internal_search(Search), Scrollable0,
-                0, Cursor, _)
-        ->
-            set_cursor_visible(Cursor, NumRows, Scrollable0, Scrollable),
-            MessageUpdate = set_info("Search wrapped to top.")
-        ;
-            Scrollable = Scrollable0,
-            MessageUpdate = set_warning("Not found.")
-        ),
-        !Info ^ i_scrollable := Scrollable
+            MessageUpdate = no_change
+        )
     ;
         MaybeSearch = no,
         MessageUpdate = set_warning("No search string.")
+    ).
+
+:- pred skip_to_internal_search_2(string::in, search_direction::in,
+    int::in, int::in, string::in, int::in, message_update::out,
+    scrollable(index_line)::in, scrollable(index_line)::out) is det.
+
+skip_to_internal_search_2(Search, SearchDir, Start, WrapStart, WrapMessage,
+        NumRows, MessageUpdate, Scrollable0, Scrollable) :-
+    (
+        scrollable.search(line_matches_internal_search(Search), SearchDir,
+            Scrollable0, Start, Cursor)
+    ->
+        set_cursor_visible(Cursor, NumRows, Scrollable0, Scrollable),
+        MessageUpdate = clear_message
+    ;
+        scrollable.search(line_matches_internal_search(Search), SearchDir,
+            Scrollable0, WrapStart, Cursor)
+    ->
+        set_cursor_visible(Cursor, NumRows, Scrollable0, Scrollable),
+        MessageUpdate = set_info(WrapMessage)
+    ;
+        Scrollable = Scrollable0,
+        MessageUpdate = set_warning("Not found.")
     ).
 
 :- pred line_matches_internal_search(string::in, index_line::in) is semidet.
