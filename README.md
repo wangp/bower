@@ -77,7 +77,7 @@ The keys are:
     Enter           open thread
     m               compose new message
     R               recall postponed message
-    /               search for string within results
+    /, ?            search for string within results
     n               skip to next search result
     N               toggle unread tag on current thread
     F               toggle flagged tag on current thread
@@ -128,7 +128,7 @@ This view pages through an entire thread.  The keys are:
     [, ]            previous, next half page
     p               go to parent message
     S               skip quoted text
-    /, n            search, next
+    /, ?, n         search, next
     =               refresh search results
 
     N               toggle 'unread' tag on current message
