@@ -86,6 +86,7 @@
 :- import_module bool.
 :- import_module cord.
 :- import_module int.
+:- import_module set.
 :- import_module string.
 :- import_module version_array.
 
@@ -687,9 +688,22 @@ line_matches_search(Search, Line) :-
         ),
         strcase_str(String, Search)
     ;
-        ( Line = attachment(_)
-        ; Line = message_separator
-        ),
+        Line = start_message_header(Message, _, _),
+        % XXX this won't match current tags
+        Tags = Message ^ m_tags,
+        set.member(tag(TagName), Tags),
+        strcase_str(TagName, Search)
+    ;
+        Line = attachment(Part),
+        (
+            Part ^ pt_type = Type,
+            strcase_str(Type, Search)
+        ;
+            Part ^ pt_filename = yes(FileName),
+            strcase_str(FileName, Search)
+        )
+    ;
+        Line = message_separator,
         fail
     ).
 
