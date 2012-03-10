@@ -6,6 +6,7 @@
 
 :- import_module bool.
 :- import_module io.
+:- import_module maybe.
 
 :- import_module data.
 :- import_module screen.
@@ -13,8 +14,8 @@
 
 %-----------------------------------------------------------------------------%
 
-:- pred open_thread_pager(screen::in, thread_id::in, bool::out,
-    common_history::in, common_history::out, io::di, io::uo) is det.
+:- pred open_thread_pager(screen::in, thread_id::in, maybe(string)::in,
+    bool::out, common_history::in, common_history::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -27,7 +28,6 @@
 :- import_module int.
 :- import_module list.
 :- import_module map.
-:- import_module maybe.
 :- import_module require.
 :- import_module set.
 :- import_module string.
@@ -112,12 +112,13 @@
 
 %-----------------------------------------------------------------------------%
 
-open_thread_pager(Screen, ThreadId, NeedRefreshIndex,
+open_thread_pager(Screen, ThreadId, MaybeSearch, NeedRefreshIndex,
         CommonHistory0, CommonHistory, !IO) :-
     create_thread_pager(Screen, ThreadId, CommonHistory0, Info0, Count, !IO),
+    Info1 = Info0 ^ tp_search := MaybeSearch,
     string.format("Showing %d messages.", [i(Count)], Msg),
     update_message(Screen, set_info(Msg), !IO),
-    thread_pager_loop(Screen, Info0, Info, !IO),
+    thread_pager_loop(Screen, Info1, Info, !IO),
     NeedRefreshIndex = Info ^ tp_need_refresh_index,
     CommonHistory = Info ^ tp_common_history.
 

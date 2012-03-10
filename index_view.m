@@ -256,8 +256,9 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         index_loop(NewScreen, !.IndexInfo, !IO)
     ;
         Action = open_pager(ThreadId),
+        MaybeSearch = !.IndexInfo ^ i_internal_search,
         CommonHistory0 = !.IndexInfo ^ i_common_history,
-        open_thread_pager(Screen, ThreadId, NeedRefresh,
+        open_thread_pager(Screen, ThreadId, MaybeSearch, NeedRefresh,
             CommonHistory0, CommonHistory, !IO),
         % In case of resize.
         recreate_screen(Screen, NewScreen, !IndexInfo, !IO),
