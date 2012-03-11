@@ -24,6 +24,9 @@
 :- pred start_reply(screen::in, message::in, reply_kind::in,
     io::di, io::uo) is det.
 
+:- pred start_reply_to_message_id(screen::in, message_id::in, reply_kind::in,
+    io::di, io::uo) is det.
+
 :- pred continue_postponed(screen::in, message::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
@@ -250,6 +253,21 @@ set_headers_for_list_reply(OrigFrom, !Headers) :-
         !Headers ^ h_to := To
     ;
         true
+    ).
+
+%-----------------------------------------------------------------------------%
+
+start_reply_to_message_id(Screen, MessageId, ReplyKind, !IO) :-
+    run_notmuch([
+        "show", "--format=json", "--part=0", "--",
+        message_id_to_search_term(MessageId)
+    ], parse_top_message, Res, !IO),
+    (
+        Res = ok(Message),
+        start_reply(Screen, Message, ReplyKind, !IO)
+    ;
+        Res = error(Error),
+        unexpected($module, $pred, io.error_message(Error))
     ).
 
 %-----------------------------------------------------------------------------%

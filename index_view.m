@@ -97,6 +97,7 @@
     ;       refresh_all
     ;       start_compose
     ;       start_recall
+    ;       start_reply(reply_kind)
     ;       prompt_internal_search(search_direction)
     ;       skip_to_internal_search
     ;       toggle_unread
@@ -117,6 +118,7 @@
     ;       refresh_all
     ;       start_compose
     ;       start_recall
+    ;       start_reply(reply_kind)
     ;       prompt_internal_search(search_direction)
     ;       toggle_unread
     ;       toggle_flagged
@@ -125,6 +127,11 @@
     ;       prompt_tag(string)
     ;       bulk_tag
     ;       quit.
+
+:- type try_reply_result
+    --->    ok
+    ;       unable_to_choose
+    ;       error.
 
 :- type arbitrary_tag_changes
     --->    no
@@ -309,6 +316,16 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         !IndexInfo ^ i_compose_history := ComposeHistory,
         index_loop(Screen, !.IndexInfo, !IO)
     ;
+        Action = start_reply(ReplyKind),
+        start_reply(Screen, ReplyKind, MaybeRefresh, !IndexInfo, !IO),
+        (
+            MaybeRefresh = yes(ThreadId),
+            refresh_index_line(Screen, ThreadId, !IndexInfo, !IO)
+        ;
+            MaybeRefresh = no
+        ),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
         Action = start_recall,
         select_recall(Screen, MaybeSelected, !IO),
         (
@@ -424,6 +441,10 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = start_recall
         ;
+            Binding = start_reply(ReplyKind),
+            MessageUpdate = no_change,
+            Action = start_reply(ReplyKind)
+        ;
             Binding = prompt_internal_search(SearchDir),
             MessageUpdate = no_change,
             Action = prompt_internal_search(SearchDir)
@@ -512,6 +533,9 @@ key_binding_char('\t', skip_to_unread).
 key_binding_char('\r', enter).
 key_binding_char('l', enter_limit).
 key_binding_char('m', start_compose).
+key_binding_char('r', start_reply(direct_reply)).
+key_binding_char('e', start_reply(group_reply)).
+key_binding_char('L', start_reply(list_reply)).
 key_binding_char('R', start_recall).
 key_binding_char('/', prompt_internal_search(dir_forward)).
 key_binding_char('?', prompt_internal_search(dir_reverse)).
@@ -588,6 +612,78 @@ enter(Info, Action) :-
         Action = open_pager(ThreadId)
     ;
         Action = continue
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred start_reply(screen::in, reply_kind::in, maybe(thread_id)::out,
+    index_info::in, index_info::out, io::di, io::uo) is det.
+
+start_reply(Screen, ReplyKind, MaybeRefresh, !Info, !IO) :-
+    Scrollable = !.Info ^ i_scrollable,
+    ( get_cursor_line(Scrollable, _, CursorLine) ->
+        ThreadId = CursorLine ^ i_id,
+        try_reply(Screen, ThreadId, no, ReplyKind, TryResA, !IO),
+        (
+            TryResA = ok,
+            MaybeRefresh = yes(ThreadId)
+        ;
+            TryResA = unable_to_choose,
+            try_reply(Screen, ThreadId, yes, ReplyKind, TryResB, !IO),
+            (
+                TryResB = ok,
+                MaybeRefresh = yes(ThreadId)
+            ;
+                TryResB = unable_to_choose,
+                Msg = "Unable to choose message to reply to.",
+                update_message(Screen, set_warning(Msg), !IO),
+                MaybeRefresh = no
+            ;
+                TryResB = error,
+                MaybeRefresh = no
+            )
+        ;
+            TryResA = error,
+            MaybeRefresh = no
+        )
+    ;
+        update_message(Screen, set_warning("No thread."), !IO),
+        MaybeRefresh = no
+    ).
+
+:- pred try_reply(screen::in, thread_id::in, bool::in, reply_kind::in,
+    try_reply_result::out, io::di, io::uo) is det.
+
+try_reply(Screen, ThreadId, RequireUnread, ReplyKind, Res, !IO) :-
+    (
+        RequireUnread = yes,
+        Args0 = ["tag:unread"]
+    ;
+        RequireUnread = no,
+        Args0 = []
+    ),
+    Args = [
+        "search", "--format=json", "--output=messages", "--",
+        thread_id_to_search_term(ThreadId),
+        "-tag:sent",
+        "-tag:replied",
+        "-tag:deleted",
+        "-tag:draft"
+        | Args0
+    ],
+    run_notmuch(Args, parse_message_id_list, ListRes, !IO),
+    (
+        ListRes = ok(MessageIds),
+        ( MessageIds = [MessageId] ->
+            start_reply_to_message_id(Screen, MessageId, ReplyKind, !IO),
+            Res = ok
+        ;
+            Res = unable_to_choose
+        )
+    ;
+        ListRes = error(Error),
+        update_message(Screen, set_warning(io.error_message(Error)), !IO),
+        Res = error
     ).
 
 %-----------------------------------------------------------------------------%

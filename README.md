@@ -76,6 +76,9 @@ The keys are:
     =               refresh search results
     Enter           open thread
     m               compose new message
+    r               reply to sender
+    e               reply to everyone
+    L               reply to list
     R               recall postponed message
     /, ?            search for string within results
     n               skip to next search result
