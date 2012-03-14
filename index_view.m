@@ -282,7 +282,8 @@ index_loop(Screen, !.IndexInfo, !IO) :-
     ;
         Action = enter_limit,
         History0 = !.IndexInfo ^ i_common_history ^ ch_limit_history,
-        Completion = complete_tags(["tag:", "is:"]),
+        Completion = complete_tags([
+            "tag:", "+tag:", "-tag:", "is:", "+is:", "-is:"]),
         text_entry(Screen, "Limit to messages matching: ", History0,
             Completion, Return, !IO),
         (
