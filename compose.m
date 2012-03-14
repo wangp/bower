@@ -446,7 +446,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO) :-
     draw_attachments_label(AttachmentPanels, !IO),
     draw_sep_bar(Screen, MaybeSepPanel, !IO),
     draw_pager_lines(PagerPanels, !.PagerInfo, !IO),
-    draw_staging_bar(Screen, !IO),
+    draw_staging_bar(Screen, !.StagingInfo, !IO),
     panel.update_panels(!IO),
     NumAttachmentRows = list.length(AttachmentPanels),
     NumPagerRows = list.length(PagerPanels),
@@ -508,6 +508,19 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO) :-
         ;
             Res = no,
             staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, !IO)
+        )
+    ; Char = 'D' ->
+        % XXX prompt to discard
+        (
+            MaybeOldDraft = yes(_),
+            Message = "Message discarded (older postponed message kept).",
+            update_message(Screen, set_info(Message), !IO)
+        ;
+            MaybeOldDraft = no,
+            Message = "Not editing a postponed message.",
+            update_message(Screen, set_warning(Message), !IO),
+            staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo,
+                !IO)
         )
     ; Char = 'Q' ->
         % XXX prompt to abandon
@@ -984,15 +997,23 @@ draw_sep_bar(Screen, yes(Panel), !IO) :-
         ++ "(T) edit attachment type ", !IO),
     hline(Panel, char.to_int('-'), Cols, !IO).
 
-:- pred draw_staging_bar(screen::in, io::di, io::uo) is det.
+:- pred draw_staging_bar(screen::in, staging_info::in, io::di, io::uo) is det.
 
-draw_staging_bar(Screen, !IO) :-
+draw_staging_bar(Screen, StagingInfo, !IO) :-
+    MaybeOldDraft = StagingInfo ^ si_old_msgid,
     get_cols(Screen, Cols),
     get_bar_panel(Screen, Panel),
     panel.erase(Panel, !IO),
     panel.attr_set(Panel, fg_bg(white, blue), !IO),
     my_addstr(Panel, "-- ", !IO),
-    Msg = "Compose: (e) edit, (p) postpone, (Y) send, (Q) abandon. ",
+    (
+        MaybeOldDraft = yes(_),
+        Msg = "Compose: (e) edit, (p) postpone, (Y) send, " ++
+            "(D) discard new changes, (Q) abandon."
+    ;
+        MaybeOldDraft = no,
+        Msg = "Compose: (e) edit, (p) postpone, (Y) send, (Q) abandon."
+    ),
     my_addstr_fixed(Panel, Cols - 3, Msg, '-', !IO).
 
 %-----------------------------------------------------------------------------%
