@@ -343,7 +343,8 @@ create_edit_stage(Screen, Headers0, Text0, Attachments, MaybeOldDraft, !IO) :-
             (
                 ResParse = ok(Headers1 - Text),
                 io.remove_file(Filename, _, !IO),
-                update_references(Headers0, Headers1, Headers),
+                update_references(Headers0, Headers1, Headers2),
+                expand_aliases_after_edit(Headers2, Headers, !IO),
                 StagingInfo = staging_info(Headers, Text, MaybeOldDraft,
                     init_history),
                 AttachInfo = scrollable.init_with_cursor(Attachments),
@@ -416,6 +417,20 @@ update_references(Headers0, !Headers) :-
     ;
         true
     ).
+
+:- pred expand_aliases_after_edit(headers::in, headers::out, io::di, io::uo)
+    is det.
+
+expand_aliases_after_edit(!Headers, !IO) :-
+    To0 = !.Headers ^ h_to,
+    Cc0 = !.Headers ^ h_cc,
+    Bcc0 = !.Headers ^ h_bcc,
+    expand_aliases(To0, To, !IO),
+    expand_aliases(Cc0, Cc, !IO),
+    expand_aliases(Bcc0, Bcc, !IO),
+    !Headers ^ h_to := To,
+    !Headers ^ h_cc := Cc,
+    !Headers ^ h_bcc := Bcc.
 
 %-----------------------------------------------------------------------------%
 
