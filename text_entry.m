@@ -58,7 +58,8 @@
                 pre_history     :: history,
                 post_history    :: history,
                 compl_type      :: completion_type,
-                compl_choices   :: list(string)
+                compl_choices   :: list(string),
+                compl_point     :: int
             ).
 
 %-----------------------------------------------------------------------------%
@@ -100,7 +101,7 @@ text_entry_full(Screen, Prompt, History, Initial, CompleteType, FirstTime,
     string.to_char_list(Initial, Before0),
     list.reverse(Before0, Before),
     After = [],
-    SubInfo = sub_info(FirstTime, History, [], CompleteType, []),
+    SubInfo = sub_info(FirstTime, History, [], CompleteType, [], 0),
     text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO),
     update_message(Screen, clear_message, !IO).
 
@@ -220,12 +221,14 @@ text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO) :-
     ;
         Key = char('\x09\') % Tab
     ->
-        bol_eol(After, Before, Before1),
+        Type = SubInfo ^ compl_type,
+        forward_for_completion(Type, Before, Before1, After, After1),
         do_completion(Before1, Before2, SubInfo, MaybeSubInfo1, !IO),
         (
             MaybeSubInfo1 = yes(SubInfo1),
             clear_first_time_flag(SubInfo1, SubInfo2),
-            text_entry_real(Screen, Prompt, Before2, [], SubInfo2, Return, !IO)
+            text_entry_real(Screen, Prompt, Before2, After1, SubInfo2, Return,
+                !IO)
         ;
             MaybeSubInfo1 = no,
             % XXX type tab?
@@ -278,7 +281,8 @@ clear_first_time_flag(!SubInfo) :-
 
 clear_completion_choices(!SubInfo) :-
     ( !.SubInfo ^ compl_choices = [_ | _] ->
-        !SubInfo ^ compl_choices := []
+        !SubInfo ^ compl_choices := [],
+        !SubInfo ^ compl_point := 0
     ;
         true
     ).
@@ -381,6 +385,24 @@ move_history(Before0, Before, After0, After, Hist0, Hist, HistOpp0, HistOpp) :-
 
 %-----------------------------------------------------------------------------%
 
+:- pred forward_for_completion(completion_type::in,
+    list(char)::in, list(char)::out, list(char)::in, list(char)::out) is det.
+
+forward_for_completion(Type, Before0, Before, After0, After) :-
+    (
+        Type = complete_none,
+        Before = Before0,
+        After = After0
+    ;
+        Type = complete_path,
+        bol_eol(After0, Before0, Before),
+        After = []
+    ;
+        Type = complete_tags(_),
+        list.takewhile(non_whitespace, After0, Take, After),
+        Before = list.reverse(Take) ++ Before0
+    ).
+
 :- pred do_completion(list(char)::in, list(char)::out, sub_info::in,
     maybe(sub_info)::out, io::di, io::uo) is det.
 
@@ -390,20 +412,25 @@ do_completion(Orig, Replacement, SubInfo0, MaybeSubInfo, !IO) :-
     (
         Choices0 = [],
         Type = complete_none,
-        Choices = []
+        Choices = [],
+        CompletionPoint = 0
     ;
         Choices0 = [],
         Type = complete_path,
         string.from_rev_char_list(Orig, OrigString),
-        generate_path_choices(OrigString, Choices, !IO)
+        generate_path_choices(OrigString, Choices, !IO),
+        CompletionPoint = 0
     ;
         Choices0 = [],
         Type = complete_tags(CompletionTriggers),
-        string.from_rev_char_list(Orig, OrigString),
-        generate_tag_choices(CompletionTriggers, OrigString, Choices, !IO)
+        list.takewhile(non_whitespace, Orig, Word, Untouched),
+        list.length(Untouched, CompletionPoint),
+        string.from_rev_char_list(Word, WordString),
+        generate_tag_choices(CompletionTriggers, WordString, Choices, !IO)
     ;
         Choices0 = [_ | _],
-        Choices = Choices0
+        Choices = Choices0,
+        CompletionPoint = SubInfo0 ^ compl_point
     ),
     (
         Choices = [],
@@ -411,13 +438,16 @@ do_completion(Orig, Replacement, SubInfo0, MaybeSubInfo, !IO) :-
         MaybeSubInfo = no
     ;
         Choices = [FirstChoice | MoreChoices],
-        Replacement = list.reverse(string.to_char_list(FirstChoice)),
+        det_take_tail(CompletionPoint, Orig, OrigKeep),
+        reverse_onto(string.to_char_list(FirstChoice), OrigKeep, Replacement),
         (
             MoreChoices = [],
             SubInfo = SubInfo0 ^ compl_choices := []
         ;
             MoreChoices = [_ | _],
-            SubInfo = SubInfo0 ^ compl_choices := MoreChoices ++ [FirstChoice]
+            RotateChoices = MoreChoices ++ [FirstChoice],
+            SubInfo1 = SubInfo0 ^ compl_choices := RotateChoices,
+            SubInfo = SubInfo1 ^ compl_point := CompletionPoint
         ),
         MaybeSubInfo = yes(SubInfo)
     ).
@@ -509,6 +539,23 @@ generate_tag_choices(CompletionTriggers, OrigString, Choices, !IO) :-
 filter_tag_choice(Trigger, TagPrefix, Tag, Choice) :-
     string.prefix(Tag, TagPrefix),
     Choice = Trigger ++ Tag.
+
+:- pred non_whitespace(char::in) is semidet.
+
+non_whitespace(C) :-
+    not char.is_whitespace(C).
+
+:- pred det_take_tail(int::in, list(char)::in, list(char)::out) is det.
+
+det_take_tail(N, Xs, XsTail) :-
+    list.length(Xs, Length),
+    list.det_drop(Length - N, Xs, XsTail).
+
+:- pred reverse_onto(list(char)::in, list(char)::in, list(char)::out) is det.
+
+reverse_onto([], Acc, Acc).
+reverse_onto([X | Xs], Acc0, Acc) :-
+    reverse_onto(Xs, [X | Acc0], Acc).
 
 %-----------------------------------------------------------------------------%
 
