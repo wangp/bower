@@ -19,7 +19,12 @@
 
 :- type pager_info.
 
-:- pred setup_pager(int::in, list(message)::in, pager_info::out) is det.
+:- type setup_mode
+    --->    include_replies
+    ;       toplevel_only.
+
+:- pred setup_pager(setup_mode::in, int::in, list(message)::in,
+    pager_info::out) is det.
 
 :- pred setup_pager_for_staging(int::in, string::in, pager_info::out) is det.
 
@@ -141,16 +146,16 @@
 
 %-----------------------------------------------------------------------------%
 
-setup_pager(Cols, Messages, Info) :-
-    list.foldl(append_message(Cols), Messages, cord.init, LinesCord),
+setup_pager(Mode, Cols, Messages, Info) :-
+    list.foldl(append_message(Mode, Cols), Messages, cord.init, LinesCord),
     Lines = list(LinesCord),
     Scrollable = scrollable.init(Lines),
     Info = pager_info(Scrollable).
 
-:- pred append_message(int::in, message::in,
+:- pred append_message(setup_mode::in, int::in, message::in,
     cord(pager_line)::in, cord(pager_line)::out) is det.
 
-append_message(Cols, Message, !Lines) :-
+append_message(Mode, Cols, Message, !Lines) :-
     Headers = Message ^ m_headers,
     StartMessage = start_message_header(Message, "Date", Headers ^ h_date),
     snoc(StartMessage, !Lines),
@@ -175,8 +180,13 @@ append_message(Cols, Message, !Lines) :-
     snoc(message_separator, !Lines),
     snoc(message_separator, !Lines),
     snoc(message_separator, !Lines),
-    Replies = Message ^ m_replies,
-    list.foldl(append_message(Cols), Replies, !Lines).
+    (
+        Mode = include_replies,
+        Replies = Message ^ m_replies,
+        list.foldl(append_message(Mode, Cols), Replies, !Lines)
+    ;
+        Mode = toplevel_only
+    ).
 
 :- pred append_header(string::in, string::in,
     cord(pager_line)::in, cord(pager_line)::out) is det.

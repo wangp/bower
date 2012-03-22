@@ -133,6 +133,7 @@ This view pages through an entire thread.  The keys are:
     p               go to parent message
     S               skip quoted text
     /, ?, n         search, next
+    O               change ordering of messages
     =               refresh search results
 
     N               toggle 'unread' tag on current message

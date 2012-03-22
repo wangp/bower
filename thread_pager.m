@@ -54,6 +54,7 @@
 :- type thread_pager_info
     --->    thread_pager_info(
                 tp_thread_id        :: thread_id,
+                tp_ordering         :: ordering,
                 tp_scrollable       :: scrollable(thread_line),
                 tp_num_thread_rows  :: int,
                 tp_pager            :: pager_info,
@@ -63,6 +64,10 @@
                 tp_common_history   :: common_history,
                 tp_need_refresh_index :: bool
             ).
+
+:- type ordering
+    --->    ordering_threaded
+    ;       ordering_flat.
 
 :- type thread_line
     --->    thread_line(
@@ -75,7 +80,7 @@
                 tp_replied      :: replied,         % cached from tp_curr_tags
                 tp_deleted      :: deleted,         % cached from tp_curr_tags
                 tp_flagged      :: flagged,         % cached from tp_curr_tags
-                tp_graphics     :: list(graphic),
+                tp_graphics     :: maybe(list(graphic)),
                 tp_reldate      :: string,
                 tp_subject      :: maybe(string)
             ).
@@ -101,10 +106,17 @@
     ;       prompt_open_part(part)
     ;       prompt_open_url(string)
     ;       prompt_search(search_direction)
+    ;       prompt_ordering
     ;       refresh_results
     ;       leave(
                 map(set(tag_delta), list(message_id))
                 % Group messages by the tag changes to be applied.
+            ).
+
+:- type message_flat
+    --->    message_flat(
+                mf_message      :: message,
+                mf_maybe_parent :: maybe(message_id)
             ).
 
 :- instance scrollable.line(thread_line) where [
@@ -115,7 +127,8 @@
 
 open_thread_pager(Screen, ThreadId, MaybeSearch, NeedRefreshIndex,
         CommonHistory0, CommonHistory, !IO) :-
-    create_thread_pager(Screen, ThreadId, CommonHistory0, Info0, Count, !IO),
+    create_thread_pager(Screen, ThreadId, ordering_threaded, CommonHistory0,
+        Info0, Count, !IO),
     Info1 = Info0 ^ tp_search := MaybeSearch,
     string.format("Showing %d messages.", [i(Count)], Msg),
     update_message(Screen, set_info(Msg), !IO),
@@ -126,18 +139,27 @@ open_thread_pager(Screen, ThreadId, MaybeSearch, NeedRefreshIndex,
 :- pred reopen_thread_pager(screen::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
-reopen_thread_pager(Screen, Info0, Info, !IO) :-
-    Info0 = thread_pager_info(ThreadId0, Scrollable0, _NumThreadRows, Pager0,
-        _NumPagerRows, Search, SearchDir, CommonHistory, NeedRefreshIndex),
+reopen_thread_pager(Screen, !Info, !IO) :-
+    Ordering = !.Info ^ tp_ordering,
+    reopen_thread_pager_with_ordering(Screen, Ordering, !Info, !IO).
+
+:- pred reopen_thread_pager_with_ordering(screen::in, ordering::in,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+
+reopen_thread_pager_with_ordering(Screen, Ordering, Info0, Info, !IO) :-
+    Info0 = thread_pager_info(ThreadId0, _Ordering0,
+        Scrollable0, _NumThreadRows, Pager0, _NumPagerRows,
+        Search, SearchDir, CommonHistory, NeedRefreshIndex),
 
     % We recreate the entire pager.  This may seem a bit inefficient but it is
     % much simpler and the time it takes to run the notmuch show command vastly
     % exceeds the time to format the messages anyway.
-    create_thread_pager(Screen, ThreadId0, CommonHistory, Info1, Count, !IO),
+    create_thread_pager(Screen, ThreadId0, Ordering, CommonHistory, Info1,
+        Count, !IO),
 
-    Info1 = thread_pager_info(ThreadId, Scrollable1, NumThreadRows, Pager1,
-        NumPagerRows, _Search1, _SearchDir1, _CommonHistory1,
-        _NeedRefreshIndex),
+    Info1 = thread_pager_info(ThreadId, _Ordering,
+        Scrollable1, NumThreadRows, Pager1, NumPagerRows,
+        _Search1, _SearchDir1, _CommonHistory1, _NeedRefreshIndex),
 
     % Reapply tag changes from previous state.
     ThreadLines0 = get_lines_list(Scrollable0),
@@ -160,17 +182,20 @@ reopen_thread_pager(Screen, Info0, Info, !IO) :-
         Pager = Pager1
     ),
 
-    Info2 = thread_pager_info(ThreadId, Scrollable, NumThreadRows, Pager,
-        NumPagerRows, Search, SearchDir, CommonHistory, NeedRefreshIndex),
+    Info2 = thread_pager_info(ThreadId, Ordering,
+        Scrollable, NumThreadRows, Pager, NumPagerRows,
+        Search, SearchDir, CommonHistory, NeedRefreshIndex),
     sync_thread_to_pager(Info2, Info),
 
     string.format("Showing %d messages.", [i(Count)], Msg),
     update_message(Screen, set_info(Msg), !IO).
 
-:- pred create_thread_pager(screen::in, thread_id::in, common_history::in,
-    thread_pager_info::out, int::out, io::di, io::uo) is det.
+:- pred create_thread_pager(screen::in, thread_id::in, ordering::in,
+    common_history::in, thread_pager_info::out, int::out, io::di, io::uo)
+    is det.
 
-create_thread_pager(Screen, ThreadId, CommonHistory, Info, Count, !IO) :-
+create_thread_pager(Screen, ThreadId, Ordering, CommonHistory, Info, Count,
+        !IO) :-
     run_notmuch([
         "show", "--format=json", "--", thread_id_to_search_term(ThreadId)
     ], parse_messages_list, Result, !IO),
@@ -185,7 +210,7 @@ create_thread_pager(Screen, ThreadId, CommonHistory, Info, Count, !IO) :-
     time(Time, !IO),
     Nowish = localtime(Time),
     get_rows_cols(Screen, Rows, Cols),
-    setup_thread_pager(ThreadId, Nowish, Rows - 2, Cols, Messages,
+    setup_thread_pager(ThreadId, Ordering, Nowish, Rows - 2, Cols, Messages,
         CommonHistory, Info, Count).
 
 :- pred filter_unwanted_messages(message::in, message::out) is semidet.
@@ -198,21 +223,29 @@ filter_unwanted_messages(!Message) :-
     list.filter_map(filter_unwanted_messages, Replies0, Replies),
     !Message ^ m_replies := Replies.
 
-:- pred setup_thread_pager(thread_id::in, tm::in, int::in, int::in,
-    list(message)::in, common_history::in, thread_pager_info::out, int::out)
-    is det.
+:- pred setup_thread_pager(thread_id::in, ordering::in, tm::in, int::in,
+    int::in, list(message)::in, common_history::in, thread_pager_info::out,
+    int::out) is det.
 
-setup_thread_pager(ThreadId, Nowish, Rows, Cols, Messages, CommonHistory,
-        ThreadPagerInfo, NumThreadLines) :-
-    append_messages(Nowish, [], [], no, Messages, "", cord.init, ThreadCord),
-    ThreadLines = list(ThreadCord),
+setup_thread_pager(ThreadId, Ordering, Nowish, Rows, Cols, Messages,
+        CommonHistory, ThreadPagerInfo, NumThreadLines) :-
+    (
+        Ordering = ordering_threaded,
+        append_threaded_messages(Nowish, Messages, ThreadLines),
+        setup_pager(include_replies, Cols, Messages, PagerInfo)
+    ;
+        Ordering = ordering_flat,
+        append_flat_messages(Nowish, Messages, ThreadLines,
+            SortedFlatMessages),
+        setup_pager(toplevel_only, Cols, SortedFlatMessages, PagerInfo)
+    ),
     Scrollable = scrollable.init_with_cursor(ThreadLines),
     NumThreadLines = get_num_lines(Scrollable),
-    setup_pager(Cols, Messages, PagerInfo),
 
     compute_num_rows(Rows, Scrollable, NumThreadRows, NumPagerRows),
-    ThreadPagerInfo1 = thread_pager_info(ThreadId, Scrollable, NumThreadRows,
-        PagerInfo, NumPagerRows, no, dir_forward, CommonHistory, no),
+    ThreadPagerInfo1 = thread_pager_info(ThreadId, Ordering,
+        Scrollable, NumThreadRows, PagerInfo, NumPagerRows,
+        no, dir_forward, CommonHistory, no),
     (
         get_cursor_line(Scrollable, _, FirstLine),
         is_unread_line(FirstLine)
@@ -254,31 +287,47 @@ compute_num_rows(Rows, Scrollable, NumThreadRows, NumPagerRows) :-
 
 max_thread_lines = 8.
 
-:- pred append_messages(tm::in, list(graphic)::in, list(graphic)::in,
+:- pred append_threaded_messages(tm::in, list(message)::in,
+    list(thread_line)::out) is det.
+
+append_threaded_messages(Nowish, Messages, ThreadLines) :-
+    append_threaded_messages(Nowish, [], [], no, Messages, "",
+        cord.init, ThreadCord),
+    ThreadLines = list(ThreadCord).
+
+:- pred append_threaded_messages(tm::in, list(graphic)::in, list(graphic)::in,
     maybe(message_id)::in, list(message)::in, string::in,
     cord(thread_line)::in, cord(thread_line)::out) is det.
 
-append_messages(_Nowish, _Above, _Below, _MaybeParentId, [], _PrevSubject,
-        !Cord).
-append_messages(Nowish, Above0, Below0, MaybeParentId, [Message | Messages],
-        PrevSubject, !Cord) :-
+append_threaded_messages(_Nowish, _Above, _Below, _MaybeParentId,
+        [], _PrevSubject, !Cord).
+append_threaded_messages(Nowish, Above0, Below0, MaybeParentId,
+        [Message | Messages], PrevSubject, !Cord) :-
     (
         Messages = [],
-        make_thread_line(Nowish, Message, MaybeParentId, Above0 ++ [ell],
+        Graphics = Above0 ++ [ell],
+        make_thread_line(Nowish, Message, MaybeParentId, yes(Graphics),
             PrevSubject, Line),
         snoc(Line, !Cord),
         MessagesCord = cord.empty,
         Below1 = Below0
     ;
         Messages = [_ | _],
-        make_thread_line(Nowish, Message, MaybeParentId, Above0 ++ [tee],
+        Graphics = Above0 ++ [tee],
+        make_thread_line(Nowish, Message, MaybeParentId, yes(Graphics),
             PrevSubject, Line),
         snoc(Line, !Cord),
         get_last_subject(Message, LastSubject),
-        append_messages(Nowish, Above0, Below0, MaybeParentId, Messages,
-            LastSubject, cord.init, MessagesCord),
+        append_threaded_messages(Nowish, Above0, Below0, MaybeParentId,
+            Messages, LastSubject, cord.init, MessagesCord),
         ( get_first(MessagesCord, FollowingLine) ->
-            Below1 = FollowingLine ^ tp_graphics
+            MaybeGraphics = FollowingLine ^ tp_graphics,
+            (
+                MaybeGraphics = yes(Below1)
+            ;
+                MaybeGraphics = no,
+                Below1 = []
+            )
         ;
             unexpected($module, $pred, "empty cord")
         )
@@ -291,8 +340,8 @@ append_messages(Nowish, Above0, Below0, MaybeParentId, [Message | Messages],
     MessageId = Message ^ m_id,
     Replies = Message ^ m_replies,
     Subject = Message ^ m_headers ^ h_subject,
-    append_messages(Nowish, Above1, Below1, yes(MessageId), Replies, Subject,
-        !Cord),
+    append_threaded_messages(Nowish, Above1, Below1, yes(MessageId), Replies,
+        Subject, !Cord),
     !:Cord = !.Cord ++ MessagesCord.
 
 :- pred get_last_subject(message::in, string::out) is det.
@@ -311,10 +360,50 @@ not_blank_at_column(Graphics, Col) :-
     list.index0(Graphics, Col, Graphic),
     Graphic \= blank.
 
-:- pred make_thread_line(tm::in, message::in, maybe(message_id)::in,
-    list(graphic)::in, string::in, thread_line::out) is det.
+:- pred append_flat_messages(tm::in, list(message)::in,
+    list(thread_line)::out, list(message)::out) is det.
 
-make_thread_line(Nowish, Message, MaybeParentId, Graphics, PrevSubject,
+append_flat_messages(Nowish, Messages, ThreadLines, SortedFlatMessages) :-
+    flatten_messages(no, Messages, [], MessagesFlat0),
+    list.sort(compare_by_timestamp, MessagesFlat0, MessagesFlat),
+    list.foldl2(append_flat_message(Nowish), MessagesFlat,
+        "", _PrevSubject, [], RevThreadLines),
+    list.reverse(RevThreadLines, ThreadLines),
+    SortedFlatMessages = list.map(mf_message, MessagesFlat).
+
+:- pred flatten_messages(maybe(message_id)::in, list(message)::in,
+    list(message_flat)::in, list(message_flat)::out) is det.
+
+flatten_messages(_MaybeParentId, [], !Acc).
+flatten_messages(MaybeParentId, [Message | Messages], !Acc) :-
+    Message = message(MessageId, _Timestamp, _Headers, _Tags, _Body, Replies),
+    list.cons(message_flat(Message, MaybeParentId), !Acc),
+    flatten_messages(yes(MessageId), Replies, !Acc),
+    flatten_messages(MaybeParentId, Messages, !Acc).
+
+:- pred compare_by_timestamp(message_flat::in, message_flat::in,
+    comparison_result::out) is det.
+
+compare_by_timestamp(A, B, Rel) :-
+    TimestampA = A ^ mf_message ^ m_timestamp,
+    TimestampB = B ^ mf_message ^ m_timestamp,
+    compare(Rel, TimestampA, TimestampB).
+
+:- pred append_flat_message(tm::in, message_flat::in, string::in, string::out,
+    list(thread_line)::in, list(thread_line)::out) is det.
+
+append_flat_message(Nowish, MessageFlat, PrevSubject, Subject, !RevAcc) :-
+    MessageFlat = message_flat(Message, MaybeParentId),
+    make_thread_line(Nowish, Message, MaybeParentId, no, PrevSubject, Line),
+    Subject = Message ^ m_headers ^ h_subject,
+    cons(Line, !RevAcc).
+
+:- func mf_message(message_flat) = message. % accessor
+
+:- pred make_thread_line(tm::in, message::in, maybe(message_id)::in,
+    maybe(list(graphic))::in, string::in, thread_line::out) is det.
+
+make_thread_line(Nowish, Message, MaybeParentId, MaybeGraphics, PrevSubject,
         Line) :-
     Timestamp = Message ^ m_timestamp,
     Tags = Message ^ m_tags,
@@ -330,7 +419,8 @@ make_thread_line(Nowish, Message, MaybeParentId, Graphics, PrevSubject,
         MaybeSubject = yes(Subject)
     ),
     Line = thread_line(Message, MaybeParentId, From, Tags, Tags,
-        Unread, Replied, Deleted, Flagged, Graphics, RelDate, MaybeSubject).
+        Unread, Replied, Deleted, Flagged, MaybeGraphics, RelDate,
+        MaybeSubject).
 
 :- func clean_email_address(string) = string.
 
@@ -388,7 +478,7 @@ create_tag_delta_map(ThreadLine, !DeltaMap) :-
 
 restore_tag_deltas(DeltaMap, ThreadLine0, ThreadLine) :-
     ThreadLine0 = thread_line(Message, ParentId, From, PrevTags, CurrTags0,
-        _Unread, _Replied, _Deleted, _Flagged, Graphics, RelDate,
+        _Unread, _Replied, _Deleted, _Flagged, ModeGraphics, RelDate,
         MaybeSubject),
     MessageId = Message ^ m_id,
     ( map.search(DeltaMap, MessageId, Deltas) ->
@@ -397,7 +487,7 @@ restore_tag_deltas(DeltaMap, ThreadLine0, ThreadLine) :-
         set.union(CurrTags1, AddTags, CurrTags),
         get_standard_tag_state(CurrTags, Unread, Replied, Deleted, Flagged),
         ThreadLine = thread_line(Message, ParentId, From, PrevTags, CurrTags,
-            Unread, Replied, Deleted, Flagged, Graphics, RelDate,
+            Unread, Replied, Deleted, Flagged, ModeGraphics, RelDate,
             MaybeSubject)
     ;
         ThreadLine = ThreadLine0
@@ -466,6 +556,16 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
     ;
         Action = prompt_search(SearchDir),
         prompt_search(Screen, SearchDir, !Info, !IO),
+        thread_pager_loop(Screen, !Info, !IO)
+    ;
+        Action = prompt_ordering,
+        prompt_ordering(Screen, MaybeOrdering, !IO),
+        (
+            MaybeOrdering = yes(Ordering),
+            reopen_thread_pager_with_ordering(Screen, Ordering, !Info, !IO)
+        ;
+            MaybeOrdering = no
+        ),
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = refresh_results,
@@ -677,6 +777,11 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ->
         skip_to_search(continue_search, MessageUpdate, !Info),
         Action = continue
+    ;
+        Key = char('O')
+    ->
+        Action = prompt_ordering,
+        MessageUpdate = no_change
     ;
         Key = char('=')
     ->
@@ -1010,7 +1115,7 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
                 ->
                     CursorLine0 = thread_line(Message, ParentId, From,
                         PrevTags, CurrTags0, _Unread, _Replied, _Deleted,
-                        _Flagged, Graphics, RelDate, MaybeSubject),
+                        _Flagged, ModeGraphics, RelDate, MaybeSubject),
                     % Notmuch performs tag removals before addition.
                     set.difference(CurrTags0, RemoveTags, CurrTags1),
                     set.union(CurrTags1, AddTags, CurrTags),
@@ -1018,7 +1123,7 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
                         Flagged),
                     CursorLine = thread_line(Message, ParentId, From,
                         PrevTags, CurrTags, Unread, Replied, Deleted, Flagged,
-                        Graphics, RelDate, MaybeSubject),
+                        ModeGraphics, RelDate, MaybeSubject),
                     set_cursor_line(CursorLine, Scrollable0, Scrollable),
                     !Info ^ tp_scrollable := Scrollable
                 ;
@@ -1355,6 +1460,24 @@ skip_to_search(SearchKind, MessageUpdate, !Info) :-
 
 %-----------------------------------------------------------------------------%
 
+:- pred prompt_ordering(screen::in, maybe(ordering)::out, io::di, io::uo)
+    is det.
+
+prompt_ordering(Screen, MaybeOrdering, !IO) :-
+    Prompt = "Sort by (d)ate, (t)hread: ",
+    update_message_immed(Screen, set_prompt(Prompt), !IO),
+    get_char(Char, !IO),
+    ( Char = 'd' ->
+        MaybeOrdering = yes(ordering_flat)
+    ; Char = 't' ->
+        MaybeOrdering = yes(ordering_threaded)
+    ;
+        MaybeOrdering = no,
+        update_message(Screen, set_info("Unchanged."), !IO)
+    ).
+
+%-----------------------------------------------------------------------------%
+
 :- pred get_tag_delta_groups(thread_pager_info::in,
     map(set(tag_delta), list(message_id))::out) is det.
 
@@ -1442,7 +1565,8 @@ draw_sep(Cols, MaybeSepPanel, !IO) :-
 
 draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
     Line = thread_line(_Message, _ParentId, From, _PrevTags, CurrTags,
-        Unread, Replied, Deleted, Flagged, Graphics, RelDate, MaybeSubject),
+        Unread, Replied, Deleted, Flagged, MaybeGraphics, RelDate,
+        MaybeSubject),
     (
         IsCursor = yes,
         panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
@@ -1482,8 +1606,13 @@ draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         my_addstr(Panel, "  ", !IO)
     ),
     cond_attr_set(Panel, fg_bg(magenta, black), IsCursor, !IO),
-    list.foldl(draw_graphic(Panel), Graphics, !IO),
-    my_addstr(Panel, "> ", !IO),
+    (
+        MaybeGraphics = yes(Graphics),
+        list.foldl(draw_graphic(Panel), Graphics, !IO),
+        my_addstr(Panel, "> ", !IO)
+    ;
+        MaybeGraphics = no
+    ),
     (
         Unread = unread,
         cond_attr_set(Panel, bold, IsCursor, !IO)
