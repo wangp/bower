@@ -137,16 +137,20 @@ unescape(esc_string(S0)) = S :-
     pieces::in, pieces::out) is det.
 
 unescape_loop(S, AnchorPos, Pos0, !RevPieces) :-
-    ( string.unsafe_index_next(S, Pos0, Pos1, C0) ->
-        ( C0 = ('\\') ->
-            add_substring_piece(S, AnchorPos, Pos0, !RevPieces),
-            unescape_sequence(S, Pos1, Pos2, !RevPieces),
-            unescape_loop(S, Pos2, Pos2, !RevPieces)
-        ;
-            unescape_loop(S, AnchorPos, Pos1, !RevPieces)
-        )
-    ;
+    % This relies on unsafe_index_code_unit returning 0 when indexing the NUL
+    % terminator at the end of the string; officially unspecified behaviour
+    % but unlikely to change.
+    string.unsafe_index_code_unit(S, Pos0, C0),
+    ( C0 = 0 ->
         add_substring_piece(S, AnchorPos, Pos0, !RevPieces)
+    ; C0 = char.to_int('\\') ->
+        Pos1 = Pos0 + 1,
+        add_substring_piece(S, AnchorPos, Pos0, !RevPieces),
+        unescape_sequence(S, Pos1, Pos2, !RevPieces),
+        unescape_loop(S, Pos2, Pos2, !RevPieces)
+    ;
+        Pos1 = Pos0 + 1,
+        unescape_loop(S, AnchorPos, Pos1, !RevPieces)
     ).
 
 :- pred add_substring_piece(string::in, int::in, int::in,
