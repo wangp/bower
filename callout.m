@@ -199,7 +199,8 @@ parse_part(MessageId, JSON, Part) :-
         JSON/"id" = int(PartId),
         JSON/"content-type" = unesc_string(ContentType)
     ->
-        ( string.prefix(ContentType, "multipart/") ->
+        % NOTE: ContentType must be compared case-insensitively.
+        ( strcase_prefix(ContentType, "multipart/") ->
             ( JSON/"content" = array(SubParts0) ->
                 list.map(parse_part(MessageId), SubParts0, SubParts),
                 Content = subparts(SubParts),
@@ -207,7 +208,7 @@ parse_part(MessageId, JSON, Part) :-
             ;
                 notmuch_json_error
             )
-        ; ContentType = "message/rfc822" ->
+        ; strcase_equal(ContentType, "message/rfc822") ->
             Content = unsupported,
             MaybeFilename = no
         ;
