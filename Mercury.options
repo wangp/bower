@@ -1,8 +1,5 @@
 MAIN_TARGET = bower
 
-PARALLEL =
-MCFLAGS += $(PARALLEL)
-
 # Reduce memory usage in low-level C grades due to large stack sizes.
 # Comment this out or override it for debugging, etc.
 MCFLAGS += --runtime-flags "--detstack-size 16 --nondetstack-size 12"
