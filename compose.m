@@ -1183,9 +1183,12 @@ create_temp_message_file(Headers, Text, Attachments, Prepare, Res, !IO) :-
             write_header(Stream, "Message-ID", MessageId, !IO),
             Write = write_header_opt(Stream)
         ;
-            ( Prepare = prepare_edit
-            ; Prepare = prepare_postpone
-            ),
+            Prepare = prepare_postpone,
+            generate_date_msg_id(Date, _MessageId, !IO),
+            write_header(Stream, "Date", Date, !IO),
+            Write = write_header(Stream)
+        ;
+            Prepare = prepare_edit,
             Write = write_header(Stream)
         ),
         Write("From", From, !IO),
