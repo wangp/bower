@@ -12,11 +12,15 @@
 
 :- pred get_domainname(string::out, io::di, io::uo) is det.
 
+:- pred make_temp_suffix(string::in, string::uo, io::di, io::uo) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
+:- import_module dir.
+:- import_module exception.
 :- import_module list.
 :- import_module maybe.
 :- import_module string.
@@ -96,6 +100,53 @@ get_domainname_2(Stream, MaybeDomain, !IO) :-
         ResRead = error(_),
         MaybeDomain = no
     ).
+
+%-----------------------------------------------------------------------------%
+
+make_temp_suffix(Suffix, Name, !IO) :-
+    io.get_environment_var("TMPDIR", MaybeTMPDIR, !IO),
+    (
+        MaybeTMPDIR = yes(Dir)
+    ;
+        MaybeTMPDIR = no,
+        io.get_environment_var("TMP", MaybeTMP, !IO),
+        (
+            MaybeTMP = yes(Dir)
+        ;
+            MaybeTMP = no,
+            Dir = "/tmp"
+        )
+    ),
+    DirSep = char_to_string(dir.directory_separator),
+    mkstemps(Dir, DirSep, "mtmp", Suffix, Error, Name, !IO),
+    ( Error = 0 ->
+        true
+    ;
+        throw(software_error("mkstemps failed: error = " ++ from_int(Error)))
+    ).
+
+:- pred mkstemps(string::in, string::in, string::in, string::in, int::out,
+    string::uo, io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    mkstemps(Dir::in, DirSep::in, Prefix::in, Suffix::in, Error::out,
+        FileName::uo, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io],
+"
+    int fd, err;
+
+    FileName = MR_make_string(MR_ALLOC_ID, ""%s%s%sXXXXXX%s"", Dir, DirSep,
+        Prefix, Suffix);
+    fd = mkstemps(FileName, strlen(Suffix));
+    if (fd == -1) {
+        Error = -1;
+    } else {
+        do {
+            err = close(fd);
+        } while (err == -1 && MR_is_eintr(errno));
+        Error = err;
+    }
+").
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
