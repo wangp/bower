@@ -11,6 +11,9 @@ MCFLAGS-bower += --mercury-linkage static
 # Comment this out or override it for debugging, etc.
 MCFLAGS-bower += --runtime-flags "--detstack-size 16 --nondetstack-size 12"
 
+# General optimisation flags.
+MCFLAGS += --optimise-constructor-last-call
+
 # Module-specific options.
 MCFLAGS-popen += --no-ansi-c
 MCFLAGS-string_util += --no-ansi-c
