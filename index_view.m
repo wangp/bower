@@ -129,7 +129,7 @@
     ;       quit.
 
 :- type try_reply_result
-    --->    ok
+    --->    ok(compose.sent)
     ;       unable_to_choose
     ;       error.
 
@@ -313,8 +313,14 @@ index_loop(Screen, !.IndexInfo, !IO) :-
     ;
         Action = start_compose,
         ComposeHistory0 = !.IndexInfo ^ i_compose_history,
-        start_compose(Screen, ComposeHistory0, ComposeHistory, !IO),
+        start_compose(Screen, Sent, ComposeHistory0, ComposeHistory, !IO),
         !IndexInfo ^ i_compose_history := ComposeHistory,
+        (
+            Sent = sent,
+            refresh_all(Screen, !IndexInfo, !IO)
+        ;
+            Sent = not_sent
+        ),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = start_reply(ReplyKind),
@@ -331,7 +337,13 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         select_recall(Screen, MaybeSelected, !IO),
         (
             MaybeSelected = yes(Message),
-            continue_postponed(Screen, Message, !IO)
+            continue_postponed(Screen, Message, Sent, !IO),
+            (
+                Sent = sent,
+                refresh_all(Screen, !IndexInfo, !IO)
+            ;
+                Sent = not_sent
+            )
         ;
             MaybeSelected = no
         ),
@@ -626,14 +638,20 @@ start_reply(Screen, ReplyKind, MaybeRefresh, !Info, !IO) :-
         ThreadId = CursorLine ^ i_id,
         try_reply(Screen, ThreadId, no, ReplyKind, TryResA, !IO),
         (
-            TryResA = ok,
+            TryResA = ok(sent),
             MaybeRefresh = yes(ThreadId)
+        ;
+            TryResA = ok(not_sent),
+            MaybeRefresh = no
         ;
             TryResA = unable_to_choose,
             try_reply(Screen, ThreadId, yes, ReplyKind, TryResB, !IO),
             (
-                TryResB = ok,
+                TryResB = ok(sent),
                 MaybeRefresh = yes(ThreadId)
+            ;
+                TryResB = ok(not_sent),
+                MaybeRefresh = no
             ;
                 TryResB = unable_to_choose,
                 Msg = "Unable to choose message to reply to.",
@@ -676,8 +694,8 @@ try_reply(Screen, ThreadId, RequireUnread, ReplyKind, Res, !IO) :-
     (
         ListRes = ok(MessageIds),
         ( MessageIds = [MessageId] ->
-            start_reply_to_message_id(Screen, MessageId, ReplyKind, !IO),
-            Res = ok
+            start_reply_to_message_id(Screen, MessageId, ReplyKind, Sent, !IO),
+            Res = ok(Sent)
         ;
             Res = unable_to_choose
         )

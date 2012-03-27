@@ -526,11 +526,15 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         thread_pager_loop(NewScreen, !Info, !IO)
     ;
         Action = start_reply(Message, ReplyKind),
-        start_reply(Screen, Message, ReplyKind, !IO),
-        % Don't really *need* to refresh if the reply is aborted.
-        !Info ^ tp_need_refresh_index := yes,
-        % XXX would be nice to move cursor to the sent message
-        reopen_thread_pager(Screen, !Info, !IO),
+        start_reply(Screen, Message, ReplyKind, Sent, !IO),
+        (
+            Sent = sent,
+            !Info ^ tp_need_refresh_index := yes,
+            % XXX would be nice to move cursor to the sent message
+            reopen_thread_pager(Screen, !Info, !IO)
+        ;
+            Sent = not_sent
+        ),
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = prompt_tag(Initial),
