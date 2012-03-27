@@ -20,6 +20,8 @@
 
 :- pred unsafe_strstr(string::in, string::in, int::in, int::out) is semidet.
 
+:- pred get_extension(string::in, string::out) is semidet.
+
 :- pred fix_utf8(string::in, string::out) is det.
 
 :- type pieces
@@ -114,6 +116,27 @@ string_wcwidth_2(C, Width, Width + wcwidth(C)).
         Index = -1;
     }
 ").
+
+%-----------------------------------------------------------------------------%
+
+get_extension(FileName, Ext) :-
+    string.length(FileName, End),
+    get_extension_2(FileName, End, Start),
+    string.between(FileName, Start, End, Ext).
+
+:- pred get_extension_2(string::in, int::in, int::out) is semidet.
+
+get_extension_2(FileName, !Index) :-
+    string.unsafe_prev_index(FileName, !Index, C),
+    ( C = ('.') ->
+        true
+    ; C = ('/') ->
+        fail
+    ; C = ('\\') ->
+        fail
+    ;
+        get_extension_2(FileName, !Index)
+    ).
 
 %-----------------------------------------------------------------------------%
 
