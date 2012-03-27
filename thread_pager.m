@@ -45,6 +45,7 @@
 :- import_module quote_arg.
 :- import_module scrollable.
 :- import_module string_util.
+:- import_module sys_util.
 :- import_module tags.
 :- import_module text_entry.
 :- import_module time_util.
@@ -1331,9 +1332,15 @@ prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
     ->
         add_history_nodup(Command, History0, History),
         !Info ^ tp_common_history ^ ch_prog_history := History,
-        io.make_temp(FileName, !IO),
-        MessageId = Part ^ pt_msgid,
-        PartId = Part ^ pt_part,
+        Part = part(MessageId, PartId, _Type, _Content, MaybePartFileName),
+        (
+            MaybePartFileName = yes(PartFilename),
+            get_extension(PartFilename, Ext)
+        ->
+            make_temp_suffix(Ext, FileName, !IO)
+        ;
+            io.make_temp(FileName, !IO)
+        ),
         do_save_part(MessageId, PartId, FileName, Res, !IO),
         (
             Res = ok,
