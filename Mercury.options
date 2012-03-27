@@ -1,19 +1,20 @@
+# Default target for mmc --make.
 MAIN_TARGET = bower
+
+# Link with curses.
+MLLIBS-bower += -lncursesw -lpanel
 
 # Reduce memory usage in low-level C grades due to large stack sizes.
 # Comment this out or override it for debugging, etc.
-MCFLAGS += --runtime-flags "--detstack-size 16 --nondetstack-size 12"
+MCFLAGS-bower += --runtime-flags "--detstack-size 16 --nondetstack-size 12"
 
+# Module-specific options.
 MCFLAGS-popen += --no-ansi-c
 MCFLAGS-string_util += --no-ansi-c
-
-# for wide-character functions
 CFLAGS-curs += -D_XOPEN_SOURCE_EXTENDED
-
-CFLAGS-time_util += -D_GNU_SOURCE
-CFLAGS-sys_util += -D_BSD_SOURCE
 CFLAGS-string_util += -D_GNU_SOURCE
+CFLAGS-sys_util += -D_BSD_SOURCE
+CFLAGS-time_util += -D_GNU_SOURCE
 
-MLLIBS-bower += -lncursesw -lpanel
-
+# Add workspace-specific options here.
 -include Mercury.params
