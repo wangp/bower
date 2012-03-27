@@ -4,6 +4,9 @@ MAIN_TARGET = bower
 # Link with curses.
 MLLIBS-bower += -lncursesw -lpanel
 
+# Statically link to Mercury libraries.
+MCFLAGS-bower += --mercury-linkage static
+
 # Reduce memory usage in low-level C grades due to large stack sizes.
 # Comment this out or override it for debugging, etc.
 MCFLAGS-bower += --runtime-flags "--detstack-size 16 --nondetstack-size 12"
