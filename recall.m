@@ -22,6 +22,7 @@
 :- import_module int.
 :- import_module list.
 :- import_module require.
+:- import_module time.
 
 :- import_module callout.
 :- import_module curs.
@@ -30,6 +31,7 @@
 :- import_module maildir.
 :- import_module scrollable.
 :- import_module tags.
+:- import_module time_util.
 
 %-----------------------------------------------------------------------------%
 
@@ -41,6 +43,7 @@
 :- type recall_line
     --->    recall_line(
                 r_message       :: message,
+                r_date          :: string,
                 r_to            :: string,
                 r_subject       :: string
             ).
@@ -59,27 +62,33 @@ select_recall(Screen, MaybeSelected, !IO) :-
         MaybeSelected = no
     ;
         Ids = [_ | _],
-        list.map_foldl(make_recall_line, Ids, Lines, !IO),
+        time(Time, !IO),
+        Nowish = localtime(Time),
+        list.map_foldl(make_recall_line(Nowish), Ids, Lines, !IO),
         Scrollable = scrollable.init_with_cursor(Lines),
         Info = recall_info(Scrollable),
         update_message(Screen, clear_message, !IO),
         recall_screen_loop(Screen, MaybeSelected, Info, _Info, !IO)
     ).
 
-:- pred make_recall_line(message_id::in, recall_line::out, io::di, io::uo)
-    is det.
+:- pred make_recall_line(tm::in, message_id::in, recall_line::out,
+    io::di, io::uo) is det.
 
-make_recall_line(MessageId, Line, !IO) :-
+make_recall_line(Nowish, MessageId, Line, !IO) :-
     run_notmuch([
         "show", "--format=json", "--part=0", "--",
         message_id_to_search_term(MessageId)
     ], parse_top_message, Result, !IO),
     (
         Result = ok(Message),
+        Timestamp = Message ^ m_timestamp,
         Headers = Message ^ m_headers,
         To = Headers ^ h_to,
         Subject = Headers ^ h_subject,
-        Line = recall_line(Message, To, Subject)
+        timestamp_to_tm(Timestamp, TM),
+        Shorter = no,
+        make_reldate(Nowish, TM, Shorter, RelDate),
+        Line = recall_line(Message, RelDate, To, Subject)
     ;
         Result = error(Error),
         unexpected($module, $pred, io.error_message(Error))
@@ -186,18 +195,20 @@ draw_recall(Screen, Info, !IO) :-
     io::di, io::uo) is det.
 
 draw_recall_line(Panel, Line, _LineNr, IsCursor, !IO) :-
-    Line = recall_line(_FileName, To, Subject),
+    Line = recall_line(_FileName, RelDate, To, Subject),
     (
         IsCursor = yes,
         panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
     ;
-        IsCursor = no
+        IsCursor = no,
+        panel.attr_set(Panel, fg_bg(blue, black) + bold, !IO)
     ),
+    my_addstr_fixed(Panel, 13, RelDate, ' ', !IO),
     FieldAttr = fg_bg(red, black) + bold,
     cond_attr_set(Panel, FieldAttr, IsCursor, !IO),
     my_addstr(Panel, "To: ", !IO),
     cond_attr_set(Panel, normal, IsCursor, !IO),
-    my_addstr_fixed(Panel, 35, To, ' ', !IO),
+    my_addstr_fixed(Panel, 25, To, ' ', !IO),
     cond_attr_set(Panel, FieldAttr, IsCursor, !IO),
     my_addstr(Panel, " Subject: ", !IO),
     cond_attr_set(Panel, normal, IsCursor, !IO),
