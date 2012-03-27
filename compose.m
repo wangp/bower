@@ -317,7 +317,9 @@ first_text_part([Part | Parts], Text, AttachmentParts) :-
         PartContent = subparts(SubParts),
         first_text_part(SubParts, Text, AttachmentParts)
     ;
-        PartContent = unsupported,
+        ( PartContent = encapsulated_messages(_)
+        ; PartContent = unsupported
+        ),
         first_text_part(Parts, Text, AttachmentParts0),
         AttachmentParts = [Part | AttachmentParts0]
     ).
@@ -1410,6 +1412,9 @@ write_mime_part_attachment(Stream, Boundary, Attachment, !IO) :-
         ;
             Content = subparts(_),
             unexpected($module, $pred, "nested part")
+        ;
+            Content = encapsulated_messages(_),
+            unexpected($module, $pred, "encapsulated_messages")
         ),
         MaybeFileName = Part ^ pt_filename
     ;

@@ -69,7 +69,14 @@
 :- type part_content
     --->    text(string)
     ;       subparts(list(part))
+    ;       encapsulated_messages(list(encapsulated_message))
     ;       unsupported.
+
+:- type encapsulated_message
+    --->    encapsulated_message(
+                em_headers      :: headers,
+                em_body         :: list(part)
+            ).
 
 %-----------------------------------------------------------------------------%
 

@@ -231,6 +231,11 @@ append_part(Cols, Part, !Lines, !IsFirst) :-
             list.foldl2(append_part(Cols), SubParts, !Lines, !IsFirst)
         )
     ;
+        Content = encapsulated_messages(EncapMessages),
+        snoc(attachment(Part), !Lines),
+        list.foldl(append_encapsulated_message(Cols), EncapMessages, !Lines),
+        !:IsFirst = no
+    ;
         Content = unsupported,
         snoc(blank_line, !Lines),
         snoc(attachment(Part), !Lines),
@@ -389,6 +394,31 @@ skip_whitespace(String, I0, I) :-
         )
     ;
         I = I0
+    ).
+
+:- pred append_encapsulated_message(int::in, encapsulated_message::in,
+    cord(pager_line)::in, cord(pager_line)::out) is det.
+
+append_encapsulated_message(Cols, EncapMessage, !Lines) :-
+    EncapMessage = encapsulated_message(Headers, Body),
+    append_encapsulated_header("Date", Headers ^ h_date, !Lines),
+    append_encapsulated_header("From", Headers ^ h_from, !Lines),
+    append_encapsulated_header("Subject", Headers ^ h_subject, !Lines),
+    append_encapsulated_header("To", Headers ^ h_to, !Lines),
+    append_encapsulated_header("Cc", Headers ^ h_cc, !Lines),
+    append_encapsulated_header("Reply-To", Headers ^ h_replyto, !Lines),
+    snoc(blank_line, !Lines),
+    list.foldl2(append_part(Cols), Body, !Lines, yes, _IsFirst).
+
+:- pred append_encapsulated_header(string::in, string::in,
+    cord(pager_line)::in, cord(pager_line)::out) is det.
+
+append_encapsulated_header(Header, Value, !Lines) :-
+    ( Value = "" ->
+        true
+    ;
+        Line = text(Header ++ ": " ++ Value, no_url),
+        snoc(Line, !Lines)
     ).
 
 :- func blank_line = pager_line.

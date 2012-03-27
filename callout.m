@@ -209,8 +209,14 @@ parse_part(MessageId, JSON, Part) :-
                 notmuch_json_error
             )
         ; strcase_equal(ContentType, "message/rfc822") ->
-            Content = unsupported,
-            MaybeFilename = no
+            ( JSON/"content" = array(List) ->
+                list.map(parse_encapsulated_message(MessageId), List,
+                    EncapMessages),
+                Content = encapsulated_messages(EncapMessages),
+                MaybeFilename = no
+            ;
+                notmuch_json_error
+            )
         ;
             % Leaf part.
             ( JSON/"filename" = unesc_string(Filename) ->
@@ -227,6 +233,21 @@ parse_part(MessageId, JSON, Part) :-
             )
         ),
         Part = part(MessageId, PartId, ContentType, Content, MaybeFilename)
+    ;
+        notmuch_json_error
+    ).
+
+:- pred parse_encapsulated_message(message_id::in, json::in,
+    encapsulated_message::out) is det.
+
+parse_encapsulated_message(MessageId, JSON, EncapMessage) :-
+    (
+        JSON/"headers" = map(HeaderMap),
+        map.foldl(parse_header, HeaderMap, init_headers, Headers),
+        JSON/"body" = array(BodyList),
+        list.map(parse_part(MessageId), BodyList, Body)
+    ->
+        EncapMessage = encapsulated_message(Headers, Body)
     ;
         notmuch_json_error
     ).

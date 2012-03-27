@@ -45,6 +45,12 @@ expand_part(Part0, Part, !IO) :-
         Content = subparts(SubParts),
         Part = part(MessageId, PartId, Type, Content, MaybeFilename)
     ;
+        Content0 = encapsulated_messages(EncapMessages0),
+        list.map_foldl(expand_encapsulated_message, EncapMessages0,
+            EncapMessages, !IO),
+        Content = encapsulated_messages(EncapMessages),
+        Part = part(MessageId, PartId, Type, Content, MaybeFilename)
+    ;
         Content0 = unsupported,
         (
             % XXX we should use mailcap, though we don't want to show
@@ -57,6 +63,14 @@ expand_part(Part0, Part, !IO) :-
             Part = Part0
         )
     ).
+
+:- pred expand_encapsulated_message(encapsulated_message::in,
+    encapsulated_message::out, io::di, io::uo) is det.
+
+expand_encapsulated_message(EncapMessage0, EncapMessage, !IO) :-
+    EncapMessage0 = encapsulated_message(Headers, SubParts0),
+    list.map_foldl(expand_part, SubParts0, SubParts, !IO),
+    EncapMessage = encapsulated_message(Headers, SubParts).
 
 :- pred expand_html(message_id::in, int::in, part_content::out,
     io::di, io::uo) is det.
