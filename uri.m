@@ -175,7 +175,9 @@ detect_bracketed_url_end(String, Start, End0, UrlEnd) :-
         UrlEnd = End1
     ;
         ( LastChar = ('!')
+        ; LastChar = (',')
         ; LastChar = ('.')
+        ; LastChar = (';')
         ; LastChar = ('?')
         ),
         string.unsafe_prev_index(String, End1, UrlEnd, ')')
