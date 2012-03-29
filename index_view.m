@@ -141,6 +141,10 @@
                 remove_tags :: set(tag)
             ).
 
+:- type verbosity
+    --->    verbose
+    ;       quiet.
+
 :- instance scrollable.line(index_line) where [
     pred(draw_line/6) is draw_index_line
 ].
@@ -175,6 +179,13 @@ open_index(Screen, SearchString, !IO) :-
 
 search_terms_with_progress(Screen, Tokens, Threads, !IO) :-
     update_message_immed(Screen, set_info("Searching..."), !IO),
+    search_terms_quiet(Tokens, Threads, MessageUpdate, !IO),
+    update_message(Screen, MessageUpdate, !IO).
+
+:- pred search_terms_quiet(list(token)::in, list(thread)::out,
+    message_update::out, io::di, io::uo) is det.
+
+search_terms_quiet(Tokens, Threads, MessageUpdate, !IO) :-
     tokens_to_search_terms(Tokens, Terms, ApplyCap, !IO),
     (
         ApplyCap = yes,
@@ -203,8 +214,7 @@ search_terms_with_progress(Screen, Tokens, Threads, !IO) :-
         Message = "Error: " ++ io.error_message(Error),
         MessageUpdate = set_warning(Message),
         Threads = []
-    ),
-    update_message(Screen, MessageUpdate, !IO).
+    ).
 
 :- pred setup_index_scrollable(time_t::in, list(thread)::in,
     scrollable(index_line)::out) is det.
@@ -308,7 +318,7 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         )
     ;
         Action = refresh_all,
-        refresh_all(Screen, !IndexInfo, !IO),
+        refresh_all(Screen, verbose, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = start_compose,
@@ -317,7 +327,7 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         !IndexInfo ^ i_compose_history := ComposeHistory,
         (
             Sent = sent,
-            refresh_all(Screen, !IndexInfo, !IO)
+            refresh_all(Screen, quiet, !IndexInfo, !IO)
         ;
             Sent = not_sent
         ),
@@ -340,7 +350,7 @@ index_loop(Screen, !.IndexInfo, !IO) :-
             continue_postponed(Screen, Message, Sent, !IO),
             (
                 Sent = sent,
-                refresh_all(Screen, !IndexInfo, !IO)
+                refresh_all(Screen, quiet, !IndexInfo, !IO)
             ;
                 Sent = not_sent
             )
@@ -1161,16 +1171,22 @@ common_unread_state([H | T], State0, State) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred refresh_all(screen::in, index_info::in, index_info::out,
+:- pred refresh_all(screen::in, verbosity::in, index_info::in, index_info::out,
     io::di, io::uo) is det.
 
-refresh_all(Screen, !Info, !IO) :-
+refresh_all(Screen, Verbose, !Info, !IO) :-
     time(Time, !IO),
     % The user might have changed search aliases and is trying to force a
     % refresh, so expand the search terms from the beginning.
     Terms = !.Info ^ i_search_terms,
     predigest_search_string(Terms, Tokens, !IO),
-    search_terms_with_progress(Screen, Tokens, Threads, !IO),
+    (
+        Verbose = verbose,
+        search_terms_with_progress(Screen, Tokens, Threads, !IO)
+    ;
+        Verbose = quiet,
+        search_terms_quiet(Tokens, Threads, _MessageUpdate, !IO)
+    ),
     some [!Scrollable] (
         Scrollable0 = !.Info ^ i_scrollable,
         Top0 = get_top(Scrollable0),
