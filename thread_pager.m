@@ -233,27 +233,46 @@ setup_thread_pager(ThreadId, Ordering, Nowish, Rows, Cols, Messages,
     (
         Ordering = ordering_threaded,
         append_threaded_messages(Nowish, Messages, ThreadLines),
-        setup_pager(include_replies, Cols, Messages, PagerInfo)
+        setup_pager(include_replies, Cols, Messages, PagerInfo0)
     ;
         Ordering = ordering_flat,
         append_flat_messages(Nowish, Messages, ThreadLines,
             SortedFlatMessages),
-        setup_pager(toplevel_only, Cols, SortedFlatMessages, PagerInfo)
+        setup_pager(toplevel_only, Cols, SortedFlatMessages, PagerInfo0)
     ),
-    Scrollable = scrollable.init_with_cursor(ThreadLines),
-    NumThreadLines = get_num_lines(Scrollable),
-
-    compute_num_rows(Rows, Scrollable, NumThreadRows, NumPagerRows),
-    ThreadPagerInfo1 = thread_pager_info(ThreadId, Ordering,
-        Scrollable, NumThreadRows, PagerInfo, NumPagerRows,
-        no, dir_forward, CommonHistory, no),
+    Scrollable0 = scrollable.init_with_cursor(ThreadLines),
+    NumThreadLines = get_num_lines(Scrollable0),
+    compute_num_rows(Rows, Scrollable0, NumThreadRows, NumPagerRows),
     (
-        get_cursor_line(Scrollable, _, FirstLine),
-        is_unread_line(FirstLine)
-    ->
-        ThreadPagerInfo = ThreadPagerInfo1
+        ThreadLines = [],
+        Scrollable = Scrollable0,
+        PagerInfo = PagerInfo0
     ;
-        skip_to_unread(_MessageUpdate, ThreadPagerInfo1, ThreadPagerInfo)
+        ThreadLines = [FirstLine | RestLines],
+        ( list.find_first_match(is_unread_line, ThreadLines, UnreadLine) ->
+            CursorLine = UnreadLine
+        ;
+            list.foldl(get_latest_line, RestLines, FirstLine, LatestLine),
+            CursorLine = LatestLine
+        ),
+        MessageId = CursorLine ^ tp_message ^ m_id,
+        goto_message(MessageId, NumThreadRows, Scrollable0, Scrollable),
+        pager.skip_to_message(MessageId, PagerInfo0, PagerInfo)
+    ),
+    ThreadPagerInfo = thread_pager_info(ThreadId, Ordering, Scrollable,
+        NumThreadRows, PagerInfo, NumPagerRows, no, dir_forward, CommonHistory,
+        no).
+
+:- pred get_latest_line(thread_line::in, thread_line::in, thread_line::out)
+    is det.
+
+get_latest_line(LineA, LineB, Line) :-
+    TimestampA = LineA ^ tp_message ^ m_timestamp,
+    TimestampB = LineB ^ tp_message ^ m_timestamp,
+    ( TimestampA >= TimestampB ->
+        Line = LineA
+    ;
+        Line = LineB
     ).
 
 :- pred resize_thread_pager(int::in, int::in,
@@ -929,11 +948,20 @@ sync_thread_to_pager(!Info) :-
     (
         % XXX inefficient
         get_top_message(PagerInfo, Message),
-        MessageId = Message ^ m_id,
-        search_forward(is_message(MessageId), Scrollable0, 0, Cursor, _)
+        MessageId = Message ^ m_id
     ->
-        set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
+        goto_message(MessageId, NumThreadRows, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
+    ;
+        true
+    ).
+
+:- pred goto_message(message_id::in, int::in,
+    scrollable(thread_line)::in, scrollable(thread_line)::out) is det.
+
+goto_message(MessageId, NumThreadRows, !Scrollable) :-
+    ( search_forward(is_message(MessageId), !.Scrollable, 0, Cursor, _) ->
+        set_cursor_centred(Cursor, NumThreadRows, !Scrollable)
     ;
         true
     ).
