@@ -90,6 +90,7 @@ The keys are:
     t               select/unselect thread
     T               unselect all threads
     '               bulk tag changes on selected threads
+    "               same as ' but retain selections afterwards
     q               quit
 
 The `l` command slightly extends the notmuch search term syntax with these

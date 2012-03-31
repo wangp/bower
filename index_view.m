@@ -107,7 +107,7 @@
     ;       prompt_tag(string)
     ;       toggle_select
     ;       unselect_all
-    ;       bulk_tag
+    ;       bulk_tag(keep_selection)
     ;       quit.
 
 :- type action
@@ -125,8 +125,12 @@
     ;       set_deleted
     ;       unset_deleted
     ;       prompt_tag(string)
-    ;       bulk_tag
+    ;       bulk_tag(keep_selection)
     ;       quit.
+
+:- type keep_selection
+    --->    clear_selection
+    ;       keep_selection.
 
 :- type try_reply_result
     --->    ok(compose.sent)
@@ -383,8 +387,16 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         prompt_tag(Screen, Initial, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
-        Action = bulk_tag,
-        bulk_tag(Screen, !IndexInfo, !IO),
+        Action = bulk_tag(KeepSelection),
+        bulk_tag(Screen, Done, !IndexInfo, !IO),
+        (
+            Done = yes,
+            KeepSelection = clear_selection
+        ->
+            unselect_all(_MessageUpdate, !IndexInfo)
+        ;
+            true
+        ),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = quit
@@ -504,9 +516,9 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             unselect_all(MessageUpdate, !IndexInfo),
             Action = continue
         ;
-            Binding = bulk_tag,
+            Binding = bulk_tag(KeepSelection),
             MessageUpdate = no_change,
-            Action = bulk_tag
+            Action = bulk_tag(KeepSelection)
         ;
             Binding = quit,
             MessageUpdate = no_change,
@@ -571,7 +583,8 @@ key_binding_char('+', prompt_tag("+")).
 key_binding_char('-', prompt_tag("-")).
 key_binding_char('t', toggle_select).
 key_binding_char('T', unselect_all).
-key_binding_char('''', bulk_tag).
+key_binding_char('''', bulk_tag(clear_selection)).
+key_binding_char('"', bulk_tag(keep_selection)).
 key_binding_char('q', quit).
 
 :- pred move_cursor(screen::in, int::in, message_update::out,
@@ -1011,10 +1024,10 @@ unselect_line(!Line) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred bulk_tag(screen::in, index_info::in, index_info::out,
+:- pred bulk_tag(screen::in, bool::out, index_info::in, index_info::out,
     io::di, io::uo) is det.
 
-bulk_tag(Screen, !Info, !IO) :-
+bulk_tag(Screen, Done, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,
     Lines0 = get_lines_list(Scrollable0),
     ( any_selected_line(Lines0) ->
@@ -1023,28 +1036,35 @@ bulk_tag(Screen, !Info, !IO) :-
         update_message_immed(Screen, set_prompt(Prompt), !IO),
         get_keycode(KeyCode, !IO),
         ( KeyCode = char('-') ->
-            bulk_arbitrary_tag_changes(Screen, "-", MessageUpdate, !Info, !IO)
+            bulk_arbitrary_tag_changes(Screen, "-", MessageUpdate, !Info, !IO),
+            Done = yes
         ; KeyCode = char('+') ->
-            bulk_arbitrary_tag_changes(Screen, "+", MessageUpdate, !Info, !IO)
+            bulk_arbitrary_tag_changes(Screen, "+", MessageUpdate, !Info, !IO),
+            Done = yes
         ; KeyCode = char('d') ->
             TagDeltas = [tag_delta("+deleted")],
             AddTags = set.make_singleton_set(tag("deleted")),
             RemoveTags = set.init,
             bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate,
-                !Info, !IO)
+                !Info, !IO),
+            Done = yes
         ; KeyCode = char('u') ->
             TagDeltas = [tag_delta("-deleted")],
             AddTags = set.init,
             RemoveTags = set.make_singleton_set(tag("deleted")),
             bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate,
-                !Info, !IO)
+                !Info, !IO),
+            Done = yes
         ; KeyCode = char('N') ->
-            bulk_toggle_unread(MessageUpdate, !Info, !IO)
+            bulk_toggle_unread(MessageUpdate, !Info, !IO),
+            Done = yes
         ;
-            MessageUpdate = set_info("No changes.")
+            MessageUpdate = set_info("No changes."),
+            Done = no
         )
     ;
-        MessageUpdate = set_warning("No threads selected.")
+        MessageUpdate = set_warning("No threads selected."),
+        Done = no
     ),
     update_message(Screen, MessageUpdate, !IO).
 
