@@ -571,7 +571,7 @@ key_binding_char('+', prompt_tag("+")).
 key_binding_char('-', prompt_tag("-")).
 key_binding_char('t', toggle_select).
 key_binding_char('T', unselect_all).
-key_binding_char(';', bulk_tag).
+key_binding_char('''', bulk_tag).
 key_binding_char('q', quit).
 
 :- pred move_cursor(screen::in, int::in, message_update::out,

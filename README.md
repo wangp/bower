@@ -89,7 +89,7 @@ The keys are:
     +, -            add/remove arbitrary tags
     t               select/unselect thread
     T               unselect all threads
-    ;               bulk tag changes on selected threads
+    '               bulk tag changes on selected threads
     q               quit
 
 The `l` command slightly extends the notmuch search term syntax with these
