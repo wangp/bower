@@ -1032,7 +1032,7 @@ bulk_tag(Screen, Done, !Info, !IO) :-
     Lines0 = get_lines_list(Scrollable0),
     ( any_selected_line(Lines0) ->
         Prompt = "Action: (d)elete, (u)ndelete, (N) toggle unread, " ++
-            "(+/-) change tags",
+            "(') mark read, (+/-) change tags",
         update_message_immed(Screen, set_prompt(Prompt), !IO),
         get_keycode(KeyCode, !IO),
         ( KeyCode = char('-') ->
@@ -1057,6 +1057,13 @@ bulk_tag(Screen, Done, !Info, !IO) :-
             Done = yes
         ; KeyCode = char('N') ->
             bulk_toggle_unread(MessageUpdate, !Info, !IO),
+            Done = yes
+        ; KeyCode = char('''') ->
+            TagDeltas = [tag_delta("-unread")],
+            AddTags = set.init,
+            RemoveTags = set.make_singleton_set(tag("unread")),
+            bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate,
+                !Info, !IO),
             Done = yes
         ;
             MessageUpdate = set_info("No changes."),
