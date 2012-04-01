@@ -1,24 +1,21 @@
 # This configuration file belongs in ~/.config/bower/bower.conf
+# The lines beginning with '#' or ';' are treated as comment lines.
 
 [command]
 
 # How to run notmuch and notmuch-deliver.
-
-; notmuch=notmuch
-; notmuch_deliver=notmuch-deliver
-
-# I run bower locally but my mail and notmuch are on a remote machine.
-
-; notmuch=ssh_escape user@host notmuch
-; notmuch_deliver=ssh_escape user@host notmuch-deliver
+# Set these if notmuch or notmuch-deliver are not already on your PATH.
+# I run bower locally but keep my mail and notmuch on a remote machine,
+# accessed via ssh.  That requires an extra level of shell quoting, which
+# is achieved with a small zsh helper script.
+; notmuch=/local/ssh_escape user@host /remote/notmuch
+; notmuch_deliver=/local/ssh_escape user@host /remote/notmuch-deliver
 
 # How to send a message.
 # The default is to use sendmail (untested) but I use msmtp.
-
 ; sendmail=/usr/bin/sendmail -oi -oem
 ; sendmail=/usr/bin/msmtp -t
 
 # How to format HTML on stdin to plain text.
-
 ; html_dump=lynx -dump -force-html -stdin
 
