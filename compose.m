@@ -391,22 +391,10 @@ create_edit_stage(Screen, Headers0, Text0, Attachments, MaybeOldDraft,
 :- pred call_editor(screen::in, string::in, bool::out, io::di, io::uo) is det.
 
 call_editor(Screen, Filename, Res, !IO) :-
-    io.get_environment_var("EDITOR", MaybeEditor, !IO),
-    (
-        MaybeEditor = yes(Editor)
-    ;
-        MaybeEditor = no,
-        Editor = "vi"
-    ),
+    get_editor_command(Editor, !IO),
     curs.def_prog_mode(!IO),
     curs.stop(!IO),
-    ( string.sub_string_search(Editor, "vim", _) ->
-        Args = [Editor, "+set ft=mail", Filename]
-    ;
-        Args = [Editor, Filename]
-    ),
-    args_to_quoted_command(Args, Command),
-    io.call_system(Command, CallRes, !IO),
+    io.call_system(Editor ++ " " ++ quote_arg(Filename), CallRes, !IO),
     curs.reset_prog_mode(!IO),
     curs.refresh(!IO),
     (

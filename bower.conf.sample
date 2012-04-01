@@ -11,6 +11,10 @@
 ; notmuch=/local/ssh_escape user@host /remote/notmuch
 ; notmuch_deliver=/local/ssh_escape user@host /remote/notmuch-deliver
 
+# How to edit a message.
+# The default is to use $EDITOR, or else "vi".
+; editor=vim '+set ft=mail'
+
 # How to send a message.
 # The default is to use sendmail (untested) but I use msmtp.
 ; sendmail=/usr/bin/sendmail -oi -oem

@@ -10,6 +10,8 @@
 
 :- pred get_notmuch_deliver_prefix(string::out, io::di, io::uo) is det.
 
+:- pred get_editor_command(string::out, io::di, io::uo) is det.
+
 :- pred get_sendmail_command(string::out, io::di, io::uo) is det.
 
 :- pred get_html_dump_command(string::out, io::di, io::uo) is det.
@@ -77,6 +79,20 @@ get_notmuch_deliver_prefix(NotmuchDeliver, !IO) :-
         NotmuchDeliver = default_notmuch_deliver_prefix
     ).
 
+get_editor_command(Command, !IO) :-
+    get_prog_config(Config, !IO),
+    ( search_config(Config, "command", "editor", Value) ->
+        Command = Value
+    ;
+        io.get_environment_var("EDITOR", MaybeEditor, !IO),
+        (
+            MaybeEditor = yes(Command)
+        ;
+            MaybeEditor = no,
+            Command = default_editor_command
+        )
+    ).
+
 get_sendmail_command(Command, !IO) :-
     get_prog_config(Config, !IO),
     ( search_config(Config, "command", "sendmail", Value) ->
@@ -106,6 +122,10 @@ default_notmuch_prefix = "notmuch ". % trailing space
 :- func default_notmuch_deliver_prefix = string.
 
 default_notmuch_deliver_prefix = "notmuch-deliver ". % trailing space
+
+:- func default_editor_command = string.
+
+default_editor_command = "vi".
 
 :- func default_sendmail_command = string.
 
