@@ -60,6 +60,14 @@ See `bower.conf.sample` for details.
 
 
 Usage
+=======
+
+Run `bower` to start.  By default, Bower displays the last week's worth of
+mail.  You can change that by setting the `~default` search alias; see below.
+Alternatively, you may pass a search query directly on the command-line.
+
+
+Views
 =====
 
 There are two main views: the index, and the combined thread/pager.
@@ -168,6 +176,7 @@ in a section called `[bower:search_alias]`.  Expansions may make use of other
 (non-recursive) expansions.  For example:
 
     [bower:search_alias]
+    default = ~lw
     lw = ~d {last week}..
     2w = ~d {2 weeks ago}..
     lm = ~d {last month}..
@@ -175,6 +184,9 @@ in a section called `[bower:search_alias]`.  Expansions may make use of other
     notmuch = to:notmuch
     bower = ~notmuch AND bower
     bower_recent = ~lm ~bower
+
+As mentioned earlier, the `~default` alias sets the initial search query
+if you run `bower` without command-line arguments.
 
 
 Simple addressbook

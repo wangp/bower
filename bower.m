@@ -16,6 +16,7 @@
 :- import_module list.
 :- import_module string.
 
+:- import_module callout.
 :- import_module curs.
 :- import_module index_view.
 :- import_module screen.
@@ -34,7 +35,7 @@ main(!IO) :-
     io.command_line_arguments(Args, !IO),
     (
         Args = [],
-        Terms = "~d {last week}.."
+        get_default_search_terms(Terms, !IO)
     ;
         Args = [_ | _],
         Terms = string.join_list(" ", Args)
@@ -54,6 +55,19 @@ main(!IO) :-
     setlocale(LC_ALL, """");
     IO = IO0;
 ").
+
+:- pred get_default_search_terms(string::out, io::di, io::uo) is det.
+
+get_default_search_terms(Terms, !IO) :-
+    get_notmuch_config("bower:search_alias", "default", Res, !IO),
+    (
+        Res = ok(Value),
+        Value \= ""
+    ->
+        Terms = Value
+    ;
+        Terms = "~d {last week}.."
+    ).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
