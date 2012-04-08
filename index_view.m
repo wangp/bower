@@ -962,14 +962,16 @@ prompt_arbitrary_tag_changes(Screen, Initial, TagChanges, !Info, !IO) :-
 apply_tag_changes(Screen, CursorLine0, TagDeltas, AddTags, RemoveTags,
         !Info, !IO) :-
     CursorLine0 = index_line(ThreadId, Selected,
-        _Unread, _Replied, _Deleted, _Flagged, Date, Authors, Subject,
+        Unread0, Replied0, Deleted0, Flagged0, Date, Authors, Subject,
         TagSet0, _NonstdTagsWidth, Matched, Total),
+    apply_standard_tag_state(Unread0, Replied0, Deleted0, Flagged0,
+        TagSet0, TagSet1),
     tag_threads(TagDeltas, [ThreadId], Res, !IO),
     (
         Res = ok,
         % Notmuch performs tag removals before addition.
-        set.difference(TagSet0, RemoveTags, TagSet1),
-        set.union(TagSet1, AddTags, TagSet),
+        set.difference(TagSet1, RemoveTags, TagSet2),
+        set.union(TagSet2, AddTags, TagSet),
         get_standard_tag_state(TagSet, Unread, Replied, Deleted, Flagged),
         get_nonstandard_tags_width(TagSet, NonstdTagsWidth),
         CursorLine = index_line(ThreadId, Selected,

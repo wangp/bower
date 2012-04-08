@@ -37,6 +37,9 @@
 :- pred get_standard_tag_state(set(tag)::in,
     unread::out, replied::out, deleted::out, flagged::out) is det.
 
+:- pred apply_standard_tag_state(unread::in, replied::in, deleted::in,
+    flagged::in, set(tag)::in, set(tag)::out) is det.
+
 :- pred get_nonstandard_tags_width(set(tag)::in, int::out) is det.
 
 :- pred validate_tag_deltas(list(string)::in, list(tag_delta)::out,
@@ -70,6 +73,38 @@ get_standard_tag_state(Tags, Unread, Replied, Deleted, Flagged) :-
     Replied = ( set.contains(Tags, tag("replied")) -> replied ; not_replied ),
     Deleted = ( set.contains(Tags, tag("deleted")) -> deleted ; not_deleted ),
     Flagged = ( set.contains(Tags, tag("flagged")) -> flagged ; unflagged ).
+
+%-----------------------------------------------------------------------------%
+
+apply_standard_tag_state(Unread, Replied, Deleted, Flagged, !TagSet) :-
+    (
+        Unread = unread,
+        set.insert(tag("unread"), !TagSet)
+    ;
+        Unread = read,
+        set.delete(tag("unread"), !TagSet)
+    ),
+    (
+        Replied = replied,
+        set.insert(tag("replied"), !TagSet)
+    ;
+        Replied = not_replied,
+        set.delete(tag("replied"), !TagSet)
+    ),
+    (
+        Deleted = deleted,
+        set.insert(tag("deleted"), !TagSet)
+    ;
+        Deleted = not_deleted,
+        set.delete(tag("deleted"), !TagSet)
+    ),
+    (
+        Flagged = flagged,
+        set.insert(tag("flagged"), !TagSet)
+    ;
+        Flagged = unflagged,
+        set.delete(tag("flagged"), !TagSet)
+    ).
 
 %-----------------------------------------------------------------------------%
 
