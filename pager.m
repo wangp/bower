@@ -870,7 +870,11 @@ draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
             Attr = reverse
         ;
             IsCursor = no,
-            Attr = normal
+            ( Header = "Subject" ->
+                Attr = bold
+            ;
+                Attr = normal
+            )
         ),
         panel.attr_set(Panel, Attr, !IO),
         my_addstr(Panel, Value, !IO)
