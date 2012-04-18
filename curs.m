@@ -42,6 +42,11 @@
     %
 :- pred nodelay(bool::in, io::di, io::uo) is det.
 
+    % halfdelay(Tenths, !IO)
+    % Enable halfdelay mode. The delay is in tenths of a second.
+    %
+:- pred halfdelay(int::in, io::di, io::uo) is det.
+
     % Close a curses session; necessary to return the tty to a sensible
     % state.
     %
@@ -445,6 +450,16 @@ init_pair(FG_BG(COLOR_WHITE, COLOR_WHITE),      COLOR_WHITE, COLOR_WHITE);
     [will_not_call_mercury, promise_pure],
 "
     nodelay(stdscr, BF);
+    IO = IO0;
+").
+
+%-----------------------------------------------------------------------------%
+
+:- pragma foreign_proc("C",
+    halfdelay(Tenths::in, IO0::di, IO::uo),
+    [will_not_call_mercury, promise_pure],
+"
+    halfdelay(Tenths);
     IO = IO0;
 ").
 
