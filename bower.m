@@ -42,6 +42,8 @@ main(!IO) :-
     ),
     curs.start(!IO),
     create_screen(Screen, !IO),
+    draw_bar(Screen, !IO),
+    curs.refresh(!IO),
     open_index(Screen, Terms, !IO),
     curs.stop(!IO).
 
