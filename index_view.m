@@ -35,7 +35,6 @@
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module data.
-:- import_module maildir.
 :- import_module prog_config.
 :- import_module recall.
 :- import_module scrollable.
@@ -973,8 +972,8 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
             !Info, !IO),
         (
             TagChanges = yes(TagDeltas, AddTags, RemoveTags),
-            apply_tag_changes(Screen, CursorLine0, TagDeltas, AddTags,
-                RemoveTags, !Info, !IO)
+            apply_tag_changes(CursorLine0, TagDeltas, AddTags, RemoveTags,
+                !Info, !IO)
         ;
             TagChanges = no
         )
@@ -1015,36 +1014,28 @@ prompt_arbitrary_tag_changes(Screen, Initial, TagChanges, !Info, !IO) :-
         TagChanges = no
     ).
 
-:- pred apply_tag_changes(screen::in, index_line::in, list(tag_delta)::in,
+:- pred apply_tag_changes(index_line::in, list(tag_delta)::in,
     set(tag)::in, set(tag)::in, index_info::in, index_info::out,
     io::di, io::uo) is det.
 
-apply_tag_changes(Screen, CursorLine0, TagDeltas, AddTags, RemoveTags,
-        !Info, !IO) :-
+apply_tag_changes(CursorLine0, TagDeltas, AddTags, RemoveTags, !Info, !IO) :-
     CursorLine0 = index_line(ThreadId, Selected,
         Unread0, Replied0, Deleted0, Flagged0, Date, Authors, Subject,
         TagSet0, _NonstdTagsWidth, Matched, Total),
     apply_standard_tag_state(Unread0, Replied0, Deleted0, Flagged0,
         TagSet0, TagSet1),
-    tag_threads(TagDeltas, [ThreadId], Res, !IO),
-    (
-        Res = ok,
-        % Notmuch performs tag removals before addition.
-        set.difference(TagSet1, RemoveTags, TagSet2),
-        set.union(TagSet2, AddTags, TagSet),
-        get_standard_tag_state(TagSet, Unread, Replied, Deleted, Flagged),
-        get_nonstandard_tags_width(TagSet, NonstdTagsWidth),
-        CursorLine = index_line(ThreadId, Selected,
-            Unread, Replied, Deleted, Flagged, Date, Authors, Subject,
-            TagSet, NonstdTagsWidth, Matched, Total),
-        Scrollable0 = !.Info ^ i_scrollable,
-        set_cursor_line(CursorLine, Scrollable0, Scrollable),
-        !Info ^ i_scrollable := Scrollable
-    ;
-        Res = error(Error),
-        MessageUpdate = set_warning(io.error_message(Error)),
-        update_message(Screen, MessageUpdate, !IO)
-    ).
+    async_tag_threads(TagDeltas, [ThreadId], !IO),
+    % Notmuch performs tag removals before addition.
+    set.difference(TagSet1, RemoveTags, TagSet2),
+    set.union(TagSet2, AddTags, TagSet),
+    get_standard_tag_state(TagSet, Unread, Replied, Deleted, Flagged),
+    get_nonstandard_tags_width(TagSet, NonstdTagsWidth),
+    CursorLine = index_line(ThreadId, Selected,
+        Unread, Replied, Deleted, Flagged, Date, Authors, Subject,
+        TagSet, NonstdTagsWidth, Matched, Total),
+    Scrollable0 = !.Info ^ i_scrollable,
+    set_cursor_line(CursorLine, Scrollable0, Scrollable),
+    !Info ^ i_scrollable := Scrollable.
 
 %-----------------------------------------------------------------------------%
 
