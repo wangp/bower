@@ -1167,19 +1167,13 @@ bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate, !Info, !IO) :-
         Lines0, Lines, [], SelectedThreadIds),
     (
         SelectedThreadIds = [_ | _],
-        tag_threads(TagDeltas, SelectedThreadIds, Res, !IO),
-        (
-            Res = ok,
-            set_lines_list(Lines, Scrollable0, Scrollable),
-            !Info ^ i_scrollable := Scrollable,
-            list.length(SelectedThreadIds, NumThreads),
-            string.format("Modified tags in %d threads.", [i(NumThreads)],
-                Message),
-            MessageUpdate = set_info(Message)
-        ;
-            Res = error(Error),
-            MessageUpdate = set_warning(io.error_message(Error))
-        )
+        async_tag_threads(TagDeltas, SelectedThreadIds, !IO),
+        set_lines_list(Lines, Scrollable0, Scrollable),
+        !Info ^ i_scrollable := Scrollable,
+        list.length(SelectedThreadIds, NumThreads),
+        string.format("Modified tags in %d threads.", [i(NumThreads)],
+            Message),
+        MessageUpdate = set_info(Message)
     ;
         SelectedThreadIds = [],
         MessageUpdate = set_info("No changes.")
