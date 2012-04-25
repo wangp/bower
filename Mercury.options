@@ -16,6 +16,7 @@ MCFLAGS += --optimise-constructor-last-call
 
 # Module-specific options.
 MCFLAGS-popen += --no-ansi-c
+MCFLAGS-sleep += --no-ansi-c
 MCFLAGS-string_util += --no-ansi-c
 CFLAGS-curs += -D_XOPEN_SOURCE_EXTENDED
 CFLAGS-string_util += -D_GNU_SOURCE
