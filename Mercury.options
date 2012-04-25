@@ -18,6 +18,7 @@ MCFLAGS += --optimise-constructor-last-call
 MCFLAGS-popen += --no-ansi-c
 MCFLAGS-sleep += --no-ansi-c
 MCFLAGS-string_util += --no-ansi-c
+CFLAGS-async += -D_POSIX_SOURCE
 CFLAGS-curs += -D_XOPEN_SOURCE_EXTENDED
 CFLAGS-string_util += -D_GNU_SOURCE
 CFLAGS-sys_util += -D_BSD_SOURCE

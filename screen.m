@@ -64,7 +64,8 @@
 :- type keycode
     --->    char(char)
     ;       meta(char)
-    ;       code(int).
+    ;       code(int)
+    ;       timeout_or_error.
 
 :- pred get_keycode(keycode::out, io::di, io::uo) is det.
 
@@ -302,7 +303,9 @@ get_keycode(Code, !IO) :-
         Code = code(C)
     ;
         IsCode = no,
-        ( C = 27 -> % Escape
+        ( C = 0 ->
+            Code = timeout_or_error
+        ; C = 27 -> % Escape
             nodelay(yes, !IO),
             curs.get_wch(C2, IsCode2, !IO),
             nodelay(no, !IO),
@@ -333,6 +336,9 @@ get_char(Char, !IO) :-
         get_char(Char, !IO)
     ;
         Code = meta(_),
+        get_char(Char, !IO)
+    ;
+        Code = timeout_or_error,
         get_char(Char, !IO)
     ).
 

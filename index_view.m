@@ -29,6 +29,7 @@
 :- import_module string.
 :- import_module time.
 
+:- import_module async.
 :- import_module callout.
 :- import_module compose.
 :- import_module curs.
@@ -38,6 +39,7 @@
 :- import_module recall.
 :- import_module scrollable.
 :- import_module search_term.
+:- import_module sleep.
 :- import_module string_util.
 :- import_module tags.
 :- import_module text_entry.
@@ -113,6 +115,7 @@
 
 :- type action
     --->    continue
+    ;       continue_no_draw
     ;       resize
     ;       open_pager(thread_id)
     ;       enter_limit
@@ -184,6 +187,7 @@ open_index(Screen, SearchString, !IO) :-
     list(thread)::out, io::di, io::uo) is det.
 
 search_terms_with_progress(Screen, Tokens, Threads, !IO) :-
+    flush_async_with_progress(Screen, !IO),
     update_message_immed(Screen, set_info("Searching..."), !IO),
     search_terms_quiet(Tokens, Threads, MessageUpdate, !IO),
     update_message(Screen, MessageUpdate, !IO).
@@ -264,11 +268,19 @@ default_max_threads = 300.
 
 :- pred index_loop(screen::in, index_info::in, io::di, io::uo) is det.
 
-index_loop(Screen, !.IndexInfo, !IO) :-
-    draw_index_view(Screen, !.IndexInfo, !IO),
-    draw_index_bar(Screen, !.IndexInfo, !IO),
+index_loop(Screen, IndexInfo, !IO) :-
+    draw_index_view(Screen, IndexInfo, !IO),
+    draw_index_bar(Screen, IndexInfo, !IO),
     panel.update_panels(!IO),
-    get_keycode(KeyCode, !IO),
+    index_loop_no_draw(Screen, IndexInfo, !IO).
+
+:- pred index_loop_no_draw(screen::in, index_info::in, io::di, io::uo)
+    is det.
+:- pragma inline(index_loop_no_draw/4).
+
+index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
+    poll_async_with_progress(Screen, !IO),
+    get_keycode_maybe_timeout(KeyCode, !IO),
     index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo),
     update_message(Screen, MessageUpdate, !IO),
     (
@@ -276,11 +288,15 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         maybe_poll(!IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
+        Action = continue_no_draw,
+        index_loop_no_draw(Screen, !.IndexInfo, !IO)
+    ;
         Action = resize,
         recreate_screen(Screen, NewScreen, !IndexInfo, !IO),
         index_loop(NewScreen, !.IndexInfo, !IO)
     ;
         Action = open_pager(ThreadId),
+        flush_async_with_progress(Screen, !IO),
         MaybeSearch = !.IndexInfo ^ i_internal_search,
         CommonHistory0 = !.IndexInfo ^ i_common_history,
         open_thread_pager(Screen, ThreadId, MaybeSearch, NeedRefresh,
@@ -329,6 +345,7 @@ index_loop(Screen, !.IndexInfo, !IO) :-
     ;
         Action = start_compose,
         ComposeHistory0 = !.IndexInfo ^ i_compose_history,
+        flush_async_with_progress(Screen, !IO),
         start_compose(Screen, Sent, ComposeHistory0, ComposeHistory, !IO),
         !IndexInfo ^ i_compose_history := ComposeHistory,
         (
@@ -340,6 +357,7 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = start_reply(ReplyKind),
+        flush_async_with_progress(Screen, !IO),
         start_reply(Screen, ReplyKind, MaybeRefresh, !IndexInfo, !IO),
         (
             MaybeRefresh = yes(ThreadId),
@@ -350,6 +368,7 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = start_recall,
+        flush_async_with_progress(Screen, !IO),
         select_recall(Screen, no, MaybeSelected, !IO),
         (
             MaybeSelected = yes(Message),
@@ -405,7 +424,41 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         toggle_async_test(Screen, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
-        Action = quit
+        Action = quit,
+        flush_async_with_progress(Screen, !IO)
+    ).
+
+:- pred get_keycode_maybe_timeout(keycode::out, io::di, io::uo) is det.
+
+get_keycode_maybe_timeout(Code, !IO) :-
+    async.have_child_process(HaveChild, !IO),
+    (
+        HaveChild = yes,
+        get_keycode_timeout_loop(Code, !IO),
+        % Reset back to blocking mode.
+        curs.nodelay(no, !IO)
+    ;
+        HaveChild = no,
+        get_keycode(Code, !IO)
+    ).
+
+:- pred get_keycode_timeout_loop(keycode::out, io::di, io::uo) is det.
+
+get_keycode_timeout_loop(Code, !IO) :-
+    % get_keycode can change the timeout so reset it for each iteration.
+    curs.halfdelay(10, !IO),
+    get_keycode(Code0, !IO),
+    ( Code0 = timeout_or_error ->
+        async.received_sigchld_since_spawn(Sigchld, !IO),
+        (
+            Sigchld = yes,
+            Code = Code0
+        ;
+            Sigchld = no,
+            get_keycode_timeout_loop(Code, !IO)
+        )
+    ;
+        Code = Code0
     ).
 
 %-----------------------------------------------------------------------------%
@@ -535,13 +588,14 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             Action = quit
         )
     ;
-        KeyCode = code(key_resize)
-    ->
-        MessageUpdate = no_change,
-        Action = resize
-    ;
-        MessageUpdate = no_change,
-        Action = continue
+        ( KeyCode = code(key_resize) ->
+            Action = resize
+        ; KeyCode = timeout_or_error ->
+            Action = continue_no_draw
+        ;
+            Action = continue
+        ),
+        MessageUpdate = no_change
     ).
 
 :- pred key_binding(keycode::in, binding::out) is semidet.
@@ -1218,8 +1272,8 @@ common_unread_state([H | T], State0, State) :-
 toggle_async_test(Screen, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
-        TestTag = tag("async-test"),
         TagSet0 = CursorLine0 ^ i_tags,
+        TestTag = tag("async-test"),
         ( set.contains(TagSet0, TestTag) ->
             set.delete(TestTag, TagSet0, TagSet)
         ;
@@ -1230,12 +1284,18 @@ toggle_async_test(Screen, !Info, !IO) :-
         CursorLine = CursorLine1 ^ i_nonstd_tags_width := NonstdTagsWidth,
         set_cursor_line(CursorLine, Scrollable0, Scrollable),
         !Info ^ i_scrollable := Scrollable,
-        MessageUpdate = set_info("Asynchronous tagging (NYI)"),
-        update_message(Screen, MessageUpdate, !IO)
+
+        % This is fake.
+        Op = async_shell_command("sleep", ["1"], async_tag_attempts),
+        push_async(Op, !IO)
     ;
         MessageUpdate = set_warning("No thread."),
         update_message(Screen, MessageUpdate, !IO)
     ).
+
+:- func async_tag_attempts = int.
+
+async_tag_attempts = 3.
 
 %-----------------------------------------------------------------------------%
 
@@ -1243,6 +1303,7 @@ toggle_async_test(Screen, !Info, !IO) :-
     io::di, io::uo) is det.
 
 refresh_all(Screen, Verbose, !Info, !IO) :-
+    flush_async_with_progress(Screen, !IO),
     time(Time, !IO),
     % The user might have changed search aliases and is trying to force a
     % refresh, so expand the search terms from the beginning.
@@ -1372,6 +1433,106 @@ recreate_screen(Screen0, Screen, !IndexInfo, !IO) :-
     ;
         true
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred poll_async_with_progress(screen::in, io::di, io::uo) is det.
+
+poll_async_with_progress(Screen, !IO) :-
+    poll_async_nonblocking(Return, !IO),
+    (
+        Return = none
+    ;
+        Return = child_succeeded,
+        poll_async_with_progress(Screen, !IO)
+    ;
+        Return = child_failed(Op, Failure),
+        handle_async_failure(Screen, Op, Failure, !IO),
+        poll_async_with_progress(Screen, !IO)
+    ).
+
+:- pred flush_async_with_progress(screen::in, io::di, io::uo) is det.
+
+flush_async_with_progress(Screen, !IO) :-
+    async_count(Count, !IO),
+    ( Count = 0 ->
+        true
+    ;
+        flush_async_with_progress_loop(Screen, yes, !IO)
+    ).
+
+:- pred flush_async_with_progress_loop(screen::in, bool::in, io::di, io::uo)
+    is det.
+
+flush_async_with_progress_loop(Screen, Display, !IO) :-
+    async_count(Count, !IO),
+    ( Count = 0 ->
+        update_message(Screen, clear_message, !IO)
+    ;
+        (
+            Display = yes,
+            string.format("Flushing %d asynchronous operations.",
+                [i(Count)], Message),
+            update_message_immed(Screen, set_info(Message), !IO)
+        ;
+            Display = no
+        ),
+        poll_async_blocking(Return, !IO),
+        (
+            Return = none,
+            % Don't busy wait.
+            usleep(100000, !IO),
+            flush_async_with_progress_loop(Screen, no, !IO)
+        ;
+            Return = child_succeeded,
+            flush_async_with_progress_loop(Screen, yes, !IO)
+        ;
+            Return = child_failed(Op, Failure),
+            handle_async_failure(Screen, Op, Failure, !IO),
+            flush_async_with_progress_loop(Screen, no, !IO)
+        )
+    ).
+
+:- pred handle_async_failure(screen::in, async_op::in, async_failure::in,
+    io::di, io::uo) is det.
+
+handle_async_failure(Screen, Op, Failure, !IO) :-
+    Op = async_shell_command(CommandPrefix, Args, RemainingAttempts0),
+    FullCommand = CommandPrefix ++ " " ++ string.join_list(" ", Args),
+    ( string.count_codepoints(FullCommand) > 40 ->
+        ShortCommand = "..." ++ string.right(FullCommand, 37)
+    ;
+        ShortCommand = FullCommand
+    ),
+    (
+        Failure = failure_nonzero_exit(Status),
+        ( RemainingAttempts0 = 0 ->
+            string.format("'%s' returned exit status %d; not retrying.",
+                [s(ShortCommand), i(Status)], Message)
+        ;
+            Delay = 5,
+            string.format("'%s' returned exit status %d; retrying in %d secs.",
+                [s(ShortCommand), i(Status), i(Delay)], Message),
+            RemainingAttempts = RemainingAttempts0 - 1,
+            RetryOp = async_shell_command(CommandPrefix, Args,
+                RemainingAttempts),
+            retry_async(Delay, RetryOp, !IO)
+        )
+    ;
+        Failure = failure_signal(Signal),
+        string.format("'%s' received signal %d; not retrying.",
+            [s(ShortCommand), i(Signal)], Message)
+    ;
+        Failure = failure_abnormal_exit,
+        string.format("'%s' exited abnormally; not retrying.",
+            [s(ShortCommand)], Message)
+    ;
+        Failure = failure_error(Error),
+        string.format("'%s': %s; not retrying.",
+            [s(ShortCommand), s(io.error_message(Error))], Message)
+    ),
+    update_message_immed(Screen, set_warning(Message), !IO),
+    sleep(1, !IO).
 
 %-----------------------------------------------------------------------------%
 

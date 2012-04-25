@@ -16,6 +16,7 @@
 :- import_module list.
 :- import_module string.
 
+:- import_module async.
 :- import_module callout.
 :- import_module curs.
 :- import_module index_view.
@@ -32,6 +33,7 @@
 
 main(!IO) :-
     setlocale(!IO),
+    async.install_sigchld_handler(!IO),
     io.command_line_arguments(Args, !IO),
     (
         Args = [],
