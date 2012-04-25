@@ -133,9 +133,5 @@ do_tag(TagDeltas, SearchTerms, Res, !IO) :-
         Res = error(Error)
     ).
 
-:- func tag_delta_to_string(tag_delta) = string.
-
-tag_delta_to_string(tag_delta(String)) = String.
-
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

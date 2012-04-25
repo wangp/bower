@@ -32,6 +32,8 @@
 :- type tag_delta
     --->    tag_delta(string). % +tag or -tag
 
+:- func tag_delta_to_string(tag_delta) = string.
+
 :- pred standard_tag(tag::in) is semidet.
 
 :- pred get_standard_tag_state(set(tag)::in,
@@ -54,6 +56,10 @@
 :- import_module string.
 
 :- import_module string_util.
+
+%-----------------------------------------------------------------------------%
+
+tag_delta_to_string(tag_delta(String)) = String.
 
 %-----------------------------------------------------------------------------%
 
