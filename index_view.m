@@ -1395,20 +1395,25 @@ maybe_poll(!Info, !IO) :-
     ( TimeInt - PollTimeInt < poll_period_secs ->
         true
     ;
-        !Info ^ i_poll_time := Time,
-        Tokens = !.Info ^ i_search_tokens,
-        SearchTime = !.Info ^ i_search_time,
-        time_to_int(SearchTime, SearchTimeInt),
-        tokens_to_search_terms(Tokens, Terms1, _ApplyCap, !IO),
-        string.format("( %s ) %d.. AND tag:unread",
-            [s(Terms1), i(SearchTimeInt)], Terms),
-        run_notmuch_count(Terms, ResCount, !IO),
-        (
-            ResCount = ok(Count),
-            !Info ^ i_poll_count := Count
+        async.async_count(AsyncCount, !IO),
+        ( AsyncCount > 0 ->
+            true
         ;
-            ResCount = error(_)
-            % XXX show error message?
+            !Info ^ i_poll_time := Time,
+            Tokens = !.Info ^ i_search_tokens,
+            SearchTime = !.Info ^ i_search_time,
+            time_to_int(SearchTime, SearchTimeInt),
+            tokens_to_search_terms(Tokens, Terms1, _ApplyCap, !IO),
+            string.format("( %s ) %d.. AND tag:unread",
+                [s(Terms1), i(SearchTimeInt)], Terms),
+            run_notmuch_count(Terms, ResCount, !IO),
+            (
+                ResCount = ok(Count),
+                !Info ^ i_poll_count := Count
+            ;
+                ResCount = error(_)
+                % XXX show error message?
+            )
         )
     ).
 
