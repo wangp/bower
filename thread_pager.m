@@ -4,32 +4,47 @@
 :- module thread_pager.
 :- interface.
 
-:- import_module bool.
 :- import_module io.
+:- import_module list.
+:- import_module map.
 :- import_module maybe.
+:- import_module set.
 
 :- import_module data.
 :- import_module screen.
+:- import_module tags.
 :- import_module view_common.
 
 %-----------------------------------------------------------------------------%
 
+:- type thread_pager_effects
+    --->    thread_pager_effects(
+                % Set of tags for the thread.
+                thread_tags     :: set(tag),
+
+                % Tag changes to be applied to messages.
+                tag_changes     :: map(set(tag_delta), list(message_id)),
+
+                % Number of messages added (by sending).
+                added_messages  :: int
+            ).
+
 :- pred open_thread_pager(screen::in, thread_id::in, maybe(string)::in,
-    bool::out, common_history::in, common_history::out, io::di, io::uo) is det.
+    thread_pager_effects::out, common_history::in, common_history::out,
+    io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
+:- import_module bool.
 :- import_module char.
 :- import_module cord.
 :- import_module dir.
 :- import_module int.
-:- import_module list.
 :- import_module map.
 :- import_module require.
-:- import_module set.
 :- import_module string.
 :- import_module time.
 :- import_module version_array.
@@ -39,7 +54,6 @@
 :- import_module copious_output.
 :- import_module curs.
 :- import_module curs.panel.
-:- import_module maildir.
 :- import_module pager.
 :- import_module prog_config.
 :- import_module quote_arg.
@@ -47,7 +61,6 @@
 :- import_module scrollable.
 :- import_module string_util.
 :- import_module sys_util.
-:- import_module tags.
 :- import_module text_entry.
 :- import_module time_util.
 
@@ -64,7 +77,7 @@
                 tp_search           :: maybe(string),
                 tp_search_dir       :: search_direction,
                 tp_common_history   :: common_history,
-                tp_need_refresh_index :: bool
+                tp_added_messages   :: int
             ).
 
 :- type ordering
@@ -117,10 +130,7 @@
     ;       prompt_search(search_direction)
     ;       prompt_ordering
     ;       refresh_results
-    ;       leave(
-                map(set(tag_delta), list(message_id))
-                % Group messages by the tag changes to be applied.
-            ).
+    ;       leave.
 
 :- type keep_selection
     --->    clear_selection
@@ -145,7 +155,7 @@
 
 %-----------------------------------------------------------------------------%
 
-open_thread_pager(Screen, ThreadId, MaybeSearch, NeedRefreshIndex,
+open_thread_pager(Screen, ThreadId, MaybeSearch, Effects,
         CommonHistory0, CommonHistory, !IO) :-
     create_thread_pager(Screen, ThreadId, ordering_threaded, CommonHistory0,
         Info0, Count, !IO),
@@ -153,7 +163,7 @@ open_thread_pager(Screen, ThreadId, MaybeSearch, NeedRefreshIndex,
     string.format("Showing %d messages.", [i(Count)], Msg),
     update_message(Screen, set_info(Msg), !IO),
     thread_pager_loop(Screen, Info1, Info, !IO),
-    NeedRefreshIndex = Info ^ tp_need_refresh_index,
+    get_effects(Info, Effects),
     CommonHistory = Info ^ tp_common_history.
 
 :- pred reopen_thread_pager(screen::in,
@@ -169,7 +179,7 @@ reopen_thread_pager(Screen, !Info, !IO) :-
 reopen_thread_pager_with_ordering(Screen, Ordering, Info0, Info, !IO) :-
     Info0 = thread_pager_info(ThreadId0, _Ordering0,
         Scrollable0, _NumThreadRows, Pager0, _NumPagerRows,
-        Search, SearchDir, CommonHistory, NeedRefreshIndex),
+        Search, SearchDir, CommonHistory, AddedMessages),
 
     % We recreate the entire pager.  This may seem a bit inefficient but it is
     % much simpler and the time it takes to run the notmuch show command vastly
@@ -179,7 +189,7 @@ reopen_thread_pager_with_ordering(Screen, Ordering, Info0, Info, !IO) :-
 
     Info1 = thread_pager_info(ThreadId, _Ordering,
         Scrollable1, NumThreadRows, Pager1, NumPagerRows,
-        _Search1, _SearchDir1, _CommonHistory1, _NeedRefreshIndex),
+        _Search1, _SearchDir1, _CommonHistory1, _AddedMessages1),
 
     % Reapply tag changes from previous state.
     ThreadLines0 = get_lines_list(Scrollable0),
@@ -204,7 +214,7 @@ reopen_thread_pager_with_ordering(Screen, Ordering, Info0, Info, !IO) :-
 
     Info2 = thread_pager_info(ThreadId, Ordering,
         Scrollable, NumThreadRows, Pager, NumPagerRows,
-        Search, SearchDir, CommonHistory, NeedRefreshIndex),
+        Search, SearchDir, CommonHistory, AddedMessages),
     sync_thread_to_pager(Info2, Info),
 
     string.format("Showing %d messages.", [i(Count)], Msg),
@@ -278,9 +288,10 @@ setup_thread_pager(ThreadId, Ordering, Nowish, Rows, Cols, Messages,
         goto_message(MessageId, NumThreadRows, Scrollable0, Scrollable),
         pager.skip_to_message(MessageId, PagerInfo0, PagerInfo)
     ),
+    AddedMessages = 0,
     ThreadPagerInfo = thread_pager_info(ThreadId, Ordering, Scrollable,
-        NumThreadRows, PagerInfo, NumPagerRows, no, dir_forward, CommonHistory,
-        no).
+        NumThreadRows, PagerInfo, NumPagerRows, no, dir_forward,
+        CommonHistory, AddedMessages).
 
 :- pred get_latest_line(thread_line::in, thread_line::in, thread_line::out)
     is det.
@@ -567,7 +578,8 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         start_reply(Screen, Message, ReplyKind, Sent, !IO),
         (
             Sent = sent,
-            !Info ^ tp_need_refresh_index := yes,
+            AddedMessages0 = !.Info ^ tp_added_messages,
+            !Info ^ tp_added_messages := AddedMessages0 + 1,
             % XXX would be nice to move cursor to the sent message
             reopen_thread_pager(Screen, !Info, !IO)
         ;
@@ -583,7 +595,8 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
             continue_postponed(Screen, Message, Sent, !IO),
             (
                 Sent = sent,
-                !Info ^ tp_need_refresh_index := yes,
+                AddedMessages0 = !.Info ^ tp_added_messages,
+                !Info ^ tp_added_messages := AddedMessages0 + 1,
                 reopen_thread_pager(Screen, !Info, !IO)
             ;
                 Sent = not_sent
@@ -645,34 +658,7 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         reopen_thread_pager(Screen, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
-        Action = leave(TagGroups),
-        ( map.is_empty(TagGroups) ->
-            true
-        ;
-            map.foldl2(apply_tag_delta, TagGroups, yes, Res, !IO),
-            (
-                Res = yes,
-                update_message(Screen, clear_message, !IO)
-            ;
-                Res = no,
-                Msg = "Encountered problems while applying tags.",
-                update_message(Screen, set_warning(Msg), !IO)
-            ),
-            !Info ^ tp_need_refresh_index := yes
-        )
-    ).
-
-:- pred apply_tag_delta(set(tag_delta)::in, list(message_id)::in,
-    bool::in, bool::out, io::di, io::uo) is det.
-
-apply_tag_delta(TagDeltaSet, MessageIds, !AccRes, !IO) :-
-    set.to_sorted_list(TagDeltaSet, TagDeltas),
-    tag_messages(TagDeltas, MessageIds, Res, !IO),
-    (
-        Res = ok
-    ;
-        Res = error(_),
-        !:AccRes = no
+        Action = leave
     ).
 
 %-----------------------------------------------------------------------------%
@@ -886,15 +872,13 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         ; Key = char('q')
         )
     ->
-        get_tag_delta_groups(!.Info, TagGroups),
-        Action = leave(TagGroups),
+        Action = leave,
         MessageUpdate = clear_message
     ;
         Key = char('I')
     ->
         mark_all_read(!Info),
-        get_tag_delta_groups(!.Info, TagGroups),
-        Action = leave(TagGroups),
+        Action = leave,
         MessageUpdate = clear_message
     ;
         Key = char('r')
@@ -1802,20 +1786,29 @@ prompt_ordering(Screen, MaybeOrdering, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred get_tag_delta_groups(thread_pager_info::in,
-    map(set(tag_delta), list(message_id))::out) is det.
+:- pred get_effects(thread_pager_info::in, thread_pager_effects::out) is det.
 
-get_tag_delta_groups(Info, TagGroups) :-
+get_effects(Info, Effects) :-
     Scrollable = Info ^ tp_scrollable,
     Lines = get_lines(Scrollable),
-    version_array.foldl(get_changed_status_messages_2, Lines,
-        map.init, TagGroups).
+    version_array.foldl(get_overall_tags, Lines,
+        set.init, TagSet),
+    version_array.foldl(get_changed_status_messages, Lines,
+        map.init, TagGroups),
+    AddedMessages = Info ^ tp_added_messages,
+    Effects = thread_pager_effects(TagSet, TagGroups, AddedMessages).
 
-:- pred get_changed_status_messages_2(thread_line::in,
+:- pred get_overall_tags(thread_line::in, set(tag)::in, set(tag)::out) is det.
+
+get_overall_tags(Line, !TagSet) :-
+    CurrTags = Line ^ tp_curr_tags,
+    set.union(CurrTags, !TagSet).
+
+:- pred get_changed_status_messages(thread_line::in,
     map(set(tag_delta), list(message_id))::in,
     map(set(tag_delta), list(message_id))::out) is det.
 
-get_changed_status_messages_2(Line, !TagGroups) :-
+get_changed_status_messages(Line, !TagGroups) :-
     TagSet = get_tag_delta_set(Line),
     ( set.non_empty(TagSet) ->
         MessageId = Line ^ tp_message ^ m_id,

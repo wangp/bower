@@ -21,6 +21,7 @@
 :- import_module bool.
 :- import_module cord.
 :- import_module list.
+:- import_module map.
 :- import_module maybe.
 :- import_module int.
 :- import_module list.
@@ -299,17 +300,12 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         flush_async_with_progress(Screen, !IO),
         MaybeSearch = !.IndexInfo ^ i_internal_search,
         CommonHistory0 = !.IndexInfo ^ i_common_history,
-        open_thread_pager(Screen, ThreadId, MaybeSearch, NeedRefresh,
+        open_thread_pager(Screen, ThreadId, MaybeSearch, TagUpdates,
             CommonHistory0, CommonHistory, !IO),
+        effect_thread_pager_changes(TagUpdates, !IndexInfo, !IO),
         % In case of resize.
         recreate_screen(Screen, NewScreen, !IndexInfo, !IO),
         !IndexInfo ^ i_common_history := CommonHistory,
-        (
-            NeedRefresh = yes,
-            refresh_index_line(NewScreen, ThreadId, !IndexInfo, !IO)
-        ;
-            NeedRefresh = no
-        ),
         index_loop(NewScreen, !.IndexInfo, !IO)
     ;
         Action = enter_limit,
@@ -714,6 +710,40 @@ enter(Info, Action) :-
     ;
         Action = continue
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred effect_thread_pager_changes(thread_pager_effects::in,
+    index_info::in, index_info::out, io::di, io::uo) is det.
+
+effect_thread_pager_changes(Effects, !Info, !IO) :-
+    Effects = thread_pager_effects(TagSet, TagGroups, AddedMessages),
+    Scrollable0 = !.Info ^ i_scrollable,
+    ( get_cursor_line(Scrollable0, _, CursorLine0) ->
+        set_index_line_tags(TagSet, CursorLine0, CursorLine1),
+        % Increment the total number of messages.  Too bad we don't know if the
+        % matched number should be increased as well.
+        Total1 = CursorLine1 ^ i_total,
+        CursorLine = CursorLine1 ^ i_total := Total1 + AddedMessages,
+        set_cursor_line(CursorLine, Scrollable0, Scrollable),
+        !Info ^ i_scrollable := Scrollable,
+        map.foldl(async_tag_messages, TagGroups, !IO)
+    ;
+        unexpected($module, $pred, "cursor not on expected line")
+    ).
+
+:- pred set_index_line_tags(set(tag)::in, index_line::in, index_line::out)
+    is det.
+
+set_index_line_tags(TagSet, Line0, Line) :-
+    Line0 = index_line(ThreadId, Selected,
+        _Unread0, _Replied0, _Deleted0, _Flagged0, Date, Authors, Subject,
+        _TagSet0, _NonstdTagsWidth, Matched, Total),
+    get_standard_tag_state(TagSet, Unread, Replied, Deleted, Flagged),
+    get_nonstandard_tags_width(TagSet, NonstdTagsWidth),
+    Line = index_line(ThreadId, Selected,
+        Unread, Replied, Deleted, Flagged, Date, Authors, Subject,
+        TagSet, NonstdTagsWidth, Matched, Total).
 
 %-----------------------------------------------------------------------------%
 
@@ -1280,6 +1310,20 @@ async_tag_threads(TagDeltas, ThreadIds, !IO) :-
     get_notmuch_prefix(Notmuch, !IO),
     TagDeltaStrings = list.map(tag_delta_to_string, TagDeltas),
     SearchTerms = list.map(thread_id_to_search_term, ThreadIds),
+    Args = list.condense([
+        ["tag"], TagDeltaStrings, ["--"], SearchTerms
+    ]),
+    Op = async_shell_command(Notmuch, Args, async_tag_attempts),
+    push_async(Op, !IO).
+
+:- pred async_tag_messages(set(tag_delta)::in, list(message_id)::in,
+    io::di, io::uo) is det.
+
+async_tag_messages(TagDeltaSet, MessageIds, !IO) :-
+    set.to_sorted_list(TagDeltaSet, TagDeltas),
+    get_notmuch_prefix(Notmuch, !IO),
+    TagDeltaStrings = list.map(tag_delta_to_string, TagDeltas),
+    SearchTerms = list.map(message_id_to_search_term, MessageIds),
     Args = list.condense([
         ["tag"], TagDeltaStrings, ["--"], SearchTerms
     ]),
