@@ -36,6 +36,7 @@
 :- import_module curs.panel.
 :- import_module data.
 :- import_module maildir.
+:- import_module prog_config.
 :- import_module recall.
 :- import_module scrollable.
 :- import_module search_term.
@@ -901,17 +902,11 @@ modify_tag_cursor_line(ModifyPred, Screen, !Info, !IO) :-
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
         ThreadId = CursorLine0 ^ i_id,
         ( ModifyPred(CursorLine0, CursorLine, TagDelta) ->
-            tag_threads([TagDelta], [ThreadId], Res, !IO),
-            (
-                Res = ok,
-                set_cursor_line(CursorLine, Scrollable0, Scrollable),
-                !Info ^ i_scrollable := Scrollable,
-                move_cursor(Screen, 1, _MessageUpdate, !Info),
-                MessageUpdate = clear_message
-            ;
-                Res = error(Error),
-                MessageUpdate = set_warning(io.error_message(Error))
-            )
+            async_tag_threads([TagDelta], [ThreadId], !IO),
+            set_cursor_line(CursorLine, Scrollable0, Scrollable),
+            !Info ^ i_scrollable := Scrollable,
+            move_cursor(Screen, 1, _MessageUpdate, !Info),
+            MessageUpdate = clear_message
         ;
             MessageUpdate = set_warning("Refusing to tag multiple messages.")
         )
@@ -1292,6 +1287,19 @@ toggle_async_test(Screen, !Info, !IO) :-
         MessageUpdate = set_warning("No thread."),
         update_message(Screen, MessageUpdate, !IO)
     ).
+
+:- pred async_tag_threads(list(tag_delta)::in, list(thread_id)::in,
+    io::di, io::uo) is det.
+
+async_tag_threads(TagDeltas, ThreadIds, !IO) :-
+    get_notmuch_prefix(Notmuch, !IO),
+    TagDeltaStrings = list.map(tag_delta_to_string, TagDeltas),
+    SearchTerms = list.map(thread_id_to_search_term, ThreadIds),
+    Args = list.condense([
+        ["tag"], TagDeltaStrings, ["--"], SearchTerms
+    ]),
+    Op = async_shell_command(Notmuch, Args, async_tag_attempts),
+    push_async(Op, !IO).
 
 :- func async_tag_attempts = int.
 
