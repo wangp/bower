@@ -254,6 +254,12 @@ text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO) :-
             ),
             text_entry(Screen, Prompt, Before1, After, SubInfo1, Return, !IO)
         ;
+            Key = timeout_or_error
+        ->
+            % Don't clear first time flag on a timeout.
+            text_entry_real(Screen, Prompt, Before, After, SubInfo, Return,
+                !IO)
+        ;
             text_entry(Screen, Prompt, Before, After, SubInfo, Return, !IO)
         )
     ).
