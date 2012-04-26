@@ -1058,8 +1058,7 @@ bulk_tag(Screen, Done, !Info, !IO) :-
                 !Info, !IO),
             Done = yes
         ; KeyCode = char('N') ->
-            bulk_toggle_unread(MessageUpdate, !Info, !IO),
-            Done = yes
+            bulk_toggle_unread(MessageUpdate, Done, !Info, !IO)
         ; KeyCode = char('''') ->
             TagDeltas = [tag_delta("-unread")],
             AddTags = set.init,
@@ -1153,10 +1152,10 @@ update_selected_line_for_tag_changes(AddTags, RemoveTags, Line0, Line,
         Line = Line0
     ).
 
-:- pred bulk_toggle_unread(message_update::out,
+:- pred bulk_toggle_unread(message_update::out, bool::out,
     index_info::in, index_info::out, io::di, io::uo) is det.
 
-bulk_toggle_unread(MessageUpdate, !Info, !IO) :-
+bulk_toggle_unread(MessageUpdate, Done, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,
     Lines0 = get_lines_list(Scrollable0),
     ( common_unread_state(Lines0, no, yes(CommonUnreadState)) ->
@@ -1172,10 +1171,12 @@ bulk_toggle_unread(MessageUpdate, !Info, !IO) :-
             RemoveTags = set.make_singleton_set(tag("unread"))
         ),
         bulk_tag_changes([TagDelta], AddTags, RemoveTags, MessageUpdate,
-            !Info, !IO)
+            !Info, !IO),
+        Done = yes
     ;
         Message = "Selected threads differ in unread state.",
-        MessageUpdate = set_info(Message)
+        MessageUpdate = set_info(Message),
+        Done = no
     ).
 
 :- pred common_unread_state(list(index_line)::in,
