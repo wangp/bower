@@ -77,6 +77,7 @@
                 tp_clean_from   :: string,
                 tp_prev_tags    :: set(tag),
                 tp_curr_tags    :: set(tag),
+                tp_selected     :: selected,
                 tp_unread       :: unread,          % cached from tp_curr_tags
                 tp_replied      :: replied,         % cached from tp_curr_tags
                 tp_deleted      :: deleted,         % cached from tp_curr_tags
@@ -85,6 +86,10 @@
                 tp_reldate      :: string,
                 tp_subject      :: maybe(string)
             ).
+
+:- type selected
+    --->    not_selected
+    ;       selected.
 
 :- type graphic
     --->    blank
@@ -439,8 +444,8 @@ make_thread_line(Nowish, Message, MaybeParentId, MaybeGraphics, PrevSubject,
         MaybeSubject = yes(Subject)
     ),
     Line = thread_line(Message, MaybeParentId, From, Tags, Tags,
-        Unread, Replied, Deleted, Flagged, MaybeGraphics, RelDate,
-        MaybeSubject).
+        not_selected, Unread, Replied, Deleted, Flagged, MaybeGraphics,
+        RelDate, MaybeSubject).
 
 :- func clean_email_address(string) = string.
 
@@ -498,7 +503,7 @@ create_tag_delta_map(ThreadLine, !DeltaMap) :-
 
 restore_tag_deltas(DeltaMap, ThreadLine0, ThreadLine) :-
     ThreadLine0 = thread_line(Message, ParentId, From, PrevTags, CurrTags0,
-        _Unread, _Replied, _Deleted, _Flagged, ModeGraphics, RelDate,
+        Selected, _Unread, _Replied, _Deleted, _Flagged, ModeGraphics, RelDate,
         MaybeSubject),
     MessageId = Message ^ m_id,
     ( map.search(DeltaMap, MessageId, Deltas) ->
@@ -507,7 +512,7 @@ restore_tag_deltas(DeltaMap, ThreadLine0, ThreadLine) :-
         set.union(CurrTags1, AddTags, CurrTags),
         get_standard_tag_state(CurrTags, Unread, Replied, Deleted, Flagged),
         ThreadLine = thread_line(Message, ParentId, From, PrevTags, CurrTags,
-            Unread, Replied, Deleted, Flagged, ModeGraphics, RelDate,
+            Selected, Unread, Replied, Deleted, Flagged, ModeGraphics, RelDate,
             MaybeSubject)
     ;
         ThreadLine = ThreadLine0
@@ -768,6 +773,17 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ->
         Action = prompt_tag("-"),
         MessageUpdate = clear_message
+    ;
+        Key = char('t')
+    ->
+        toggle_select(!Info),
+        next_message(MessageUpdate, !Info),
+        Action = continue
+    ;
+        Key = char('T')
+    ->
+        unselect_all(MessageUpdate, !Info),
+        Action = continue
     ;
         Key = char('v')
     ->
@@ -1147,15 +1163,17 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
                     validate_tag_deltas(Words, _TagDeltas, AddTags, RemoveTags)
                 ->
                     CursorLine0 = thread_line(Message, ParentId, From,
-                        PrevTags, CurrTags0, _Unread, _Replied, _Deleted,
-                        _Flagged, ModeGraphics, RelDate, MaybeSubject),
+                        PrevTags, CurrTags0, Selected,
+                        _Unread, _Replied, _Deleted, _Flagged,
+                        ModeGraphics, RelDate, MaybeSubject),
                     % Notmuch performs tag removals before addition.
                     set.difference(CurrTags0, RemoveTags, CurrTags1),
                     set.union(CurrTags1, AddTags, CurrTags),
                     get_standard_tag_state(CurrTags, Unread, Replied, Deleted,
                         Flagged),
                     CursorLine = thread_line(Message, ParentId, From,
-                        PrevTags, CurrTags, Unread, Replied, Deleted, Flagged,
+                        PrevTags, CurrTags, Selected,
+                        Unread, Replied, Deleted, Flagged,
                         ModeGraphics, RelDate, MaybeSubject),
                     set_cursor_line(CursorLine, Scrollable0, Scrollable),
                     !Info ^ tp_scrollable := Scrollable
@@ -1173,6 +1191,42 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
     ;
         true
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred toggle_select(thread_pager_info::in, thread_pager_info::out) is det.
+
+toggle_select(!Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
+        Selected0 = CursorLine0 ^ tp_selected,
+        (
+            Selected0 = selected,
+            Selected = not_selected
+        ;
+            Selected0 = not_selected,
+            Selected = selected
+        ),
+        CursorLine = CursorLine0 ^ tp_selected := Selected,
+        set_cursor_line(CursorLine, Scrollable0, Scrollable),
+        !Info ^ tp_scrollable := Scrollable
+    ;
+        true
+    ).
+
+:- pred unselect_all(message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+unselect_all(MessageUpdate, !Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    map_lines(unselect_line, Scrollable0, Scrollable),
+    !Info ^ tp_scrollable := Scrollable,
+    MessageUpdate = set_info("Unselected all messages.").
+
+:- pred unselect_line(thread_line::in, thread_line::out) is det.
+
+unselect_line(!Line) :-
+    !Line ^ tp_selected := not_selected.
 
 %-----------------------------------------------------------------------------%
 
@@ -1604,7 +1658,7 @@ draw_sep(Cols, MaybeSepPanel, !IO) :-
 
 draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
     Line = thread_line(_Message, _ParentId, From, _PrevTags, CurrTags,
-        Unread, Replied, Deleted, Flagged, MaybeGraphics, RelDate,
+        Selected, Unread, Replied, Deleted, Flagged, MaybeGraphics, RelDate,
         MaybeSubject),
     (
         IsCursor = yes,
@@ -1614,6 +1668,14 @@ draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         panel.attr_set(Panel, fg_bg(blue, black) + bold, !IO)
     ),
     my_addstr_fixed(Panel, 13, RelDate, ' ', !IO),
+    (
+        Selected = selected,
+        cond_attr_set(Panel, fg_bg(magenta, black) + bold, IsCursor, !IO),
+        my_addstr(Panel, "*", !IO)
+    ;
+        Selected = not_selected,
+        my_addstr(Panel, " ", !IO)
+    ),
     cond_attr_set(Panel, normal, IsCursor, !IO),
     (
         Unread = unread,

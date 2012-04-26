@@ -151,6 +151,8 @@ This view pages through an entire thread.  The keys are:
     d               add 'deleted' tag on current message
     u               remove 'deleted' tag on current message
     +, -            add/remove arbitrary tags
+    t               select/unselect message
+    T               unselect all messages
 
     r               reply to sender
     e               reply to everyone
