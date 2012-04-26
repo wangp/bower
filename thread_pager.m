@@ -108,6 +108,7 @@
     ;       resize
     ;       start_reply(message, reply_kind)
     ;       prompt_tag(string)
+    ;       bulk_tag(keep_selection)
     ;       prompt_save_part(part, maybe(string))
     ;       prompt_open_part(part)
     ;       prompt_open_url(string)
@@ -117,6 +118,17 @@
     ;       leave(
                 map(set(tag_delta), list(message_id))
                 % Group messages by the tag changes to be applied.
+            ).
+
+:- type keep_selection
+    --->    clear_selection
+    ;       keep_selection.
+
+:- type arbitrary_tag_changes
+    --->    no
+    ;       yes(
+                add_tags    :: set(tag),
+                remove_tags :: set(tag)
             ).
 
 :- type message_flat
@@ -565,6 +577,18 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         prompt_tag(Screen, Initial, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
+        Action = bulk_tag(KeepSelection),
+        bulk_tag(Screen, Done, !Info, !IO),
+        (
+            Done = yes,
+            KeepSelection = clear_selection
+        ->
+            unselect_all(_MessageUpdate, !Info)
+        ;
+            true
+        ),
+        thread_pager_loop(Screen, !Info, !IO)
+    ;
         Action = prompt_save_part(Part, MaybeSubject),
         prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
@@ -784,6 +808,16 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ->
         unselect_all(MessageUpdate, !Info),
         Action = continue
+    ;
+        Key = char('''')
+    ->
+        Action = bulk_tag(clear_selection),
+        MessageUpdate = clear_message
+    ;
+        Key = char('"')
+    ->
+        Action = bulk_tag(keep_selection),
+        MessageUpdate = clear_message
     ;
         Key = char('v')
     ->
@@ -1145,51 +1179,65 @@ toggle_deleted(Deleted, !Info) :-
 
 prompt_tag(Screen, Initial, !Info, !IO) :-
     Scrollable0 = !.Info ^ tp_scrollable,
-    History0 = !.Info ^ tp_common_history ^ ch_tag_history,
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
-        Completion = complete_tags(["+", "-"]),
-        FirstTime = no,
-        text_entry_full(Screen, "Change tags: ", History0, Initial,
-            Completion, FirstTime, Return, !IO),
+        prompt_arbitrary_tag_changes(Screen, Initial, TagChanges,
+            !Info, !IO),
         (
-            Return = yes(String),
-            (
-                Words = string.words(String),
-                Words = [_ | _]
-            ->
-                add_history_nodup(String, History0, History),
-                !Info ^ tp_common_history ^ ch_tag_history := History,
-                (
-                    validate_tag_deltas(Words, _TagDeltas, AddTags, RemoveTags)
-                ->
-                    CursorLine0 = thread_line(Message, ParentId, From,
-                        PrevTags, CurrTags0, Selected,
-                        _Unread, _Replied, _Deleted, _Flagged,
-                        ModeGraphics, RelDate, MaybeSubject),
-                    % Notmuch performs tag removals before addition.
-                    set.difference(CurrTags0, RemoveTags, CurrTags1),
-                    set.union(CurrTags1, AddTags, CurrTags),
-                    get_standard_tag_state(CurrTags, Unread, Replied, Deleted,
-                        Flagged),
-                    CursorLine = thread_line(Message, ParentId, From,
-                        PrevTags, CurrTags, Selected,
-                        Unread, Replied, Deleted, Flagged,
-                        ModeGraphics, RelDate, MaybeSubject),
-                    set_cursor_line(CursorLine, Scrollable0, Scrollable),
-                    !Info ^ tp_scrollable := Scrollable
-                ;
-                    update_message(Screen,
-                        set_warning("Tags must be of the form +tag or -tag."),
-                        !IO)
-                )
-            ;
-                true
-            )
+            TagChanges = yes(AddTags, RemoveTags),
+            CursorLine0 = thread_line(Message, ParentId, From,
+                PrevTags, CurrTags0, Selected,
+                _Unread, _Replied, _Deleted, _Flagged,
+                ModeGraphics, RelDate, MaybeSubject),
+            % Notmuch performs tag removals before addition.
+            set.difference(CurrTags0, RemoveTags, CurrTags1),
+            set.union(CurrTags1, AddTags, CurrTags),
+            get_standard_tag_state(CurrTags, Unread, Replied, Deleted,
+                Flagged),
+            CursorLine = thread_line(Message, ParentId, From,
+                PrevTags, CurrTags, Selected,
+                Unread, Replied, Deleted, Flagged,
+                ModeGraphics, RelDate, MaybeSubject),
+            set_cursor_line(CursorLine, Scrollable0, Scrollable),
+            !Info ^ tp_scrollable := Scrollable
         ;
-            Return = no
+            TagChanges = no
         )
     ;
         true
+    ).
+
+:- pred prompt_arbitrary_tag_changes(screen::in, string::in,
+    arbitrary_tag_changes::out, thread_pager_info::in, thread_pager_info::out,
+    io::di, io::uo) is det.
+
+prompt_arbitrary_tag_changes(Screen, Initial, TagChanges, !Info, !IO) :-
+    History0 = !.Info ^ tp_common_history ^ ch_tag_history,
+    Completion = complete_tags(["+", "-"]),
+    FirstTime = no,
+    text_entry_full(Screen, "Change tags: ", History0, Initial,
+        Completion, FirstTime, Return, !IO),
+    (
+        Return = yes(String),
+        (
+            Words = string.words(String),
+            Words = [_ | _]
+        ->
+            add_history_nodup(String, History0, History),
+            !Info ^ tp_common_history ^ ch_tag_history := History,
+            ( validate_tag_deltas(Words, _TagDeltas, AddTags, RemoveTags) ->
+                TagChanges = yes(AddTags, RemoveTags)
+            ;
+                TagChanges = no,
+                update_message(Screen,
+                    set_warning("Tags must be of the form +tag or -tag."),
+                    !IO)
+            )
+        ;
+            TagChanges = no
+        )
+    ;
+        Return = no,
+        TagChanges = no
     ).
 
 %-----------------------------------------------------------------------------%
@@ -1227,6 +1275,164 @@ unselect_all(MessageUpdate, !Info) :-
 
 unselect_line(!Line) :-
     !Line ^ tp_selected := not_selected.
+
+%-----------------------------------------------------------------------------%
+
+:- pred bulk_tag(screen::in, bool::out,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+
+bulk_tag(Screen, Done, !Info, !IO) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    Lines0 = get_lines_list(Scrollable0),
+    ( any_selected_line(Lines0) ->
+        Prompt = "Action: (d)elete, (u)ndelete, (N) toggle unread, " ++
+            "(') mark read, (+/-) change tags",
+        update_message_immed(Screen, set_prompt(Prompt), !IO),
+        get_keycode(KeyCode, !IO),
+        ( KeyCode = char('-') ->
+            bulk_arbitrary_tag_changes(Screen, "-", MessageUpdate, !Info, !IO),
+            Done = yes
+        ; KeyCode = char('+') ->
+            bulk_arbitrary_tag_changes(Screen, "+", MessageUpdate, !Info, !IO),
+            Done = yes
+        ; KeyCode = char('d') ->
+            AddTags = set.make_singleton_set(tag("deleted")),
+            RemoveTags = set.init,
+            bulk_tag_changes(AddTags, RemoveTags, MessageUpdate, !Info, !IO),
+            Done = yes
+        ; KeyCode = char('u') ->
+            AddTags = set.init,
+            RemoveTags = set.make_singleton_set(tag("deleted")),
+            bulk_tag_changes(AddTags, RemoveTags, MessageUpdate, !Info, !IO),
+            Done = yes
+        ; KeyCode = char('N') ->
+            bulk_toggle_unread(MessageUpdate, Done, !Info, !IO)
+        ; KeyCode = char('''') ->
+            AddTags = set.init,
+            RemoveTags = set.make_singleton_set(tag("unread")),
+            bulk_tag_changes(AddTags, RemoveTags, MessageUpdate, !Info, !IO),
+            Done = yes
+        ;
+            MessageUpdate = set_info("No changes."),
+            Done = no
+        )
+    ;
+        MessageUpdate = set_warning("No messages selected."),
+        Done = no
+    ),
+    update_message(Screen, MessageUpdate, !IO).
+
+:- pred any_selected_line(list(thread_line)::in) is semidet.
+
+any_selected_line(Lines) :-
+    list.member(Line, Lines),
+    Line ^ tp_selected = selected.
+
+:- pred bulk_arbitrary_tag_changes(screen::in, string::in, message_update::out,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+
+bulk_arbitrary_tag_changes(Screen, Initial, MessageUpdate, !Info, !IO) :-
+    prompt_arbitrary_tag_changes(Screen, Initial, TagChanges, !Info, !IO),
+    (
+        TagChanges = yes(AddTags, RemoveTags),
+        bulk_tag_changes(AddTags, RemoveTags, MessageUpdate, !Info, !IO)
+    ;
+        TagChanges = no,
+        MessageUpdate = clear_message
+    ).
+
+:- pred bulk_tag_changes(set(tag)::in, set(tag)::in, message_update::out,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+
+bulk_tag_changes(AddTags, RemoveTags, MessageUpdate, !Info, !IO) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    Lines0 = get_lines_list(Scrollable0),
+    list.map_foldl(update_selected_line_for_tag_changes(AddTags, RemoveTags),
+        Lines0, Lines, [], SelectedIds),
+    (
+        SelectedIds = [_ | _],
+        set_lines_list(Lines, Scrollable0, Scrollable),
+        !Info ^ tp_scrollable := Scrollable,
+        list.length(SelectedIds, NumMessages),
+        string.format("Modified tags in %d messages.", [i(NumMessages)],
+            Message),
+        MessageUpdate = set_info(Message)
+    ;
+        SelectedIds = [],
+        MessageUpdate = set_info("No changes.")
+    ).
+
+:- pred update_selected_line_for_tag_changes(set(tag)::in, set(tag)::in,
+    thread_line::in, thread_line::out,
+    list(message_id)::in, list(message_id)::out) is det.
+
+update_selected_line_for_tag_changes(AddTags, RemoveTags, Line0, Line,
+        !MessageIds) :-
+    Line0 = thread_line(Message, MaybeParentId, From, PrevTags, CurrTags0,
+        Selected, _Unread, _Replied, _Deleted, _Flagged, MaybeGraphics,
+        RelDate, MaybeSubject),
+    MessageId = Message ^ m_id,
+    (
+        Selected = selected,
+        % Notmuch performs tag removals before addition.
+        TagSet0 = CurrTags0,
+        set.difference(TagSet0, RemoveTags, TagSet1),
+        set.union(TagSet1, AddTags, TagSet),
+        TagSet \= TagSet0
+    ->
+        CurrTags = TagSet,
+        get_standard_tag_state(CurrTags, Unread, Replied, Deleted, Flagged),
+        Line = thread_line(Message, MaybeParentId, From, PrevTags, CurrTags,
+            Selected, Unread, Replied, Deleted, Flagged, MaybeGraphics,
+            RelDate, MaybeSubject),
+        list.cons(MessageId, !MessageIds)
+    ;
+        Line = Line0
+    ).
+
+:- pred bulk_toggle_unread(message_update::out, bool::out,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+
+bulk_toggle_unread(MessageUpdate, Done, !Info, !IO) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    Lines0 = get_lines_list(Scrollable0),
+    ( common_unread_state(Lines0, no, yes(CommonUnreadState)) ->
+        (
+            CommonUnreadState = read,
+            AddTags = set.make_singleton_set(tag("unread")),
+            RemoveTags = set.init
+        ;
+            CommonUnreadState = unread,
+            AddTags = set.init,
+            RemoveTags = set.make_singleton_set(tag("unread"))
+        ),
+        bulk_tag_changes(AddTags, RemoveTags, MessageUpdate, !Info, !IO),
+        Done = yes
+    ;
+        Message = "Selected messages differ in unread state.",
+        MessageUpdate = set_info(Message),
+        Done = no
+    ).
+
+:- pred common_unread_state(list(thread_line)::in,
+    maybe(unread)::in, maybe(unread)::out) is semidet.
+
+common_unread_state([], State, State).
+common_unread_state([H | T], State0, State) :-
+    Selected = H ^ tp_selected,
+    (
+        Selected = selected,
+        State0 = no,
+        State1 = yes(H ^ tp_unread),
+        common_unread_state(T, State1, State)
+    ;
+        Selected = selected,
+        State0 = yes(H ^ tp_unread),
+        common_unread_state(T, State0, State)
+    ;
+        Selected = not_selected,
+        common_unread_state(T, State0, State)
+    ).
 
 %-----------------------------------------------------------------------------%
 

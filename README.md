@@ -153,6 +153,8 @@ This view pages through an entire thread.  The keys are:
     +, -            add/remove arbitrary tags
     t               select/unselect message
     T               unselect all messages
+    '               bulk tag changes on selected threads
+    "               same as ' but retain selections afterwards
 
     r               reply to sender
     e               reply to everyone
