@@ -53,7 +53,7 @@ posix_spawn(Prog, Args, Res, !IO) :-
         may_not_duplicate],
 "
     pid_t pid;
-    const posix_spawn_file_actions_t *file_actions = NULL;
+    posix_spawn_file_actions_t file_actions;
     posix_spawnattr_t attr;
     char *argv[NumArgs + 1];    /* C99 stack allocation */
     int i;
@@ -67,9 +67,18 @@ posix_spawn(Prog, Args, Res, !IO) :-
     }
     argv[i] = NULL;
 
+    /*
+    ** Close stdin in the child.  This prevents interference with reading
+    ** input in the parent process.
+    */
+    posix_spawn_file_actions_init(&file_actions);
+    posix_spawn_file_actions_addclose(&file_actions, STDIN_FILENO);
     posix_spawnattr_init(&attr);
-    rc = posix_spawnp(&pid, Prog, file_actions, &attr, argv, environ);
+
+    rc = posix_spawnp(&pid, Prog, &file_actions, &attr, argv, environ);
+
     posix_spawnattr_destroy(&attr);
+    posix_spawn_file_actions_destroy(&file_actions);
 
     if (rc == 0) {
         Pid = pid;
