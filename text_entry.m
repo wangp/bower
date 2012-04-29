@@ -26,7 +26,8 @@
                 and_tags    :: set(string),
                 % At least one selected message has these tags.
                 or_tags     :: set(string)
-            ).
+            )
+    ;       complete_config_key(string). % config section name
 
 :- func init_history = history.
 
@@ -417,6 +418,7 @@ forward_for_completion(Type, Before0, Before, After0, After) :-
     ;
         ( Type = complete_tags(_)
         ; Type = complete_tags_smart(_, _)
+        ; Type = complete_config_key(_)
         ),
         list.takewhile(non_whitespace, After0, Take, After),
         Before = list.reverse(Take) ++ Before0
@@ -455,6 +457,13 @@ do_completion(Orig, Replacement, After, SubInfo0, MaybeSubInfo, !IO) :-
         string.from_rev_char_list(Word, WordString),
         generate_smart_tag_choices(AndTags, OrTags, EnteredTags, WordString,
             Choices, !IO)
+    ;
+        Choices0 = [],
+        Type = complete_config_key(SectionName),
+        list.takewhile(non_whitespace, Orig, Word, Untouched),
+        list.length(Untouched, CompletionPoint),
+        string.from_rev_char_list(Word, WordString),
+        generate_config_key_choices(SectionName, WordString, Choices, !IO)
     ;
         Choices0 = [_ | _],
         Choices = Choices0,
@@ -622,6 +631,48 @@ get_notmuch_all_tags(TagsList, !IO) :-
 filter_tag_choice(Trigger, TagPrefix, Tag, Choice) :-
     string.prefix(Tag, TagPrefix),
     Choice = Trigger ++ Tag.
+
+%-----------------------------------------------------------------------------%
+
+:- pred generate_config_key_choices(string::in, string::in, list(string)::out,
+    io::di, io::uo) is det.
+
+generate_config_key_choices(SectionName, OrigString, Choices, !IO) :-
+    get_notmuch_prefix(Notmuch, !IO),
+    args_to_quoted_command(["config", "list"], Command),
+    popen(Notmuch ++ Command, CallRes, !IO),
+    (
+        CallRes = ok(ItemsString),
+        % The empty string following the final newline is not an item.
+        ItemsList = string.words_separator(unify('\n'), ItemsString),
+        list.filter_map(
+            filter_config_key_choice(SectionName ++ ".", OrigString),
+            ItemsList, Choices)
+    ;
+        CallRes = error(_),
+        Choices = []
+    ).
+
+:- pred filter_config_key_choice(string::in, string::in, string::in,
+    string::out) is semidet.
+
+filter_config_key_choice(SectionNameDot, OrigString, Input, Key) :-
+    string.remove_prefix(SectionNameDot, Input, InputSansSection),
+    string.prefix(InputSansSection, OrigString),
+    KeyStart = 0,
+    find_first_char(InputSansSection, '=', KeyStart, KeyEnd),
+    KeyEnd > KeyStart,
+    string.between(InputSansSection, KeyStart, KeyEnd, Key).
+
+:- pred find_first_char(string::in, char::in, int::in, int::out) is semidet.
+
+find_first_char(S, FindChar, I0, I) :-
+    string.unsafe_index_next(S, I0, I1, C),
+    ( C = FindChar ->
+        I = I0
+    ;
+        find_first_char(S, FindChar, I1, I)
+    ).
 
 %-----------------------------------------------------------------------------%
 
