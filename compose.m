@@ -132,8 +132,8 @@ init_compose_history = compose_history(init_history, init_history).
 start_compose(Screen, Transition, !History, !IO) :-
     get_from(From, !IO),
     !.History = compose_history(ToHistory0, SubjectHistory0),
-    text_entry_initial(Screen, "To: ", ToHistory0, "", complete_none, MaybeTo,
-        !IO),
+    text_entry_initial(Screen, "To: ", ToHistory0, "",
+        complete_config_key(addressbook_section), MaybeTo, !IO),
     (
         MaybeTo = yes(To),
         add_history_nodup(To, ToHistory0, ToHistory),
@@ -612,7 +612,14 @@ resize_staging_screen(Screen0, Screen, StagingInfo, PagerInfo0, PagerInfo,
 edit_header(Screen, HeaderType, !StagingInfo, !IO) :-
     Headers0 = !.StagingInfo ^ si_headers,
     get_header(HeaderType, Headers0, Prompt, Initial, ExpandAddresses),
-    text_entry_initial(Screen, Prompt, init_history, Initial, complete_none,
+    (
+        ExpandAddresses = yes,
+        Completion = complete_config_key(addressbook_section)
+    ;
+        ExpandAddresses = no,
+        Completion = complete_none
+    ),
+    text_entry_initial(Screen, Prompt, init_history, Initial, Completion,
         Return, !IO),
     (
         Return = yes(Value0),
@@ -665,7 +672,7 @@ expand_aliases(String0, String, !IO) :-
 expand_aliases_2(Word0, Expansion, !IO) :-
     Word1 = string.strip(Word0),
     ( string.all_match(is_alias_char, Word1) ->
-        Key = "bower:addressbook." ++ Word1,
+        Key = addressbook_section ++ "." ++ Word1,
         get_notmuch_config(Key, MaybeValue, !IO),
         (
             MaybeValue = ok(Expansion)
@@ -682,6 +689,10 @@ expand_aliases_2(Word0, Expansion, !IO) :-
 is_alias_char(C) :- char.is_alnum_or_underscore(C).
 is_alias_char('-').
 is_alias_char('+').
+
+:- func addressbook_section = string.
+
+addressbook_section = "bower:addressbook".
 
 %-----------------------------------------------------------------------------%
 
