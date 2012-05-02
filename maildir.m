@@ -6,6 +6,7 @@
 
 :- import_module io.
 :- import_module list.
+:- import_module maybe.
 
 :- import_module data.
 :- import_module tags.
@@ -16,7 +17,8 @@
 
 :- pred add_draft(string::in, io.res::out, io::di, io::uo) is det.
 
-:- pred find_drafts(list(message_id)::out, io::di, io::uo) is det.
+:- pred find_drafts(maybe(thread_id)::in, list(message_id)::out,
+    io::di, io::uo) is det.
 
 :- pred tag_messages(list(tag_delta)::in, list(message_id)::in, io.res::out,
     io::di, io::uo) is det.
@@ -73,10 +75,17 @@ call_notmuch_deliver(FileName, Folder, TagOps, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-find_drafts(MessageIds, !IO) :-
+find_drafts(MaybeThreadId, MessageIds, !IO) :-
+    (
+        MaybeThreadId = yes(ThreadId),
+        ThreadSearchTerm = [thread_id_to_search_term(ThreadId)]
+    ;
+        MaybeThreadId = no,
+        ThreadSearchTerm = []
+    ),
     run_notmuch([
         "search", "--format=json", "--output=messages", "--",
-        "tag:draft", "-tag:deleted"
+        "tag:draft", "-tag:deleted" | ThreadSearchTerm
     ], parse_message_id_list, Result, !IO),
     (
         Result = ok(MessageIds)

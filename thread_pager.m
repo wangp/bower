@@ -43,6 +43,7 @@
 :- import_module pager.
 :- import_module prog_config.
 :- import_module quote_arg.
+:- import_module recall.
 :- import_module scrollable.
 :- import_module string_util.
 :- import_module sys_util.
@@ -107,6 +108,7 @@
     --->    continue
     ;       resize
     ;       start_reply(message, reply_kind)
+    ;       start_recall
     ;       prompt_tag(string)
     ;       bulk_tag(keep_selection)
     ;       prompt_save_part(part, maybe(string))
@@ -573,6 +575,24 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         ),
         thread_pager_loop(Screen, !Info, !IO)
     ;
+        Action = start_recall,
+        ThreadId = !.Info ^ tp_thread_id,
+        select_recall(Screen, yes(ThreadId), MaybeSelected, !IO),
+        (
+            MaybeSelected = yes(Message),
+            continue_postponed(Screen, Message, Sent, !IO),
+            (
+                Sent = sent,
+                !Info ^ tp_need_refresh_index := yes,
+                reopen_thread_pager(Screen, !Info, !IO)
+            ;
+                Sent = not_sent
+            )
+        ;
+            MaybeSelected = no
+        ),
+        thread_pager_loop(Screen, !Info, !IO)
+    ;
         Action = prompt_tag(Initial),
         prompt_tag(Screen, Initial, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
@@ -888,6 +908,11 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Key = char('L')
     ->
         reply(!.Info, list_reply, Action, MessageUpdate)
+    ;
+        Key = char('R')
+    ->
+        Action = start_recall,
+        MessageUpdate = no_change
     ;
         Key = code(key_resize)
     ->

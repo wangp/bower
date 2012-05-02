@@ -159,6 +159,7 @@ This view pages through an entire thread.  The keys are:
     r               reply to sender
     e               reply to everyone
     L               reply to list
+    R               recall postponed message
 
     v               highlight next visible attachment or URL
     V               highlight next visible attachment or top of message

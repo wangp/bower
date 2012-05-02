@@ -348,7 +348,7 @@ index_loop(Screen, !.IndexInfo, !IO) :-
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = start_recall,
-        select_recall(Screen, MaybeSelected, !IO),
+        select_recall(Screen, no, MaybeSelected, !IO),
         (
             MaybeSelected = yes(Message),
             continue_postponed(Screen, Message, Sent, !IO),

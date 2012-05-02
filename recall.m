@@ -10,8 +10,8 @@
 :- import_module data.
 :- import_module screen.
 
-:- pred select_recall(screen::in, maybe(message)::out, io::di, io::uo)
-    is det.
+:- pred select_recall(screen::in, maybe(thread_id)::in, maybe(message)::out,
+    io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -54,11 +54,18 @@
 
 %-----------------------------------------------------------------------------%
 
-select_recall(Screen, MaybeSelected, !IO) :-
-    find_drafts(Ids, !IO),
+select_recall(Screen, MaybeThreadId, MaybeSelected, !IO) :-
+    find_drafts(MaybeThreadId, Ids, !IO),
     (
         Ids = [],
-        update_message(Screen, set_warning("No postponed messages."), !IO),
+        (
+            MaybeThreadId = yes(_),
+            Message = "No postponed messages for this thread."
+        ;
+            MaybeThreadId = no,
+            Message = "No postponed messages."
+        ),
+        update_message(Screen, set_warning(Message), !IO),
         MaybeSelected = no
     ;
         Ids = [_ | _],
