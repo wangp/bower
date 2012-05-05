@@ -8,6 +8,7 @@
 # I run bower locally but keep my mail and notmuch on a remote machine,
 # accessed via ssh.  That requires an extra level of shell quoting, which
 # is achieved with a small zsh helper script.
+# You may also like to enable the OpenSSH ControlMaster option.
 ; notmuch=/local/ssh_escape user@host /remote/notmuch
 ; notmuch_deliver=/local/ssh_escape user@host /remote/notmuch-deliver
 

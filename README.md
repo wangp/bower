@@ -55,8 +55,11 @@ If successful, you will get a binary named `bower`.
 Configuration
 =============
 
-The configuration file is called `~/.config/bower/bower.conf`.
+The bower configuration file is located at `~/.config/bower/bower.conf`.
 See `bower.conf.sample` for details.
+
+In particular, bower is designed such that it can be run locally,
+accessing notmuch (and the mail store) on a remote machine via ssh.
 
 
 Usage
