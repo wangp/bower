@@ -1,3 +1,32 @@
+Bower 0.3 (2012-05-05)
+======================
+
+* Add bulk tagging operations; see keys 't', 'T', ' and ".
+* Reply-to-all is now bound to 'e' (everyone).
+* Make 'g'/'G' synonyms for Home/End.
+* '/' now matches tag and attachment file names.
+* '?' performs reverse search.
+* index: Reply directly from index view.
+* index: Support F, [, ] keys.
+* index: Complete tags after "+tag:", "-tag:", "+is:", "-is:".
+* index: Poll for 'unread' instead of not 'sent' messages.
+* thread/pager: 'R' recalls postponed message.
+* thread/pager: 'O' toggles flat message list, ordered by time.
+* thread/pager: Use attachment file extension for temporary files.
+* compose: 'D' discards new changes to postponed message.
+* compose: Expand addressbook aliases after returning from editor.
+* compose: Support changing media type of new attachments.
+* compose: Display new attachment file sizes.
+* compose: Add Date header when postponing drafts.
+* recall: 'd' deletes a draft message.
+* config: Default search terms can be set with the ~default alias.
+* config: Let editor be set in config file.
+* Word-based completion for tag names.
+* Parse and display message/rfc822 parts.
+* Minor UI changes.
+* Bug fixes and optimisations.
+* Statically link Mercury libraries by default.
+
 Bower 0.2 (2012-03-04)
 ======================
 
