@@ -48,7 +48,7 @@ popen(Command, Res, !IO) :-
 :- pragma foreign_proc("C",
     popen_2(Command::in, Errno::out, ExitStatus::out, RevList::uo,
         IO0::di, IO::uo),
-    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+    [will_not_call_mercury, promise_pure, not_thread_safe, tabled_for_io,
         may_not_duplicate],
 "
     static char buf[16384];
