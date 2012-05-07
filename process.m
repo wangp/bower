@@ -35,6 +35,8 @@
 :- pred drain_and_close_pipe(pipe_read::in, io.res(string)::out,
     io::di, io::uo) is det.
 
+:- pred close_pipe(pipe_read::in, io::di, io::uo) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -263,6 +265,21 @@ drain_and_close_pipe(pipe_read(Fd), Res, !IO) :-
         }
     }
 
+    close(Fd);
+").
+
+%-----------------------------------------------------------------------------%
+
+close_pipe(pipe_read(Fd), !IO) :-
+    close_pipe_2(Fd, !IO).
+
+:- pred close_pipe_2(int::in, io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    close_pipe_2(Fd::in, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
+"
     close(Fd);
 ").
 
