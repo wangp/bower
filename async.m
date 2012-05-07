@@ -72,11 +72,7 @@
 :- type async_info
     --->    async_info(
                 ai_queue            :: queue(queue_elem),
-                % Current child process if any, and the SIGCHLD count
-                % before the last async process was started.
-                ai_maybe_pid        :: maybe(pid),
-                ai_current_op       :: async_op,
-                ai_sigchld_count    :: int
+                ai_maybe_child      :: maybe(current_child)
             ).
 
 :- type queue_elem
@@ -86,6 +82,14 @@
 :- type timeout
     --->    timeout(int, int).
 
+:- type current_child
+    --->    current_child(
+                cc_op               :: async_op,
+                cc_pid              :: pid,
+                % The SIGCHLD count before the last async process was started.
+                cc_sigchld_count    :: int
+            ).
+
 :- mutable(async_info, async_info, init_async_info, ground,
     [untrailed, attach_to_io_state]).
 
@@ -93,11 +97,7 @@
 
 :- func init_async_info = async_info.
 
-init_async_info = async_info(queue.init, no, dummy_op, 0).
-
-:- func dummy_op = async_op.
-
-dummy_op = async_shell_command("false", [], 0).
+init_async_info = async_info(queue.init, no).
 
 %-----------------------------------------------------------------------------%
 
@@ -135,23 +135,23 @@ async_count(Count, !IO) :-
     get_async_info(Info, !IO),
     Queue = Info ^ ai_queue,
     queue.length(Queue, QueueLength),
-    MaybePid = Info ^ ai_maybe_pid,
+    MaybeChild = Info ^ ai_maybe_child,
     (
-        MaybePid = yes(_),
+        MaybeChild = yes(_),
         Count = 1 + QueueLength
     ;
-        MaybePid = no,
+        MaybeChild = no,
         Count = QueueLength
     ).
 
 have_child_process(HaveChild, !IO) :-
     get_async_info(Info, !IO),
-    MaybePid = Info ^ ai_maybe_pid,
+    MaybeChild = Info ^ ai_maybe_child,
     (
-        MaybePid = yes(_),
+        MaybeChild = yes(_),
         HaveChild = yes
     ;
-        MaybePid = no,
+        MaybeChild = no,
         HaveChild = no
     ).
 
@@ -161,20 +161,20 @@ have_child_process(HaveChild, !IO) :-
     async_info::in, async_info::out, io::di, io::uo) is det.
 
 do_poll(Blocking, Return, !Info, !IO) :-
-    MaybePid = !.Info ^ ai_maybe_pid,
+    MaybeChild = !.Info ^ ai_maybe_child,
     (
-        MaybePid = no,
+        MaybeChild = no,
         start_next_op(Return, !Info, !IO)
     ;
-        MaybePid = yes(Pid),
-        do_poll_in_progress(Pid, Blocking, Return, !Info, !IO)
+        MaybeChild = yes(Child),
+        do_poll_in_progress(Child, Blocking, Return, !Info, !IO)
     ).
 
-:- pred do_poll_in_progress(pid::in, wait_pid_blocking::in, async_return::out,
-    async_info::in, async_info::out, io::di, io::uo) is det.
+:- pred do_poll_in_progress(current_child::in, wait_pid_blocking::in,
+    async_return::out, async_info::in, async_info::out, io::di, io::uo) is det.
 
-do_poll_in_progress(Pid, Blocking, Return, !Info, !IO) :-
-    Op = !.Info ^ ai_current_op,
+do_poll_in_progress(Child, Blocking, Return, !Info, !IO) :-
+    Child = current_child(Op, Pid, _SigchldCount),
     wait_pid(Pid, Blocking, WaitRes, !IO),
     (
         WaitRes = no_hang,
@@ -198,8 +198,7 @@ do_poll_in_progress(Pid, Blocking, Return, !Info, !IO) :-
             WaitRes = error(Error),
             Return = child_failed(Op, failure_error(Error))
         ),
-        !Info ^ ai_maybe_pid := no,
-        !Info ^ ai_current_op := dummy_op
+        !Info ^ ai_maybe_child := no
     ).
 
 :- pred start_next_op(async_return::out, async_info::in, async_info::out,
@@ -232,12 +231,12 @@ start_next_op(Return, !Info, !IO) :-
     async_info::in, async_info::out, io::di, io::uo) is det.
 
 start_op(Op, Return, !Info, !IO) :-
-    MaybePid0 = !.Info ^ ai_maybe_pid,
+    MaybeChild0 = !.Info ^ ai_maybe_child,
     (
-        MaybePid0 = yes(_),
+        MaybeChild0 = yes(_),
         unexpected($module, $pred, "already have child process")
     ;
-        MaybePid0 = no
+        MaybeChild0 = no
     ),
 
     get_sigchld_count(PreSigchldCount, !IO),
@@ -249,9 +248,8 @@ start_op(Op, Return, !Info, !IO) :-
     posix_spawn(Shell, ShellArgs, SpawnRes, !IO),
     (
         SpawnRes = ok(Pid),
-        !Info ^ ai_maybe_pid := yes(Pid),
-        !Info ^ ai_current_op := Op,
-        !Info ^ ai_sigchld_count := PreSigchldCount,
+        Child = current_child(Op, Pid, PreSigchldCount),
+        !Info ^ ai_maybe_child := yes(Child),
         Return = none
     ;
         SpawnRes = error(Error),
@@ -305,10 +303,17 @@ sigchld_handler(int sig)
 ").
 
 received_sigchld_since_spawn(Increased, !IO) :-
-    get_async_info(Info0, !IO),
-    Count0 = Info0 ^ ai_sigchld_count,
-    get_sigchld_count(Count, !IO),
-    Increased = ( Count > Count0 -> yes ; no ).
+    get_async_info(Info, !IO),
+    MaybeChild = Info ^ ai_maybe_child,
+    (
+        MaybeChild = yes(Child),
+        Count0 = Child ^ cc_sigchld_count,
+        get_sigchld_count(Count, !IO),
+        Increased = ( Count > Count0 -> yes ; no )
+    ;
+        MaybeChild = no,
+        Increased = no
+    ).
 
 %-----------------------------------------------------------------------------%
 
