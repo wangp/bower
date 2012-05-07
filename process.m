@@ -7,7 +7,10 @@
 :- import_module io.
 :- import_module list.
 
-:- pred posix_spawn(string::in, list(string)::in, io.res(int)::out,
+:- type pid
+    --->    pid(int).
+
+:- pred posix_spawn(string::in, list(string)::in, io.res(pid)::out,
     io::di, io::uo) is det.
 
 :- type wait_pid_blocking
@@ -21,7 +24,7 @@
     ;       child_abnormal_exit
     ;       error(io.error).
 
-:- pred wait_pid(int::in, wait_pid_blocking::in, wait_pid_result::out,
+:- pred wait_pid(pid::in, wait_pid_blocking::in, wait_pid_result::out,
     io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
@@ -38,7 +41,7 @@ posix_spawn(Prog, Args, Res, !IO) :-
     list.length(Args, NumArgs),
     posix_spawn_2(Prog, Args, NumArgs, Pid, !IO),
     ( Pid >= 0 ->
-        Res = ok(Pid)
+        Res = ok(pid(Pid))
     ;
         Res = error(io.make_io_error("posix_spawn failed"))
     ).
@@ -89,7 +92,7 @@ posix_spawn(Prog, Args, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-wait_pid(Pid, Blocking, Res, !IO) :-
+wait_pid(pid(Pid), Blocking, Res, !IO) :-
     (
         Blocking = blocking,
         BlockingBool = yes

@@ -74,7 +74,7 @@
                 ai_queue            :: queue(queue_elem),
                 % Current child process if any, and the SIGCHLD count
                 % before the last async process was started.
-                ai_maybe_pid        :: maybe(int),
+                ai_maybe_pid        :: maybe(pid),
                 ai_current_op       :: async_op,
                 ai_sigchld_count    :: int
             ).
@@ -170,7 +170,7 @@ do_poll(Blocking, Return, !Info, !IO) :-
         do_poll_in_progress(Pid, Blocking, Return, !Info, !IO)
     ).
 
-:- pred do_poll_in_progress(int::in, wait_pid_blocking::in, async_return::out,
+:- pred do_poll_in_progress(pid::in, wait_pid_blocking::in, async_return::out,
     async_info::in, async_info::out, io::di, io::uo) is det.
 
 do_poll_in_progress(Pid, Blocking, Return, !Info, !IO) :-
