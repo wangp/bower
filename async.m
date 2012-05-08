@@ -15,11 +15,25 @@
                 command_prefix      :: string,          % will not be quoted
                 command_args        :: list(string),    % will be quoted
                 remaining_attempts  :: int
+            )
+    ;       async_lowprio_command(
+                % Low priority operations return the output of a command.
+                % They are for polling status only, and won't be retried on
+                % failure.
+                lowprio_command_prefix  :: string,      % will not be quoted
+                lowprio_args            :: list(string) % will be quoted
             ).
+
+:- inst async_shell_command
+    --->    async_shell_command(ground, ground, ground).
+
+:- inst async_lowprio_command
+    --->    async_lowprio_command(ground, ground).
 
 :- type async_return
     --->    none
     ;       child_succeeded
+    ;       child_lowprio_output(string)
     ;       child_failed(
                 child_op        :: async_op,
                 child_failure   :: async_failure
@@ -31,9 +45,15 @@
     ;       failure_abnormal_exit
     ;       failure_error(io.error).
 
-:- pred push_async(async_op::in, io::di, io::uo) is det.
+:- pred push_async(async_op::in(async_shell_command), io::di, io::uo) is det.
 
-:- pred retry_async(int::in, async_op::in, io::di, io::uo) is det.
+:- pred retry_async(int::in, async_op::in(async_shell_command),
+    io::di, io::uo) is det.
+
+:- pred push_lowprio_async(async_op::in(async_lowprio_command), bool::out,
+    io::di, io::uo) is det.
+
+:- pred clear_lowprio_async(io::di, io::uo) is det.
 
 :- pred poll_async_nonblocking(async_return::out, io::di, io::uo) is det.
 
@@ -72,6 +92,12 @@
 :- type async_info
     --->    async_info(
                 ai_queue            :: queue(queue_elem),
+
+                % Only a single low priority polling command queued at a time.
+                % It will only be executed if the main queue is empty.
+                ai_lowprio_queue    :: maybe(async_op),
+
+                % Current child process, if any.
                 ai_maybe_child      :: maybe(current_child)
             ).
 
@@ -86,6 +112,7 @@
     --->    current_child(
                 cc_op               :: async_op,
                 cc_pid              :: pid,
+                cc_maybe_pipe       :: maybe(pipe_read),
                 % The SIGCHLD count before the last async process was started.
                 cc_sigchld_count    :: int
             ).
@@ -97,7 +124,7 @@
 
 :- func init_async_info = async_info.
 
-init_async_info = async_info(queue.init, no).
+init_async_info = async_info(queue.init, no, no).
 
 %-----------------------------------------------------------------------------%
 
@@ -119,6 +146,24 @@ retry_async(Delay, Op, !IO) :-
         Queue = Queue1
     ),
     Info = Info0 ^ ai_queue := Queue,
+    set_async_info(Info, !IO).
+
+push_lowprio_async(Op, Pushed, !IO) :-
+    get_async_info(Info0, !IO),
+    Queue0 = Info0 ^ ai_lowprio_queue,
+    (
+        Queue0 = no,
+        Info = Info0 ^ ai_lowprio_queue := yes(Op),
+        set_async_info(Info, !IO),
+        Pushed = yes
+    ;
+        Queue0 = yes(_),
+        Pushed = no
+    ).
+
+clear_lowprio_async(!IO) :-
+    get_async_info(Info0, !IO),
+    Info = Info0 ^ ai_lowprio_queue := no,
     set_async_info(Info, !IO).
 
 poll_async_nonblocking(Return, !IO) :-
@@ -174,7 +219,7 @@ do_poll(Blocking, Return, !Info, !IO) :-
     async_return::out, async_info::in, async_info::out, io::di, io::uo) is det.
 
 do_poll_in_progress(Child, Blocking, Return, !Info, !IO) :-
-    Child = current_child(Op, Pid, _SigchldCount),
+    Child = current_child(Op, Pid, MaybePipe, _SigchldCount),
     wait_pid(Pid, Blocking, WaitRes, !IO),
     (
         WaitRes = no_hang,
@@ -184,28 +229,55 @@ do_poll_in_progress(Child, Blocking, Return, !Info, !IO) :-
         (
             WaitRes = child_exit(Status),
             ( Status = 0 ->
-                Return = child_succeeded
+                (
+                    MaybePipe = no,
+                    Return = child_succeeded
+                ;
+                    MaybePipe = yes(PipeRead),
+                    drain_and_close_pipe(PipeRead, DrainRes, !IO),
+                    (
+                        DrainRes = ok(String),
+                        Return = child_lowprio_output(String)
+                    ;
+                        DrainRes = error(_Error),
+                        % XXX what else can we do?
+                        Return = child_lowprio_output("")
+                    )
+                )
             ;
+                maybe_close_pipe(MaybePipe, !IO),
                 Return = child_failed(Op, failure_nonzero_exit(Status))
             )
         ;
             WaitRes = child_signalled(Signal),
+            maybe_close_pipe(MaybePipe, !IO),
             Return = child_failed(Op, failure_signal(Signal))
         ;
             WaitRes = child_abnormal_exit,
+            maybe_close_pipe(MaybePipe, !IO),
             Return = child_failed(Op, failure_abnormal_exit)
         ;
             WaitRes = error(Error),
+            maybe_close_pipe(MaybePipe, !IO),
             Return = child_failed(Op, failure_error(Error))
         ),
         !Info ^ ai_maybe_child := no
     ).
+
+:- pred maybe_close_pipe(maybe(pipe_read)::in, io::di, io::uo) is det.
+
+maybe_close_pipe(no, !IO).
+maybe_close_pipe(yes(PipeRead), !IO) :-
+    close_pipe(PipeRead, !IO).
+
+%-----------------------------------------------------------------------------%
 
 :- pred start_next_op(async_return::out, async_info::in, async_info::out,
     io::di, io::uo) is det.
 
 start_next_op(Return, !Info, !IO) :-
     Queue0 = !.Info ^ ai_queue,
+    LowQueue0 = !.Info ^ ai_lowprio_queue,
     ( queue.get(Next, Queue0, Queue) ->
         (
             Next = q_op(Op),
@@ -223,6 +295,9 @@ start_next_op(Return, !Info, !IO) :-
                 Return = none
             )
         )
+    ; LowQueue0 = yes(Op) ->
+        !Info ^ ai_lowprio_queue := no,
+        start_op(Op, Return, !Info, !IO)
     ;
         Return = none
     ).
@@ -232,29 +307,55 @@ start_next_op(Return, !Info, !IO) :-
 
 start_op(Op, Return, !Info, !IO) :-
     MaybeChild0 = !.Info ^ ai_maybe_child,
-    (
-        MaybeChild0 = yes(_),
-        unexpected($module, $pred, "already have child process")
-    ;
-        MaybeChild0 = no
-    ),
-
+    expect(unify(MaybeChild0, no), $module, $pred,
+        "already have child process"),
     get_sigchld_count(PreSigchldCount, !IO),
-    Op = async_shell_command(CommandPrefix, UnquotedArgs, _RemainingAttempts),
-    QuotedArgs = list.map(quote_arg, UnquotedArgs),
-    ShellCommand = string.join_list(" ", [CommandPrefix | QuotedArgs]),
-    Shell = "/bin/sh",
-    ShellArgs = ["-c", ShellCommand],
-    posix_spawn(Shell, ShellArgs, SpawnRes, !IO),
+    spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO),
     (
-        SpawnRes = ok(Pid),
-        Child = current_child(Op, Pid, PreSigchldCount),
+        Res = ok(Child),
         !Info ^ ai_maybe_child := yes(Child),
         Return = none
     ;
-        SpawnRes = error(Error),
+        Res = error(Error),
         Return = child_failed(Op, failure_error(Error))
     ).
+
+:- pred spawn_process_for_op(async_op::in, int::in, io.res(current_child)::out,
+    async_info::in, async_info::out, io::di, io::uo) is det.
+
+spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO) :-
+    Op = async_shell_command(CommandPrefix, UnquotedArgs, _RemainingAttempts),
+    shell_and_args(CommandPrefix, UnquotedArgs, Shell, ShellArgs),
+    posix_spawn(Shell, ShellArgs, SpawnRes, !IO),
+    (
+        SpawnRes = ok(Pid),
+        Child = current_child(Op, Pid, no, PreSigchldCount),
+        Res = ok(Child)
+    ;
+        SpawnRes = error(Error),
+        Res = error(Error)
+    ).
+spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO) :-
+    Op = async_lowprio_command(CommandPrefix, UnquotedArgs),
+    shell_and_args(CommandPrefix, UnquotedArgs, Shell, ShellArgs),
+    posix_spawn_capture_stdout(Shell, ShellArgs, SpawnRes, !IO),
+    (
+        SpawnRes = ok({Pid, PipeRead}),
+        Child = current_child(Op, Pid, yes(PipeRead), PreSigchldCount),
+        Res = ok(Child)
+    ;
+        SpawnRes = error(Error),
+        Res = error(Error)
+    ).
+
+:- pred shell_and_args(string::in, list(string)::in,
+    string::out, list(string)::out) is det.
+
+shell_and_args(CommandPrefix, UnquotedArgs, Shell, ShellArgs) :-
+    QuotedArgs = list.map(quote_arg, UnquotedArgs),
+    ShellCommand = string.join_list(" ", [CommandPrefix | QuotedArgs]),
+    Shell = "/bin/sh",
+    ShellArgs = ["-c", ShellCommand].
 
 %-----------------------------------------------------------------------------%
 

@@ -56,7 +56,7 @@
                 i_search_terms      :: string,
                 i_search_tokens     :: list(token),
                 i_search_time       :: time_t,
-                i_poll_time         :: time_t,
+                i_next_poll_time    :: int, % time_t
                 i_poll_count        :: int,
                 i_internal_search   :: maybe(string),
                 i_internal_search_dir :: search_direction,
@@ -174,13 +174,13 @@ open_index(Screen, SearchString, !IO) :-
     ),
     setup_index_scrollable(Time, Threads, Scrollable),
     SearchTime = Time,
-    PollTime = Time,
+    NextPollTime = next_poll_time(Time),
     PollCount = 0,
     MaybeSearch = no,
     CommonHistory = common_history(LimitHistory, init_history, init_history,
         init_history, init_history),
     IndexInfo = index_info(Scrollable, SearchString, SearchTokens, SearchTime,
-        PollTime, PollCount, MaybeSearch, dir_forward, CommonHistory,
+        NextPollTime, PollCount, MaybeSearch, dir_forward, CommonHistory,
         init_compose_history),
     index_loop(Screen, IndexInfo, !IO).
 
@@ -280,16 +280,17 @@ index_loop(Screen, IndexInfo, !IO) :-
 :- pragma inline(index_loop_no_draw/4).
 
 index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
-    poll_async_with_progress(Screen, !IO),
-    get_keycode_maybe_timeout(KeyCode, !IO),
+    poll_async_with_progress(Screen, !IndexInfo, !IO),
+    index_get_keycode(!.IndexInfo, KeyCode, !IO),
     index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo),
     update_message(Screen, MessageUpdate, !IO),
     (
         Action = continue,
-        maybe_poll(!IndexInfo, !IO),
+        maybe_sched_poll(!IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = continue_no_draw,
+        maybe_sched_poll(!IndexInfo, !IO),
         index_loop_no_draw(Screen, !.IndexInfo, !IO)
     ;
         Action = resize,
@@ -325,7 +326,7 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
             !IndexInfo ^ i_search_terms := LimitString,
             !IndexInfo ^ i_search_tokens := Tokens,
             !IndexInfo ^ i_search_time := Time,
-            !IndexInfo ^ i_poll_time := Time,
+            !IndexInfo ^ i_next_poll_time := next_poll_time(Time),
             !IndexInfo ^ i_poll_count := 0,
             !IndexInfo ^ i_common_history ^ ch_limit_history := History,
             index_loop(Screen, !.IndexInfo, !IO)
@@ -424,25 +425,36 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         flush_async_with_progress(Screen, !IO)
     ).
 
-:- pred get_keycode_maybe_timeout(keycode::out, io::di, io::uo) is det.
+:- pred index_get_keycode(index_info::in, keycode::out, io::di, io::uo) is det.
 
-get_keycode_maybe_timeout(Code, !IO) :-
+index_get_keycode(Info, Code, !IO) :-
     async.have_child_process(HaveChild, !IO),
     (
         HaveChild = yes,
-        get_keycode_timeout_loop(Code, !IO),
-        % Reset back to blocking mode.
-        curs.nodelay(no, !IO)
+        Tenths = 10,
+        get_keycode_child_process_loop(Tenths, Code, !IO)
     ;
         HaveChild = no,
-        get_keycode(Code, !IO)
-    ).
+        time(Time, !IO),
+        time_to_int(Time, TimeInt),
+        NextPollTime = Info ^ i_next_poll_time,
+        DeltaSecs = NextPollTime - TimeInt,
+        ( DeltaSecs =< 0 ->
+            Tenths = 10
+        ;
+            Tenths = 10 * DeltaSecs + 1
+        ),
+        get_keycode_timeout(Tenths, Code, !IO)
+    ),
+    % Reset back to blocking mode.
+    curs.nodelay(no, !IO).
 
-:- pred get_keycode_timeout_loop(keycode::out, io::di, io::uo) is det.
+:- pred get_keycode_child_process_loop(int::in, keycode::out,
+    io::di, io::uo) is det.
 
-get_keycode_timeout_loop(Code, !IO) :-
+get_keycode_child_process_loop(Tenths, Code, !IO) :-
     % get_keycode can change the timeout so reset it for each iteration.
-    curs.halfdelay(10, !IO),
+    curs.halfdelay(Tenths, !IO),
     get_keycode(Code0, !IO),
     ( Code0 = timeout_or_error ->
         async.received_sigchld_since_spawn(Sigchld, !IO),
@@ -451,11 +463,17 @@ get_keycode_timeout_loop(Code, !IO) :-
             Code = Code0
         ;
             Sigchld = no,
-            get_keycode_timeout_loop(Code, !IO)
+            get_keycode_child_process_loop(Tenths, Code, !IO)
         )
     ;
         Code = Code0
     ).
+
+:- pred get_keycode_timeout(int::in, keycode::out, io::di, io::uo) is det.
+
+get_keycode_timeout(Tenths, Code, !IO) :-
+    curs.halfdelay(Tenths, !IO),
+    get_keycode(Code, !IO).
 
 %-----------------------------------------------------------------------------%
 
@@ -1379,7 +1397,7 @@ refresh_all(Screen, Verbose, !Info, !IO) :-
         !Info ^ i_scrollable := !.Scrollable,
         !Info ^ i_search_tokens := Tokens,
         !Info ^ i_search_time := Time,
-        !Info ^ i_poll_time := Time,
+        !Info ^ i_next_poll_time := next_poll_time(Time),
         !Info ^ i_poll_count := 0
     ).
 
@@ -1422,37 +1440,47 @@ replace_index_cursor_line(Nowish, Thread, !Info) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred maybe_poll(index_info::in, index_info::out, io::di, io::uo) is det.
+:- pred maybe_sched_poll(index_info::in, index_info::out, io::di, io::uo)
+    is det.
 
-maybe_poll(!Info, !IO) :-
+maybe_sched_poll(!Info, !IO) :-
     time(Time, !IO),
-    PollTime = !.Info ^ i_poll_time,
     time_to_int(Time, TimeInt),
-    time_to_int(PollTime, PollTimeInt),
-    ( TimeInt - PollTimeInt < poll_period_secs ->
+    NextPollTime = !.Info ^ i_next_poll_time,
+    ( TimeInt < NextPollTime ->
         true
     ;
-        async.async_count(AsyncCount, !IO),
-        ( AsyncCount > 0 ->
-            true
-        ;
-            !Info ^ i_poll_time := Time,
-            Tokens = !.Info ^ i_search_tokens,
-            SearchTime = !.Info ^ i_search_time,
-            time_to_int(SearchTime, SearchTimeInt),
-            tokens_to_search_terms(Tokens, Terms1, _ApplyCap, !IO),
-            string.format("( %s ) %d.. AND tag:unread",
-                [s(Terms1), i(SearchTimeInt)], Terms),
-            run_notmuch_count(Terms, ResCount, !IO),
-            (
-                ResCount = ok(Count),
-                !Info ^ i_poll_count := Count
-            ;
-                ResCount = error(_)
-                % XXX show error message?
-            )
-        )
+        Tokens = !.Info ^ i_search_tokens,
+        SearchTime = !.Info ^ i_search_time,
+        time_to_int(SearchTime, SearchTimeInt),
+        tokens_to_search_terms(Tokens, Terms1, _ApplyCap, !IO),
+        get_notmuch_prefix(Notmuch, !IO),
+        Args = [
+            "count", "--",
+            "(", Terms1, ")", from_int(SearchTimeInt) ++ "..",
+            "AND", "tag:unread"
+        ],
+        Op = async_lowprio_command(Notmuch, Args),
+        push_lowprio_async(Op, _Pushed, !IO),
+        !Info ^ i_next_poll_time := next_poll_time(Time)
     ).
+
+:- pred handle_poll_result(screen::in, string::in,
+    index_info::in, index_info::out, io::di, io::uo) is det.
+
+handle_poll_result(Screen, CountOutput, !Info, !IO) :-
+    ( string.to_int(rstrip(CountOutput), Count) ->
+        !Info ^ i_poll_count := Count
+    ;
+        update_message(Screen,
+            set_warning("notmuch count return unexpected result"), !IO)
+    ).
+
+:- func next_poll_time(time_t) = int.
+
+next_poll_time(Time) = NextTimeInt :-
+    time_to_int(Time, TimeInt),
+    NextTimeInt = TimeInt + poll_period_secs.
 
 :- func poll_period_secs = int.
 
@@ -1478,24 +1506,30 @@ recreate_screen(Screen0, Screen, !IndexInfo, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred poll_async_with_progress(screen::in, io::di, io::uo) is det.
+:- pred poll_async_with_progress(screen::in, index_info::in, index_info::out,
+    io::di, io::uo) is det.
 
-poll_async_with_progress(Screen, !IO) :-
+poll_async_with_progress(Screen, !Info, !IO) :-
     poll_async_nonblocking(Return, !IO),
     (
         Return = none
     ;
         Return = child_succeeded,
-        poll_async_with_progress(Screen, !IO)
+        poll_async_with_progress(Screen, !Info, !IO)
+    ;
+        Return = child_lowprio_output(Output),
+        handle_poll_result(Screen, Output, !Info, !IO),
+        poll_async_with_progress(Screen, !Info, !IO)
     ;
         Return = child_failed(Op, Failure),
         handle_async_failure(Screen, Op, Failure, !IO),
-        poll_async_with_progress(Screen, !IO)
+        poll_async_with_progress(Screen, !Info, !IO)
     ).
 
 :- pred flush_async_with_progress(screen::in, io::di, io::uo) is det.
 
 flush_async_with_progress(Screen, !IO) :-
+    clear_lowprio_async(!IO),
     async_count(Count, !IO),
     ( Count = 0 ->
         true
@@ -1527,6 +1561,9 @@ flush_async_with_progress_loop(Screen, Display, !IO) :-
             flush_async_with_progress_loop(Screen, no, !IO)
         ;
             Return = child_succeeded,
+            flush_async_with_progress_loop(Screen, yes, !IO)
+        ;
+            Return = child_lowprio_output(_),
             flush_async_with_progress_loop(Screen, yes, !IO)
         ;
             Return = child_failed(Op, Failure),
@@ -1575,6 +1612,9 @@ handle_async_failure(Screen, Op, Failure, !IO) :-
     ),
     update_message_immed(Screen, set_warning(Message), !IO),
     sleep(1, !IO).
+handle_async_failure(_Screen, Op, _Failure, !IO) :-
+    % Ignore poll command failures.
+    Op = async_lowprio_command(_, _).
 
 %-----------------------------------------------------------------------------%
 

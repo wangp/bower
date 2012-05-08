@@ -18,6 +18,7 @@
 :- pred get_notmuch_config(string::in, string::in, io.res(string)::out,
     io::di, io::uo) is det.
 
+:- pragma obsolete(run_notmuch_count/4).
 :- pred run_notmuch_count(string::in, io.res(int)::out, io::di, io::uo)
     is det.
 
