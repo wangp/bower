@@ -128,8 +128,13 @@ Some examples:
 
 You can add your own search term expansions; see below.
 
-bower will call notmuch count every minute to check for new results.
-This is pretty crude.
+Tag modifications are performed (mostly) asynchronously to minimise stutter.
+Remember to quit properly using 'q' to flush all changes.  Tag updates will
+be retried a limited number of time on failure, e.g. because the notmuch
+database is locked.
+
+Bower will call notmuch count every 60 seconds, while in the index view,
+to notify you of new unread messages matching the current search terms.
 
 
 Thread/pager view
