@@ -1440,6 +1440,24 @@ replace_index_cursor_line(Nowish, Thread, !Info) :-
 
 %-----------------------------------------------------------------------------%
 
+:- pred recreate_screen(screen::in, screen::out,
+    index_info::in, index_info::out, io::di, io::uo) is det.
+
+recreate_screen(Screen0, Screen, !IndexInfo, !IO) :-
+    destroy_screen(Screen0, !IO),
+    create_screen(Screen, !IO),
+    % Keep cursor visible.
+    Scrollable0 = !.IndexInfo ^ i_scrollable,
+    ( get_cursor(Scrollable0, Cursor) ->
+        get_main_rows(Screen, NumRows),
+        set_cursor_visible(Cursor, NumRows, Scrollable0, Scrollable),
+        !IndexInfo ^ i_scrollable := Scrollable
+    ;
+        true
+    ).
+
+%-----------------------------------------------------------------------------%
+
 :- pred maybe_sched_poll(index_info::in, index_info::out, io::di, io::uo)
     is det.
 
@@ -1485,24 +1503,6 @@ next_poll_time(Time) = NextTimeInt :-
 :- func poll_period_secs = int.
 
 poll_period_secs = 60.
-
-%-----------------------------------------------------------------------------%
-
-:- pred recreate_screen(screen::in, screen::out,
-    index_info::in, index_info::out, io::di, io::uo) is det.
-
-recreate_screen(Screen0, Screen, !IndexInfo, !IO) :-
-    destroy_screen(Screen0, !IO),
-    create_screen(Screen, !IO),
-    % Keep cursor visible.
-    Scrollable0 = !.IndexInfo ^ i_scrollable,
-    ( get_cursor(Scrollable0, Cursor) ->
-        get_main_rows(Screen, NumRows),
-        set_cursor_visible(Cursor, NumRows, Scrollable0, Scrollable),
-        !IndexInfo ^ i_scrollable := Scrollable
-    ;
-        true
-    ).
 
 %-----------------------------------------------------------------------------%
 
