@@ -433,9 +433,15 @@ setup_pager_for_staging(Cols, Text, Info) :-
     Cur = 0,
     MaybeLevel = no,
     InDiff = no,
-    append_text(Cols, Text, Start, LastBreak, Cur, MaybeLevel, InDiff,
-        cord.init, LinesCord),
-    Lines = list(LinesCord),
+    some [!Lines] (
+        !:Lines = cord.init,
+        append_text(Cols, Text, Start, LastBreak, Cur, MaybeLevel, InDiff,
+            !Lines),
+        snoc(message_separator, !Lines),
+        snoc(message_separator, !Lines),
+        snoc(message_separator, !Lines),
+        Lines = list(!.Lines)
+    ),
     Scrollable = scrollable.init(Lines),
     Info = pager_info(Scrollable).
 
