@@ -115,12 +115,14 @@
 :- type pager_line
     --->    start_message_header(message, string, string)
     ;       header(string, string)
-    ;       text(quote_level, string, maybe_url)
+    ;       text(quote_level, string, quote_marker_end, maybe_url)
     ;       diff_text(diff_line, string)
     ;       attachment(part)
     ;       message_separator.
 
 :- type quote_level == int.
+
+:- type quote_marker_end == int.
 
 :- type maybe_url
     --->    url(int, int)   % (start, end] columns
@@ -307,18 +309,20 @@ append_substring(String, Start, End, MaybeLevel, ContQuoteLevel, !InDiff,
         !Lines) :-
     string.unsafe_between(String, Start, End, SubString),
     (
-        MaybeLevel = yes(Level)
+        MaybeLevel = yes(QuoteLevel),
+        QuoteMarkerEnd = 0
     ;
         MaybeLevel = no,
-        Level = detect_quote_level(SubString, 0)
+        detect_quote_level(SubString, 0, QuoteLevel, QuoteMarkerEnd)
     ),
-    ( Level = 0 ->
+    ( QuoteLevel = 0 ->
         append_unquoted_string(SubString, !InDiff, !Lines)
     ;
         MaybeUrl = detect_maybe_url(SubString),
-        snoc(text(Level, SubString, MaybeUrl), !Lines)
+        Text = text(QuoteLevel, SubString, QuoteMarkerEnd, MaybeUrl),
+        snoc(Text, !Lines)
     ),
-    ContQuoteLevel = Level.
+    ContQuoteLevel = QuoteLevel.
 
 :- pred append_unquoted_string(string::in, bool::in, bool::out,
     cord(pager_line)::in, cord(pager_line)::out) is det.
@@ -329,22 +333,25 @@ append_unquoted_string(String, !InDiff, !Lines) :-
         snoc(diff_text(DiffLine, String), !Lines)
     ;
         MaybeUrl = detect_maybe_url(String),
-        snoc(text(0, String, MaybeUrl), !Lines)
+        snoc(text(0, String, 0, MaybeUrl), !Lines)
     ).
 
-:- func detect_quote_level(string, int) = int.
+:- pred detect_quote_level(string::in, int::in, int::out, int::out) is det.
 
-detect_quote_level(String, Pos) = QuoteLevel :-
+detect_quote_level(String, Pos, QuoteLevel, QuoteMarkerEnd) :-
     ( string.unsafe_index_next(String, Pos, NextPos, Char) ->
         ( char.is_whitespace(Char) ->
-            QuoteLevel = detect_quote_level(String, NextPos)
+            detect_quote_level(String, NextPos, QuoteLevel, QuoteMarkerEnd)
         ; Char = ('>') ->
-            QuoteLevel = 1 + detect_quote_level(String, NextPos)
+            detect_quote_level(String, NextPos, QuoteLevel0, QuoteMarkerEnd),
+            QuoteLevel = 1 + QuoteLevel0
         ;
-            QuoteLevel = 0
+            QuoteLevel = 0,
+            QuoteMarkerEnd = Pos
         )
     ;
-        QuoteLevel = 0
+        QuoteLevel = 0,
+        QuoteMarkerEnd = Pos
     ).
 
 :- pred detect_diff(string::in, bool::in, diff_line::out) is semidet.
@@ -421,13 +428,13 @@ append_encapsulated_header(Header, Value, !Lines) :-
     ( Value = "" ->
         true
     ;
-        Line = text(0, Header ++ ": " ++ Value, no_url),
+        Line = text(0, Header ++ ": " ++ Value, 0, no_url),
         snoc(Line, !Lines)
     ).
 
 :- func blank_line = pager_line.
 
-blank_line = text(0, "", no_url).
+blank_line = text(0, "", 0, no_url).
 
 %-----------------------------------------------------------------------------%
 
@@ -628,7 +635,7 @@ skip_quoted_text(MessageUpdate, !Info) :-
 
 is_quoted_text_or_message_start(Line) :-
     (
-        Line = text(Level, _, _),
+        Line = text(Level, _, _, _),
         Level > 0
     ;
         Line = start_message_header(_, _, _)
@@ -638,7 +645,7 @@ is_quoted_text_or_message_start(Line) :-
 
 is_unquoted_text(Line) :-
     not (
-        Line = text(Level, _, _),
+        Line = text(Level, _, _, _),
         Level > 0
     ).
 
@@ -766,7 +773,7 @@ line_matches_search(Search, Line) :-
     (
         ( Line = start_message_header(_, _, String)
         ; Line = header(_, String)
-        ; Line = text(_, String, _)
+        ; Line = text(_, String, _, _)
         ; Line = diff_text(_, String)
         ),
         strcase_str(String, Search)
@@ -834,7 +841,7 @@ do_highlight(Highlightable, NumRows, !Info) :-
 :- pred is_highlightable_part_or_url(pager_line::in) is semidet.
 
 is_highlightable_part_or_url(attachment(_)).
-is_highlightable_part_or_url(text(_, _, url(_, _))).
+is_highlightable_part_or_url(text(_, _, _, url(_, _))).
 
 :- pred is_highlightable_part_or_message(pager_line::in) is semidet.
 
@@ -859,7 +866,7 @@ get_highlighted_url(Info, Url) :-
     Info = pager_info(Scrollable),
     get_cursor_line(Scrollable, _, Line),
     (
-        Line = text(_, String, url(Start, End))
+        Line = text(_, String, _, url(Start, End))
     ),
     string.between(String, Start, End, Url).
 
@@ -900,7 +907,7 @@ draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         my_addstr(Panel, Value, !IO)
     ;
         (
-            Line = text(QuoteLevel, Text, MaybeUrl),
+            Line = text(QuoteLevel, Text, _QuoteMarkerEnd, MaybeUrl),
             Attr0 = quote_level_to_attr(QuoteLevel)
         ;
             Line = diff_text(DiffLine, Text),
