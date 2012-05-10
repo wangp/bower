@@ -115,8 +115,7 @@
 :- type pager_line
     --->    start_message_header(message, string, string)
     ;       header(string, string)
-    ;       text(string, maybe_url)
-    ;       quoted_text(quote_level, string, maybe_url)
+    ;       text(quote_level, string, maybe_url)
     ;       diff_text(diff_line, string)
     ;       attachment(part)
     ;       message_separator.
@@ -317,7 +316,7 @@ append_substring(String, Start, End, MaybeLevel, ContQuoteLevel, !InDiff,
         append_unquoted_string(SubString, !InDiff, !Lines)
     ;
         MaybeUrl = detect_maybe_url(SubString),
-        snoc(quoted_text(Level, SubString, MaybeUrl), !Lines)
+        snoc(text(Level, SubString, MaybeUrl), !Lines)
     ),
     ContQuoteLevel = Level.
 
@@ -330,7 +329,7 @@ append_unquoted_string(String, !InDiff, !Lines) :-
         snoc(diff_text(DiffLine, String), !Lines)
     ;
         MaybeUrl = detect_maybe_url(String),
-        snoc(text(String, MaybeUrl), !Lines)
+        snoc(text(0, String, MaybeUrl), !Lines)
     ).
 
 :- func detect_quote_level(string, int) = int.
@@ -422,13 +421,13 @@ append_encapsulated_header(Header, Value, !Lines) :-
     ( Value = "" ->
         true
     ;
-        Line = text(Header ++ ": " ++ Value, no_url),
+        Line = text(0, Header ++ ": " ++ Value, no_url),
         snoc(Line, !Lines)
     ).
 
 :- func blank_line = pager_line.
 
-blank_line = text("", no_url).
+blank_line = text(0, "", no_url).
 
 %-----------------------------------------------------------------------------%
 
@@ -629,7 +628,8 @@ skip_quoted_text(MessageUpdate, !Info) :-
 
 is_quoted_text_or_message_start(Line) :-
     (
-        Line = quoted_text(_, _, _)
+        Line = text(Level, _, _),
+        Level > 0
     ;
         Line = start_message_header(_, _, _)
     ).
@@ -637,7 +637,10 @@ is_quoted_text_or_message_start(Line) :-
 :- pred is_unquoted_text(pager_line::in) is semidet.
 
 is_unquoted_text(Line) :-
-    Line \= quoted_text(_, _, _).
+    not (
+        Line = text(Level, _, _),
+        Level > 0
+    ).
 
 %-----------------------------------------------------------------------------%
 
@@ -763,8 +766,7 @@ line_matches_search(Search, Line) :-
     (
         ( Line = start_message_header(_, _, String)
         ; Line = header(_, String)
-        ; Line = text(String, _)
-        ; Line = quoted_text(_, String, _)
+        ; Line = text(_, String, _)
         ; Line = diff_text(_, String)
         ),
         strcase_str(String, Search)
@@ -832,8 +834,7 @@ do_highlight(Highlightable, NumRows, !Info) :-
 :- pred is_highlightable_part_or_url(pager_line::in) is semidet.
 
 is_highlightable_part_or_url(attachment(_)).
-is_highlightable_part_or_url(text(_, url(_, _))).
-is_highlightable_part_or_url(quoted_text(_, _, url(_, _))).
+is_highlightable_part_or_url(text(_, _, url(_, _))).
 
 :- pred is_highlightable_part_or_message(pager_line::in) is semidet.
 
@@ -858,9 +859,7 @@ get_highlighted_url(Info, Url) :-
     Info = pager_info(Scrollable),
     get_cursor_line(Scrollable, _, Line),
     (
-        Line = text(String, url(Start, End))
-    ;
-        Line = quoted_text(_, String, url(Start, End))
+        Line = text(_, String, url(Start, End))
     ),
     string.between(String, Start, End, Url).
 
@@ -901,10 +900,7 @@ draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         my_addstr(Panel, Value, !IO)
     ;
         (
-            Line = text(Text, MaybeUrl),
-            Attr0 = normal
-        ;
-            Line = quoted_text(QuoteLevel, Text, MaybeUrl),
+            Line = text(QuoteLevel, Text, MaybeUrl),
             Attr0 = quote_level_to_attr(QuoteLevel)
         ;
             Line = diff_text(DiffLine, Text),
@@ -962,11 +958,13 @@ draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
 
 :- func quote_level_to_attr(quote_level) = attr.
 
-quote_level_to_attr(QuoteLevel) =
-    ( int.odd(QuoteLevel) ->
-        fg_bg(blue, black) + bold
+quote_level_to_attr(QuoteLevel) = Attr :-
+    ( QuoteLevel = 0 ->
+        Attr = normal
+    ; int.odd(QuoteLevel) ->
+        Attr = fg_bg(blue, black) + bold
     ;
-        fg_bg(green, black)
+        Attr = fg_bg(green, black)
     ).
 
 :- func diff_line_to_attr(diff_line) = attr.
