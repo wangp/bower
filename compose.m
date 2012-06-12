@@ -482,10 +482,18 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Sent, !IO) :-
     ; KeyCode = char('r') ->
         edit_header(Screen, replyto, !StagingInfo, !IO),
         Action = continue
-    ; KeyCode = char('j') ->
+    ;
+        ( KeyCode = char('j')
+        ; KeyCode = code(key_down)
+        )
+    ->
         scroll_attachments(Screen, NumAttachmentRows, 1, !AttachInfo, !IO),
         Action = continue
-    ; KeyCode = char('k') ->
+    ;
+        ( KeyCode = char('k')
+        ; KeyCode = code(key_up)
+        )
+    ->
         scroll_attachments(Screen, NumAttachmentRows, -1, !AttachInfo, !IO),
         Action = continue
     ; KeyCode = char('a') ->
