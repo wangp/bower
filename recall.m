@@ -109,19 +109,33 @@ make_recall_line(Nowish, MessageId, Line, !IO) :-
 recall_screen_loop(Screen, MaybeSelected, !Info, !IO) :-
     draw_recall(Screen, !.Info, !IO),
     panel.update_panels(!IO),
-    get_char(Char, !IO),
-    ( Char = 'j' ->
+    get_keycode(KeyCode, !IO),
+    (
+        ( KeyCode = char('j')
+        ; KeyCode = code(key_down)
+        )
+    ->
         move_cursor(Screen, 1, !Info, !IO),
         recall_screen_loop(Screen, MaybeSelected, !Info, !IO)
-    ; Char = 'k' ->
+    ;
+        ( KeyCode = char('k')
+        ; KeyCode = code(key_up)
+        )
+    ->
         move_cursor(Screen, -1, !Info, !IO),
         recall_screen_loop(Screen, MaybeSelected, !Info, !IO)
-    ; Char = 'q' ->
+    ;
+        KeyCode = char('q')
+    ->
         update_message(Screen, clear_message, !IO),
         MaybeSelected = no
-    ; Char = '\r' ->
+    ;
+        KeyCode = char('\r')
+    ->
         enter(!.Info, MaybeSelected)
-    ; Char = 'd' ->
+    ;
+        KeyCode = char('d')
+    ->
         delete_draft(Screen, !Info, !IO),
         NumLines = get_num_lines(!.Info ^ r_scrollable),
         ( NumLines = 0 ->
