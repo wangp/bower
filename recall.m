@@ -108,6 +108,7 @@ make_recall_line(Nowish, MessageId, Line, !IO) :-
 
 recall_screen_loop(Screen, MaybeSelected, !Info, !IO) :-
     draw_recall(Screen, !.Info, !IO),
+    draw_bar(Screen, !IO),
     panel.update_panels(!IO),
     get_keycode(KeyCode, !IO),
     (
