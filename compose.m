@@ -461,44 +461,44 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Sent, !IO) :-
     panel.update_panels(!IO),
     NumAttachmentRows = list.length(AttachmentPanels),
     NumPagerRows = list.length(PagerPanels),
-    get_char(Char, !IO),
-    ( Char = 'e' ->
+    get_keycode(KeyCode, !IO),
+    ( KeyCode = char('e') ->
         Action = edit
-    ; Char = 'f' ->
+    ; KeyCode = char('f') ->
         edit_header(Screen, from, !StagingInfo, !IO),
         Action = continue
-    ; Char = 't' ->
+    ; KeyCode = char('t') ->
         edit_header(Screen, to, !StagingInfo, !IO),
         Action = continue
-    ; Char = 'c' ->
+    ; KeyCode = char('c') ->
         edit_header(Screen, cc, !StagingInfo, !IO),
         Action = continue
-    ; Char = 'b' ->
+    ; KeyCode = char('b') ->
         edit_header(Screen, bcc, !StagingInfo, !IO),
         Action = continue
-    ; Char = 's' ->
+    ; KeyCode = char('s') ->
         edit_header(Screen, subject, !StagingInfo, !IO),
         Action = continue
-    ; Char = 'r' ->
+    ; KeyCode = char('r') ->
         edit_header(Screen, replyto, !StagingInfo, !IO),
         Action = continue
-    ; Char = 'j' ->
+    ; KeyCode = char('j') ->
         scroll_attachments(Screen, NumAttachmentRows, 1, !AttachInfo, !IO),
         Action = continue
-    ; Char = 'k' ->
+    ; KeyCode = char('k') ->
         scroll_attachments(Screen, NumAttachmentRows, -1, !AttachInfo, !IO),
         Action = continue
-    ; Char = 'a' ->
+    ; KeyCode = char('a') ->
         add_attachment(Screen, NumAttachmentRows, !StagingInfo, !AttachInfo,
             !IO),
         Action = continue
-    ; Char = 'd' ->
+    ; KeyCode = char('d') ->
         delete_attachment(Screen, !AttachInfo, !IO),
         Action = continue
-    ; Char = 'T' ->
+    ; KeyCode = char('T') ->
         edit_attachment_type(Screen, !AttachInfo, !IO),
         Action = continue
-    ; Char = 'p' ->
+    ; KeyCode = char('p') ->
         Attachments = get_lines_list(!.AttachInfo),
         postpone(Screen, Headers, Text, Attachments, Res, !IO),
         (
@@ -509,7 +509,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Sent, !IO) :-
             Res = no,
             Action = continue
         )
-    ; Char = 'Y' ->
+    ; KeyCode = char('Y') ->
         Attachments = get_lines_list(!.AttachInfo),
         send_mail(Screen, Headers, Text, Attachments, Sent0, !IO),
         (
@@ -521,7 +521,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Sent, !IO) :-
             Sent0 = not_sent,
             Action = continue
         )
-    ; Char = 'D' ->
+    ; KeyCode = char('D') ->
         % XXX prompt to discard
         (
             MaybeOldDraft = yes(_),
@@ -534,7 +534,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Sent, !IO) :-
             update_message(Screen, set_warning(Message), !IO),
             Action = continue
         )
-    ; Char = 'Q' ->
+    ; KeyCode = char('Q') ->
         % XXX prompt to abandon
         (
             MaybeOldDraft = yes(_),
@@ -546,9 +546,11 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Sent, !IO) :-
             update_message(Screen, set_info("Mail not sent."), !IO),
             Action = leave(not_sent)
         )
-    ;
+    ; KeyCode = char(Char) ->
         pager_input(NumPagerRows, Char, _Action, MessageUpdate, !PagerInfo),
         update_message(Screen, MessageUpdate, !IO),
+        Action = continue
+    ;
         Action = continue
     ),
     (
