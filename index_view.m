@@ -343,43 +343,50 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         Action = start_compose,
         ComposeHistory0 = !.IndexInfo ^ i_compose_history,
         flush_async_with_progress(Screen, !IO),
-        start_compose(Screen, Sent, ComposeHistory0, ComposeHistory, !IO),
+        start_compose(Screen, Transition, ComposeHistory0, ComposeHistory,
+            !IO),
         !IndexInfo ^ i_compose_history := ComposeHistory,
+        handle_screen_transition(Screen, NewScreen, Transition, Sent,
+            !IndexInfo, !IO),
         (
             Sent = sent,
-            refresh_all(Screen, quiet, !IndexInfo, !IO)
+            refresh_all(NewScreen, quiet, !IndexInfo, !IO)
         ;
             Sent = not_sent
         ),
-        index_loop(Screen, !.IndexInfo, !IO)
+        index_loop(NewScreen, !.IndexInfo, !IO)
     ;
         Action = start_reply(ReplyKind),
         flush_async_with_progress(Screen, !IO),
-        start_reply(Screen, ReplyKind, MaybeRefresh, !IndexInfo, !IO),
+        start_reply(Screen, NewScreen, ReplyKind, MaybeRefresh,
+            !IndexInfo, !IO),
         (
             MaybeRefresh = yes(ThreadId),
-            refresh_index_line(Screen, ThreadId, !IndexInfo, !IO)
+            refresh_index_line(NewScreen, ThreadId, !IndexInfo, !IO)
         ;
             MaybeRefresh = no
         ),
-        index_loop(Screen, !.IndexInfo, !IO)
+        index_loop(NewScreen, !.IndexInfo, !IO)
     ;
         Action = start_recall,
         flush_async_with_progress(Screen, !IO),
         select_recall(Screen, no, MaybeSelected, !IO),
         (
             MaybeSelected = yes(Message),
-            continue_postponed(Screen, Message, Sent, !IO),
+            continue_postponed(Screen, Message, Transition, !IO),
+            handle_screen_transition(Screen, NewScreen, Transition, Sent,
+                !IndexInfo, !IO),
             (
                 Sent = sent,
-                refresh_all(Screen, quiet, !IndexInfo, !IO)
+                refresh_all(NewScreen, quiet, !IndexInfo, !IO)
             ;
                 Sent = not_sent
             )
         ;
-            MaybeSelected = no
+            MaybeSelected = no,
+            NewScreen = Screen
         ),
-        index_loop(Screen, !.IndexInfo, !IO)
+        index_loop(NewScreen, !.IndexInfo, !IO)
     ;
         Action = prompt_internal_search(SearchDir),
         prompt_internal_search(Screen, SearchDir, !IndexInfo, !IO),
@@ -765,14 +772,15 @@ set_index_line_tags(TagSet, Line0, Line) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred start_reply(screen::in, reply_kind::in, maybe(thread_id)::out,
-    index_info::in, index_info::out, io::di, io::uo) is det.
+:- pred start_reply(screen::in, screen::out, reply_kind::in,
+    maybe(thread_id)::out, index_info::in, index_info::out, io::di, io::uo)
+    is det.
 
-start_reply(Screen, ReplyKind, MaybeRefresh, !Info, !IO) :-
+start_reply(!Screen, ReplyKind, MaybeRefresh, !Info, !IO) :-
     Scrollable = !.Info ^ i_scrollable,
     ( get_cursor_line(Scrollable, _, CursorLine) ->
         ThreadId = CursorLine ^ i_id,
-        try_reply(Screen, ThreadId, no, ReplyKind, TryResA, !IO),
+        try_reply(!Screen, ThreadId, no, ReplyKind, TryResA, !Info, !IO),
         (
             TryResA = ok(sent),
             MaybeRefresh = yes(ThreadId)
@@ -781,7 +789,7 @@ start_reply(Screen, ReplyKind, MaybeRefresh, !Info, !IO) :-
             MaybeRefresh = no
         ;
             TryResA = unable_to_choose,
-            try_reply(Screen, ThreadId, yes, ReplyKind, TryResB, !IO),
+            try_reply(!Screen, ThreadId, yes, ReplyKind, TryResB, !Info, !IO),
             (
                 TryResB = ok(sent),
                 MaybeRefresh = yes(ThreadId)
@@ -791,7 +799,7 @@ start_reply(Screen, ReplyKind, MaybeRefresh, !Info, !IO) :-
             ;
                 TryResB = unable_to_choose,
                 Msg = "Unable to choose message to reply to.",
-                update_message(Screen, set_warning(Msg), !IO),
+                update_message(!.Screen, set_warning(Msg), !IO),
                 MaybeRefresh = no
             ;
                 TryResB = error,
@@ -802,14 +810,15 @@ start_reply(Screen, ReplyKind, MaybeRefresh, !Info, !IO) :-
             MaybeRefresh = no
         )
     ;
-        update_message(Screen, set_warning("No thread."), !IO),
+        update_message(!.Screen, set_warning("No thread."), !IO),
         MaybeRefresh = no
     ).
 
-:- pred try_reply(screen::in, thread_id::in, bool::in, reply_kind::in,
-    try_reply_result::out, io::di, io::uo) is det.
+:- pred try_reply(screen::in, screen::out, thread_id::in, bool::in,
+    reply_kind::in, try_reply_result::out, index_info::in, index_info::out,
+    io::di, io::uo) is det.
 
-try_reply(Screen, ThreadId, RequireUnread, ReplyKind, Res, !IO) :-
+try_reply(!Screen, ThreadId, RequireUnread, ReplyKind, Res, !Info, !IO) :-
     (
         RequireUnread = yes,
         Args0 = ["tag:unread"]
@@ -830,14 +839,17 @@ try_reply(Screen, ThreadId, RequireUnread, ReplyKind, Res, !IO) :-
     (
         ListRes = ok(MessageIds),
         ( MessageIds = [MessageId] ->
-            start_reply_to_message_id(Screen, MessageId, ReplyKind, Sent, !IO),
+            start_reply_to_message_id(!.Screen, MessageId, ReplyKind,
+                Transition, !IO),
+            handle_screen_transition(!Screen, Transition, Sent,
+                !Info, !IO),
             Res = ok(Sent)
         ;
             Res = unable_to_choose
         )
     ;
         ListRes = error(Error),
-        update_message(Screen, set_warning(io.error_message(Error)), !IO),
+        update_message(!.Screen, set_warning(io.error_message(Error)), !IO),
         Res = error
     ).
 
@@ -1455,6 +1467,19 @@ recreate_screen(Screen0, Screen, !IndexInfo, !IO) :-
     ;
         true
     ).
+
+:- pred handle_screen_transition(screen::in, screen::out,
+    screen_transition(T)::in, T::out, index_info::in, index_info::out,
+    io::di, io::uo) is det.
+
+handle_screen_transition(!Screen, Transition, T, !Info, !IO) :-
+    (
+        Transition = screen_ok(T, MessageUpdate)
+    ;
+        Transition = screen_maybe_destroyed(T, MessageUpdate),
+        recreate_screen(!Screen, !Info, !IO)
+    ),
+    update_message(!.Screen, MessageUpdate, !IO).
 
 %-----------------------------------------------------------------------------%
 

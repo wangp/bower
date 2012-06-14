@@ -22,6 +22,12 @@
     ;       set_warning(string)
     ;       set_prompt(string).
 
+:- type screen_transition(T)
+    --->    screen_ok(T, message_update)
+    ;       screen_maybe_destroyed(T, message_update).
+            % The screen may have been destroyed during a call and must
+            % be recreated by the caller.
+
 :- pred create_screen(screen::uo, io::di, io::uo) is det.
 
 :- pred destroy_screen(screen::in, io::di, io::uo) is det.

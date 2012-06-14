@@ -22,17 +22,17 @@
 
 :- func init_compose_history = compose_history.
 
-:- pred start_compose(screen::in, sent::out,
+:- pred start_compose(screen::in, screen_transition(sent)::out,
     compose_history::in, compose_history::out, io::di, io::uo) is det.
 
-:- pred start_reply(screen::in, message::in, reply_kind::in, sent::out,
-    io::di, io::uo) is det.
+:- pred start_reply(screen::in, message::in, reply_kind::in,
+    screen_transition(sent)::out, io::di, io::uo) is det.
 
 :- pred start_reply_to_message_id(screen::in, message_id::in, reply_kind::in,
-    sent::out, io::di, io::uo) is det.
+    screen_transition(sent)::out, io::di, io::uo) is det.
 
-:- pred continue_postponed(screen::in, message::in, sent::out, io::di, io::uo)
-    is det.
+:- pred continue_postponed(screen::in, message::in,
+    screen_transition(sent)::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -110,7 +110,11 @@
 :- type staging_screen_action
     --->    continue
     ;       edit
-    ;       leave(sent).
+    ;       leave(sent, message_update).
+
+:- type call_res
+    --->    ok
+    ;       error(string).
 
 :- instance scrollable.line(attachment) where [
     pred(draw_line/6) is draw_attachment_line
@@ -124,7 +128,7 @@
 
 init_compose_history = compose_history(init_history, init_history).
 
-start_compose(Screen, Sent, !History, !IO) :-
+start_compose(Screen, Transition, !History, !IO) :-
     get_from(From, !IO),
     !.History = compose_history(ToHistory0, SubjectHistory0),
     text_entry_initial(Screen, "To: ", ToHistory0, "", complete_none, MaybeTo,
@@ -150,14 +154,14 @@ start_compose(Screen, Sent, !History, !IO) :-
             Attachments = [],
             MaybeOldDraft = no,
             create_edit_stage(Screen, Headers, Text, Attachments,
-                MaybeOldDraft, Sent, !IO)
+                MaybeOldDraft, Transition, !IO)
         ;
             MaybeSubject = no,
-            Sent = not_sent
+            Transition = screen_ok(not_sent, no_change)
         )
     ;
         MaybeTo = no,
-        Sent = not_sent
+        Transition = screen_ok(not_sent, no_change)
     ).
 
 :- pred get_from(string::out, io::di, io::uo) is det.
@@ -181,7 +185,7 @@ get_from(From, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-start_reply(Screen, Message, ReplyKind, Sent, !IO) :-
+start_reply(Screen, Message, ReplyKind, Transition, !IO) :-
     Message ^ m_id = MessageId,
     Args = ["reply", message_id_to_search_term(MessageId)],
     args_to_quoted_command(Args, Command),
@@ -207,13 +211,12 @@ start_reply(Screen, Message, ReplyKind, Sent, !IO) :-
         Attachments = [],
         MaybeOldDraft = no,
         create_edit_stage(Screen, Headers, Text, Attachments, MaybeOldDraft,
-            Sent, !IO)
+            Transition, !IO)
     ;
         CommandResult = error(Error),
         string.append_list(["Error running notmuch: ",
             io.error_message(Error)], Warning),
-        update_message(Screen, set_warning(Warning), !IO),
-        Sent = not_sent
+        Transition = screen_ok(not_sent, set_warning(Warning))
     ).
 
 :- pred set_headers_for_direct_reply(string::in, string::in,
@@ -285,7 +288,7 @@ start_reply_to_message_id(Screen, MessageId, ReplyKind, Sent, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-continue_postponed(Screen, Message, Sent, !IO) :-
+continue_postponed(Screen, Message, Transition, !IO) :-
     MessageId = Message ^ m_id,
     Headers0 = Message ^ m_headers,
     Body0 = Message ^ m_body,
@@ -310,13 +313,12 @@ continue_postponed(Screen, Message, Sent, !IO) :-
             Headers = !.Headers
         ),
         create_edit_stage(Screen, Headers, Text, Attachments, yes(MessageId),
-            Sent, !IO)
+            Transition, !IO)
     ;
         CallRes = error(Error),
         string.append_list(["Error running notmuch: ",
             io.error_message(Error)], Warning),
-        update_message(Screen, set_warning(Warning), !IO),
-        Sent = not_sent
+        Transition = screen_ok(not_sent, set_warning(Warning))
     ).
 
 :- pred first_text_part(list(part)::in, string::out, list(part)::out)
@@ -346,18 +348,18 @@ to_old_attachment(Part, old_attachment(Part)).
 %-----------------------------------------------------------------------------%
 
 :- pred create_edit_stage(screen::in, headers::in, string::in,
-    list(attachment)::in, maybe(message_id)::in, sent::out, io::di, io::uo)
-    is det.
+    list(attachment)::in, maybe(message_id)::in, screen_transition(sent)::out,
+    io::di, io::uo) is det.
 
 create_edit_stage(Screen, Headers0, Text0, Attachments, MaybeOldDraft,
-        Sent, !IO) :-
+        Transition, !IO) :-
     create_temp_message_file(Headers0, Text0, Attachments, prepare_edit,
         ResFilename, !IO),
     (
         ResFilename = ok(Filename),
-        call_editor(Screen, Filename, ResEdit, !IO),
+        call_editor(Filename, ResEdit, !IO),
         (
-            ResEdit = yes,
+            ResEdit = ok,
             parse_message_file(Filename, ResParse, !IO),
             (
                 ResParse = ok(Headers1 - Text),
@@ -370,27 +372,25 @@ create_edit_stage(Screen, Headers0, Text0, Attachments, MaybeOldDraft,
                 get_cols(Screen, Cols),
                 setup_pager_for_staging(Cols, Text, PagerInfo),
                 staging_screen(Screen, StagingInfo, AttachInfo, PagerInfo,
-                    Sent, !IO)
+                    Transition, !IO)
             ;
                 ResParse = error(Error),
                 io.error_message(Error, Msg),
-                update_message(Screen, set_warning(Msg), !IO),
-                Sent = not_sent
+                Transition = screen_ok(not_sent, set_warning(Msg))
             )
         ;
-            ResEdit = no,
-            Sent = not_sent
+            ResEdit = error(Msg),
+            Transition = screen_ok(not_sent, set_warning(Msg))
         )
     ;
         ResFilename = error(Error),
-        Message = io.error_message(Error),
-        update_message(Screen, set_warning(Message), !IO),
-        Sent = not_sent
+        Msg = io.error_message(Error),
+        Transition = screen_ok(not_sent, set_warning(Msg))
     ).
 
-:- pred call_editor(screen::in, string::in, bool::out, io::di, io::uo) is det.
+:- pred call_editor(string::in, call_res::out, io::di, io::uo) is det.
 
-call_editor(Screen, Filename, Res, !IO) :-
+call_editor(Filename, Res, !IO) :-
     get_editor_command(Editor, !IO),
     curs.def_prog_mode(!IO),
     curs.stop(!IO),
@@ -400,19 +400,17 @@ call_editor(Screen, Filename, Res, !IO) :-
     (
         CallRes = ok(ExitStatus),
         ( ExitStatus = 0 ->
-            Res = yes
+            Res = ok
         ;
             string.format("%s returned exit status %d",
                 [s(Editor), i(ExitStatus)], Warning),
-            update_message(Screen, set_warning(Warning), !IO),
-            Res = no
+            Res = error(Warning)
         )
     ;
         CallRes = error(Error),
         string.append_list(["Error running ", Editor, ": ",
             io.error_message(Error)], Warning),
-        update_message(Screen, set_warning(Warning), !IO),
-        Res = no
+        Res = error(Warning)
     ).
 
 :- pred update_references(headers::in, headers::in, headers::out) is det.
@@ -446,9 +444,10 @@ expand_aliases_after_edit(!Headers, !IO) :-
 %-----------------------------------------------------------------------------%
 
 :- pred staging_screen(screen::in, staging_info::in, attach_info::in,
-    pager_info::in, sent::out, io::di, io::uo) is det.
+    pager_info::in, screen_transition(sent)::out, io::di, io::uo) is det.
 
-staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Sent, !IO) :-
+staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
+        !IO) :-
     !.StagingInfo = staging_info(Headers, Text, MaybeOldDraft, _AttachHistory),
     split_panels(Screen, HeaderPanels, AttachmentPanels, MaybeSepPanel,
         PagerPanels),
@@ -508,25 +507,35 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Sent, !IO) :-
         Action = continue
     ; KeyCode = char('p') ->
         Attachments = get_lines_list(!.AttachInfo),
-        postpone(Screen, Headers, Text, Attachments, Res, !IO),
+        postpone(Screen, Headers, Text, Attachments, Res, PostponeMsg, !IO),
         (
             Res = yes,
             maybe_remove_draft(!.StagingInfo, !IO),
-            Action = leave(not_sent)
+            Action = leave(not_sent, PostponeMsg)
         ;
             Res = no,
+            update_message(Screen, PostponeMsg, !IO),
             Action = continue
         )
     ; KeyCode = char('Y') ->
         Attachments = get_lines_list(!.AttachInfo),
-        send_mail(Screen, Headers, Text, Attachments, Sent0, !IO),
+        send_mail(Screen, Headers, Text, Attachments, Sent0, MessageUpdate0,
+            !IO),
         (
             Sent0 = sent,
-            tag_replied_message(Screen, Headers, !IO),
+            tag_replied_message(Headers, TagRes, !IO),
             maybe_remove_draft(!.StagingInfo, !IO),
-            Action = leave(sent)
+            (
+                TagRes = ok,
+                MessageUpdate = MessageUpdate0
+            ;
+                TagRes = error(TagError),
+                MessageUpdate = set_warning(io.error_message(TagError))
+            ),
+            Action = leave(sent, MessageUpdate)
         ;
             Sent0 = not_sent,
+            update_message(Screen, MessageUpdate0, !IO),
             Action = continue
         )
     ; KeyCode = char('D') ->
@@ -534,8 +543,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Sent, !IO) :-
         (
             MaybeOldDraft = yes(_),
             Message = "Message discarded (older postponed message kept).",
-            update_message(Screen, set_info(Message), !IO),
-            Action = leave(not_sent)
+            Action = leave(not_sent, set_info(Message))
         ;
             MaybeOldDraft = no,
             Message = "Not editing a postponed message.",
@@ -547,12 +555,12 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Sent, !IO) :-
         (
             MaybeOldDraft = yes(_),
             maybe_remove_draft(!.StagingInfo, !IO),
-            update_message(Screen, set_info("Postponed message deleted."), !IO),
-            Action = leave(not_sent)
+            Message = set_info("Postponed message deleted."),
+            Action = leave(not_sent, Message)
         ;
             MaybeOldDraft = no,
-            update_message(Screen, set_info("Mail not sent."), !IO),
-            Action = leave(not_sent)
+            Message = set_info("Mail not sent."),
+            Action = leave(not_sent, Message)
         )
     ; KeyCode = char(Char) ->
         pager_input(NumPagerRows, Char, _Action, MessageUpdate, !PagerInfo),
@@ -563,15 +571,16 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Sent, !IO) :-
     ),
     (
         Action = continue,
-        staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Sent,
-            !IO)
+        staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo,
+            Transition, !IO)
     ;
         Action = edit,
         EditAttachments = get_lines_list(!.AttachInfo),
         create_edit_stage(Screen, Headers, Text, EditAttachments,
-            MaybeOldDraft, Sent, !IO)
+            MaybeOldDraft, Transition, !IO)
     ;
-        Action = leave(Sent)
+        Action = leave(Sent, TransitionMessage),
+        Transition = screen_maybe_destroyed(Sent, TransitionMessage)
     ).
 
 %-----------------------------------------------------------------------------%
@@ -1055,9 +1064,9 @@ draw_staging_bar(Screen, StagingInfo, !IO) :-
 %-----------------------------------------------------------------------------%
 
 :- pred postpone(screen::in, headers::in, string::in, list(attachment)::in,
-    bool::out, io::di, io::uo) is det.
+    bool::out, message_update::out, io::di, io::uo) is det.
 
-postpone(Screen, Headers, Text, Attachments, Res, !IO) :-
+postpone(Screen, Headers, Text, Attachments, Res, MessageUpdate, !IO) :-
     create_temp_message_file(Headers, Text, Attachments, prepare_postpone,
         ResFilename, !IO),
     (
@@ -1067,17 +1076,17 @@ postpone(Screen, Headers, Text, Attachments, Res, !IO) :-
         io.remove_file(Filename, _, !IO),
         (
             DraftRes = ok,
-            update_message(Screen, set_info("Message postponed."), !IO),
+            MessageUpdate = set_info("Message postponed."),
             Res = yes
         ;
             DraftRes = error(Error),
             Msg = io.error_message(Error),
-            update_message(Screen, set_warning(Msg), !IO),
+            MessageUpdate = set_warning(Msg),
             Res = no
         )
     ;
         ResFilename = error(Error),
-        update_message(Screen, set_warning(io.error_message(Error)), !IO),
+        MessageUpdate = set_warning(io.error_message(Error)),
         Res = no
     ).
 
@@ -1095,27 +1104,35 @@ maybe_remove_draft(StagingInfo, !IO) :-
 %-----------------------------------------------------------------------------%
 
 :- pred send_mail(screen::in, headers::in, string::in, list(attachment)::in,
-    sent::out, io::di, io::uo) is det.
+    sent::out, message_update::out, io::di, io::uo) is det.
 
-send_mail(Screen, Headers, Text, Attachments, Res, !IO) :-
+send_mail(Screen, Headers, Text, Attachments, Res, MessageUpdate, !IO) :-
     create_temp_message_file(Headers, Text, Attachments, prepare_send,
         ResFilename, !IO),
     (
         ResFilename = ok(Filename),
-        call_send_mail(Screen, Filename, Res, !IO),
-        io.remove_file(Filename, _, !IO)
+        update_message_immed(Screen, set_info("Sending message..."), !IO),
+        call_send_mail(Filename, SendRes, !IO),
+        io.remove_file(Filename, _, !IO),
+        (
+            SendRes = ok,
+            MessageUpdate = set_info("Mail sent."),
+            Res = sent
+        ;
+            SendRes = error(Message),
+            MessageUpdate = set_warning(Message),
+            Res = not_sent
+        )
     ;
         ResFilename = error(Error),
         Message = io.error_message(Error),
-        update_message(Screen, set_warning(Message), !IO),
+        MessageUpdate = set_warning(Message),
         Res = not_sent
     ).
 
-:- pred call_send_mail(screen::in, string::in, sent::out, io::di, io::uo)
-    is det.
+:- pred call_send_mail(string::in, call_res::out, io::di, io::uo) is det.
 
-call_send_mail(Screen, Filename, Sent, !IO) :-
-    update_message_immed(Screen, set_info("Sending message..."), !IO),
+call_send_mail(Filename, Res, !IO) :-
     get_sendmail_command(Command, !IO),
     io.call_system(Command ++ " < " ++ quote_arg(Filename), ResSend, !IO),
     (
@@ -1124,30 +1141,25 @@ call_send_mail(Screen, Filename, Sent, !IO) :-
             add_sent(Filename, ResAdd, !IO),
             (
                 ResAdd = ok,
-                update_message(Screen, set_info("Mail sent."), !IO),
-                Sent = sent
+                Res = ok
             ;
                 ResAdd = error(Error),
-                Msg = "Mail sent, but " ++ io.error_message(Error),
-                update_message(Screen, set_warning(Msg), !IO),
-                Sent = not_sent
+                Res = error("Mail sent, but " ++ io.error_message(Error))
             )
         ;
             Msg = string.format("%s: returned with exit status %d",
                 [s(Command), i(ExitStatus)]),
-            update_message(Screen, set_warning(Msg), !IO),
-            Sent = not_sent
+            Res = error(Msg)
         )
     ;
         ResSend = error(Error),
         Msg = Command ++ ": " ++ io.error_message(Error),
-        update_message(Screen, set_warning(Msg), !IO),
-        Sent = not_sent
+        Res = error(Msg)
     ).
 
-:- pred tag_replied_message(screen::in, headers::in, io::di, io::uo) is det.
+:- pred tag_replied_message(headers::in, io.res::out, io::di, io::uo) is det.
 
-tag_replied_message(Screen, Headers, !IO) :-
+tag_replied_message(Headers, Res, !IO) :-
     InReplyTo0 = Headers ^ h_inreplyto,
     (
         string.index(InReplyTo0, 0, '<'),
@@ -1158,16 +1170,9 @@ tag_replied_message(Screen, Headers, !IO) :-
         string.between(InReplyTo0, 1, LastPos, Id),
         MessageId = message_id(Id),
         tag_messages([tag_delta("+replied"), tag_delta("-unread")],
-            [MessageId], TagRes, !IO),
-        (
-            TagRes = ok
-        ;
-            TagRes = error(Error),
-            Msg = io.error_message(Error),
-            update_message(Screen, set_warning(Msg), !IO)
-        )
+            [MessageId], Res, !IO)
     ;
-        true
+        Res = ok
     ).
 
 %-----------------------------------------------------------------------------%

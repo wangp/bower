@@ -545,6 +545,31 @@ restore_tag_deltas(DeltaMap, ThreadLine0, ThreadLine) :-
 
 %-----------------------------------------------------------------------------%
 
+:- pred recreate_screen(screen::in, screen::out,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+
+recreate_screen(Screen0, Screen, !Info, !IO) :-
+    destroy_screen(Screen0, !IO),
+    create_screen(Screen, !IO),
+    get_rows_cols(Screen, Rows, Cols),
+    resize_thread_pager(Rows, Cols, !Info).
+
+:- pred handle_screen_transition(screen::in, screen::out,
+    screen_transition(T)::in, T::out,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+
+handle_screen_transition(Screen0, Screen, Transition, T, !Info, !IO) :-
+    (
+        Transition = screen_ok(T, MessageUpdate),
+        Screen = Screen0
+    ;
+        Transition = screen_maybe_destroyed(T, MessageUpdate),
+        recreate_screen(Screen0, Screen, !Info, !IO)
+    ),
+    update_message(Screen, MessageUpdate, !IO).
+
+%-----------------------------------------------------------------------------%
+
 :- pred thread_pager_loop(screen::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
@@ -568,43 +593,45 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = resize,
-        destroy_screen(Screen, !IO),
-        create_screen(NewScreen, !IO),
-        get_rows_cols(NewScreen, Rows, Cols),
-        resize_thread_pager(Rows, Cols, !Info),
+        recreate_screen(Screen, NewScreen, !Info, !IO),
         thread_pager_loop(NewScreen, !Info, !IO)
     ;
         Action = start_reply(Message, ReplyKind),
-        start_reply(Screen, Message, ReplyKind, Sent, !IO),
+        start_reply(Screen, Message, ReplyKind, Transition, !IO),
+        handle_screen_transition(Screen, NewScreen, Transition, Sent,
+            !Info, !IO),
         (
             Sent = sent,
             AddedMessages0 = !.Info ^ tp_added_messages,
             !Info ^ tp_added_messages := AddedMessages0 + 1,
             % XXX would be nice to move cursor to the sent message
-            reopen_thread_pager(Screen, !Info, !IO)
+            reopen_thread_pager(NewScreen, !Info, !IO)
         ;
             Sent = not_sent
         ),
-        thread_pager_loop(Screen, !Info, !IO)
+        thread_pager_loop(NewScreen, !Info, !IO)
     ;
         Action = start_recall,
         ThreadId = !.Info ^ tp_thread_id,
         select_recall(Screen, yes(ThreadId), MaybeSelected, !IO),
         (
             MaybeSelected = yes(Message),
-            continue_postponed(Screen, Message, Sent, !IO),
+            continue_postponed(Screen, Message, Transition, !IO),
+            handle_screen_transition(Screen, NewScreen, Transition, Sent,
+                !Info, !IO),
             (
                 Sent = sent,
                 AddedMessages0 = !.Info ^ tp_added_messages,
                 !Info ^ tp_added_messages := AddedMessages0 + 1,
-                reopen_thread_pager(Screen, !Info, !IO)
+                reopen_thread_pager(NewScreen, !Info, !IO)
             ;
                 Sent = not_sent
             )
         ;
-            MaybeSelected = no
+            MaybeSelected = no,
+            NewScreen = Screen
         ),
-        thread_pager_loop(Screen, !Info, !IO)
+        thread_pager_loop(NewScreen, !Info, !IO)
     ;
         Action = prompt_tag(Initial),
         prompt_tag(Screen, Initial, !Info, !IO),
