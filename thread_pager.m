@@ -613,23 +613,14 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
     ;
         Action = start_recall,
         ThreadId = !.Info ^ tp_thread_id,
-        select_recall(Screen, yes(ThreadId), MaybeSelected, !IO),
+        handle_recall(Screen, NewScreen, ThreadId, Sent, !Info, !IO),
         (
-            MaybeSelected = yes(Message),
-            continue_postponed(Screen, Message, Transition, !IO),
-            handle_screen_transition(Screen, NewScreen, Transition, Sent,
-                !Info, !IO),
-            (
-                Sent = sent,
-                AddedMessages0 = !.Info ^ tp_added_messages,
-                !Info ^ tp_added_messages := AddedMessages0 + 1,
-                reopen_thread_pager(NewScreen, !Info, !IO)
-            ;
-                Sent = not_sent
-            )
+            Sent = sent,
+            AddedMessages0 = !.Info ^ tp_added_messages,
+            !Info ^ tp_added_messages := AddedMessages0 + 1,
+            reopen_thread_pager(NewScreen, !Info, !IO)
         ;
-            MaybeSelected = no,
-            NewScreen = Screen
+            Sent = not_sent
         ),
         thread_pager_loop(NewScreen, !Info, !IO)
     ;
@@ -1876,6 +1867,23 @@ reply(Info, ReplyKind, Action, MessageUpdate) :-
     ;
         MessageUpdate = set_warning("Nothing to reply to."),
         Action = continue
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred handle_recall(screen::in, screen::out, thread_id::in, sent::out,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+
+handle_recall(!Screen, ThreadId, Sent, !Info, !IO) :-
+    select_recall(!.Screen, yes(ThreadId), TransitionA, !IO),
+    handle_screen_transition(!Screen, TransitionA, MaybeSelected, !Info, !IO),
+    (
+        MaybeSelected = yes(Message),
+        continue_postponed(!.Screen, Message, TransitionB, !IO),
+        handle_screen_transition(!Screen, TransitionB, Sent, !Info, !IO)
+    ;
+        MaybeSelected = no,
+        Sent = not_sent
     ).
 
 %-----------------------------------------------------------------------------%

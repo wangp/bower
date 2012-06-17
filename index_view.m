@@ -370,21 +370,12 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
     ;
         Action = start_recall,
         flush_async_with_progress(Screen, !IO),
-        select_recall(Screen, no, MaybeSelected, !IO),
+        handle_recall(Screen, NewScreen, Sent, !IndexInfo, !IO),
         (
-            MaybeSelected = yes(Message),
-            continue_postponed(Screen, Message, Transition, !IO),
-            handle_screen_transition(Screen, NewScreen, Transition, Sent,
-                !IndexInfo, !IO),
-            (
-                Sent = sent,
-                refresh_all(NewScreen, quiet, !IndexInfo, !IO)
-            ;
-                Sent = not_sent
-            )
+            Sent = sent,
+            refresh_all(NewScreen, quiet, !IndexInfo, !IO)
         ;
-            MaybeSelected = no,
-            NewScreen = Screen
+            Sent = not_sent
         ),
         index_loop(NewScreen, !.IndexInfo, !IO)
     ;
@@ -851,6 +842,24 @@ try_reply(!Screen, ThreadId, RequireUnread, ReplyKind, Res, !Info, !IO) :-
         ListRes = error(Error),
         update_message(!.Screen, set_warning(io.error_message(Error)), !IO),
         Res = error
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred handle_recall(screen::in, screen::out, sent::out,
+    index_info::in, index_info::out, io::di, io::uo) is det.
+
+handle_recall(!Screen, Sent, !IndexInfo, !IO) :-
+    select_recall(!.Screen, no, TransitionA, !IO),
+    handle_screen_transition(!Screen, TransitionA, MaybeSelected,
+        !IndexInfo, !IO),
+    (
+        MaybeSelected = yes(Message),
+        continue_postponed(!.Screen, Message, TransitionB, !IO),
+        handle_screen_transition(!Screen, TransitionB, Sent, !IndexInfo, !IO)
+    ;
+        MaybeSelected = no,
+        Sent = not_sent
     ).
 
 %-----------------------------------------------------------------------------%

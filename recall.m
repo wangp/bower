@@ -10,8 +10,8 @@
 :- import_module data.
 :- import_module screen.
 
-:- pred select_recall(screen::in, maybe(thread_id)::in, maybe(message)::out,
-    io::di, io::uo) is det.
+:- pred select_recall(screen::in, maybe(thread_id)::in,
+    screen_transition(maybe(message))::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -54,7 +54,7 @@
 
 %-----------------------------------------------------------------------------%
 
-select_recall(Screen, MaybeThreadId, MaybeSelected, !IO) :-
+select_recall(Screen, MaybeThreadId, Transition, !IO) :-
     find_drafts(MaybeThreadId, Ids, !IO),
     (
         Ids = [],
@@ -65,8 +65,8 @@ select_recall(Screen, MaybeThreadId, MaybeSelected, !IO) :-
             MaybeThreadId = no,
             Message = "No postponed messages."
         ),
-        update_message(Screen, set_warning(Message), !IO),
-        MaybeSelected = no
+        MaybeSelected = no,
+        Transition = screen_ok(MaybeSelected, set_warning(Message))
     ;
         Ids = [_ | _],
         time(Time, !IO),
@@ -75,7 +75,8 @@ select_recall(Screen, MaybeThreadId, MaybeSelected, !IO) :-
         Scrollable = scrollable.init_with_cursor(Lines),
         Info = recall_info(Scrollable),
         update_message(Screen, clear_message, !IO),
-        recall_screen_loop(Screen, MaybeSelected, Info, _Info, !IO)
+        recall_screen_loop(Screen, MaybeSelected, Info, _Info, !IO),
+        Transition = screen_maybe_destroyed(MaybeSelected, no_change)
     ).
 
 :- pred make_recall_line(tm::in, message_id::in, recall_line::out,
@@ -144,6 +145,12 @@ recall_screen_loop(Screen, MaybeSelected, !Info, !IO) :-
         ;
             recall_screen_loop(Screen, MaybeSelected, !Info, !IO)
         )
+    ;
+        KeyCode = code(key_resize)
+    ->
+        destroy_screen(Screen, !IO),
+        create_screen(NewScreen, !IO),
+        recall_screen_loop(NewScreen, MaybeSelected, !Info, !IO)
     ;
         recall_screen_loop(Screen, MaybeSelected, !Info, !IO)
     ).
