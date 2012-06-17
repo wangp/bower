@@ -109,6 +109,7 @@
 
 :- type staging_screen_action
     --->    continue
+    ;       resize
     ;       edit
     ;       leave(sent, message_update).
 
@@ -370,7 +371,7 @@ create_edit_stage(Screen, Headers0, Text0, Attachments, MaybeOldDraft,
                     init_history),
                 AttachInfo = scrollable.init_with_cursor(Attachments),
                 get_cols(Screen, Cols),
-                setup_pager_for_staging(Cols, Text, PagerInfo),
+                setup_pager_for_staging(Cols, Text, new_pager, PagerInfo),
                 staging_screen(Screen, StagingInfo, AttachInfo, PagerInfo,
                     Transition, !IO)
             ;
@@ -566,12 +567,20 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         pager_input(NumPagerRows, Char, _Action, MessageUpdate, !PagerInfo),
         update_message(Screen, MessageUpdate, !IO),
         Action = continue
+    ; KeyCode = code(key_resize) ->
+        Action = resize
     ;
         Action = continue
     ),
     (
         Action = continue,
         staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo,
+            Transition, !IO)
+    ;
+        Action = resize,
+        resize_staging_screen(Screen, NewScreen, !.StagingInfo, !PagerInfo,
+            !IO),
+        staging_screen(NewScreen, !.StagingInfo, !.AttachInfo, !.PagerInfo,
             Transition, !IO)
     ;
         Action = edit,
@@ -582,6 +591,21 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         Action = leave(Sent, TransitionMessage),
         Transition = screen_maybe_destroyed(Sent, TransitionMessage)
     ).
+
+:- pred resize_staging_screen(screen::in, screen::out, staging_info::in,
+    pager_info::in, pager_info::out, io::di, io::uo) is det.
+
+resize_staging_screen(Screen0, Screen, StagingInfo, PagerInfo0, PagerInfo,
+        !IO) :-
+    destroy_screen(Screen0, !IO),
+    create_screen(Screen, !IO),
+    get_cols(Screen, Cols),
+    split_panels(Screen, _HeaderPanels, _AttachmentPanels, _MaybeSepPanel,
+        PagerPanels),
+    NumPagerRows = list.length(PagerPanels),
+    Text = StagingInfo ^ si_text,
+    setup_pager_for_staging(Cols, Text,
+        retain_pager_pos(PagerInfo0, NumPagerRows), PagerInfo).
 
 %-----------------------------------------------------------------------------%
 

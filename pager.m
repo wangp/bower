@@ -23,10 +23,15 @@
     --->    include_replies
     ;       toplevel_only.
 
+:- type retain_pager_pos
+    --->    new_pager
+    ;       retain_pager_pos(pager_info, int).
+
 :- pred setup_pager(setup_mode::in, int::in, list(message)::in,
     pager_info::out) is det.
 
-:- pred setup_pager_for_staging(int::in, string::in, pager_info::out) is det.
+:- pred setup_pager_for_staging(int::in, string::in, retain_pager_pos::in,
+    pager_info::out) is det.
 
 :- type pager_action
     --->    continue
@@ -427,7 +432,7 @@ blank_line = text("", no_url).
 
 %-----------------------------------------------------------------------------%
 
-setup_pager_for_staging(Cols, Text, Info) :-
+setup_pager_for_staging(Cols, Text, RetainPagerPos, Info) :-
     Start = 0,
     LastBreak = 0,
     Cur = 0,
@@ -442,8 +447,18 @@ setup_pager_for_staging(Cols, Text, Info) :-
         snoc(message_separator, !Lines),
         Lines = list(!.Lines)
     ),
-    Scrollable = scrollable.init(Lines),
-    Info = pager_info(Scrollable).
+    Scrollable0 = scrollable.init(Lines),
+    Info0 = pager_info(Scrollable0),
+    (
+        RetainPagerPos = new_pager,
+        Info = Info0
+    ;
+        RetainPagerPos = retain_pager_pos(OldPager, NumRows),
+        % Make an attempt to retain the pager position.
+        OldPager = pager_info(OldScrollable),
+        Top = get_top(OldScrollable),
+        scroll(NumRows, Top, _, Info0, Info)
+    ).
 
 %-----------------------------------------------------------------------------%
 
