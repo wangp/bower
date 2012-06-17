@@ -164,7 +164,7 @@ open_thread_pager(Screen, ThreadId, MaybeSearch, Transition,
     update_message(Screen, set_info(Msg), !IO),
     thread_pager_loop(Screen, Info1, Info, !IO),
     get_effects(Info, Effects),
-    Transition = screen_maybe_destroyed(Effects, no_change),
+    Transition = screen_transition(Effects, no_change),
     CommonHistory = Info ^ tp_common_history.
 
 :- pred reopen_thread_pager(screen::in,
@@ -306,10 +306,11 @@ get_latest_line(LineA, LineB, Line) :-
         Line = LineB
     ).
 
-:- pred resize_thread_pager(int::in, int::in,
+:- pred resize_thread_pager(screen::in,
     thread_pager_info::in, thread_pager_info::out) is det.
 
-resize_thread_pager(Rows, _Cols, !Info) :-
+resize_thread_pager(Screen, !Info) :-
+    get_rows_cols(Screen, Rows, _Cols),
     Scrollable0 = !.Info ^ tp_scrollable,
     compute_num_rows(Rows, Scrollable0, NumThreadRows, NumPagerRows),
     ( get_cursor(Scrollable0, Cursor) ->
@@ -546,26 +547,18 @@ restore_tag_deltas(DeltaMap, ThreadLine0, ThreadLine) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred recreate_screen(screen::in, screen::out,
-    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
-
-recreate_screen(Screen0, Screen, !Info, !IO) :-
-    destroy_screen(Screen0, !IO),
-    create_screen(Screen, !IO),
-    get_rows_cols(Screen, Rows, Cols),
-    resize_thread_pager(Rows, Cols, !Info).
-
 :- pred handle_screen_transition(screen::in, screen::out,
     screen_transition(T)::in, T::out,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 handle_screen_transition(Screen0, Screen, Transition, T, !Info, !IO) :-
+    Transition = screen_transition(T, MessageUpdate),
+    fast_forward_screen(Screen0, Screen, Resized, !IO),
     (
-        Transition = screen_ok(T, MessageUpdate),
-        Screen = Screen0
+        Resized = yes,
+        resize_thread_pager(Screen, !Info)
     ;
-        Transition = screen_maybe_destroyed(T, MessageUpdate),
-        recreate_screen(Screen0, Screen, !Info, !IO)
+        Resized = no
     ),
     update_message(Screen, MessageUpdate, !IO).
 
@@ -594,7 +587,8 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = resize,
-        recreate_screen(Screen, NewScreen, !Info, !IO),
+        replace_screen_for_resize(Screen, NewScreen, !IO),
+        resize_thread_pager(NewScreen, !Info),
         thread_pager_loop(NewScreen, !Info, !IO)
     ;
         Action = start_reply(Message, ReplyKind),

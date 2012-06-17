@@ -23,14 +23,21 @@
     ;       set_prompt(string).
 
 :- type screen_transition(T)
-    --->    screen_ok(T, message_update)
-    ;       screen_maybe_destroyed(T, message_update).
-            % The screen may have been destroyed during a call and must
-            % be recreated by the caller.
+    --->    screen_transition(T, message_update).
+            % The caller needs to account for the screen being resized
+            % during the call.
+
+:- type screen_resized
+    --->    yes
+    ;       no.
 
 :- pred create_screen(screen::uo, io::di, io::uo) is det.
 
-:- pred destroy_screen(screen::in, io::di, io::uo) is det.
+:- pred replace_screen_for_resize(screen::in, screen::out, io::di, io::uo)
+    is det.
+
+:- pred fast_forward_screen(screen::in, screen::out, screen_resized::out,
+    io::di, io::uo) is det.
 
 :- pred get_cols(screen::in, int::out) is det.
 
@@ -90,9 +97,9 @@
 
 :- import_module string_util.
 
-:- type screen == mutvar(real_screen).
+:- type screen == mutvar(screen_version).
 
-:- type real_screen
+:- type screen_version
     --->    screen(
                 rows            :: int,
                 cols            :: int,
@@ -100,7 +107,13 @@
                 bar_panel       :: panel,
                 msgentry_panel  :: panel
             )
-    ;       destroyed_screen.
+    ;       forward_screen(
+                % This version of the screen is obsolete,
+                % replaced by a forwarding pointer.
+                old_rows        :: int,
+                old_cols        :: int,
+                fwd_screen      :: screen
+            ).
 
 :- inst real_screen
     --->    screen(ground, ground, ground, ground, ground).
@@ -132,17 +145,56 @@ create_row_panel(Cols, Row, Panel, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-destroy_screen(Screen, !IO) :-
+replace_screen_for_resize(Screen0, Screen, !IO) :-
     promise_pure (
-        impure get_mutvar(Screen, RealScreen),
+        impure destroy_screen(Screen0, OldRows, OldCols, !IO),
+        create_screen(Screen, !IO),
+        % Replace Screen0 by a forwarding pointer.
+        impure set_mutvar(Screen0, forward_screen(OldRows, OldCols, Screen))
+    ).
+
+:- impure pred destroy_screen(screen::in, int::out, int::out, io::di, io::uo)
+    is det.
+
+destroy_screen(Screen, OldRows, OldCols, !IO) :-
+    impure get_mutvar(Screen, ScreenVersion),
+    (
+        ScreenVersion = screen(OldRows, OldCols, MainPanels, BarPanel,
+            MsgEntryPanel),
+        % impure set_mutvar(Screen, destroyed_screen),
+        list.foldl(panel.delete, [BarPanel, MsgEntryPanel | MainPanels], !IO)
+    ;
+        ScreenVersion = forward_screen(_, _, _),
+        unexpected($module, $pred, "screen already destroyed")
+    ).
+
+%-----------------------------------------------------------------------------%
+
+fast_forward_screen(Screen0, Screen, Resized, !IO) :-
+    promise_pure (
+        impure get_mutvar(Screen0, ScreenVersion),
         (
-            RealScreen = screen(_, _, MainPanels, BarPanel, MsgEntryPanel),
-            impure set_mutvar(Screen, destroyed_screen),
-            list.foldl(panel.delete, [BarPanel, MsgEntryPanel | MainPanels],
-                !IO)
+            ScreenVersion = screen(_, _, _, _, _),
+            Screen = Screen0,
+            Resized = no
         ;
-            RealScreen = destroyed_screen
+            ScreenVersion = forward_screen(OldRows, OldCols, Screen1),
+            impure fast_forward_screen_2(Screen1, Screen, Rows, Cols),
+            Resized = ( Rows = OldRows, Cols = OldCols -> yes ; no )
         )
+    ).
+
+:- impure pred fast_forward_screen_2(screen::in, screen::out,
+    int::out, int::out) is det.
+
+fast_forward_screen_2(Screen0, Screen, Rows, Cols) :-
+    impure get_mutvar(Screen0, ScreenVersion),
+    (
+        ScreenVersion = screen(Rows, Cols, _, _, _),
+        Screen = Screen0
+    ;
+        ScreenVersion = forward_screen(_, _, Screen1),
+        impure fast_forward_screen_2(Screen1, Screen, Rows, Cols)
     ).
 
 %-----------------------------------------------------------------------------%
@@ -172,7 +224,7 @@ get_msgentry_panel(Screen, MsgEntryPanel) :-
     get_real_screen(Screen, RealScreen),
     MsgEntryPanel = RealScreen ^ msgentry_panel.
 
-:- pred get_real_screen(screen::in, real_screen::out(real_screen)) is det.
+:- pred get_real_screen(screen::in, screen_version::out(real_screen)) is det.
 
 get_real_screen(Screen, RealScreen) :-
     promise_pure (
@@ -180,7 +232,7 @@ get_real_screen(Screen, RealScreen) :-
         (
             RealScreen = screen(_, _, _, _, _)
         ;
-            RealScreen = destroyed_screen,
+            RealScreen = forward_screen(_, _, _),
             unexpected($module, $pred, "screen already destroyed")
         )
     ).

@@ -66,7 +66,7 @@ select_recall(Screen, MaybeThreadId, Transition, !IO) :-
             Message = "No postponed messages."
         ),
         MaybeSelected = no,
-        Transition = screen_ok(MaybeSelected, set_warning(Message))
+        Transition = screen_transition(MaybeSelected, set_warning(Message))
     ;
         Ids = [_ | _],
         time(Time, !IO),
@@ -76,7 +76,7 @@ select_recall(Screen, MaybeThreadId, Transition, !IO) :-
         Info = recall_info(Scrollable),
         update_message(Screen, clear_message, !IO),
         recall_screen_loop(Screen, MaybeSelected, Info, _Info, !IO),
-        Transition = screen_maybe_destroyed(MaybeSelected, no_change)
+        Transition = screen_transition(MaybeSelected, no_change)
     ).
 
 :- pred make_recall_line(tm::in, message_id::in, recall_line::out,
@@ -148,8 +148,7 @@ recall_screen_loop(Screen, MaybeSelected, !Info, !IO) :-
     ;
         KeyCode = code(key_resize)
     ->
-        destroy_screen(Screen, !IO),
-        create_screen(NewScreen, !IO),
+        replace_screen_for_resize(Screen, NewScreen, !IO),
         recall_screen_loop(NewScreen, MaybeSelected, !Info, !IO)
     ;
         recall_screen_loop(Screen, MaybeSelected, !Info, !IO)

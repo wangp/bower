@@ -294,7 +294,8 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         index_loop_no_draw(Screen, !.IndexInfo, !IO)
     ;
         Action = resize,
-        recreate_screen(Screen, NewScreen, !IndexInfo, !IO),
+        replace_screen_for_resize(Screen, NewScreen, !IO),
+        recreate_screen(NewScreen, !IndexInfo),
         index_loop(NewScreen, !.IndexInfo, !IO)
     ;
         Action = open_pager(ThreadId),
@@ -1461,12 +1462,9 @@ replace_index_cursor_line(Nowish, Thread, !Info) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred recreate_screen(screen::in, screen::out,
-    index_info::in, index_info::out, io::di, io::uo) is det.
+:- pred recreate_screen(screen::in, index_info::in, index_info::out) is det.
 
-recreate_screen(Screen0, Screen, !IndexInfo, !IO) :-
-    destroy_screen(Screen0, !IO),
-    create_screen(Screen, !IO),
+recreate_screen(Screen, !IndexInfo) :-
     % Keep cursor visible.
     Scrollable0 = !.IndexInfo ^ i_scrollable,
     ( get_cursor(Scrollable0, Cursor) ->
@@ -1482,11 +1480,13 @@ recreate_screen(Screen0, Screen, !IndexInfo, !IO) :-
     io::di, io::uo) is det.
 
 handle_screen_transition(!Screen, Transition, T, !Info, !IO) :-
+    Transition = screen_transition(T, MessageUpdate),
+    fast_forward_screen(!Screen, Resized, !IO),
     (
-        Transition = screen_ok(T, MessageUpdate)
+        Resized = yes,
+        recreate_screen(!.Screen, !Info)
     ;
-        Transition = screen_maybe_destroyed(T, MessageUpdate),
-        recreate_screen(!Screen, !Info, !IO)
+        Resized = no
     ),
     update_message(!.Screen, MessageUpdate, !IO).
 

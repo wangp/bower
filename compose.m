@@ -158,11 +158,11 @@ start_compose(Screen, Transition, !History, !IO) :-
                 MaybeOldDraft, Transition, !IO)
         ;
             MaybeSubject = no,
-            Transition = screen_ok(not_sent, no_change)
+            Transition = screen_transition(not_sent, no_change)
         )
     ;
         MaybeTo = no,
-        Transition = screen_ok(not_sent, no_change)
+        Transition = screen_transition(not_sent, no_change)
     ).
 
 :- pred get_from(string::out, io::di, io::uo) is det.
@@ -217,7 +217,7 @@ start_reply(Screen, Message, ReplyKind, Transition, !IO) :-
         CommandResult = error(Error),
         string.append_list(["Error running notmuch: ",
             io.error_message(Error)], Warning),
-        Transition = screen_ok(not_sent, set_warning(Warning))
+        Transition = screen_transition(not_sent, set_warning(Warning))
     ).
 
 :- pred set_headers_for_direct_reply(string::in, string::in,
@@ -319,7 +319,7 @@ continue_postponed(Screen, Message, Transition, !IO) :-
         CallRes = error(Error),
         string.append_list(["Error running notmuch: ",
             io.error_message(Error)], Warning),
-        Transition = screen_ok(not_sent, set_warning(Warning))
+        Transition = screen_transition(not_sent, set_warning(Warning))
     ).
 
 :- pred first_text_part(list(part)::in, string::out, list(part)::out)
@@ -377,16 +377,16 @@ create_edit_stage(Screen, Headers0, Text0, Attachments, MaybeOldDraft,
             ;
                 ResParse = error(Error),
                 io.error_message(Error, Msg),
-                Transition = screen_ok(not_sent, set_warning(Msg))
+                Transition = screen_transition(not_sent, set_warning(Msg))
             )
         ;
             ResEdit = error(Msg),
-            Transition = screen_ok(not_sent, set_warning(Msg))
+            Transition = screen_transition(not_sent, set_warning(Msg))
         )
     ;
         ResFilename = error(Error),
         Msg = io.error_message(Error),
-        Transition = screen_ok(not_sent, set_warning(Msg))
+        Transition = screen_transition(not_sent, set_warning(Msg))
     ).
 
 :- pred call_editor(string::in, call_res::out, io::di, io::uo) is det.
@@ -589,7 +589,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
             MaybeOldDraft, Transition, !IO)
     ;
         Action = leave(Sent, TransitionMessage),
-        Transition = screen_maybe_destroyed(Sent, TransitionMessage)
+        Transition = screen_transition(Sent, TransitionMessage)
     ).
 
 :- pred resize_staging_screen(screen::in, screen::out, staging_info::in,
@@ -597,8 +597,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
 
 resize_staging_screen(Screen0, Screen, StagingInfo, PagerInfo0, PagerInfo,
         !IO) :-
-    destroy_screen(Screen0, !IO),
-    create_screen(Screen, !IO),
+    replace_screen_for_resize(Screen0, Screen, !IO),
     get_cols(Screen, Cols),
     split_panels(Screen, _HeaderPanels, _AttachmentPanels, _MaybeSepPanel,
         PagerPanels),
