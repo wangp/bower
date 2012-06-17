@@ -380,10 +380,10 @@ detect_diff(String, I, CurLineEnd, PrevDiff, QuoteLevel, Diff) :-
         Diff = diff_add
     ;
         Char = ('-'),
-        (
-            unify_upto(String, J, CurLineEnd, '-')
-        =>
-            J = CurLineEnd
+        ( J = CurLineEnd ->
+            true
+        ;
+            not dashes_or_sig_separator(String, J, CurLineEnd)
         ),
         (
             PrevDiff = yes
@@ -431,12 +431,18 @@ lookahead_likely_diff(String, Start, ExpectedQuoteLevel) :-
         unsafe_substring_prefix(String, I, "Index: ")
     ).
 
-:- pred unify_upto(string::in, int::in, int::in, char::in) is semidet.
+:- pred dashes_or_sig_separator(string::in, int::in, int::in) is semidet.
 
-unify_upto(String, I0, End, MatchChar) :-
+dashes_or_sig_separator(String, I0, End) :-
     ( I0 < End ->
-        string.unsafe_index_next(String, I0, I1, MatchChar),
-        unify_upto(String, I1, End, MatchChar)
+        string.unsafe_index_next(String, I0, I1, Char),
+        (
+            Char = ('-'),
+            dashes_or_sig_separator(String, I1, End)
+        ;
+            Char = (' '),
+            I1 = End
+        )
     ;
         true
     ).
