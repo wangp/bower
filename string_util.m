@@ -14,6 +14,8 @@
 
 :- pred strcase_prefix(string::in, string::in) is semidet.
 
+:- pred unsafe_substring_prefix(string::in, int::in, string::in) is semidet.
+
 :- pred strcase_str(string::in, string::in) is semidet.
 
 :- pred strrchr(string::in, char::in, int::out) is semidet.
@@ -76,6 +78,13 @@ string_wcwidth_2(C, Width, Width + wcwidth(C)).
     [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
 "
     SUCCESS_INDICATOR = (strncasecmp(String, Prefix, strlen(Prefix)) == 0);
+").
+
+:- pragma foreign_proc("C",
+    unsafe_substring_prefix(String::in, Index::in, Prefix::in),
+    [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
+"
+    SUCCESS_INDICATOR = (strncmp(String + Index, Prefix, strlen(Prefix)) == 0);
 ").
 
 :- pragma foreign_proc("C",

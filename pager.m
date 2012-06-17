@@ -115,8 +115,7 @@
 :- type pager_line
     --->    start_message_header(message, string, string)
     ;       header(string, string)
-    ;       text(quote_level, string, quote_marker_end, maybe_url)
-    ;       diff_text(diff_line, string)
+    ;       text(quote_level, string, quote_marker_end, text_type)
     ;       attachment(part)
     ;       message_separator.
 
@@ -124,12 +123,14 @@
 
 :- type quote_marker_end == int.
 
-:- type maybe_url
-    --->    url(int, int)   % (start, end] columns
-    ;       no_url.
+:- type text_type
+    --->    plain
+    ;       diff(diff_line)
+    ;       url(int, int).  % (start, end] columns
 
 :- type diff_line
-    --->    diff_add
+    --->    diff_common
+    ;       diff_add
     ;       diff_rem
     ;       diff_hunk
     ;       diff_index.
@@ -222,9 +223,10 @@ append_part(Cols, Part, !Lines, !IsFirst) :-
         LastBreak = 0,
         Cur = 0,
         QuoteLevel = no,
-        InDiff = no,
-        append_text(Cols, Text, Start, LastBreak, Cur, QuoteLevel, InDiff,
-            !Lines)
+        DiffQuoteLevels = set.init,
+        append_text(Cols, Text, Start, LastBreak, Cur, QuoteLevel,
+            DiffQuoteLevels, _, cord.init, TextLines),
+        !:Lines = !.Lines ++ TextLines
     ;
         Content = subparts(SubParts),
         (
@@ -249,49 +251,53 @@ append_part(Cols, Part, !Lines, !IsFirst) :-
     ).
 
 :- pred append_text(int::in, string::in, int::in, int::in, int::in,
-    maybe(quote_level)::in, bool::in,
+    maybe(quote_level)::in, set(quote_level)::in, set(quote_level)::out,
     cord(pager_line)::in, cord(pager_line)::out) is det.
 
-append_text(Max, String, Start, LastBreak, Cur, QuoteLevel, !.InDiff, !Lines) :-
+append_text(Max, String, Start, LastBreak, Cur, QuoteLevel, !DiffQuoteLevels,
+        !Lines) :-
     ( string.unsafe_index_next(String, Cur, Next, Char) ->
         (
             Char = '\n'
         ->
-            append_substring(String, Start, Cur, QuoteLevel, _, !InDiff, !Lines),
-            append_text(Max, String, Next, Next, Next, no, !.InDiff, !Lines)
+            append_substring(String, Start, Cur, QuoteLevel, _,
+                !DiffQuoteLevels, !Lines),
+            append_text(Max, String, Next, Next, Next, no,
+                !DiffQuoteLevels, !Lines)
         ;
             char.is_whitespace(Char)
         ->
-            append_text(Max, String, Start, Cur, Next, QuoteLevel, !.InDiff,
-                !Lines)
+            append_text(Max, String, Start, Cur, Next, QuoteLevel,
+                !DiffQuoteLevels, !Lines)
         ;
             % XXX this should actually count with wcwidth
             Next - Start > Max
         ->
             maybe_append_substring(String, Start, LastBreak, QuoteLevel,
-                ContQuoteLevel, !InDiff, !Lines),
-            skip_whitespace(String, LastBreak, NextStart),
+                ContQuoteLevel, !DiffQuoteLevels, !Lines),
+            skip_nls(String, LastBreak, NextStart),
             append_text(Max, String, NextStart, NextStart, Next,
-                yes(ContQuoteLevel), !.InDiff, !Lines)
+                yes(ContQuoteLevel), !DiffQuoteLevels, !Lines)
         ;
             append_text(Max, String, Start, LastBreak, Next, QuoteLevel,
-                !.InDiff, !Lines)
+                !DiffQuoteLevels, !Lines)
         )
     ;
         % End of string.
         maybe_append_substring(String, Start, Cur, QuoteLevel, _,
-            !.InDiff, _, !Lines)
+            !DiffQuoteLevels, !Lines)
     ).
 
 :- pred maybe_append_substring(string::in, int::in, int::in,
-    maybe(quote_level)::in, quote_level::out, bool::in, bool::out,
+    maybe(quote_level)::in, quote_level::out,
+    set(quote_level)::in, set(quote_level)::out,
     cord(pager_line)::in, cord(pager_line)::out) is det.
 
 maybe_append_substring(String, Start, End, QuoteLevel, ContQuoteLevel,
-        !InDiff, !Lines) :-
+        !DiffQuoteLevels, !Lines) :-
     ( End > Start ->
         append_substring(String, Start, End, QuoteLevel, ContQuoteLevel,
-            !InDiff, !Lines)
+            !DiffQuoteLevels, !Lines)
     ;
         (
             QuoteLevel = yes(ContQuoteLevel)
@@ -302,11 +308,11 @@ maybe_append_substring(String, Start, End, QuoteLevel, ContQuoteLevel,
     ).
 
 :- pred append_substring(string::in, int::in, int::in, maybe(quote_level)::in,
-    quote_level::out, bool::in, bool::out,
+    quote_level::out, set(quote_level)::in, set(quote_level)::out,
     cord(pager_line)::in, cord(pager_line)::out) is det.
 
-append_substring(String, Start, End, MaybeLevel, ContQuoteLevel, !InDiff,
-        !Lines) :-
+append_substring(String, Start, End, MaybeLevel, ContQuoteLevel,
+        !DiffQuoteLevels, !Lines) :-
     string.unsafe_between(String, Start, End, SubString),
     (
         MaybeLevel = yes(QuoteLevel),
@@ -315,26 +321,27 @@ append_substring(String, Start, End, MaybeLevel, ContQuoteLevel, !InDiff,
         MaybeLevel = no,
         detect_quote_level(SubString, 0, QuoteLevel, QuoteMarkerEnd)
     ),
-    ( QuoteLevel = 0 ->
-        append_unquoted_string(SubString, !InDiff, !Lines)
+    ( contains(!.DiffQuoteLevels, QuoteLevel) ->
+        PrevDiff = yes
     ;
-        MaybeUrl = detect_maybe_url(SubString),
-        Text = text(QuoteLevel, SubString, QuoteMarkerEnd, MaybeUrl),
-        snoc(Text, !Lines)
+        PrevDiff = no
     ),
-    ContQuoteLevel = QuoteLevel.
-
-:- pred append_unquoted_string(string::in, bool::in, bool::out,
-    cord(pager_line)::in, cord(pager_line)::out) is det.
-
-append_unquoted_string(String, !InDiff, !Lines) :-
-    (  detect_diff(String, !.InDiff, DiffLine) ->
-        !:InDiff = yes,
-        snoc(diff_text(DiffLine, String), !Lines)
+    (
+        detect_diff(String, Start + QuoteMarkerEnd, End, PrevDiff,
+            QuoteLevel, DiffLine)
+    ->
+        LineType = diff(DiffLine),
+        insert(QuoteLevel, !DiffQuoteLevels)
+    ; PrevDiff = yes ->
+        LineType = diff(diff_common)
+    ; detect_url(SubString, UrlStart, UrlEnd) ->
+        LineType = url(UrlStart, UrlEnd)
     ;
-        MaybeUrl = detect_maybe_url(String),
-        snoc(text(0, String, 0, MaybeUrl), !Lines)
-    ).
+        LineType = plain
+    ),
+    Text = text(QuoteLevel, SubString, QuoteMarkerEnd, LineType),
+    snoc(Text, !Lines),
+    ContQuoteLevel = QuoteLevel.
 
 :- pred detect_quote_level(string::in, int::in, int::out, int::out) is det.
 
@@ -354,52 +361,90 @@ detect_quote_level(String, Pos, QuoteLevel, QuoteMarkerEnd) :-
         QuoteMarkerEnd = Pos
     ).
 
-:- pred detect_diff(string::in, bool::in, diff_line::out) is semidet.
+:- pred detect_diff(string::in, int::in, int::in, bool::in, quote_level::in,
+    diff_line::out) is semidet.
 
-detect_diff(String, InDiff, Diff) :-
-    ( String \= "" ->
-        string.unsafe_index(String, 0, Char),
+detect_diff(String, I, CurLineEnd, PrevDiff, QuoteLevel, Diff) :-
+    string.unsafe_index_next(String, I, J, Char),
+    (
+        Char = ('+'),
         (
-            Char = ('+'),
-            InDiff = yes,
-            Diff = diff_add
+            PrevDiff = yes
         ;
-            Char = ('-'),
-            not string.all_match(unify('-'), String),
-            InDiff = yes,
-            Diff = diff_rem
-        ;
-            Char = ('@'),
-            string.prefix(String, "@@ "),
-            Diff = diff_hunk
-        ;
-            Char = 'd',
-            string.prefix(String, "diff -"),
-            Diff = diff_index
-        ;
-            Char = 'I',
-            string.prefix(String, "Index: "),
-            Diff = diff_index
-        )
+            QuoteLevel > 0,
+            skip_nls(String, CurLineEnd, NextLineOffset),
+            lookahead_likely_diff(String, NextLineOffset, QuoteLevel)
+        ),
+        Diff = diff_add
     ;
-        fail
+        Char = ('-'),
+        (
+            unify_upto(String, J, CurLineEnd, '-')
+        =>
+            J = CurLineEnd
+        ),
+        (
+            PrevDiff = yes
+        ;
+            QuoteLevel > 0,
+            skip_nls(String, CurLineEnd, NextLineOffset),
+            lookahead_likely_diff(String, NextLineOffset, QuoteLevel)
+        ),
+        Diff = diff_rem
+    ;
+        Char = ('@'),
+        unsafe_substring_prefix(String, I, "@@ "),
+        Diff = diff_hunk
+    ;
+        Char = 'd',
+        unsafe_substring_prefix(String, I, "diff -"),
+        Diff = diff_index
+    ;
+        Char = 'I',
+        unsafe_substring_prefix(String, I, "Index: "),
+        Diff = diff_index
     ).
 
-:- func detect_maybe_url(string) = maybe_url.
+    % Quoted diffs are often missing the standard diff headers.  To help
+    % detect diff lines without diff headers, we look ahead one line (only).
+    %
+:- pred lookahead_likely_diff(string::in, int::in, quote_level::in) is semidet.
 
-detect_maybe_url(String) = MaybeUrl :-
-    ( detect_url(String, Start, End) ->
-        MaybeUrl = url(Start, End)
+lookahead_likely_diff(String, Start, ExpectedQuoteLevel) :-
+    detect_quote_level(String, Start, ExpectedQuoteLevel, QuoteMarkerEnd),
+    I = QuoteMarkerEnd,
+    string.unsafe_index_next(String, I, _, Char),
+    (
+        Char = ('+')
     ;
-        MaybeUrl = no_url
+        Char = ('-')
+    ;
+        Char = ('@'),
+        unsafe_substring_prefix(String, I, "@@ ")
+    ;
+        Char = 'd',
+        unsafe_substring_prefix(String, I, "diff -")
+    ;
+        Char = 'I',
+        unsafe_substring_prefix(String, I, "Index: ")
     ).
 
-:- pred skip_whitespace(string::in, int::in, int::out) is det.
+:- pred unify_upto(string::in, int::in, int::in, char::in) is semidet.
 
-skip_whitespace(String, I0, I) :-
+unify_upto(String, I0, End, MatchChar) :-
+    ( I0 < End ->
+        string.unsafe_index_next(String, I0, I1, MatchChar),
+        unify_upto(String, I1, End, MatchChar)
+    ;
+        true
+    ).
+
+:- pred skip_nls(string::in, int::in, int::out) is det.
+
+skip_nls(String, I0, I) :-
     ( string.unsafe_index_next(String, I0, I1, Char) ->
-        ( char.is_whitespace(Char) ->
-            skip_whitespace(String, I1, I)
+        ( Char = ('\n') ->
+            skip_nls(String, I1, I)
         ;
             I = I0
         )
@@ -428,13 +473,13 @@ append_encapsulated_header(Header, Value, !Lines) :-
     ( Value = "" ->
         true
     ;
-        Line = text(0, Header ++ ": " ++ Value, 0, no_url),
+        Line = text(0, Header ++ ": " ++ Value, 0, plain),
         snoc(Line, !Lines)
     ).
 
 :- func blank_line = pager_line.
 
-blank_line = text(0, "", 0, no_url).
+blank_line = text(0, "", 0, plain).
 
 %-----------------------------------------------------------------------------%
 
@@ -443,11 +488,11 @@ setup_pager_for_staging(Cols, Text, RetainPagerPos, Info) :-
     LastBreak = 0,
     Cur = 0,
     MaybeLevel = no,
-    InDiff = no,
+    DiffQuoteLevels = set.init,
     some [!Lines] (
         !:Lines = cord.init,
-        append_text(Cols, Text, Start, LastBreak, Cur, MaybeLevel, InDiff,
-            !Lines),
+        append_text(Cols, Text, Start, LastBreak, Cur, MaybeLevel,
+            DiffQuoteLevels, _DiffQuoteLevels, !Lines),
         snoc(message_separator, !Lines),
         snoc(message_separator, !Lines),
         snoc(message_separator, !Lines),
@@ -774,7 +819,6 @@ line_matches_search(Search, Line) :-
         ( Line = start_message_header(_, _, String)
         ; Line = header(_, String)
         ; Line = text(_, String, _, _)
-        ; Line = diff_text(_, String)
         ),
         strcase_str(String, Search)
     ;
@@ -906,14 +950,8 @@ draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         panel.attr_set(Panel, Attr, !IO),
         my_addstr(Panel, Value, !IO)
     ;
-        (
-            Line = text(QuoteLevel, Text, _QuoteMarkerEnd, MaybeUrl),
-            Attr0 = quote_level_to_attr(QuoteLevel)
-        ;
-            Line = diff_text(DiffLine, Text),
-            MaybeUrl = no_url,
-            Attr0 = diff_line_to_attr(DiffLine)
-        ),
+        Line = text(QuoteLevel, Text, QuoteMarkerEnd, TextType),
+        Attr0 = quote_level_to_attr(QuoteLevel),
         (
             IsCursor = yes,
             Attr1 = reverse
@@ -922,11 +960,24 @@ draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
             Attr1 = normal
         ),
         (
-            MaybeUrl = no_url,
+            TextType = plain,
             panel.attr_set(Panel, Attr0 + Attr1, !IO),
             my_addstr(Panel, Text, !IO)
         ;
-            MaybeUrl = url(UrlStart, UrlEnd),
+            TextType = diff(DiffLine),
+            DiffAttr = diff_line_to_attr(DiffLine),
+            ( QuoteMarkerEnd = 0 ->
+                panel.attr_set(Panel, DiffAttr + Attr1, !IO),
+                my_addstr(Panel, Text, !IO)
+            ;
+                End = string.length(Text),
+                panel.attr_set(Panel, Attr0 + Attr1, !IO),
+                my_addstr(Panel, string.between(Text, 0, QuoteMarkerEnd), !IO),
+                panel.attr_set(Panel, DiffAttr + Attr1, !IO),
+                my_addstr(Panel, string.between(Text, QuoteMarkerEnd, End), !IO)
+            )
+        ;
+            TextType = url(UrlStart, UrlEnd),
             End = string.length(Text),
             panel.attr_set(Panel, Attr0 + Attr1, !IO),
             my_addstr(Panel, string.between(Text, 0, UrlStart), !IO),
@@ -976,6 +1027,7 @@ quote_level_to_attr(QuoteLevel) = Attr :-
 
 :- func diff_line_to_attr(diff_line) = attr.
 
+diff_line_to_attr(diff_common) = normal.
 diff_line_to_attr(diff_add) = fg_bg(cyan, black) + bold.
 diff_line_to_attr(diff_rem) = fg_bg(red, black) + bold.
 diff_line_to_attr(diff_hunk) = fg_bg(yellow, black) + bold.
