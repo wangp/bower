@@ -30,8 +30,8 @@
             ).
 
 :- pred open_thread_pager(screen::in, thread_id::in, maybe(string)::in,
-    thread_pager_effects::out, common_history::in, common_history::out,
-    io::di, io::uo) is det.
+    screen_transition(thread_pager_effects)::out,
+    common_history::in, common_history::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -155,7 +155,7 @@
 
 %-----------------------------------------------------------------------------%
 
-open_thread_pager(Screen, ThreadId, MaybeSearch, Effects,
+open_thread_pager(Screen, ThreadId, MaybeSearch, Transition,
         CommonHistory0, CommonHistory, !IO) :-
     create_thread_pager(Screen, ThreadId, ordering_threaded, CommonHistory0,
         Info0, Count, !IO),
@@ -164,6 +164,7 @@ open_thread_pager(Screen, ThreadId, MaybeSearch, Effects,
     update_message(Screen, set_info(Msg), !IO),
     thread_pager_loop(Screen, Info1, Info, !IO),
     get_effects(Info, Effects),
+    Transition = screen_maybe_destroyed(Effects, no_change),
     CommonHistory = Info ^ tp_common_history.
 
 :- pred reopen_thread_pager(screen::in,

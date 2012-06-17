@@ -301,11 +301,11 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         flush_async_with_progress(Screen, !IO),
         MaybeSearch = !.IndexInfo ^ i_internal_search,
         CommonHistory0 = !.IndexInfo ^ i_common_history,
-        open_thread_pager(Screen, ThreadId, MaybeSearch, TagUpdates,
+        open_thread_pager(Screen, ThreadId, MaybeSearch, Transition,
             CommonHistory0, CommonHistory, !IO),
+        handle_screen_transition(Screen, NewScreen, Transition,
+            TagUpdates, !IndexInfo, !IO),
         effect_thread_pager_changes(TagUpdates, !IndexInfo, !IO),
-        % In case of resize.
-        recreate_screen(Screen, NewScreen, !IndexInfo, !IO),
         !IndexInfo ^ i_common_history := CommonHistory,
         index_loop(NewScreen, !.IndexInfo, !IO)
     ;
