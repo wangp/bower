@@ -346,16 +346,18 @@ append_substring(String, Start, End, MaybeLevel, ContQuoteLevel,
 :- pred detect_quote_level(string::in, int::in, int::out, int::out) is det.
 
 detect_quote_level(String, Pos, QuoteLevel, QuoteMarkerEnd) :-
-    ( string.unsafe_index_next(String, Pos, NextPos, Char) ->
-        ( char.is_whitespace(Char) ->
-            detect_quote_level(String, NextPos, QuoteLevel, QuoteMarkerEnd)
-        ; Char = ('>') ->
-            detect_quote_level(String, NextPos, QuoteLevel0, QuoteMarkerEnd),
-            QuoteLevel = 1 + QuoteLevel0
+    (
+        string.unsafe_index_next(String, Pos, NextPos0, QuoteChar),
+        QuoteChar = ('>')
+    ->
+        % Accept a single optional space after the quote character.
+        ( string.unsafe_index_next(String, NextPos0, NextPos1, ' ') ->
+            NextPos = NextPos1
         ;
-            QuoteLevel = 0,
-            QuoteMarkerEnd = Pos
-        )
+            NextPos = NextPos0
+        ),
+        detect_quote_level(String, NextPos, QuoteLevel0, QuoteMarkerEnd),
+        QuoteLevel = 1 + QuoteLevel0
     ;
         QuoteLevel = 0,
         QuoteMarkerEnd = Pos
