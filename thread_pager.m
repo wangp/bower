@@ -312,7 +312,7 @@ get_latest_line(LineA, LineB, Line) :-
 resize_thread_pager(Screen, !Info) :-
     get_rows_cols(Screen, Rows, _Cols),
     Scrollable0 = !.Info ^ tp_scrollable,
-    compute_num_rows(Rows, Scrollable0, NumThreadRows, NumPagerRows),
+    compute_num_rows(Rows - 2, Scrollable0, NumThreadRows, NumPagerRows),
     ( get_cursor(Scrollable0, Cursor) ->
         set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
