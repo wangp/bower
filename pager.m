@@ -270,12 +270,13 @@ append_text(Max, String, Start, LastBreak, Cur, QuoteLevel, !DiffQuoteLevels,
             append_text(Max, String, Start, Cur, Next, QuoteLevel,
                 !DiffQuoteLevels, !Lines)
         ;
+            % Wrap long lines.
             % XXX this should actually count with wcwidth
             Next - Start > Max
         ->
             maybe_append_substring(String, Start, LastBreak, QuoteLevel,
                 ContQuoteLevel, !DiffQuoteLevels, !Lines),
-            skip_nls(String, LastBreak, NextStart),
+            skip_whitespace(String, LastBreak, NextStart),
             append_text(Max, String, NextStart, NextStart, Next,
                 yes(ContQuoteLevel), !DiffQuoteLevels, !Lines)
         ;
@@ -456,6 +457,18 @@ skip_nls(String, I0, I) :-
         ;
             I = I0
         )
+    ;
+        I = I0
+    ).
+
+:- pred skip_whitespace(string::in, int::in, int::out) is det.
+
+skip_whitespace(String, I0, I) :-
+    (
+        string.unsafe_index_next(String, I0, I1, Char),
+        char.is_whitespace(Char)
+    ->
+        skip_whitespace(String, I1, I)
     ;
         I = I0
     ).
