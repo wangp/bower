@@ -233,7 +233,8 @@ text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO) :-
     ->
         Type = SubInfo ^ compl_type,
         forward_for_completion(Type, Before, Before1, After, After1),
-        do_completion(Before1, Before2, SubInfo, MaybeSubInfo1, !IO),
+        do_completion(Before1, Before2, After1, SubInfo, MaybeSubInfo1,
+            !IO),
         (
             MaybeSubInfo1 = yes(SubInfo1),
             clear_first_time_flag(SubInfo1, SubInfo2),
@@ -421,10 +422,10 @@ forward_for_completion(Type, Before0, Before, After0, After) :-
         Before = list.reverse(Take) ++ Before0
     ).
 
-:- pred do_completion(list(char)::in, list(char)::out, sub_info::in,
-    maybe(sub_info)::out, io::di, io::uo) is det.
+:- pred do_completion(list(char)::in, list(char)::out, list(char)::in,
+    sub_info::in, maybe(sub_info)::out, io::di, io::uo) is det.
 
-do_completion(Orig, Replacement, SubInfo0, MaybeSubInfo, !IO) :-
+do_completion(Orig, Replacement, After, SubInfo0, MaybeSubInfo, !IO) :-
     Type = SubInfo0 ^ compl_type,
     Choices0 = SubInfo0 ^ compl_choices,
     (
@@ -450,8 +451,10 @@ do_completion(Orig, Replacement, SubInfo0, MaybeSubInfo, !IO) :-
         Type = complete_tags_smart(AndTags, OrTags),
         list.takewhile(non_whitespace, Orig, Word, Untouched),
         list.length(Untouched, CompletionPoint),
+        get_entered_tags(Untouched, After, EnteredTags),
         string.from_rev_char_list(Word, WordString),
-        generate_smart_tag_choices(AndTags, OrTags, WordString, Choices, !IO)
+        generate_smart_tag_choices(AndTags, OrTags, EnteredTags, WordString,
+            Choices, !IO)
     ;
         Choices0 = [_ | _],
         Choices = Choices0,
@@ -552,22 +555,45 @@ generate_tag_choices(CompletionTriggers, OrigString, Choices, !IO) :-
         generate_tag_choices(Triggers, OrigString, Choices, !IO)
     ).
 
-:- pred generate_smart_tag_choices(set(string)::in, set(string)::in,
-    string::in, list(string)::out, io::di, io::uo) is det.
+:- pred get_entered_tags(list(char)::in, list(char)::in, set(string)::out)
+    is det.
 
-generate_smart_tag_choices(AndTagSet, OrTagSet, OrigString, Choices, !IO) :-
+get_entered_tags(Before, After, TagSet) :-
+    reverse_onto(Before, After, Chars),
+    string.from_char_list(Chars, String),
+    Words = string.words(String),
+    list.filter_map(is_entered_tag, Words, TagList),
+    TagSet = set.from_list(TagList).
+
+:- pred is_entered_tag(string::in, string::out) is semidet.
+
+is_entered_tag(Word, Tag) :-
+    ( string.remove_prefix("-", Word, Tag0) ->
+        Tag = Tag0
+    ; string.remove_prefix("+", Word, Tag0) ->
+        Tag = Tag0
+    ;
+        fail
+    ).
+
+:- pred generate_smart_tag_choices(set(string)::in, set(string)::in,
+    set(string)::in, string::in, list(string)::out, io::di, io::uo) is det.
+
+generate_smart_tag_choices(AndTagSet, OrTagSet, EnteredTagSet, OrigString,
+        Choices, !IO) :-
     (
         string.remove_prefix("-", OrigString, TagPrefix)
     ->
-        set.to_sorted_list(OrTagSet, OrTagList),
-        CandidateList = OrTagList,
+        set.difference(OrTagSet, EnteredTagSet, CandidateSet),
+        set.to_sorted_list(CandidateSet, CandidateList),
         list.filter_map(filter_tag_choice("-", TagPrefix),
             CandidateList, Choices)
     ;
         string.remove_prefix("+", OrigString, TagPrefix)
     ->
         get_notmuch_all_tags(AllTagsList, !IO),
-        set.difference(from_list(AllTagsList), AndTagSet, CandidateSet),
+        set.difference(from_list(AllTagsList), AndTagSet, CandidateSet0),
+        set.difference(CandidateSet0, EnteredTagSet, CandidateSet),
         set.to_sorted_list(CandidateSet, CandidateList),
         list.filter_map(filter_tag_choice("+", TagPrefix),
             CandidateList, Choices)
