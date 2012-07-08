@@ -1038,7 +1038,10 @@ unset_deleted(Line0, Line, TagDelta) :-
 prompt_tag(Screen, Initial, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
-        prompt_arbitrary_tag_changes(Screen, Initial, TagChanges,
+        gather_initial_tags(CursorLine0, no, _AndTagSet, set.init, TagSet),
+        set.map(tag_to_string, TagSet, BothStringSet),
+        Completion = complete_tags_smart(BothStringSet, BothStringSet),
+        prompt_arbitrary_tag_changes(Screen, Initial, Completion, TagChanges,
             !Info, !IO),
         (
             TagChanges = yes(TagDeltas, AddTags, RemoveTags),
@@ -1052,12 +1055,12 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
     ).
 
 :- pred prompt_arbitrary_tag_changes(screen::in, string::in,
-    arbitrary_tag_changes::out, index_info::in, index_info::out,
-    io::di, io::uo) is det.
+    completion_type::in, arbitrary_tag_changes::out,
+    index_info::in, index_info::out, io::di, io::uo) is det.
 
-prompt_arbitrary_tag_changes(Screen, Initial, TagChanges, !Info, !IO) :-
+prompt_arbitrary_tag_changes(Screen, Initial, Completion, TagChanges,
+        !Info, !IO) :-
     History0 = !.Info ^ i_common_history ^ ch_tag_history,
-    Completion = complete_tags(["+", "-"]),
     FirstTime = no,
     text_entry_full(Screen, "Change tags: ", History0, Initial, Completion,
         FirstTime, Return, !IO),
@@ -1159,10 +1162,14 @@ bulk_tag(Screen, Done, !Info, !IO) :-
         update_message_immed(Screen, set_prompt(Prompt), !IO),
         get_keycode(KeyCode, !IO),
         ( KeyCode = char('-') ->
-            bulk_arbitrary_tag_changes(Screen, "-", MessageUpdate, !Info, !IO),
+            init_bulk_tag_completion(Lines0, Completion),
+            bulk_arbitrary_tag_changes(Screen, "-", Completion, MessageUpdate,
+                !Info, !IO),
             Done = yes
         ; KeyCode = char('+') ->
-            bulk_arbitrary_tag_changes(Screen, "+", MessageUpdate, !Info, !IO),
+            init_bulk_tag_completion(Lines0, Completion),
+            bulk_arbitrary_tag_changes(Screen, "+", Completion, MessageUpdate,
+                !Info, !IO),
             Done = yes
         ; KeyCode = char('d') ->
             TagDeltas = [tag_delta("+deleted")],
@@ -1203,11 +1210,63 @@ any_selected_line(Lines) :-
     list.member(Line, Lines),
     Line ^ i_selected = selected.
 
-:- pred bulk_arbitrary_tag_changes(screen::in, string::in, message_update::out,
-    index_info::in, index_info::out, io::di, io::uo) is det.
+:- pred init_bulk_tag_completion(list(index_line)::in, completion_type::out)
+    is det.
 
-bulk_arbitrary_tag_changes(Screen, Initial, MessageUpdate, !Info, !IO) :-
-    prompt_arbitrary_tag_changes(Screen, Initial, TagChanges, !Info, !IO),
+init_bulk_tag_completion(Lines, Completion) :-
+    list.foldl2(gather_bulk_initial_tags, Lines,
+        no, MaybeAndTagSet, set.init, OrTagSet),
+    (
+        MaybeAndTagSet = yes(AndTagSet),
+        set.map(tag_to_string, AndTagSet, AndStringSet)
+    ;
+        MaybeAndTagSet = no,
+        set.init(AndStringSet)
+    ),
+    set.map(tag_to_string, OrTagSet, OrStringSet),
+    Completion = complete_tags_smart(AndStringSet, OrStringSet).
+
+:- pred gather_bulk_initial_tags(index_line::in,
+    maybe(set(tag))::in, maybe(set(tag))::out, set(tag)::in, set(tag)::out)
+    is det.
+
+gather_bulk_initial_tags(Line, MaybeAndTagSet0, MaybeAndTagSet, !OrTagSet) :-
+    Selected = Line ^ i_selected,
+    (
+        Selected = selected,
+        gather_initial_tags(Line, MaybeAndTagSet0, AndTagSet, !OrTagSet),
+        MaybeAndTagSet = yes(AndTagSet)
+    ;
+        Selected = not_selected,
+        MaybeAndTagSet = MaybeAndTagSet0
+    ).
+
+:- pred gather_initial_tags(index_line::in, maybe(set(tag))::in, set(tag)::out,
+    set(tag)::in, set(tag)::out) is det.
+
+gather_initial_tags(Line, MaybeAndTagSet0, AndTagSet, !OrTagSet) :-
+    Line = index_line(_ThreadId, _Selected,
+        Unread, Replied, Deleted, Flagged, _Date, _Authors, _Subject,
+        TagSet0, _NonstdTagsWidth, _Matched, _Total),
+    apply_standard_tag_state(Unread, Replied, Deleted, Flagged,
+        TagSet0, TagSet),
+    (
+        MaybeAndTagSet0 = no,
+        AndTagSet = TagSet
+    ;
+        MaybeAndTagSet0 = yes(AndTagSet0),
+        set.intersect(TagSet, AndTagSet0, AndTagSet)
+    ),
+    set.union(TagSet, !OrTagSet).
+
+:- pred bulk_arbitrary_tag_changes(screen::in, string::in, completion_type::in,
+    message_update::out, index_info::in, index_info::out, io::di, io::uo)
+    is det.
+
+bulk_arbitrary_tag_changes(Screen, Initial, Completion, MessageUpdate,
+        !Info, !IO) :-
+    prompt_arbitrary_tag_changes(Screen, Initial, Completion, TagChanges,
+        !Info, !IO),
     (
         TagChanges = yes(TagDeltas, AddTags, RemoveTags),
         bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate,
@@ -1218,7 +1277,8 @@ bulk_arbitrary_tag_changes(Screen, Initial, MessageUpdate, !Info, !IO) :-
     ).
 
 :- pred bulk_tag_changes(list(tag_delta)::in, set(tag)::in, set(tag)::in,
-    message_update::out, index_info::in, index_info::out, io::di, io::uo) is det.
+    message_update::out, index_info::in, index_info::out, io::di, io::uo)
+    is det.
 
 bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,

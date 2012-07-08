@@ -8,6 +8,7 @@
 :- import_module io.
 :- import_module list.
 :- import_module maybe.
+:- import_module set.
 
 :- import_module screen.
 
@@ -16,7 +17,16 @@
 :- type completion_type
     --->    complete_none
     ;       complete_path
-    ;       complete_tags(list(string)). % prefixes to trigger completion
+    ;       complete_tags(
+                % Prefixes to trigger completion.
+                list(string)
+            )
+    ;       complete_tags_smart(
+                % All selected messages have these tags.
+                and_tags    :: set(string),
+                % At least one selected message has these tags.
+                or_tags     :: set(string)
+            ).
 
 :- func init_history = history.
 
@@ -404,7 +414,9 @@ forward_for_completion(Type, Before0, Before, After0, After) :-
         bol_eol(After0, Before0, Before),
         After = []
     ;
-        Type = complete_tags(_),
+        ( Type = complete_tags(_)
+        ; Type = complete_tags_smart(_, _)
+        ),
         list.takewhile(non_whitespace, After0, Take, After),
         Before = list.reverse(Take) ++ Before0
     ).
@@ -434,6 +446,13 @@ do_completion(Orig, Replacement, SubInfo0, MaybeSubInfo, !IO) :-
         string.from_rev_char_list(Word, WordString),
         generate_tag_choices(CompletionTriggers, WordString, Choices, !IO)
     ;
+        Choices0 = [],
+        Type = complete_tags_smart(AndTags, OrTags),
+        list.takewhile(non_whitespace, Orig, Word, Untouched),
+        list.length(Untouched, CompletionPoint),
+        string.from_rev_char_list(Word, WordString),
+        generate_smart_tag_choices(AndTags, OrTags, WordString, Choices, !IO)
+    ;
         Choices0 = [_ | _],
         Choices = Choices0,
         CompletionPoint = SubInfo0 ^ compl_point
@@ -457,6 +476,8 @@ do_completion(Orig, Replacement, SubInfo0, MaybeSubInfo, !IO) :-
         ),
         MaybeSubInfo = yes(SubInfo)
     ).
+
+%-----------------------------------------------------------------------------%
 
 :- pred generate_path_choices(string::in, list(string)::out,
     io::di, io::uo) is det.
@@ -515,6 +536,8 @@ filter_path_prefix(AddPrefix, MatchBaseNamePrefix, _DirName, BaseName,
         true
     ).
 
+%-----------------------------------------------------------------------------%
+
 :- pred generate_tag_choices(list(string)::in, string::in, list(string)::out,
     io::di, io::uo) is det.
 
@@ -522,21 +545,48 @@ generate_tag_choices([], _OrigString, [], !IO).
 generate_tag_choices(CompletionTriggers, OrigString, Choices, !IO) :-
     CompletionTriggers = [Trigger | Triggers],
     ( string.remove_prefix(Trigger, OrigString, TagPrefix) ->
-        get_notmuch_prefix(Notmuch, !IO),
-        args_to_quoted_command(["search", "--output=tags", "--", "*"],
-            Command),
-        popen(Notmuch ++ Command, CallRes, !IO),
-        (
-            CallRes = ok(TagListString),
-            TagsList = string.split_at_char('\n', TagListString),
-            list.filter_map(filter_tag_choice(Trigger, TagPrefix),
-                TagsList, Choices)
-        ;
-            CallRes = error(_),
-            Choices = []
-        )
+        get_notmuch_all_tags(TagsList, !IO),
+        list.filter_map(filter_tag_choice(Trigger, TagPrefix),
+            TagsList, Choices)
     ;
         generate_tag_choices(Triggers, OrigString, Choices, !IO)
+    ).
+
+:- pred generate_smart_tag_choices(set(string)::in, set(string)::in,
+    string::in, list(string)::out, io::di, io::uo) is det.
+
+generate_smart_tag_choices(AndTagSet, OrTagSet, OrigString, Choices, !IO) :-
+    (
+        string.remove_prefix("-", OrigString, TagPrefix)
+    ->
+        set.to_sorted_list(OrTagSet, OrTagList),
+        CandidateList = OrTagList,
+        list.filter_map(filter_tag_choice("-", TagPrefix),
+            CandidateList, Choices)
+    ;
+        string.remove_prefix("+", OrigString, TagPrefix)
+    ->
+        get_notmuch_all_tags(AllTagsList, !IO),
+        set.difference(from_list(AllTagsList), AndTagSet, CandidateSet),
+        set.to_sorted_list(CandidateSet, CandidateList),
+        list.filter_map(filter_tag_choice("+", TagPrefix),
+            CandidateList, Choices)
+    ;
+        Choices = []
+    ).
+
+:- pred get_notmuch_all_tags(list(string)::out, io::di, io::uo) is det.
+
+get_notmuch_all_tags(TagsList, !IO) :-
+    get_notmuch_prefix(Notmuch, !IO),
+    args_to_quoted_command(["search", "--output=tags", "--", "*"], Command),
+    popen(Notmuch ++ Command, CallRes, !IO),
+    (
+        CallRes = ok(TagListString),
+        TagsList = string.split_at_char('\n', TagListString)
+    ;
+        CallRes = error(_),
+        TagsList = []
     ).
 
 :- pred filter_tag_choice(string::in, string::in, string::in, string::out)
@@ -545,6 +595,8 @@ generate_tag_choices(CompletionTriggers, OrigString, Choices, !IO) :-
 filter_tag_choice(Trigger, TagPrefix, Tag, Choice) :-
     string.prefix(Tag, TagPrefix),
     Choice = Trigger ++ Tag.
+
+%-----------------------------------------------------------------------------%
 
 :- pred non_whitespace(char::in) is semidet.
 

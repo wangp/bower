@@ -86,6 +86,8 @@
 
 :- func init_headers = headers.
 
+:- pred tag_to_string(tag::in, string::out) is det.
+
 :- pred snoc(T::in, cord(T)::in, cord(T)::out) is det.
 
 %-----------------------------------------------------------------------------%
@@ -103,6 +105,8 @@ thread_id_to_search_term(thread_id(Id)) = "thread:" ++ Id.
 message_id_to_search_term(message_id(Id)) = "id:" ++ Id.
 
 init_headers = headers("", "", "", "", "", "", "", "", "", map.init).
+
+tag_to_string(tag(String), String).
 
 snoc(X, C, snoc(C, X)).
 
