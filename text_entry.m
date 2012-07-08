@@ -609,7 +609,8 @@ get_notmuch_all_tags(TagsList, !IO) :-
     popen(Notmuch ++ Command, CallRes, !IO),
     (
         CallRes = ok(TagListString),
-        TagsList = string.split_at_char('\n', TagListString)
+        % The empty string following the final newline is not a tag.
+        TagsList = string.words_separator(unify('\n'), TagListString)
     ;
         CallRes = error(_),
         TagsList = []
