@@ -1017,7 +1017,7 @@ draw_attachment_line(Panel, Attachment, LineNr, IsCursor, !IO) :-
         Attachment = new_attachment(Type, _, Filename, Size)
     ),
     panel.erase(Panel, !IO),
-    panel.move(Panel, 0, 13, !IO),
+    panel.move(Panel, 0, 10, !IO),
     panel.attr_set(Panel, normal, !IO),
     my_addstr(Panel, format("%d. ", [i(LineNr + 1)]), !IO),
     (
@@ -1050,7 +1050,7 @@ draw_attachments_label([], !IO).
 draw_attachments_label([Panel | _], !IO) :-
     panel.move(Panel, 0, 0, !IO),
     panel.attr_set(Panel, fg_bg(red, black) + bold, !IO),
-    my_addstr(Panel, "Attachments: ", !IO).
+    my_addstr(Panel, "  Attach: ", !IO).
 
 :- pred draw_sep_bar(screen::in, maybe(panel)::in, io::di, io::uo) is det.
 
