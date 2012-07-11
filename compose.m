@@ -563,13 +563,11 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
             Message = set_info("Mail not sent."),
             Action = leave(not_sent, Message)
         )
-    ; KeyCode = char(Char) ->
-        pager_input(NumPagerRows, Char, _Action, MessageUpdate, !PagerInfo),
-        update_message(Screen, MessageUpdate, !IO),
-        Action = continue
     ; KeyCode = code(key_resize) ->
         Action = resize
     ;
+        pager_input(NumPagerRows, KeyCode, _Action, MessageUpdate, !PagerInfo),
+        update_message(Screen, MessageUpdate, !IO),
         Action = continue
     ),
     (

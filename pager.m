@@ -4,7 +4,6 @@
 :- module pager.
 :- interface.
 
-:- import_module char.
 :- import_module io.
 :- import_module list.
 :- import_module maybe.
@@ -37,7 +36,7 @@
     --->    continue
     ;       leave_pager.
 
-:- pred pager_input(int::in, char::in, pager_action::out,
+:- pred pager_input(int::in, keycode::in, pager_action::out,
     message_update::out, pager_info::in, pager_info::out) is det.
 
 :- pred scroll(int::in, int::in, message_update::out,
@@ -96,6 +95,7 @@
 :- implementation.
 
 :- import_module bool.
+:- import_module char.
 :- import_module cord.
 :- import_module int.
 :- import_module set.
@@ -534,8 +534,8 @@ setup_pager_for_staging(Cols, Text, RetainPagerPos, Info) :-
 
 %-----------------------------------------------------------------------------%
 
-pager_input(NumRows, Char, Action, MessageUpdate, !Info) :-
-    ( key_binding(Char, Binding) ->
+pager_input(NumRows, KeyCode, Action, MessageUpdate, !Info) :-
+    ( key_binding(KeyCode, Binding) ->
         (
             Binding = leave_pager,
             Action = leave_pager,
@@ -582,19 +582,40 @@ pager_input(NumRows, Char, Action, MessageUpdate, !Info) :-
         MessageUpdate = no_change
     ).
 
-:- pred key_binding(char::in, binding::out) is semidet.
+:- pred key_binding(keycode::in, binding::out) is semidet.
 
-key_binding('i', leave_pager).
-key_binding('\r', scroll_down).
-key_binding('\\', scroll_up).
-key_binding('\b', scroll_up).   % XXX doesn't work
-key_binding(' ', page_down).
-key_binding('b', page_up).
-key_binding(']', half_page_down).
-key_binding('[', half_page_up).
-key_binding('j', next_message).
-key_binding('k', prev_message).
-key_binding('S', skip_quoted_text).
+key_binding(KeyCode, Binding) :-
+    (
+        KeyCode = char(Char),
+        char_binding(Char, Binding)
+    ;
+        KeyCode = code(Code),
+        ( Code = key_down ->
+            Binding = scroll_down
+        ; Code = key_up ->
+            Binding = scroll_up
+        ; Code = key_pagedown ->
+            Binding = page_down
+        ; Code = key_pageup ->
+            Binding = page_up
+        ;
+            fail
+        )
+    ).
+
+:- pred char_binding(char::in, binding::out) is semidet.
+
+char_binding('i', leave_pager).
+char_binding('\r', scroll_down).
+char_binding('\\', scroll_up).
+char_binding('\b', scroll_up).   % XXX doesn't work
+char_binding(' ', page_down).
+char_binding('b', page_up).
+char_binding(']', half_page_down).
+char_binding('[', half_page_up).
+char_binding('j', next_message).
+char_binding('k', prev_message).
+char_binding('S', skip_quoted_text).
 
 scroll(NumRows, Delta, MessageUpdate, !Info) :-
     !.Info = pager_info(Scrollable0),
