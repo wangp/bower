@@ -143,6 +143,8 @@
     ;       page_up
     ;       half_page_down
     ;       half_page_up
+    ;       home
+    ;       end
     ;       next_message
     ;       prev_message
     ;       skip_quoted_text.
@@ -565,6 +567,14 @@ pager_input(NumRows, KeyCode, Action, MessageUpdate, !Info) :-
             scroll(NumRows, -NumRows//2, MessageUpdate, !Info),
             Action = continue
         ;
+            Binding = home,
+            scroll_home(MessageUpdate, !Info),
+            Action = continue
+        ;
+            Binding = end,
+            scroll_end(NumRows, MessageUpdate, !Info),
+            Action = continue
+        ;
             Binding = next_message,
             next_message(MessageUpdate, !Info),
             Action = continue
@@ -598,6 +608,10 @@ key_binding(KeyCode, Binding) :-
             Binding = page_down
         ; Code = key_pageup ->
             Binding = page_up
+        ; Code = key_home ->
+            Binding = home
+        ; Code = key_end ->
+            Binding = end
         ;
             fail
         )
@@ -617,6 +631,8 @@ char_binding('j', next_message).
 char_binding('k', prev_message).
 char_binding('S', skip_quoted_text).
 
+%-----------------------------------------------------------------------------%
+
 scroll(NumRows, Delta, MessageUpdate, !Info) :-
     !.Info = pager_info(Scrollable0),
     scroll(NumRows, Delta, HitLimit, Scrollable0, Scrollable),
@@ -624,14 +640,54 @@ scroll(NumRows, Delta, MessageUpdate, !Info) :-
     (
         HitLimit = yes,
         ( Delta < 0 ->
-            MessageUpdate = set_warning("Top of message is shown.")
+            MessageUpdate = top_limit_message
         ;
-            MessageUpdate = set_warning("Bottom of message is shown.")
+            MessageUpdate = bottom_limit_message
         )
     ;
         HitLimit = no,
         MessageUpdate = clear_message
     ).
+
+:- pred scroll_home(message_update::out, pager_info::in, pager_info::out)
+    is det.
+
+scroll_home(MessageUpdate, !Info) :-
+    !.Info = pager_info(Scrollable0),
+    Top0 = scrollable.get_top(Scrollable0),
+    ( Top0 = 0 ->
+        MessageUpdate = top_limit_message
+    ;
+        scrollable.set_top(0, Scrollable0, Scrollable),
+        !:Info = pager_info(Scrollable),
+        MessageUpdate = clear_message
+    ).
+
+:- pred scroll_end(int::in, message_update::out,
+    pager_info::in, pager_info::out) is det.
+
+scroll_end(NumRows, MessageUpdate, !Info) :-
+    !.Info = pager_info(Scrollable0),
+    Top0 = scrollable.get_top(Scrollable0),
+    NumLines = scrollable.get_num_lines(Scrollable0),
+    Top = int.max(0, NumLines - NumRows),
+    ( Top =< Top0 ->
+        MessageUpdate = bottom_limit_message
+    ;
+        scrollable.set_top(Top, Scrollable0, Scrollable),
+        !:Info = pager_info(Scrollable),
+        MessageUpdate = clear_message
+    ).
+
+:- func top_limit_message = message_update.
+
+top_limit_message = set_warning("Top of message is shown.").
+
+:- func bottom_limit_message = message_update.
+
+bottom_limit_message = set_warning("Bottom of message is shown.").
+
+%-----------------------------------------------------------------------------%
 
 scroll_but_stop_at_message(NumRows, Delta, MessageUpdate, !Info) :-
     !.Info = pager_info(Scrollable0),
