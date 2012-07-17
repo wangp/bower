@@ -1159,12 +1159,12 @@ call_send_mail(Filename, Res, !IO) :-
     (
         ResSend = ok(ExitStatus),
         ( ExitStatus = 0 ->
-            add_sent(Filename, ResAdd, !IO),
+            call_post_sendmail_command(Filename, ResAfter, !IO),
             (
-                ResAdd = ok,
+                ResAfter = ok,
                 Res = ok
             ;
-                ResAdd = error(Error),
+                ResAfter = error(Error),
                 Res = error("Mail sent, but " ++ io.error_message(Error))
             )
         ;
@@ -1176,6 +1176,38 @@ call_send_mail(Filename, Res, !IO) :-
         ResSend = error(Error),
         Msg = Command ++ ": " ++ io.error_message(Error),
         Res = error(Msg)
+    ).
+
+:- pred call_post_sendmail_command(string::in, io.res::out, io::di, io::uo)
+    is det.
+
+call_post_sendmail_command(Filename, Res, !IO) :-
+    get_maybe_post_sendmail_command(MaybeCommand, !IO),
+    (
+        MaybeCommand = yes(Command),
+        ( Command = "" ->
+            Res = ok
+        ;
+            io.call_system(Command ++ " < " ++ quote_arg(Filename),
+                ResCall, !IO),
+            (
+                ResCall = ok(ExitStatus),
+                ( ExitStatus = 0 ->
+                    Res = ok
+                ;
+                    Msg = string.format("%s: returned with exit status %d",
+                        [s(Command), i(ExitStatus)]),
+                    Res = error(io.make_io_error(Msg))
+                )
+            ;
+                ResCall = error(Error),
+                Res = error(Error)
+            )
+        )
+    ;
+        MaybeCommand = no,
+        % Default behaviour.
+        add_sent(Filename, Res, !IO)
     ).
 
 :- pred tag_replied_message(headers::in, io.res::out, io::di, io::uo) is det.

@@ -24,6 +24,11 @@
 ; sendmail=/usr/bin/sendmail -oi -oem
 ; sendmail=/usr/bin/msmtp -t
 
+# Command to execute after the sendmail command is successful.
+# The default is to use notmuch-deliver to add the sent message to the
+# maildir.  You can disable it by setting an empty command.
+; post_sendmail=
+
 # How to format HTML on stdin to plain text.
 ; html_dump=lynx -dump -force-html -stdin
 

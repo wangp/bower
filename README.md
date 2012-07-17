@@ -215,6 +215,29 @@ in a section called `[bower:addressbook]`, e.g.
     someoneelse = someoneelse@example.org
 
 
+Sending mail
+------------
+
+Bower performs two steps when sending a message:
+
+1. Call the configured `sendmail` command with the message on standard
+   input.  This command should pass the message onto an SMTP server.
+   If the command fails (exits with non-zero status) then stop immediately.
+
+2. Call the configured `post_sendmail` command with the message on
+   standard input.  When no command is set, the default behaviour is to
+   use `notmuch-deliver` to add the sent message to the mail store, and
+   into the database with the `sent` tag and without the `unread` tag.
+   You may replace this with a custom command, or bypass the step by
+   setting the command to the empty string.
+
+If the `sendmail` and `post_sendmail` commands both run on the same remote
+server, then there is an inefficiency because a single message would need
+to be transferred to the remote server twice.  You could combine the two
+steps into a single script run at the `sendmail` step, and disable the
+`post_sendmail` step.
+
+
 Contact
 =======
 

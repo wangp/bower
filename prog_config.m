@@ -5,6 +5,7 @@
 :- interface.
 
 :- import_module io.
+:- import_module maybe.
 
 :- pred get_notmuch_prefix(string::out, io::di, io::uo) is det.
 
@@ -14,6 +15,9 @@
 
 :- pred get_sendmail_command(string::out, io::di, io::uo) is det.
 
+:- pred get_maybe_post_sendmail_command(maybe(string)::out, io::di, io::uo)
+    is det.
+
 :- pred get_html_dump_command(string::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
@@ -22,7 +26,6 @@
 :- implementation.
 
 :- import_module map.
-:- import_module maybe.
 :- import_module string.
 
 :- import_module config.
@@ -99,6 +102,14 @@ get_sendmail_command(Command, !IO) :-
         Command = Value
     ;
         Command = default_sendmail_command
+    ).
+
+get_maybe_post_sendmail_command(MaybeCommand, !IO) :-
+    get_prog_config(Config, !IO),
+    ( search_config(Config, "command", "post_sendmail", Value) ->
+        MaybeCommand = yes(Value)
+    ;
+        MaybeCommand = no
     ).
 
 get_html_dump_command(Command, !IO) :-
