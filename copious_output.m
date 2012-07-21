@@ -41,9 +41,13 @@ expand_part(Part0, Part, !IO) :-
         Part = Part0
     ;
         Content0 = subparts(SubParts0),
-        list.map_foldl(expand_part, SubParts0, SubParts, !IO),
-        Content = subparts(SubParts),
-        Part = part(MessageId, PartId, Type, Content, MaybeFilename)
+        ( strcase_equal(Type, "multipart/alternative") ->
+            expand_multipart_alternative(Part0, SubParts0, Part, !IO)
+        ;
+            list.map_foldl(expand_part, SubParts0, SubParts, !IO),
+            Content = subparts(SubParts),
+            Part = part(MessageId, PartId, Type, Content, MaybeFilename)
+        )
     ;
         Content0 = encapsulated_messages(EncapMessages0),
         list.map_foldl(expand_encapsulated_message, EncapMessages0,
@@ -62,6 +66,20 @@ expand_part(Part0, Part, !IO) :-
         ;
             Part = Part0
         )
+    ).
+
+:- pred expand_multipart_alternative(part::in, list(part)::in, part::out,
+    io::di, io::uo) is det.
+
+expand_multipart_alternative(Part, [], Part, !IO).
+expand_multipart_alternative(Part0, [SubPart | SubParts], Part, !IO) :-
+    Type = SubPart ^ pt_type,
+    ( strcase_equal(Type, "text/plain") ->
+        Part = SubPart
+    ; strcase_equal(Type, "text/html") ->
+        expand_part(SubPart, Part, !IO)
+    ;
+        expand_multipart_alternative(Part0, SubParts, Part, !IO)
     ).
 
 :- pred expand_encapsulated_message(encapsulated_message::in,
