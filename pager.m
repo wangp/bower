@@ -317,7 +317,15 @@ append_substring(String, Start, End, MaybeLevel, ContQuoteLevel,
         detect_quote_level(SubString, 0, QuoteLevel, QuoteMarkerEnd)
     ),
     ( contains(!.DiffQuoteLevels, QuoteLevel) ->
-        PrevDiff = yes
+        (
+            QuoteLevel = 0,
+            detect_diff_end(String, Start)
+        ->
+            delete(QuoteLevel, !DiffQuoteLevels),
+            PrevDiff = no
+        ;
+            PrevDiff = yes
+        )
     ;
         PrevDiff = no
     ),
@@ -466,6 +474,21 @@ skip_whitespace(String, I0, I) :-
     ;
         I = I0
     ).
+
+:- pred detect_diff_end(string::in, int::in) is semidet.
+
+detect_diff_end(String, Start) :-
+    % At quote level zero diffs are likely posted in full and have a limited
+    % set of initial characters.
+    Start = 0,
+    string.unsafe_index_next(String, Start, _, Char),
+    Char \= ('+'),
+    Char \= ('-'),
+    Char \= (' '),
+    Char \= ('@'),
+    Char \= ('d'),
+    Char \= ('I'),
+    Char \= ('i').
 
 :- pred append_encapsulated_message(int::in, encapsulated_message::in,
     cord(pager_line)::in, cord(pager_line)::out) is det.
