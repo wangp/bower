@@ -33,7 +33,7 @@ detect_url_2(String, BeginAt, Start, End) :-
         detect_url_end(String, AfterSlashSlash, End0)
     ->
         Start = Http,
-        ( detect_bracketed_url_end(String, Start, End0, UrlEnd) ->
+        ( strip_url_trailing_chars(String, End0, UrlEnd) ->
             End = UrlEnd
         ;
             End = End0
@@ -163,12 +163,10 @@ valid_uri_char('.').
 valid_uri_char('~').
 valid_uri_char('%').
 
-:- pred detect_bracketed_url_end(string::in, int::in, int::in, int::out)
-    is semidet.
+:- pred strip_url_trailing_chars(string::in, int::in, int::out) is semidet.
 
-detect_bracketed_url_end(String, Start, End0, UrlEnd) :-
+strip_url_trailing_chars(String, End0, UrlEnd) :-
     % Smartly handle bracketed URLs.
-    string.unsafe_prev_index(String, Start, _, '('),
     string.unsafe_prev_index(String, End0, End1, LastChar),
     (
         LastChar = (')'),
@@ -180,7 +178,11 @@ detect_bracketed_url_end(String, Start, End0, UrlEnd) :-
         ; LastChar = (';')
         ; LastChar = ('?')
         ),
-        string.unsafe_prev_index(String, End1, UrlEnd, ')')
+        ( string.unsafe_prev_index(String, End1, End2, ')') ->
+            UrlEnd = End2
+        ;
+            UrlEnd = End1
+        )
     ).
 
 %-----------------------------------------------------------------------------%
