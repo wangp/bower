@@ -221,14 +221,7 @@ append_part(Cols, Part, !Lines, !IsFirst) :-
             snoc(attachment(Part), !Lines)
         ),
         !:IsFirst = no,
-        Start = 0,
-        LastBreak = 0,
-        Cur = 0,
-        QuoteLevel = no,
-        DiffQuoteLevels = set.init,
-        append_text(Cols, Text, Start, LastBreak, Cur, QuoteLevel,
-            DiffQuoteLevels, _, cord.init, TextLines),
-        !:Lines = !.Lines ++ TextLines
+        append_text(Cols, Text, !Lines)
     ;
         Content = subparts(SubParts),
         list.foldl2(append_part(Cols), SubParts, !Lines, !IsFirst)
@@ -244,107 +237,151 @@ append_part(Cols, Part, !Lines, !IsFirst) :-
         !:IsFirst = no
     ).
 
-:- pred append_text(int::in, string::in, int::in, int::in, int::in,
-    maybe(quote_level)::in, set(quote_level)::in, set(quote_level)::out,
+%-----------------------------------------------------------------------------%
+
+:- type append_text_context
+    --->    append_text_context(
+                % Current quote level (for wrapped lines).
+                atc_cur_quote_level     :: maybe(quote_level),
+                % Current line type (for wrapped lines).
+                atc_cur_line_type       :: maybe(text_type),
+                % Known diffs at these quote levels.
+                atc_diff_quote_levels   :: set(quote_level)
+            ).
+
+:- pred append_text(int::in, string::in,
     cord(pager_line)::in, cord(pager_line)::out) is det.
 
-append_text(Max, String, Start, LastBreak, Cur, QuoteLevel, !DiffQuoteLevels,
-        !Lines) :-
+append_text(Max, String, !Lines) :-
+    Start = 0,
+    LastBreak = 0,
+    Cur = 0,
+    QuoteLevel = no,
+    DiffLine = no,
+    DiffQuoteLevels = set.init,
+    Context0 = append_text_context(QuoteLevel, DiffLine, DiffQuoteLevels),
+    append_text_2(Max, String, Start, LastBreak, Cur, Context0, _Context,
+        !Lines).
+
+:- pred append_text_2(int::in, string::in, int::in, int::in, int::in,
+    append_text_context::in, append_text_context::out,
+    cord(pager_line)::in, cord(pager_line)::out) is det.
+
+append_text_2(Max, String, Start, LastBreak, Cur, !Context, !Lines) :-
     ( string.unsafe_index_next(String, Cur, Next, Char) ->
         (
             Char = '\n'
         ->
-            append_substring(String, Start, Cur, QuoteLevel, _,
-                !DiffQuoteLevels, !Lines),
-            append_text(Max, String, Next, Next, Next, no,
-                !DiffQuoteLevels, !Lines)
+            append_substring(String, Start, Cur, !Context, !Lines),
+            reset_context(!Context),
+            append_text_2(Max, String, Next, Next, Next, !Context, !Lines)
         ;
             char.is_whitespace(Char)
         ->
-            append_text(Max, String, Start, Cur, Next, QuoteLevel,
-                !DiffQuoteLevels, !Lines)
+            append_text_2(Max, String, Start, Cur, Next, !Context, !Lines)
         ;
             % Wrap long lines.
             % XXX this should actually count with wcwidth
             Next - Start > Max
         ->
-            maybe_append_substring(String, Start, LastBreak, QuoteLevel,
-                ContQuoteLevel, !DiffQuoteLevels, !Lines),
+            maybe_append_substring(String, Start, LastBreak, !Context, !Lines),
             skip_whitespace(String, LastBreak, NextStart),
-            append_text(Max, String, NextStart, NextStart, Next,
-                yes(ContQuoteLevel), !DiffQuoteLevels, !Lines)
+            append_text_2(Max, String, NextStart, NextStart, Next, !Context,
+                !Lines)
         ;
-            append_text(Max, String, Start, LastBreak, Next, QuoteLevel,
-                !DiffQuoteLevels, !Lines)
+            append_text_2(Max, String, Start, LastBreak, Next, !Context,
+                !Lines)
         )
     ;
         % End of string.
-        maybe_append_substring(String, Start, Cur, QuoteLevel, _,
-            !DiffQuoteLevels, !Lines)
+        maybe_append_substring(String, Start, Cur, !Context, !Lines)
     ).
+
+:- pred reset_context(append_text_context::in, append_text_context::out)
+    is det.
+
+reset_context(!Context) :-
+    !Context ^ atc_cur_quote_level := no,
+    !Context ^ atc_cur_line_type := no.
 
 :- pred maybe_append_substring(string::in, int::in, int::in,
-    maybe(quote_level)::in, quote_level::out,
-    set(quote_level)::in, set(quote_level)::out,
+    append_text_context::in, append_text_context::out,
     cord(pager_line)::in, cord(pager_line)::out) is det.
 
-maybe_append_substring(String, Start, End, QuoteLevel, ContQuoteLevel,
-        !DiffQuoteLevels, !Lines) :-
+maybe_append_substring(String, Start, End, !Context, !Lines) :-
     ( End > Start ->
-        append_substring(String, Start, End, QuoteLevel, ContQuoteLevel,
-            !DiffQuoteLevels, !Lines)
+        append_substring(String, Start, End, !Context, !Lines)
     ;
-        (
-            QuoteLevel = yes(ContQuoteLevel)
-        ;
-            QuoteLevel = no,
-            ContQuoteLevel = 0
-        )
+        true
     ).
 
-:- pred append_substring(string::in, int::in, int::in, maybe(quote_level)::in,
-    quote_level::out, set(quote_level)::in, set(quote_level)::out,
+:- pred append_substring(string::in, int::in, int::in,
+    append_text_context::in, append_text_context::out,
     cord(pager_line)::in, cord(pager_line)::out) is det.
 
-append_substring(String, Start, End, MaybeLevel, ContQuoteLevel,
-        !DiffQuoteLevels, !Lines) :-
+append_substring(String, Start, End, Context0, Context, !Lines) :-
+    Context0 = append_text_context(MaybeQuoteLevel0, MaybeLineType0,
+        DiffQuoteLevels0),
     string.unsafe_between(String, Start, End, SubString),
     (
-        MaybeLevel = yes(QuoteLevel),
+        MaybeQuoteLevel0 = yes(QuoteLevel),
         QuoteMarkerEnd = 0
     ;
-        MaybeLevel = no,
+        MaybeQuoteLevel0 = no,
         detect_quote_level(SubString, 0, QuoteLevel, QuoteMarkerEnd)
     ),
-    ( contains(!.DiffQuoteLevels, QuoteLevel) ->
+    (
+        MaybeLineType0 = yes(diff(DiffLine))
+    ->
+        % Maintain diff line type across wrapped diff lines.
+        LineType = diff(DiffLine),
+        DiffQuoteLevels = DiffQuoteLevels0
+    ;
+        ( contains(DiffQuoteLevels0, QuoteLevel) ->
+            (
+                QuoteLevel = 0,
+                MaybeLineType0 = no,
+                detect_diff_end(String, Start)
+            ->
+                PrevDiff = no,
+                delete(QuoteLevel, DiffQuoteLevels0, DiffQuoteLevels1)
+            ;
+                PrevDiff = yes,
+                DiffQuoteLevels1 = DiffQuoteLevels0
+            )
+        ;
+            PrevDiff = no,
+            DiffQuoteLevels1 = DiffQuoteLevels0
+        ),
         (
-            QuoteLevel = 0,
-            detect_diff_end(String, Start)
+            % Only detect diffs at start of line.
+            MaybeLineType0 = no,
+            detect_diff(String, Start + QuoteMarkerEnd, End, PrevDiff,
+                QuoteLevel, DiffLine)
         ->
-            delete(QuoteLevel, !DiffQuoteLevels),
-            PrevDiff = no
+            LineType = diff(DiffLine),
+            insert(QuoteLevel, DiffQuoteLevels1, DiffQuoteLevels)
         ;
             PrevDiff = yes
+        ->
+            LineType = diff(diff_common),
+            DiffQuoteLevels = DiffQuoteLevels0
+        ;
+            detect_url(SubString, UrlStart, UrlEnd)
+        ->
+            LineType = url(UrlStart, UrlEnd),
+            DiffQuoteLevels = DiffQuoteLevels0
+        ;
+            LineType = plain,
+            DiffQuoteLevels = DiffQuoteLevels0
         )
-    ;
-        PrevDiff = no
-    ),
-    (
-        detect_diff(String, Start + QuoteMarkerEnd, End, PrevDiff,
-            QuoteLevel, DiffLine)
-    ->
-        LineType = diff(DiffLine),
-        insert(QuoteLevel, !DiffQuoteLevels)
-    ; PrevDiff = yes ->
-        LineType = diff(diff_common)
-    ; detect_url(SubString, UrlStart, UrlEnd) ->
-        LineType = url(UrlStart, UrlEnd)
-    ;
-        LineType = plain
     ),
     Text = text(QuoteLevel, SubString, QuoteMarkerEnd, LineType),
     snoc(Text, !Lines),
-    ContQuoteLevel = QuoteLevel.
+    Context = append_text_context(yes(QuoteLevel), yes(LineType),
+        DiffQuoteLevels).
+
+%-----------------------------------------------------------------------------%
 
 :- pred detect_quote_level(string::in, int::in, int::out, int::out) is det.
 
@@ -480,7 +517,6 @@ skip_whitespace(String, I0, I) :-
 detect_diff_end(String, Start) :-
     % At quote level zero diffs are likely posted in full and have a limited
     % set of initial characters.
-    Start = 0,
     string.unsafe_index_next(String, Start, _, Char),
     Char \= ('+'),
     Char \= ('-'),
@@ -489,6 +525,8 @@ detect_diff_end(String, Start) :-
     Char \= ('d'),
     Char \= ('I'),
     Char \= ('i').
+
+%-----------------------------------------------------------------------------%
 
 :- pred append_encapsulated_message(int::in, encapsulated_message::in,
     cord(pager_line)::in, cord(pager_line)::out) is det.
@@ -522,15 +560,9 @@ blank_line = text(0, "", 0, plain).
 %-----------------------------------------------------------------------------%
 
 setup_pager_for_staging(Cols, Text, RetainPagerPos, Info) :-
-    Start = 0,
-    LastBreak = 0,
-    Cur = 0,
-    MaybeLevel = no,
-    DiffQuoteLevels = set.init,
     some [!Lines] (
         !:Lines = cord.init,
-        append_text(Cols, Text, Start, LastBreak, Cur, MaybeLevel,
-            DiffQuoteLevels, _DiffQuoteLevels, !Lines),
+        append_text(Cols, Text, !Lines),
         snoc(message_separator, !Lines),
         snoc(message_separator, !Lines),
         snoc(message_separator, !Lines),
