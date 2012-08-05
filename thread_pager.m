@@ -573,7 +573,7 @@ thread_pager_loop(Screen, !Info, !IO) :-
     draw_thread_pager(Screen, !.Info, !IO),
     draw_bar(Screen, !IO),
     panel.update_panels(!IO),
-    get_keycode(Key, !IO),
+    get_keycode_blocking(Key, !IO),
     thread_pager_loop_2(Screen, Key, !Info, !IO).
 
 :- pred thread_pager_loop_2(screen::in, keycode::in,
@@ -1313,7 +1313,7 @@ bulk_tag(Screen, Done, !Info, !IO) :-
         Prompt = "Action: (d)elete, (u)ndelete, (N) toggle unread, " ++
             "(') mark read, (+/-) change tags",
         update_message_immed(Screen, set_prompt(Prompt), !IO),
-        get_keycode(KeyCode, !IO),
+        get_keycode_blocking(KeyCode, !IO),
         ( KeyCode = char('-') ->
             init_bulk_tag_completion(Lines0, Completion),
             bulk_arbitrary_tag_changes(Screen, "-", Completion, MessageUpdate,
@@ -1727,7 +1727,7 @@ prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
                     ContMessage = set_info(
                         "Press any key to continue (deletes temporary file)"),
                     update_message_immed(Screen, ContMessage, !IO),
-                    get_keycode(Key, !IO),
+                    get_keycode_blocking(Key, !IO),
                     MaybeNextKey = yes(Key),
                     MessageUpdate = clear_message
                 ;
@@ -1846,7 +1846,7 @@ skip_to_search(SearchKind, MessageUpdate, !Info) :-
 prompt_ordering(Screen, MaybeOrdering, !IO) :-
     Prompt = "Sort by (d)ate, (t)hread: ",
     update_message_immed(Screen, set_prompt(Prompt), !IO),
-    get_char(Char, !IO),
+    get_char_blocking(Char, !IO),
     ( Char = 'd' ->
         MaybeOrdering = yes(ordering_flat)
     ; Char = 't' ->

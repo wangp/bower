@@ -444,17 +444,13 @@ index_get_keycode(Info, Code, !IO) :-
             Tenths = 10 * DeltaSecs + 1
         ),
         get_keycode_timeout(Tenths, Code, !IO)
-    ),
-    % Reset back to blocking mode.
-    curs.nodelay(no, !IO).
+    ).
 
 :- pred get_keycode_child_process_loop(int::in, keycode::out,
     io::di, io::uo) is det.
 
 get_keycode_child_process_loop(Tenths, Code, !IO) :-
-    % get_keycode can change the timeout so reset it for each iteration.
-    curs.halfdelay(Tenths, !IO),
-    get_keycode(Code0, !IO),
+    get_keycode_timeout(Tenths, Code0, !IO),
     ( Code0 = timeout_or_error ->
         async.received_sigchld_since_spawn(Sigchld, !IO),
         (
@@ -467,12 +463,6 @@ get_keycode_child_process_loop(Tenths, Code, !IO) :-
     ;
         Code = Code0
     ).
-
-:- pred get_keycode_timeout(int::in, keycode::out, io::di, io::uo) is det.
-
-get_keycode_timeout(Tenths, Code, !IO) :-
-    curs.halfdelay(Tenths, !IO),
-    get_keycode(Code, !IO).
 
 %-----------------------------------------------------------------------------%
 
@@ -1160,7 +1150,7 @@ bulk_tag(Screen, Done, !Info, !IO) :-
         Prompt = "Action: (d)elete, (u)ndelete, (N) toggle unread, " ++
             "(') mark read, (+/-) change tags",
         update_message_immed(Screen, set_prompt(Prompt), !IO),
-        get_keycode(KeyCode, !IO),
+        get_keycode_blocking(KeyCode, !IO),
         ( KeyCode = char('-') ->
             init_bulk_tag_completion(Lines0, Completion),
             bulk_arbitrary_tag_changes(Screen, "-", Completion, MessageUpdate,

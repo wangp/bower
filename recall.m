@@ -111,7 +111,7 @@ recall_screen_loop(Screen, MaybeSelected, !Info, !IO) :-
     draw_recall(Screen, !.Info, !IO),
     draw_bar(Screen, !IO),
     panel.update_panels(!IO),
-    get_keycode(KeyCode, !IO),
+    get_keycode_blocking(KeyCode, !IO),
     (
         ( KeyCode = char('j')
         ; KeyCode = code(key_down)

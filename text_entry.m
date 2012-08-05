@@ -120,7 +120,7 @@ text_entry_full(Screen, Prompt, History, Initial, CompleteType, FirstTime,
 
 text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO) :-
     draw_text_entry(Screen, Prompt, Before, After, !IO),
-    get_keycode(Key, !IO),
+    get_keycode_blocking(Key, !IO),
     (
         ( Key = char('\x07\') % BEL (^G)
         ; Key = char('\x1b\') % ESC

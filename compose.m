@@ -461,7 +461,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
     panel.update_panels(!IO),
     NumAttachmentRows = list.length(AttachmentPanels),
     NumPagerRows = list.length(PagerPanels),
-    get_keycode(KeyCode, !IO),
+    get_keycode_blocking(KeyCode, !IO),
     ( KeyCode = char('e') ->
         Action = edit
     ; KeyCode = char('f') ->

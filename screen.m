@@ -80,9 +80,11 @@
     ;       code(int)
     ;       timeout_or_error.
 
-:- pred get_keycode(keycode::out, io::di, io::uo) is det.
+:- pred get_keycode_blocking(keycode::out, io::di, io::uo) is det.
 
-:- pred get_char(char::out, io::di, io::uo) is det.
+:- pred get_keycode_timeout(int::in, keycode::out, io::di, io::uo) is det.
+
+:- pred get_char_blocking(char::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -348,14 +350,24 @@ draw_bar_with_text(Screen, Text, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-get_keycode(Code, !IO) :-
+get_keycode_blocking(Code, !IO) :-
+    curs.cbreak(!IO),
+    get_keycode_2(Code, !IO).
+
+get_keycode_timeout(Tenths, Code, !IO) :-
+    curs.halfdelay(Tenths, !IO),
+    get_keycode_2(Code, !IO).
+
+:- pred get_keycode_2(keycode::out, io::di, io::uo) is det.
+
+get_keycode_2(Code, !IO) :-
     curs.get_wch(C, IsCode, !IO),
     ( C = 12 ->
         % Redraw the whole screen with ^L.
         % I have a feeling this is not really correct.
         curs.redrawwin_stdscr(!IO),
         panel.update_panels(!IO),
-        get_keycode(Code, !IO)
+        get_keycode_2(Code, !IO)
     ;
         IsCode = yes,
         Code = code(C)
@@ -380,24 +392,21 @@ get_keycode(Code, !IO) :-
             ( char.from_int(C, Char0) ->
                 Code = char(Char0)
             ;
-                get_keycode(Code, !IO)
+                get_keycode_2(Code, !IO)
             )
         )
     ).
 
-get_char(Char, !IO) :-
-    get_keycode(Code, !IO),
+get_char_blocking(Char, !IO) :-
+    get_keycode_blocking(Code, !IO),
     (
         Code = char(Char)
     ;
-        Code = code(_),
-        get_char(Char, !IO)
-    ;
-        Code = meta(_),
-        get_char(Char, !IO)
-    ;
-        Code = timeout_or_error,
-        get_char(Char, !IO)
+        ( Code = code(_)
+        ; Code = meta(_)
+        ; Code = timeout_or_error
+        ),
+        get_char_blocking(Char, !IO)
     ).
 
 %-----------------------------------------------------------------------------%
