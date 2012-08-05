@@ -36,6 +36,10 @@
     %
 :- pred start(io::di, io::uo) is det.
 
+    % Enable cbreak mode (no line buffering).
+    %
+:- pred cbreak(io::di, io::uo) is det.
+
     % Enable or disable the no-delay option.  If enabled (first argument is
     % yes) then getch will be a non-blocking call, i.e. return immediately
     % if no input is ready rather than waiting for input.
@@ -440,6 +444,16 @@ init_pair(FG_BG(COLOR_WHITE, COLOR_MAGENTA),    COLOR_WHITE, COLOR_MAGENTA);
 init_pair(FG_BG(COLOR_WHITE, COLOR_CYAN),       COLOR_WHITE, COLOR_CYAN);
 init_pair(FG_BG(COLOR_WHITE, COLOR_WHITE),      COLOR_WHITE, COLOR_WHITE);
 
+    IO = IO0;
+").
+
+%-----------------------------------------------------------------------------%
+
+:- pragma foreign_proc("C",
+    cbreak(IO0::di, IO::uo),
+    [will_not_call_mercury, promise_pure],
+"
+    cbreak();
     IO = IO0;
 ").
 
