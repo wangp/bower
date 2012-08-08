@@ -1572,7 +1572,15 @@ maybe_sched_poll(!Info, !IO) :-
 
 handle_poll_result(Screen, CountOutput, !Info, !IO) :-
     ( string.to_int(rstrip(CountOutput), Count) ->
-        !Info ^ i_poll_count := Count
+        Count0 = !.Info ^ i_poll_count,
+        ( Count0 = Count ->
+            true
+        ;
+            !Info ^ i_poll_count := Count,
+            % Redraw the bar immediately.
+            draw_index_bar(Screen, !.Info, !IO),
+            panel.update_panels(!IO)
+        )
     ;
         update_message(Screen,
             set_warning("notmuch count return unexpected result"), !IO)
