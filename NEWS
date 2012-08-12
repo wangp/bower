@@ -1,3 +1,17 @@
+Bower 0.4 (2012-08-12)
+======================
+This release requires notmuch 0.13 for addressbook completion.
+
+* Asynchronous tagging and polling in index view.
+* Highlight diff lines in quoted text.
+* Context-aware completion for tag names.
+* Completion for addressbook aliases.
+* post_sendmail configuration option.
+* Support Up/Down/PgUp/PgDn/Home/End keys in more views.
+* Better resize handling.
+* Improved URL detection.
+* Don't expand HTML alternative parts unnecessarily.
+
 Bower 0.3 (2012-05-05)
 ======================
 
