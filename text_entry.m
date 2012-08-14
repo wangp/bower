@@ -17,8 +17,10 @@
 :- type completion_type
     --->    complete_none
     ;       complete_path
-    ;       complete_tags(
-                % Prefixes to trigger completion.
+    ;       complete_limit(
+                % Name of search alias section.
+                string,
+                % Prefixes to trigger tag completion.
                 list(string)
             )
     ;       complete_tags_smart(
@@ -416,7 +418,7 @@ forward_for_completion(Type, Before0, Before, After0, After) :-
         bol_eol(After0, Before0, Before),
         After = []
     ;
-        ( Type = complete_tags(_)
+        ( Type = complete_limit(_, _)
         ; Type = complete_tags_smart(_, _)
         ; Type = complete_config_key(_)
         ),
@@ -443,11 +445,12 @@ do_completion(Orig, Replacement, After, SubInfo0, MaybeSubInfo, !IO) :-
         CompletionPoint = 0
     ;
         Choices0 = [],
-        Type = complete_tags(CompletionTriggers),
+        Type = complete_limit(SearchAliasSection, TagCompletionTriggers),
         list.takewhile(non_whitespace, Orig, Word, Untouched),
         list.length(Untouched, CompletionPoint),
         string.from_rev_char_list(Word, WordString),
-        generate_tag_choices(CompletionTriggers, WordString, Choices, !IO)
+        generate_limit_choices(SearchAliasSection, TagCompletionTriggers,
+            WordString, Choices, !IO)
     ;
         Choices0 = [],
         Type = complete_tags_smart(AndTags, OrTags),
@@ -547,6 +550,27 @@ filter_path_prefix(AddPrefix, MatchBaseNamePrefix, _DirName, BaseName,
     ;
         true
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred generate_limit_choices(string::in, list(string)::in, string::in,
+    list(string)::out, io::di, io::uo) is det.
+
+generate_limit_choices(SearchAliasSection, TagCompletionTriggers, OrigString,
+        Choices, !IO) :-
+    ( string.remove_prefix("~", OrigString, KeyPrefix) ->
+        generate_search_alias_choices(SearchAliasSection, KeyPrefix, Choices,
+            !IO)
+    ;
+        generate_tag_choices(TagCompletionTriggers, OrigString, Choices, !IO)
+    ).
+
+:- pred generate_search_alias_choices(string::in, string::in,
+    list(string)::out, io::di, io::uo) is det.
+
+generate_search_alias_choices(SearchAliasSection, KeyPrefix, Choices, !IO) :-
+    generate_config_key_choices(SearchAliasSection, KeyPrefix, Choices0, !IO),
+    list.map(append("~"), Choices0) = Choices.
 
 %-----------------------------------------------------------------------------%
 

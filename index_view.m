@@ -312,8 +312,8 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
     ;
         Action = enter_limit,
         History0 = !.IndexInfo ^ i_common_history ^ ch_limit_history,
-        Completion = complete_tags([
-            "tag:", "+tag:", "-tag:", "is:", "+is:", "-is:"]),
+        Completion = complete_limit(search_alias_section,
+            ["tag:", "+tag:", "-tag:", "is:", "+is:", "-is:"]),
         text_entry(Screen, "Limit to messages matching: ", History0,
             Completion, Return, !IO),
         (
