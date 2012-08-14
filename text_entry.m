@@ -10,13 +10,14 @@
 :- import_module maybe.
 :- import_module set.
 
+:- import_module path_expand.
 :- import_module screen.
 
 :- type history.
 
 :- type completion_type
     --->    complete_none
-    ;       complete_path
+    ;       complete_path(home)
     ;       complete_limit(
                 % Name of search alias section.
                 string,
@@ -415,7 +416,7 @@ forward_for_completion(Type, Before0, Before, After0, After) :-
         Before = Before0,
         After = After0
     ;
-        Type = complete_path,
+        Type = complete_path(_),
         bol_eol(After0, Before0, Before),
         After = []
     ;
@@ -440,9 +441,8 @@ do_completion(Orig, Replacement, After, SubInfo0, MaybeSubInfo, !IO) :-
         CompletionPoint = 0
     ;
         Choices0 = [],
-        Type = complete_path,
+        Type = complete_path(Home),
         string.from_rev_char_list(Orig, OrigString),
-        get_home_dir(Home, !IO),
         generate_path_choices(Home, OrigString, Choices, !IO),
         CompletionPoint = 0
     ;

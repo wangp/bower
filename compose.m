@@ -60,6 +60,7 @@
 :- import_module message_file.
 :- import_module mime_type.
 :- import_module pager.
+:- import_module path_expand.
 :- import_module popen.
 :- import_module prog_config.
 :- import_module quote_arg.
@@ -720,14 +721,16 @@ scroll_attachments(Screen, NumRows, Delta, !AttachInfo, !IO) :-
 
 add_attachment(Screen, NumRows, !StagingInfo, !AttachInfo, !IO) :-
     AttachHistory0 = !.StagingInfo ^ si_attach_hist,
-    text_entry(Screen, "Attach file: ", AttachHistory0, complete_path, Return,
-        !IO),
+    get_home_dir(Home, !IO),
+    text_entry(Screen, "Attach file: ", AttachHistory0, complete_path(Home),
+        Return, !IO),
     (
-        Return = yes(FileName),
-        FileName \= ""
+        Return = yes(FileName0),
+        FileName0 \= ""
     ->
-        add_history_nodup(FileName, AttachHistory0, AttachHistory),
+        add_history_nodup(FileName0, AttachHistory0, AttachHistory),
         !StagingInfo ^ si_attach_hist := AttachHistory,
+        expand_tilde_home(Home, FileName0, FileName),
         do_attach_file(FileName, NumRows, MessageUpdate, !AttachInfo, !IO)
     ;
         MessageUpdate = clear_message

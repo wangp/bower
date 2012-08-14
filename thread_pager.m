@@ -55,6 +55,7 @@
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module pager.
+:- import_module path_expand.
 :- import_module prog_config.
 :- import_module quote_arg.
 :- import_module recall.
@@ -1571,14 +1572,16 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
     ),
     History0 = !.Info ^ tp_common_history ^ ch_save_history,
     make_save_part_initial_prompt(History0, PartFilename, Initial),
+    get_home_dir(Home, !IO),
     text_entry_initial(Screen, "Save to file: ", History0, Initial,
-        complete_path, Return, !IO),
+        complete_path(Home), Return, !IO),
     (
-        Return = yes(FileName),
-        FileName \= ""
+        Return = yes(FileName0),
+        FileName0 \= ""
     ->
-        add_history_nodup(FileName, History0, History),
+        add_history_nodup(FileName0, History0, History),
         !Info ^ tp_common_history ^ ch_save_history := History,
+        expand_tilde_home(Home, FileName0, FileName),
         FollowSymLinks = no,
         io.file_type(FollowSymLinks, FileName, ResType, !IO),
         (
@@ -1697,13 +1700,14 @@ open_part(Action, MessageUpdate, !Info) :-
 prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
     History0 = !.Info ^ tp_common_history ^ ch_prog_history,
     choose_text_initial(History0, "xdg-open", Initial),
+    get_home_dir(Home, !IO),
     text_entry_initial(Screen, "Open with command: ", History0, Initial,
-        complete_path, Return, !IO),
+        complete_path(Home), Return, !IO),
     (
-        Return = yes(Command),
-        Command \= ""
+        Return = yes(Command0),
+        Command0 \= ""
     ->
-        add_history_nodup(Command, History0, History),
+        add_history_nodup(Command0, History0, History),
         !Info ^ tp_common_history ^ ch_prog_history := History,
         Part = part(MessageId, PartId, _Type, _Content, MaybePartFileName),
         (
@@ -1717,6 +1721,7 @@ prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
         do_save_part(MessageId, PartId, FileName, Res, !IO),
         (
             Res = ok,
+            expand_tilde_home(Home, Command0, Command),
             args_to_quoted_command([Command, FileName], CommandString),
             CallMessage = set_info("Calling " ++ Command ++ "..."),
             update_message_immed(Screen, CallMessage, !IO),
@@ -1764,14 +1769,16 @@ prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
 prompt_open_url(Screen, Url, !Info, !IO) :-
     History0 = !.Info ^ tp_common_history ^ ch_prog_history,
     choose_text_initial(History0, "xdg-open", Initial),
+    get_home_dir(Home, !IO),
     text_entry_initial(Screen, "Open URL with command: ", History0,
-        Initial, complete_path, Return, !IO),
+        Initial, complete_path(Home), Return, !IO),
     (
-        Return = yes(Command),
-        Command \= ""
+        Return = yes(Command0),
+        Command0 \= ""
     ->
-        add_history_nodup(Command, History0, History),
+        add_history_nodup(Command0, History0, History),
         !Info ^ tp_common_history ^ ch_prog_history := History,
+        expand_tilde_home(Home, Command0, Command),
         args_to_quoted_command([Command, Url], CommandString),
         CallMessage = set_info("Calling " ++ Command ++ "..."),
         update_message_immed(Screen, CallMessage, !IO),
