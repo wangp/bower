@@ -521,14 +521,17 @@ generate_path_choices(OrigString, Choices, !IO) :-
     io.file_type::in, bool::out, list(string)::in, list(string)::out,
     io::di, io::uo) is det.
 
-filter_path_nonhidden(AddPrefix, _DirName, BaseName, FileType, yes,
+filter_path_nonhidden(AddPrefix, DirName, BaseName, FileType, yes,
         !Matches, !IO) :-
     ( string.prefix(BaseName, ".") ->
         true
     ;
-        ( FileType = directory ->
+        is_directory(DirName, BaseName, FileType, IsDir, !IO),
+        (
+            IsDir = yes,
             Match = AddPrefix ++ BaseName ++ "/"
         ;
+            IsDir = no,
             Match = AddPrefix ++ BaseName
         ),
         list.cons(Match, !Matches)
@@ -538,17 +541,34 @@ filter_path_nonhidden(AddPrefix, _DirName, BaseName, FileType, yes,
     io.file_type::in, bool::out, list(string)::in, list(string)::out,
     io::di, io::uo) is det.
 
-filter_path_prefix(AddPrefix, MatchBaseNamePrefix, _DirName, BaseName,
+filter_path_prefix(AddPrefix, MatchBaseNamePrefix, DirName, BaseName,
         FileType, yes, !Matches, !IO) :-
     ( string.prefix(BaseName, MatchBaseNamePrefix) ->
-        ( FileType = directory ->
+        is_directory(DirName, BaseName, FileType, IsDir, !IO),
+        (
+            IsDir = yes,
             Match = AddPrefix ++ BaseName ++ "/"
         ;
+            IsDir = no,
             Match = AddPrefix ++ BaseName
         ),
         list.cons(Match, !Matches)
     ;
         true
+    ).
+
+:- pred is_directory(string::in, string::in, io.file_type::in, bool::out,
+    io::di, io::uo) is det.
+
+is_directory(DirName, BaseName, FileType0, IsDir, !IO) :-
+    ( FileType0 = directory ->
+        IsDir = yes
+    ; FileType0 = symbolic_link ->
+        FollowSymLinks = yes,
+        io.file_type(FollowSymLinks, DirName / BaseName, ResFileType, !IO),
+        IsDir = ( ResFileType = ok(directory) -> yes ; no )
+    ;
+        IsDir = no
     ).
 
 %-----------------------------------------------------------------------------%
