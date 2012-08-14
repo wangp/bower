@@ -16,6 +16,10 @@
 :- pred tokens_to_search_terms(list(token)::in, string::out, bool::out,
     io::di, io::uo) is det.
 
+:- pred get_default_search_terms(string::out, io::di, io::uo) is det.
+
+:- func search_alias_section = string.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -227,7 +231,7 @@ expand_config_alias_macro(Seen0, macro(MacroName), Tokens, !IO) :-
         string.remove_prefix("~", MacroName, Key),
         not set.contains(Seen0, Key)
     ->
-        get_notmuch_config("bower:search_alias", Key, Res, !IO),
+        get_notmuch_config(search_alias_section, Key, Res, !IO),
         (
             Res = ok(Expansion),
             set.insert(Key, Seen0, Seen),
@@ -310,6 +314,23 @@ call_date(Arg, Res, !IO) :-
         CallRes = error(_),
         Res = Arg
     ).
+
+%-----------------------------------------------------------------------------%
+
+get_default_search_terms(Terms, !IO) :-
+    get_notmuch_config(search_alias_section, "default", Res, !IO),
+    (
+        Res = ok(Value),
+        Value \= ""
+    ->
+        Terms = Value
+    ;
+        Terms = "~d {last week}.."
+    ).
+
+%-----------------------------------------------------------------------------%
+
+search_alias_section = "bower:search_alias".
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

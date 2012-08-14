@@ -17,10 +17,10 @@
 :- import_module string.
 
 :- import_module async.
-:- import_module callout.
 :- import_module curs.
 :- import_module index_view.
 :- import_module screen.
+:- import_module search_term.
 
 %-----------------------------------------------------------------------------%
 
@@ -59,19 +59,6 @@ main(!IO) :-
     setlocale(LC_ALL, """");
     IO = IO0;
 ").
-
-:- pred get_default_search_terms(string::out, io::di, io::uo) is det.
-
-get_default_search_terms(Terms, !IO) :-
-    get_notmuch_config("bower:search_alias", "default", Res, !IO),
-    (
-        Res = ok(Value),
-        Value \= ""
-    ->
-        Terms = Value
-    ;
-        Terms = "~d {last week}.."
-    ).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
