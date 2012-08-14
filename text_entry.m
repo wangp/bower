@@ -59,6 +59,7 @@
 
 :- import_module curs.
 :- import_module curs.panel.
+:- import_module path_expand.
 :- import_module popen.
 :- import_module prog_config.
 :- import_module quote_arg.
@@ -441,7 +442,8 @@ do_completion(Orig, Replacement, After, SubInfo0, MaybeSubInfo, !IO) :-
         Choices0 = [],
         Type = complete_path,
         string.from_rev_char_list(Orig, OrigString),
-        generate_path_choices(OrigString, Choices, !IO),
+        get_home_dir(Home, !IO),
+        generate_path_choices(Home, OrigString, Choices, !IO),
         CompletionPoint = 0
     ;
         Choices0 = [],
@@ -494,19 +496,31 @@ do_completion(Orig, Replacement, After, SubInfo0, MaybeSubInfo, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred generate_path_choices(string::in, list(string)::out,
+:- pred generate_path_choices(home::in, string::in, list(string)::out,
     io::di, io::uo) is det.
 
-generate_path_choices(OrigString, Choices, !IO) :-
-    ( string.suffix(OrigString, "/") ->
-        DirName = OrigString,
+generate_path_choices(Home, OrigString, Choices, !IO) :-
+    ( string.rstrip_pred(unify('/'), OrigString) = "~" ->
+        Home = home(HomeDir),
+        Choices = [HomeDir / ""]
+    ;
+        expand_tilde_home(Home, OrigString, ExpandedString),
+        generate_path_choices_2(ExpandedString, Choices, !IO)
+    ).
+
+:- pred generate_path_choices_2(string::in, list(string)::out, io::di, io::uo)
+    is det.
+
+generate_path_choices_2(ExpandedString, Choices, !IO) :-
+    ( string.suffix(ExpandedString, "/") ->
+        DirName = ExpandedString,
         Filter = filter_path_nonhidden(DirName)
-    ; dir.split_name(OrigString, DirName0, BaseNamePrefix) ->
+    ; dir.split_name(ExpandedString, DirName0, BaseNamePrefix) ->
         DirName = DirName0,
         Filter = filter_path_prefix(DirName / "", BaseNamePrefix)
     ;
         DirName = dir.this_directory,
-        Filter = filter_path_prefix("", OrigString)
+        Filter = filter_path_prefix("", ExpandedString)
     ),
     dir.foldl2(Filter, DirName, [], Result, !IO),
     (
