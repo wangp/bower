@@ -33,7 +33,7 @@ detect_url_2(String, BeginAt, Start, End) :-
         detect_url_end(String, AfterSlashSlash, End0)
     ->
         Start = Http,
-        ( strip_url_trailing_chars(String, End0, UrlEnd) ->
+        ( strip_url_trailing_chars(String, Start, End0, UrlEnd) ->
             End = UrlEnd
         ;
             End = End0
@@ -163,14 +163,15 @@ valid_uri_char('.').
 valid_uri_char('~').
 valid_uri_char('%').
 
-:- pred strip_url_trailing_chars(string::in, int::in, int::out) is semidet.
+:- pred strip_url_trailing_chars(string::in, int::in, int::in, int::out)
+    is semidet.
 
-strip_url_trailing_chars(String, End0, UrlEnd) :-
+strip_url_trailing_chars(String, Start, End0, UrlEnd) :-
     % Smartly handle bracketed URLs.
     string.unsafe_prev_index(String, End0, End1, LastChar),
     (
         LastChar = (')'),
-        count_unbalanced_parens(String, End1, 1, Unbalanced),
+        count_unbalanced_parens(String, Start, End1, 1, Unbalanced),
         ( Unbalanced > 0 ->
             UrlEnd = End1
         ;
@@ -190,10 +191,14 @@ strip_url_trailing_chars(String, End0, UrlEnd) :-
         )
     ).
 
-:- pred count_unbalanced_parens(string::in, int::in, int::in, int::out) is det.
+:- pred count_unbalanced_parens(string::in, int::in, int::in,
+    int::in, int::out) is det.
 
-count_unbalanced_parens(String, Index0, Unbalanced0, Unbalanced) :-
-    ( string.unsafe_prev_index(String, Index0, Index1, Char) ->
+count_unbalanced_parens(String, Start, Index0, Unbalanced0, Unbalanced) :-
+    (
+        string.unsafe_prev_index(String, Index0, Index1, Char),
+        Index1 >= Start
+    ->
         ( Char = (')') ->
             Unbalanced1 = Unbalanced0 + 1
         ; Char = ('(') ->
@@ -201,7 +206,8 @@ count_unbalanced_parens(String, Index0, Unbalanced0, Unbalanced) :-
         ;
             Unbalanced1 = Unbalanced0
         ),
-        count_unbalanced_parens(String, Index1, Unbalanced1, Unbalanced)
+        count_unbalanced_parens(String, Start, Index1,
+            Unbalanced1, Unbalanced)
     ;
         Unbalanced = Unbalanced0
     ).
