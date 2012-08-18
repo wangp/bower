@@ -705,7 +705,8 @@ generate_config_key_choices(SectionName, OrigString, Choices, !IO) :-
         ItemsList = string.words_separator(unify('\n'), ItemsString),
         list.filter_map(
             filter_config_key_choice(SectionName ++ ".", OrigString),
-            ItemsList, Choices)
+            ItemsList, Choices0),
+        list.sort(Choices0, Choices)
     ;
         CallRes = error(_),
         Choices = []
