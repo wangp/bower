@@ -144,7 +144,7 @@ default_sendmail_command = "/usr/bin/sendmail -oi -oem".
 
 :- func default_html_dump_command = string.
 
-default_html_dump_command = "lynx -dump -force-html -stdin".
+default_html_dump_command = "lynx -dump -force-html -stdin -display-charset=utf-8".
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

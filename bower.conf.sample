@@ -30,5 +30,6 @@
 ; post_sendmail=
 
 # How to format HTML on stdin to plain text.
-; html_dump=lynx -dump -force-html -stdin
+# The command should output UTF-8.
+; html_dump=lynx -dump -force-html -stdin -display-charset=utf-8
 
