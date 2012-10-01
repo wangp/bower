@@ -13,9 +13,9 @@
 
 %-----------------------------------------------------------------------------%
 
-:- pred add_sent(string::in, io.res::out, io::di, io::uo) is det.
+:- pred add_sent(string::in, maybe_error::out, io::di, io::uo) is det.
 
-:- pred add_draft(string::in, io.res::out, io::di, io::uo) is det.
+:- pred add_draft(string::in, maybe_error::out, io::di, io::uo) is det.
 
 :- pred find_drafts(maybe(thread_id)::in, list(message_id)::out,
     io::di, io::uo) is det.
@@ -51,7 +51,7 @@ add_draft(FileName, Res, !IO) :-
         Res, !IO).
 
 :- pred call_notmuch_deliver(string::in, string::in, list(string)::in,
-    io.res::out, io::di, io::uo) is det.
+    maybe_error::out, io::di, io::uo) is det.
 
 call_notmuch_deliver(FileName, Folder, TagOps, Res, !IO) :-
     % XXX do we need -f?
@@ -66,11 +66,11 @@ call_notmuch_deliver(FileName, Folder, TagOps, Res, !IO) :-
         ;
             Msg = string.format("notmuch-deliver returned with exit status %d",
                 [i(ExitStatus)]),
-            Res = error(io.make_io_error(Msg))
+            Res = error(Msg)
         )
     ;
         CallRes = error(Error),
-        Res = error(Error)
+        Res = error(io.error_message(Error))
     ).
 
 %-----------------------------------------------------------------------------%

@@ -1114,8 +1114,7 @@ postpone(Screen, Headers, Text, Attachments, Res, MessageUpdate, !IO) :-
             Res = yes
         ;
             DraftRes = error(Error),
-            Msg = io.error_message(Error),
-            MessageUpdate = set_warning(Msg),
+            MessageUpdate = set_warning(Error),
             Res = no
         )
     ;
@@ -1177,7 +1176,7 @@ call_send_mail(Filename, Res, !IO) :-
                 Res = ok
             ;
                 ResAfter = error(Error),
-                Res = error("Mail sent, but " ++ io.error_message(Error))
+                Res = error("Mail sent, but " ++ Error)
             )
         ;
             Msg = string.format("%s: returned with exit status %d",
@@ -1190,8 +1189,8 @@ call_send_mail(Filename, Res, !IO) :-
         Res = error(Msg)
     ).
 
-:- pred call_post_sendmail_command(string::in, io.res::out, io::di, io::uo)
-    is det.
+:- pred call_post_sendmail_command(string::in, maybe_error::out,
+    io::di, io::uo) is det.
 
 call_post_sendmail_command(Filename, Res, !IO) :-
     get_maybe_post_sendmail_command(MaybeCommand, !IO),
@@ -1209,11 +1208,11 @@ call_post_sendmail_command(Filename, Res, !IO) :-
                 ;
                     Msg = string.format("%s: returned with exit status %d",
                         [s(Command), i(ExitStatus)]),
-                    Res = error(io.make_io_error(Msg))
+                    Res = error(Msg)
                 )
             ;
                 ResCall = error(Error),
-                Res = error(Error)
+                Res = error(io.error_message(Error))
             )
         )
     ;
