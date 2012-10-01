@@ -203,7 +203,7 @@ delete_draft(Screen, !Info, !IO) :-
             MessageUpdate = set_info("Draft message deleted.")
         ;
             Res = error(Error),
-            MessageUpdate = set_warning(io.error_message(Error))
+            MessageUpdate = set_warning(Error)
         ),
         update_message(Screen, MessageUpdate, !IO)
     ;

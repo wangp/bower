@@ -531,7 +531,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
                 MessageUpdate = MessageUpdate0
             ;
                 TagRes = error(TagError),
-                MessageUpdate = set_warning(io.error_message(TagError))
+                MessageUpdate = set_warning(TagError)
             ),
             Action = leave(sent, MessageUpdate)
         ;
@@ -1221,7 +1221,8 @@ call_post_sendmail_command(Filename, Res, !IO) :-
         add_sent(Filename, Res, !IO)
     ).
 
-:- pred tag_replied_message(headers::in, io.res::out, io::di, io::uo) is det.
+:- pred tag_replied_message(headers::in, maybe_error::out, io::di, io::uo)
+    is det.
 
 tag_replied_message(Headers, Res, !IO) :-
     InReplyTo0 = Headers ^ h_inreplyto,

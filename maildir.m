@@ -20,11 +20,11 @@
 :- pred find_drafts(maybe(thread_id)::in, list(message_id)::out,
     io::di, io::uo) is det.
 
-:- pred tag_messages(list(tag_delta)::in, list(message_id)::in, io.res::out,
-    io::di, io::uo) is det.
+:- pred tag_messages(list(tag_delta)::in, list(message_id)::in,
+    maybe_error::out, io::di, io::uo) is det.
 
-:- pred tag_threads(list(tag_delta)::in, list(thread_id)::in, io.res::out,
-    io::di, io::uo) is det.
+:- pred tag_threads(list(tag_delta)::in, list(thread_id)::in,
+    maybe_error::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -110,7 +110,7 @@ tag_threads(TagDeltas, ThreadIds, Res, !IO) :-
     SearchTerms = list.map(thread_id_to_search_term, ThreadIds),
     do_tag(TagDeltas, SearchTerms, Res, !IO).
 
-:- pred do_tag(list(tag_delta)::in, list(string)::in, io.res::out,
+:- pred do_tag(list(tag_delta)::in, list(string)::in, maybe_error::out,
     io::di, io::uo) is det.
 
 do_tag(TagDeltas, SearchTerms, Res, !IO) :-
@@ -126,11 +126,11 @@ do_tag(TagDeltas, SearchTerms, Res, !IO) :-
         ;
             string.format("notmuch tag returned exit status %d",
                 [i(ExitStatus)], Msg),
-            Res = error(io.make_io_error(Msg))
+            Res = error(Msg)
         )
     ;
         CallRes = error(Error),
-        Res = error(Error)
+        Res = error(io.error_message(Error))
     ).
 
 %-----------------------------------------------------------------------------%
