@@ -159,10 +159,17 @@
 open_thread_pager(Screen, ThreadId, MaybeSearch, Transition,
         CommonHistory0, CommonHistory, !IO) :-
     create_thread_pager(Screen, ThreadId, ordering_threaded, CommonHistory0,
-        Info0, Count, !IO),
+        Info0, ResCount, !IO),
     Info1 = Info0 ^ tp_search := MaybeSearch,
-    string.format("Showing %d messages.", [i(Count)], Msg),
-    update_message(Screen, set_info(Msg), !IO),
+    (
+        ResCount = ok(Count),
+        string.format("Showing %d messages.", [i(Count)], Msg),
+        MessageUpdate = set_info(Msg)
+    ;
+        ResCount = error(Error),
+        MessageUpdate = set_warning(Error)
+    ),
+    update_message(Screen, MessageUpdate, !IO),
     thread_pager_loop(Screen, Info1, Info, !IO),
     get_effects(Info, Effects),
     Transition = screen_transition(Effects, no_change),
@@ -187,7 +194,15 @@ reopen_thread_pager_with_ordering(Screen, Ordering, Info0, Info, !IO) :-
     % much simpler and the time it takes to run the notmuch show command vastly
     % exceeds the time to format the messages anyway.
     create_thread_pager(Screen, ThreadId0, Ordering, CommonHistory, Info1,
-        Count, !IO),
+        ResCount, !IO),
+    (
+        ResCount = ok(Count),
+        string.format("Showing %d messages.", [i(Count)], Msg),
+        MessageUpdate = set_info(Msg)
+    ;
+        ResCount = error(Error),
+        MessageUpdate = set_warning(Error)
+    ),
 
     Info1 = thread_pager_info(ThreadId, _Ordering,
         Scrollable1, NumThreadRows, Pager1, NumPagerRows,
@@ -219,31 +234,38 @@ reopen_thread_pager_with_ordering(Screen, Ordering, Info0, Info, !IO) :-
         Search, SearchDir, CommonHistory, AddedMessages),
     sync_thread_to_pager(Info2, Info),
 
-    string.format("Showing %d messages.", [i(Count)], Msg),
-    update_message(Screen, set_info(Msg), !IO).
+    update_message(Screen, MessageUpdate, !IO).
 
 :- pred create_thread_pager(screen::in, thread_id::in, ordering::in,
-    common_history::in, thread_pager_info::out, int::out, io::di, io::uo)
-    is det.
+    common_history::in, thread_pager_info::out, maybe_error(int)::out,
+    io::di, io::uo) is det.
 
-create_thread_pager(Screen, ThreadId, Ordering, CommonHistory, Info, Count,
+create_thread_pager(Screen, ThreadId, Ordering, CommonHistory, Info, ResCount,
         !IO) :-
     run_notmuch([
         "show", "--format=json", "--", thread_id_to_search_term(ThreadId)
-    ], parse_messages_list, Result, !IO),
+    ], parse_messages_list, ParseResult, !IO),
     (
-        Result = ok(Messages0),
+        ParseResult = ok(Messages0),
         list.filter_map(filter_unwanted_messages, Messages0, Messages1),
         list.map_foldl(expand_copious_output, Messages1, Messages, !IO)
     ;
-        Result = error(Error),
-        unexpected($module, $pred, io.error_message(Error))
+        ParseResult = error(_),
+        Messages = []
     ),
     time(Time, !IO),
     Nowish = localtime(Time),
     get_rows_cols(Screen, Rows, Cols),
-    setup_thread_pager(ThreadId, Ordering, Nowish, Rows - 2, Cols, Messages,
-        CommonHistory, Info, Count).
+    setup_thread_pager(ThreadId, Ordering, Nowish, Rows - 2, Cols,
+        Messages, CommonHistory, Info, Count),
+    (
+        ParseResult = ok(_),
+        ResCount = ok(Count)
+    ;
+        ParseResult = error(Error),
+        ErrorMsg = io.error_message(Error),
+        ResCount = error("Error parsing notmuch response: " ++ ErrorMsg)
+    ).
 
 :- pred filter_unwanted_messages(message::in, message::out) is semidet.
 
