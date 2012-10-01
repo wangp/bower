@@ -222,7 +222,7 @@ search_terms_quiet(Tokens, Threads, MessageUpdate, !IO) :-
         MessageUpdate = set_info(Message)
     ;
         ResThreads = error(Error),
-        Message = "Error: " ++ io.error_message(Error),
+        Message = "Error: " ++ Error,
         MessageUpdate = set_warning(Message),
         Threads = []
     ).
@@ -831,7 +831,7 @@ try_reply(!Screen, ThreadId, RequireUnread, ReplyKind, Res, !Info, !IO) :-
         )
     ;
         ListRes = error(Error),
-        update_message(!.Screen, set_warning(io.error_message(Error)), !IO),
+        update_message(!.Screen, set_warning(Error), !IO),
         Res = error
     ).
 

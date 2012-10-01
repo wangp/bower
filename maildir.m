@@ -91,7 +91,7 @@ find_drafts(MaybeThreadId, MessageIds, !IO) :-
         Result = ok(MessageIds)
     ;
         Result = error(Error),
-        unexpected($module, $pred, io.error_message(Error))
+        unexpected($module, $pred, Error)
     ).
 
 %-----------------------------------------------------------------------------%

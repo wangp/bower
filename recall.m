@@ -99,7 +99,7 @@ make_recall_line(Nowish, MessageId, Line, !IO) :-
         Line = recall_line(Message, RelDate, To, Subject)
     ;
         Result = error(Error),
-        unexpected($module, $pred, io.error_message(Error))
+        unexpected($module, $pred, Error)
     ).
 
 %-----------------------------------------------------------------------------%

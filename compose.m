@@ -285,7 +285,7 @@ start_reply_to_message_id(Screen, MessageId, ReplyKind, Sent, !IO) :-
         start_reply(Screen, Message, ReplyKind, Sent, !IO)
     ;
         Res = error(Error),
-        unexpected($module, $pred, io.error_message(Error))
+        unexpected($module, $pred, Error)
     ).
 
 %-----------------------------------------------------------------------------%

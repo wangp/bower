@@ -263,8 +263,7 @@ create_thread_pager(Screen, ThreadId, Ordering, CommonHistory, Info, ResCount,
         ResCount = ok(Count)
     ;
         ParseResult = error(Error),
-        ErrorMsg = io.error_message(Error),
-        ResCount = error("Error parsing notmuch response: " ++ ErrorMsg)
+        ResCount = error("Error parsing notmuch response: " ++ Error)
     ).
 
 :- pred filter_unwanted_messages(message::in, message::out) is semidet.

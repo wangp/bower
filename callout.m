@@ -6,6 +6,7 @@
 
 :- import_module io.
 :- import_module list.
+:- import_module maybe.
 
 :- import_module data.
 :- import_module json.
@@ -19,7 +20,7 @@
     io::di, io::uo) is det.
 
 :- pred run_notmuch(list(string)::in, pred(json, T)::in(pred(in, out) is det),
-    io.res(T)::out, io::di, io::uo) is det.
+    maybe_error(T)::out, io::di, io::uo) is det.
 
 :- pred parse_messages_list(json::in, list(message)::out) is det.
 
@@ -35,7 +36,6 @@
 :- implementation.
 
 :- import_module map.
-:- import_module maybe.
 :- import_module parsing_utils.
 :- import_module require.
 :- import_module set.
@@ -82,16 +82,16 @@ run_notmuch(Args, P, Result, !IO) :-
             ParseResult = error(yes(Msg), Line, Column),
             string.format("line %d, column %d: %s",
                 [i(Line), i(Column), s(Msg)], ErrorMsg),
-            Result = error(io.make_io_error(ErrorMsg))
+            Result = error(ErrorMsg)
         ;
             ParseResult = error(no, Line, Column),
             string.format("line %d, column %d",
                 [i(Line), i(Column)], ErrorMsg),
-            Result = error(io.make_io_error(ErrorMsg))
+            Result = error(ErrorMsg)
         )
     ;
         CommandResult = error(Error),
-        Result = error(Error)
+        Result = error(io.error_message(Error))
     ).
 
 %-----------------------------------------------------------------------------%
