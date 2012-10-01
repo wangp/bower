@@ -1623,8 +1623,7 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
                 )
             ;
                 Res = error(Error),
-                ErrorMessage = io.error_message(Error),
-                MessageUpdate = set_warning(ErrorMessage)
+                MessageUpdate = set_warning(Error)
             )
         )
     ;
@@ -1672,8 +1671,8 @@ make_save_part_initial_prompt(History, PartFilename, Initial) :-
         Initial = PrevDirName / PartFilename
     ).
 
-:- pred do_save_part(message_id::in, int::in, string::in,
-    io.res::out, io::di, io::uo) is det.
+:- pred do_save_part(message_id::in, int::in, string::in, maybe_error::out,
+    io::di, io::uo) is det.
 
 do_save_part(MessageId, Part, FileName, Res, !IO) :-
     Args = [
@@ -1690,11 +1689,11 @@ do_save_part(MessageId, Part, FileName, Res, !IO) :-
         ;
             string.format("notmuch show returned exit status %d",
                 [i(ExitStatus)], Msg),
-            Res = error(io.make_io_error(Msg))
+            Res = error(Msg)
         )
     ;
         CallRes = error(Error),
-        Res = error(Error)
+        Res = error(io.error_message(Error))
     ).
 
 %-----------------------------------------------------------------------------%
@@ -1771,7 +1770,7 @@ prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
         ;
             Res = error(Error),
             string.format("Error saving to %s: %s",
-                [s(FileName), s(io.error_message(Error))], Msg),
+                [s(FileName), s(Error)], Msg),
             MessageUpdate = set_warning(Msg),
             MaybeNextKey = no
         ),
