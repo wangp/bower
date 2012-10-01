@@ -386,8 +386,7 @@ create_edit_stage(Screen, Headers0, Text0, Attachments, MaybeOldDraft,
         )
     ;
         ResFilename = error(Error),
-        Msg = io.error_message(Error),
-        Transition = screen_transition(not_sent, set_warning(Msg))
+        Transition = screen_transition(not_sent, set_warning(Error))
     ).
 
 :- pred call_editor(string::in, call_res::out, io::di, io::uo) is det.
@@ -1121,7 +1120,7 @@ postpone(Screen, Headers, Text, Attachments, Res, MessageUpdate, !IO) :-
         )
     ;
         ResFilename = error(Error),
-        MessageUpdate = set_warning(io.error_message(Error)),
+        MessageUpdate = set_warning(Error),
         Res = no
     ).
 
@@ -1160,8 +1159,7 @@ send_mail(Screen, Headers, Text, Attachments, Res, MessageUpdate, !IO) :-
         )
     ;
         ResFilename = error(Error),
-        Message = io.error_message(Error),
-        MessageUpdate = set_warning(Message),
+        MessageUpdate = set_warning(Error),
         Res = not_sent
     ).
 
@@ -1254,7 +1252,7 @@ tag_replied_message(Headers, Res, !IO) :-
     ;       mime_multipart(string). % boundary
 
 :- pred create_temp_message_file(headers::in, string::in, list(attachment)::in,
-    prepare_temp::in, io.res(string)::out, io::di, io::uo) is det.
+    prepare_temp::in, maybe_error(string)::out, io::di, io::uo) is det.
 
 create_temp_message_file(Headers, Text, Attachments, Prepare, Res, !IO) :-
     io.make_temp(Filename, !IO),
@@ -1353,7 +1351,7 @@ create_temp_message_file(Headers, Text, Attachments, Prepare, Res, !IO) :-
     ;
         ResOpen = error(_Error),
         Message = "Error writing temporary file " ++ Filename,
-        Res = error(io.make_io_error(Message))
+        Res = error(Message)
     ).
 
 :- pred generate_date_msg_id(string::out, string::out, io::di, io::uo) is det.
