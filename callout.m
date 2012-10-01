@@ -79,8 +79,15 @@ run_notmuch(Args, P, Result, !IO) :-
             P(JSON, T),
             Result = ok(T)
         ;
-            ParseResult = error(_, _, _),
-            Result = error(io.make_io_error(string(ParseResult)))
+            ParseResult = error(yes(Msg), Line, Column),
+            string.format("line %d, column %d: %s",
+                [i(Line), i(Column), s(Msg)], ErrorMsg),
+            Result = error(io.make_io_error(ErrorMsg))
+        ;
+            ParseResult = error(no, Line, Column),
+            string.format("line %d, column %d",
+                [i(Line), i(Column)], ErrorMsg),
+            Result = error(io.make_io_error(ErrorMsg))
         )
     ;
         CommandResult = error(Error),
