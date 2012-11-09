@@ -129,7 +129,7 @@
     ;       prompt_open_part(part)
     ;       prompt_open_url(string)
     ;       prompt_search(search_direction)
-    ;       prompt_ordering
+    ;       toggle_ordering
     ;       refresh_results
     ;       leave.
 
@@ -679,14 +679,9 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         prompt_search(Screen, SearchDir, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
-        Action = prompt_ordering,
-        prompt_ordering(Screen, MaybeOrdering, !IO),
-        (
-            MaybeOrdering = yes(Ordering),
-            reopen_thread_pager_with_ordering(Screen, Ordering, !Info, !IO)
-        ;
-            MaybeOrdering = no
-        ),
+        Action = toggle_ordering,
+        toggle_ordering(!.Info, Ordering),
+        reopen_thread_pager_with_ordering(Screen, Ordering, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = refresh_results,
@@ -895,7 +890,7 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ;
         Key = char('O')
     ->
-        Action = prompt_ordering,
+        Action = toggle_ordering,
         MessageUpdate = no_change
     ;
         Key = char('=')
@@ -1868,20 +1863,16 @@ skip_to_search(SearchKind, MessageUpdate, !Info) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred prompt_ordering(screen::in, maybe(ordering)::out, io::di, io::uo)
-    is det.
+:- pred toggle_ordering(thread_pager_info::in, ordering::out) is det.
 
-prompt_ordering(Screen, MaybeOrdering, !IO) :-
-    Prompt = "Sort by (d)ate, (t)hread: ",
-    update_message_immed(Screen, set_prompt(Prompt), !IO),
-    get_char_blocking(Char, !IO),
-    ( Char = 'd' ->
-        MaybeOrdering = yes(ordering_flat)
-    ; Char = 't' ->
-        MaybeOrdering = yes(ordering_threaded)
+toggle_ordering(Info, Ordering) :-
+    Ordering0 = Info ^ tp_ordering,
+    (
+        Ordering0 = ordering_flat,
+        Ordering = ordering_threaded
     ;
-        MaybeOrdering = no,
-        update_message(Screen, set_info("Unchanged."), !IO)
+        Ordering0 = ordering_threaded,
+        Ordering = ordering_flat
     ).
 
 %-----------------------------------------------------------------------------%
