@@ -70,6 +70,7 @@
 :- type thread_pager_info
     --->    thread_pager_info(
                 tp_thread_id        :: thread_id,
+                tp_messages         :: list(message),
                 tp_ordering         :: ordering,
                 tp_scrollable       :: scrollable(thread_line),
                 tp_num_thread_rows  :: int,
@@ -158,7 +159,7 @@
 
 open_thread_pager(Screen, ThreadId, MaybeSearch, Transition,
         CommonHistory0, CommonHistory, !IO) :-
-    create_thread_pager(Screen, ThreadId, ordering_threaded, CommonHistory0,
+    create_thread_pager(Screen, ThreadId, ordering_threaded, no, CommonHistory0,
         Info0, ResCount, !IO),
     Info1 = Info0 ^ tp_search := MaybeSearch,
     (
@@ -186,15 +187,19 @@ reopen_thread_pager(Screen, !Info, !IO) :-
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 reopen_thread_pager_with_ordering(Screen, Ordering, Info0, Info, !IO) :-
-    Info0 = thread_pager_info(ThreadId0, _Ordering0,
+    Info0 = thread_pager_info(ThreadId0, Cached0, _Ordering0,
         Scrollable0, _NumThreadRows, Pager0, _NumPagerRows,
         Search, SearchDir, CommonHistory, AddedMessages),
 
-    % We recreate the entire pager.  This may seem a bit inefficient but it is
-    % much simpler and the time it takes to run the notmuch show command vastly
-    % exceeds the time to format the messages anyway.
-    create_thread_pager(Screen, ThreadId0, Ordering, CommonHistory, Info1,
-        ResCount, !IO),
+    (
+        Cached0 = [],
+        MaybeCached = no
+    ;
+        Cached0 = [_ | _],
+        MaybeCached = yes(Cached0)
+    ),
+    create_thread_pager(Screen, ThreadId0, Ordering, MaybeCached,
+        CommonHistory, Info1, ResCount, !IO),
     (
         ResCount = ok(Count),
         string.format("Showing %d messages.", [i(Count)], Msg),
@@ -204,7 +209,7 @@ reopen_thread_pager_with_ordering(Screen, Ordering, Info0, Info, !IO) :-
         MessageUpdate = set_warning(Error)
     ),
 
-    Info1 = thread_pager_info(ThreadId, _Ordering,
+    Info1 = thread_pager_info(ThreadId, Cached, _Ordering,
         Scrollable1, NumThreadRows, Pager1, NumPagerRows,
         _Search1, _SearchDir1, _CommonHistory1, _AddedMessages1),
 
@@ -229,7 +234,7 @@ reopen_thread_pager_with_ordering(Screen, Ordering, Info0, Info, !IO) :-
         Pager = Pager1
     ),
 
-    Info2 = thread_pager_info(ThreadId, Ordering,
+    Info2 = thread_pager_info(ThreadId, Cached, Ordering,
         Scrollable, NumThreadRows, Pager, NumPagerRows,
         Search, SearchDir, CommonHistory, AddedMessages),
     sync_thread_to_pager(Info2, Info),
@@ -237,14 +242,21 @@ reopen_thread_pager_with_ordering(Screen, Ordering, Info0, Info, !IO) :-
     update_message(Screen, MessageUpdate, !IO).
 
 :- pred create_thread_pager(screen::in, thread_id::in, ordering::in,
+    maybe(list(message))::in,
     common_history::in, thread_pager_info::out, maybe_error(int)::out,
     io::di, io::uo) is det.
 
-create_thread_pager(Screen, ThreadId, Ordering, CommonHistory, Info, ResCount,
-        !IO) :-
-    run_notmuch([
-        "show", "--format=json", "--", thread_id_to_search_term(ThreadId)
-    ], parse_messages_list, ParseResult, !IO),
+create_thread_pager(Screen, ThreadId, Ordering, MaybeCached, CommonHistory,
+        Info, ResCount, !IO) :-
+    (
+        MaybeCached = yes(MessagesCached),
+        ParseResult = ok(MessagesCached)
+    ;
+        MaybeCached = no,
+        run_notmuch([
+            "show", "--format=json", "--", thread_id_to_search_term(ThreadId)
+        ], parse_messages_list, ParseResult, !IO)
+    ),
     (
         ParseResult = ok(Messages0),
         list.filter_map(filter_unwanted_messages, Messages0, Messages1),
@@ -312,8 +324,8 @@ setup_thread_pager(ThreadId, Ordering, Nowish, Rows, Cols, Messages,
         pager.skip_to_message(MessageId, PagerInfo0, PagerInfo)
     ),
     AddedMessages = 0,
-    ThreadPagerInfo = thread_pager_info(ThreadId, Ordering, Scrollable,
-        NumThreadRows, PagerInfo, NumPagerRows, no, dir_forward,
+    ThreadPagerInfo = thread_pager_info(ThreadId, Messages, Ordering,
+        Scrollable, NumThreadRows, PagerInfo, NumPagerRows, no, dir_forward,
         CommonHistory, AddedMessages).
 
 :- pred get_latest_line(thread_line::in, thread_line::in, thread_line::out)
