@@ -44,6 +44,7 @@ addressbook_section = "bower:addressbook".
 is_alias_char(C) :- char.is_alnum_or_underscore(C).
 is_alias_char('-').
 is_alias_char('+').
+is_alias_char('.').
 
 %-----------------------------------------------------------------------------%
 
