@@ -53,6 +53,7 @@
 :- import_module string.
 :- import_module time.
 
+:- import_module addressbook.
 :- import_module callout.
 :- import_module curs.
 :- import_module curs.panel.
@@ -655,44 +656,6 @@ set_header(cc,      Value, H, H ^ h_cc := Value).
 set_header(bcc,     Value, H, H ^ h_bcc := Value).
 set_header(subject, Value, H, H ^ h_subject := Value).
 set_header(replyto, Value, H, H ^ h_replyto := Value).
-
-:- pred expand_aliases(string::in, string::out, io::di, io::uo) is det.
-
-expand_aliases(String0, String, !IO) :-
-    Words0 = string.split_at_string(", ", String0),
-    list.map_foldl(expand_aliases_2, Words0, Words1, !IO),
-    ( Words0 = Words1 ->
-        String = String0
-    ;
-        String = string.join_list(", ", Words1)
-    ).
-
-:- pred expand_aliases_2(string::in, string::out, io::di, io::uo) is det.
-
-expand_aliases_2(Word0, Expansion, !IO) :-
-    Word1 = string.strip(Word0),
-    ( string.all_match(is_alias_char, Word1) ->
-        Key = addressbook_section ++ "." ++ Word1,
-        get_notmuch_config(Key, MaybeValue, !IO),
-        (
-            MaybeValue = ok(Expansion)
-        ;
-            MaybeValue = error(_),
-            Expansion = Word0
-        )
-    ;
-        Expansion = Word0
-    ).
-
-:- pred is_alias_char(char::in) is semidet.
-
-is_alias_char(C) :- char.is_alnum_or_underscore(C).
-is_alias_char('-').
-is_alias_char('+').
-
-:- func addressbook_section = string.
-
-addressbook_section = "bower:addressbook".
 
 %-----------------------------------------------------------------------------%
 

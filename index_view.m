@@ -30,6 +30,7 @@
 :- import_module string.
 :- import_module time.
 
+:- import_module addressbook.
 :- import_module async.
 :- import_module callout.
 :- import_module compose.
@@ -102,6 +103,7 @@
     ;       start_compose
     ;       start_recall
     ;       start_reply(reply_kind)
+    ;       addressbook_add
     ;       prompt_internal_search(search_direction)
     ;       skip_to_internal_search
     ;       toggle_unread
@@ -124,6 +126,7 @@
     ;       start_compose
     ;       start_recall
     ;       start_reply(reply_kind)
+    ;       addressbook_add
     ;       prompt_internal_search(search_direction)
     ;       toggle_unread
     ;       toggle_flagged
@@ -392,6 +395,10 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         ),
         index_loop(NewScreen, !.IndexInfo, !IO)
     ;
+        Action = addressbook_add,
+        addressbook_add(Screen, !.IndexInfo, !IO),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
         Action = prompt_internal_search(SearchDir),
         prompt_internal_search(Screen, SearchDir, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
@@ -550,6 +557,10 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = start_reply(ReplyKind)
         ;
+            Binding = addressbook_add,
+            MessageUpdate = no_change,
+            Action = addressbook_add
+        ;
             Binding = prompt_internal_search(SearchDir),
             MessageUpdate = no_change,
             Action = prompt_internal_search(SearchDir)
@@ -643,6 +654,7 @@ key_binding_char('r', start_reply(direct_reply)).
 key_binding_char('e', start_reply(group_reply)).
 key_binding_char('L', start_reply(list_reply)).
 key_binding_char('R', start_recall).
+key_binding_char('a', addressbook_add).
 key_binding_char('/', prompt_internal_search(dir_forward)).
 key_binding_char('?', prompt_internal_search(dir_reverse)).
 key_binding_char('n', skip_to_internal_search).
@@ -855,6 +867,40 @@ handle_recall(!Screen, Sent, !IndexInfo, !IO) :-
         MaybeSelected = no,
         Sent = not_sent
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred addressbook_add(screen::in, index_info::in, io::di, io::uo) is det.
+
+addressbook_add(Screen, Info, !IO) :-
+    Scrollable = Info ^ i_scrollable,
+    ( get_cursor_line(Scrollable, _Cursor, Line) ->
+        ThreadId = Line ^ i_id,
+        Args = [
+            "search", "--format=json", "--output=messages", "--",
+            thread_id_to_search_term(ThreadId)
+        ],
+        run_notmuch(Args, parse_message_id_list, ListRes, !IO),
+        ( ListRes = ok([MessageId | _]) ->
+            run_notmuch([
+                "show", "--format=json", "--part=0", "--",
+                message_id_to_search_term(MessageId)
+            ], parse_top_message, MessageRes, !IO),
+            (
+                MessageRes = ok(Message),
+                From = Message ^ m_headers ^ h_from,
+                Address0 = From
+            ;
+                MessageRes = error(_),
+                Address0 = ""
+            )
+        ;
+            Address0 = ""
+        )
+    ;
+        Address0 = ""
+    ),
+    prompt_addressbook_add(Screen, Address0, !IO).
 
 %-----------------------------------------------------------------------------%
 

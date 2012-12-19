@@ -91,6 +91,7 @@ The keys are:
     e               reply to everyone
     L               reply to list
     R               recall postponed message
+    a               add to addressbook
     /, ?            search for string within results
     n               skip to next search result
     N               toggle unread tag on current thread
@@ -168,6 +169,7 @@ This view pages through an entire thread.  The keys are:
     e               reply to everyone
     L               reply to list
     R               recall postponed message
+    a               add to addressbook
 
     v               highlight next visible attachment or URL
     V               highlight next visible attachment or top of message
@@ -213,6 +215,8 @@ in a section called `[bower:addressbook]`, e.g.
     [bower:addressbook]
     someone = Someone <someone@example.org>
     someoneelse = someoneelse@example.org
+
+You can add to the addressbook using 'a' in the index or thread views.
 
 
 Sending mail

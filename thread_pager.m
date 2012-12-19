@@ -49,6 +49,7 @@
 :- import_module time.
 :- import_module version_array.
 
+:- import_module addressbook.
 :- import_module callout.
 :- import_module compose.
 :- import_module copious_output.
@@ -131,6 +132,7 @@
     ;       prompt_open_url(string)
     ;       prompt_search(search_direction)
     ;       toggle_ordering
+    ;       addressbook_add
     ;       refresh_results
     ;       leave.
 
@@ -696,6 +698,10 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         reopen_thread_pager_with_ordering(Screen, Ordering, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
+        Action = addressbook_add,
+        addressbook_add(Screen, !.Info, !IO),
+        thread_pager_loop(Screen, !Info, !IO)
+    ;
         Action = refresh_results,
         reopen_thread_pager(Screen, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
@@ -938,6 +944,11 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Key = char('R')
     ->
         Action = start_recall,
+        MessageUpdate = no_change
+    ;
+        Key = char('a')
+    ->
+        Action = addressbook_add,
         MessageUpdate = no_change
     ;
         Key = code(key_resize)
@@ -1970,6 +1981,21 @@ handle_recall(!Screen, ThreadId, Sent, !Info, !IO) :-
         MaybeSelected = no,
         Sent = not_sent
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred addressbook_add(screen::in, thread_pager_info::in, io::di, io::uo)
+    is det.
+
+addressbook_add(Screen, Info, !IO) :-
+    Scrollable = Info ^ tp_scrollable,
+    ( get_cursor_line(Scrollable, _Cursor, Line) ->
+        From = Line ^ tp_message ^ m_headers ^ h_from,
+        Address0 = From
+    ;
+        Address0 = ""
+    ),
+    prompt_addressbook_add(Screen, Address0, !IO).
 
 %-----------------------------------------------------------------------------%
 
