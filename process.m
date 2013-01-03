@@ -125,6 +125,17 @@ posix_spawn_capture_stdout(Prog, Args, Res, !IO) :-
 ").
 
 :- pragma foreign_decl("C", local, "
+#if defined(__APPLE__) && defined(__MACH__)
+    /*
+    ** On Darwin, shared libraries and bundles don't have direct access to
+    ** environ.
+    */
+    #include <crt_externs.h>
+    #define ENVIRON (*_NSGetEnviron())
+#else
+    #define ENVIRON (environ)
+#endif
+
 static int
 do_posix_spawn(pid_t *pid_ptr, const char *Prog, char *argv[], int pipefd[2])
 {
@@ -152,7 +163,7 @@ do_posix_spawn(pid_t *pid_ptr, const char *Prog, char *argv[], int pipefd[2])
 
     posix_spawnattr_init(&attr);
 
-    rc = posix_spawnp(pid_ptr, Prog, &file_actions, &attr, argv, environ);
+    rc = posix_spawnp(pid_ptr, Prog, &file_actions, &attr, argv, ENVIRON);
 
     posix_spawnattr_destroy(&attr);
     posix_spawn_file_actions_destroy(&file_actions);
