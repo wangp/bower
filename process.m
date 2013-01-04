@@ -133,6 +133,8 @@ posix_spawn_capture_stdout(Prog, Args, Res, !IO) :-
     #include <crt_externs.h>
     #define ENVIRON (*_NSGetEnviron())
 #else
+    /* POSIX does not require environ to be declared. */
+    extern char **environ;
     #define ENVIRON (environ)
 #endif
 
