@@ -63,7 +63,9 @@
                 pt_part         :: int,
                 pt_type         :: string,
                 pt_content      :: part_content,
-                pt_filename     :: maybe(string)
+                pt_filename     :: maybe(string),
+                pt_encoding     :: maybe(string),
+                pt_content_len  :: maybe(int)
             ).
 
 :- type part_content

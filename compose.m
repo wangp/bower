@@ -1552,7 +1552,7 @@ write_mime_part_attachment(Stream, Boundary, Attachment, !IO) :-
 :- pred get_non_text_part_base64(part::in, string::out, io::di, io::uo) is det.
 
 get_non_text_part_base64(Part, Content, !IO) :-
-    Part = part(MessageId, PartId, _, _, _),
+    Part = part(MessageId, PartId, _, _, _, _, _),
     args_to_quoted_command([
         "show", "--format=raw", "--part=" ++ from_int(PartId),
         message_id_to_search_term(MessageId)

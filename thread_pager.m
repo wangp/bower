@@ -1729,7 +1729,8 @@ prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
     ->
         add_history_nodup(Command0, History0, History),
         !Info ^ tp_common_history ^ ch_prog_history := History,
-        Part = part(MessageId, PartId, _Type, _Content, MaybePartFileName),
+        Part = part(MessageId, PartId, _Type, _Content, MaybePartFileName,
+            _MaybeEncoding, _MaybeLength),
         (
             MaybePartFileName = yes(PartFilename),
             get_extension(PartFilename, Ext)

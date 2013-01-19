@@ -186,7 +186,9 @@ parse_part(MessageId, JSON, Part) :-
             ( JSON/"content" = array(SubParts0) ->
                 list.map(parse_part(MessageId), SubParts0, SubParts),
                 Content = subparts(SubParts),
-                MaybeFilename = no
+                MaybeFilename = no,
+                MaybeEncoding = no,
+                MaybeLength = no
             ;
                 notmuch_json_error
             )
@@ -195,26 +197,39 @@ parse_part(MessageId, JSON, Part) :-
                 list.map(parse_encapsulated_message(MessageId), List,
                     EncapMessages),
                 Content = encapsulated_messages(EncapMessages),
-                MaybeFilename = no
+                MaybeFilename = no,
+                MaybeEncoding = no,
+                MaybeLength = no
             ;
                 notmuch_json_error
             )
         ;
             % Leaf part.
-            ( JSON/"filename" = unesc_string(Filename) ->
-                MaybeFilename = yes(Filename)
-            ;
-                MaybeFilename = no
-            ),
             ( JSON/"content" = unesc_string(ContentString) ->
                 Content = text(ContentString)
             ;
                 % "content" is unavailable for non-text parts.
                 % We can those by running notmuch show --part=N id:NNN
                 Content = unsupported
+            ),
+            ( JSON/"filename" = unesc_string(Filename) ->
+                MaybeFilename = yes(Filename)
+            ;
+                MaybeFilename = no
+            ),
+            ( JSON/"content-transfer-encoding" = unesc_string(Encoding) ->
+                MaybeEncoding = yes(Encoding)
+            ;
+                MaybeEncoding = no
+            ),
+            ( JSON/"content-length" = int(Length) ->
+                MaybeLength = yes(Length)
+            ;
+                MaybeLength = no
             )
         ),
-        Part = part(MessageId, PartId, ContentType, Content, MaybeFilename)
+        Part = part(MessageId, PartId, ContentType, Content, MaybeFilename,
+            MaybeEncoding, MaybeLength)
     ;
         notmuch_json_error
     ).

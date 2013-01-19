@@ -35,7 +35,8 @@ expand_copious_output(Message0, Message, !IO) :-
 :- pred expand_part(part::in, part::out, io::di, io::uo) is det.
 
 expand_part(Part0, Part, !IO) :-
-    Part0 = part(MessageId, PartId, Type, Content0, MaybeFilename),
+    Part0 = part(MessageId, PartId, Type, Content0, MaybeFilename,
+        MaybeEncoding, MaybeLength),
     (
         Content0 = text(_),
         Part = Part0
@@ -46,14 +47,16 @@ expand_part(Part0, Part, !IO) :-
         ;
             list.map_foldl(expand_part, SubParts0, SubParts, !IO),
             Content = subparts(SubParts),
-            Part = part(MessageId, PartId, Type, Content, MaybeFilename)
+            Part = part(MessageId, PartId, Type, Content, MaybeFilename,
+                MaybeEncoding, MaybeLength)
         )
     ;
         Content0 = encapsulated_messages(EncapMessages0),
         list.map_foldl(expand_encapsulated_message, EncapMessages0,
             EncapMessages, !IO),
         Content = encapsulated_messages(EncapMessages),
-        Part = part(MessageId, PartId, Type, Content, MaybeFilename)
+        Part = part(MessageId, PartId, Type, Content, MaybeFilename,
+            MaybeEncoding, MaybeLength)
     ;
         Content0 = unsupported,
         (
@@ -62,7 +65,8 @@ expand_part(Part0, Part, !IO) :-
             strcase_equal(Type, "text/html")
         ->
             expand_html(MessageId, PartId, Content, !IO),
-            Part = part(MessageId, PartId, Type, Content, MaybeFilename)
+            Part = part(MessageId, PartId, Type, Content, MaybeFilename,
+                MaybeEncoding, MaybeLength)
         ;
             Part = Part0
         )

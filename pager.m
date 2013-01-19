@@ -97,6 +97,7 @@
 :- import_module bool.
 :- import_module char.
 :- import_module cord.
+:- import_module float.
 :- import_module int.
 :- import_module set.
 :- import_module string.
@@ -208,7 +209,8 @@ append_header(Header, Value, !Lines) :-
     cord(pager_line)::in, cord(pager_line)::out, bool::in, bool::out) is det.
 
 append_part(Cols, Part, !Lines, !IsFirst) :-
-    Part = part(_MsgId, _Part, Type, Content, _MaybeFilename),
+    Part = part(_MsgId, _Part, Type, Content, _MaybeFilename,
+        _MaybeEncoding, _MaybeLength),
     (
         Content = text(Text),
         (
@@ -1044,7 +1046,7 @@ get_highlighted_part(Info, Part, MaybeSubject) :-
         Line = start_message_header(Message, _, _),
         MessageId = Message ^ m_id,
         Subject = Message ^ m_headers ^ h_subject,
-        Part = part(MessageId, 0, "text/plain", unsupported, no),
+        Part = part(MessageId, 0, "text/plain", unsupported, no, no, no),
         MaybeSubject = yes(Subject)
     ;
         Line = attachment(Part),
@@ -1133,8 +1135,8 @@ draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         )
     ;
         Line = attachment(Part),
-        Part ^ pt_type = ContentType,
-        Part ^ pt_filename = MaybeFilename,
+        Part = part(_MessageId, _Part, ContentType, _Content, MaybeFilename,
+            MaybeEncoding, MaybeLength),
         (
             IsCursor = yes,
             Attr = fg_bg(magenta, black) + reverse
@@ -1151,6 +1153,13 @@ draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
             my_addstr(Panel, Filename, !IO)
         ;
             MaybeFilename = no
+        ),
+        (
+            MaybeLength = yes(Length),
+            DecodedLength = decoded_length(MaybeEncoding, Length),
+            my_addstr(Panel, format_length(DecodedLength), !IO)
+        ;
+            MaybeLength = no
         ),
         my_addstr(Panel, " --]", !IO)
     ;
@@ -1177,6 +1186,28 @@ diff_line_to_attr(diff_add) = fg_bg(cyan, black) + bold.
 diff_line_to_attr(diff_rem) = fg_bg(red, black) + bold.
 diff_line_to_attr(diff_hunk) = fg_bg(yellow, black) + bold.
 diff_line_to_attr(diff_index) = fg_bg(green, black) + bold.
+
+:- func decoded_length(maybe(string), int) = int.
+
+decoded_length(MaybeEncoding, Length) =
+    ( MaybeEncoding = yes("base64") ->
+        Length * 3 / 4
+    ;
+        Length
+    ).
+
+:- func format_length(int) = string.
+
+format_length(Size) = String :-
+    ( Size = 0 ->
+        String = " (0 bytes)"
+    ; Size =< 1000000 ->
+        Ks = float(Size) / 1000.0,
+        String = format(" (%.1f kB)", [f(Ks)])
+    ;
+        Ms = float(Size) / 1000000.0,
+        String = format(" (%.1f MB)", [f(Ms)])
+    ).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
