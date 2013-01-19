@@ -26,7 +26,7 @@ At run time:
 * notmuch
 * notmuch-deliver (for adding draft and sent messages)
 * ncurses with wide character support
-* GNU coreutils: date, base64
+* GNU coreutils: base64
 * SMTP client to send messages (configurable)
 * lynx to dump HTML emails (configurable)
 * file(1) to detect MIME types when adding attachments
@@ -134,15 +134,15 @@ these macros:
 By default, a maximum of 300 search results will be displayed.
 Add ~A to the search string to get all results.
 
-The ~d syntax currently uses the date(1) utility to parse the date.
-You may use curly brackets to surround any date strings containing spaces.
+The ~d syntax passes dates through to notmuch as a "date:" search term
+except that you may use curly brackets to surround date strings containing
+spaces, and the spaces will be replaced by underscores.
+See `notmuch-search-terms`(7) for the date range syntax.
+
 Some examples:
 
     ~d 2011-06-01..
     ~d {2 weeks ago}..{last week}
-
-In future, ~d will be an alias for the date range support introduced in
-notmuch 0.15.  You can use the "date:" prefix directly.
 
 In addition to the built-in macros, you can add your own search term
 expansions.  See below for "Search term aliases".

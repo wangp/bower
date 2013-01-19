@@ -28,15 +28,12 @@
 :- import_module char.
 :- import_module int.
 :- import_module list.
-:- import_module maybe.
 :- import_module parsing_utils.
 :- import_module require.
 :- import_module set.
 :- import_module string.
 
 :- import_module callout.
-:- import_module call_system.
-:- import_module quote_arg.
 
 :- type token
     --->    literal(string)             % pass through to notmuch
@@ -278,10 +275,10 @@ token_to_search_term(Token, Term, !IO) :-
     (
         Token = literal(Term)
     ;
-        Token = date_range(FromString, ToString),
-        date_string_to_time(FromString, FromTime, !IO),
-        date_string_to_time(ToString, ToTime, !IO),
-        Term = FromTime ++ ".." ++ ToTime
+        Token = date_range(FromString0, ToString0),
+        string.replace_all(FromString0, " ", "_", FromString),
+        string.replace_all(ToString0, " ", "_", ToString),
+        Term = "date:" ++ FromString ++ ".." ++ ToString
     ;
         Token = do_not_apply_limit,
         Term = ""
@@ -289,31 +286,6 @@ token_to_search_term(Token, Term, !IO) :-
         Token = macro(_),
         % At this stage all macros have been expanded out.
         unexpected($module, $pred, "macro should have been expanded")
-    ).
-
-:- pred date_string_to_time(string::in, string::out, io::di, io::uo)
-    is det.
-
-date_string_to_time(DateString, Time, !IO) :-
-    ( DateString = "" ->
-        Time = ""
-    ;
-        call_date(DateString, Time, !IO)
-    ).
-
-    % Lazy man's date parser, at least until notmuch implements one.
-    %
-:- pred call_date(string::in, string::out, io::di, io::uo) is det.
-
-call_date(Arg, Res, !IO) :-
-    args_to_quoted_command(["date", "+%s", "-d", Arg], Command),
-    call_system_capture_stdout(Command, no, CallRes, !IO),
-    (
-        CallRes = ok(Line),
-        Res = string.rstrip(Line)
-    ;
-        CallRes = error(_),
-        Res = Arg
     ).
 
 %-----------------------------------------------------------------------------%
