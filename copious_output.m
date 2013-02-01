@@ -19,7 +19,7 @@
 :- import_module list.
 :- import_module string.
 
-:- import_module popen.
+:- import_module call_system.
 :- import_module prog_config.
 :- import_module quote_arg.
 :- import_module string_util.
@@ -109,7 +109,7 @@ expand_html(MessageId, PartId, Content, !IO) :-
     ;
         Command = Notmuch ++ ShowCommand ++ " | " ++ DumpCommand
     ),
-    popen(Command, CallRes, !IO),
+    call_system_capture_stdout(Command, CallRes, !IO),
     (
         CallRes = ok(ContentString),
         Content = text(ContentString)

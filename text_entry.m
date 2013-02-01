@@ -61,7 +61,7 @@
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module path_expand.
-:- import_module popen.
+:- import_module call_system.
 :- import_module prog_config.
 :- import_module quote_arg.
 
@@ -673,7 +673,7 @@ generate_smart_tag_choices(AndTagSet, OrTagSet, EnteredTagSet, OrigString,
 get_notmuch_all_tags(TagsList, !IO) :-
     get_notmuch_prefix(Notmuch, !IO),
     args_to_quoted_command(["search", "--output=tags", "--", "*"], Command),
-    popen(Notmuch ++ Command, CallRes, !IO),
+    call_system_capture_stdout(Notmuch ++ Command, CallRes, !IO),
     (
         CallRes = ok(TagListString),
         % The empty string following the final newline is not a tag.
@@ -698,7 +698,7 @@ filter_tag_choice(Trigger, TagPrefix, Tag, Choice) :-
 generate_config_key_choices(SectionName, OrigString, Choices, !IO) :-
     get_notmuch_prefix(Notmuch, !IO),
     args_to_quoted_command(["config", "list"], Command),
-    popen(Notmuch ++ Command, CallRes, !IO),
+    call_system_capture_stdout(Notmuch ++ Command, CallRes, !IO),
     (
         CallRes = ok(ItemsString),
         % The empty string following the final newline is not an item.

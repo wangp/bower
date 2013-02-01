@@ -61,7 +61,7 @@
 :- import_module mime_type.
 :- import_module pager.
 :- import_module path_expand.
-:- import_module popen.
+:- import_module call_system.
 :- import_module prog_config.
 :- import_module quote_arg.
 :- import_module scrollable.
@@ -192,7 +192,7 @@ start_reply(Screen, Message, ReplyKind, Transition, !IO) :-
     Args = ["reply", message_id_to_search_term(MessageId)],
     args_to_quoted_command(Args, Command),
     get_notmuch_prefix(Notmuch, !IO),
-    popen(Notmuch ++ Command, CommandResult, !IO),
+    call_system_capture_stdout(Notmuch ++ Command, CommandResult, !IO),
     (
         CommandResult = ok(String),
         read_headers_from_string(String, 0, init_headers, Headers0, Text),
@@ -303,7 +303,7 @@ continue_postponed(Screen, Message, Transition, !IO) :-
         "show", "--format=raw", "--", message_id_to_search_term(MessageId)
     ], Command),
     get_notmuch_prefix(Notmuch, !IO),
-    popen(Notmuch ++ Command, CallRes, !IO),
+    call_system_capture_stdout(Notmuch ++ Command, CallRes, !IO),
     (
         CallRes = ok(String),
         read_headers_from_string(String, 0, init_headers, HeadersB, _Body),
@@ -849,7 +849,7 @@ do_attach_text_file(FileName, BaseName, Type, NumRows, MessageUpdate,
 do_attach_binary_file(FileName, BaseName, Type, NumRows, MessageUpdate,
         !AttachInfo, !IO) :-
     args_to_quoted_command(["base64", FileName], Command),
-    popen(Command, CallRes, !IO),
+    call_system_capture_stdout(Command, CallRes, !IO),
     (
         CallRes = ok(Content),
         string.length(Content, Size),
@@ -1558,7 +1558,7 @@ get_non_text_part_base64(Part, Content, !IO) :-
         message_id_to_search_term(MessageId)
     ], Command),
     get_notmuch_prefix(Notmuch, !IO),
-    popen(Notmuch ++ Command ++ " |base64", CallRes, !IO),
+    call_system_capture_stdout(Notmuch ++ Command ++ " |base64", CallRes, !IO),
     (
         CallRes = ok(Content)
     ;

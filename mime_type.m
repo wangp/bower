@@ -23,14 +23,14 @@
 :- import_module list.
 :- import_module string.
 
-:- import_module popen.
+:- import_module call_system.
 :- import_module quote_arg.
 
 %-----------------------------------------------------------------------------%
 
 lookup_mime_type(FileName, Res, !IO) :-
     args_to_quoted_command(["file", "--brief", "--mime", FileName], Command),
-    popen(Command, CallRes, !IO),
+    call_system_capture_stdout(Command, CallRes, !IO),
     (
         CallRes = ok(String0),
         String = string.chomp(String0),

@@ -34,7 +34,7 @@
 :- import_module string.
 
 :- import_module callout.
-:- import_module popen.
+:- import_module call_system.
 :- import_module quote_arg.
 
 :- type token
@@ -306,7 +306,7 @@ date_string_to_time(DateString, Time, !IO) :-
 
 call_date(Arg, Res, !IO) :-
     args_to_quoted_command(["date", "+%s", "-d", Arg], Command),
-    popen(Command, CallRes, !IO),
+    call_system_capture_stdout(Command, CallRes, !IO),
     (
         CallRes = ok(Line),
         Res = string.rstrip(Line)

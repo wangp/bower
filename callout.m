@@ -41,7 +41,7 @@
 :- import_module set.
 :- import_module string.
 
-:- import_module popen.
+:- import_module call_system.
 :- import_module prog_config.
 :- import_module quote_arg.
 :- import_module string_util.
@@ -51,7 +51,8 @@
 get_notmuch_config(Key, Res, !IO) :-
     get_notmuch_prefix(Notmuch, !IO),
     % Key is assumed to be quoted already.
-    popen(Notmuch ++ "config get " ++ Key ++ " 2>/dev/null", Res0, !IO),
+    Command = Notmuch ++ "config get " ++ Key ++ " 2>/dev/null",
+    call_system_capture_stdout(Command, Res0, !IO),
     (
         Res0 = ok(Value0),
         Value = string.strip(Value0),
@@ -69,7 +70,7 @@ get_notmuch_config(Section, Key, Res, !IO) :-
 run_notmuch(Args, P, Result, !IO) :-
     args_to_quoted_command(Args, Command),
     get_notmuch_prefix(Notmuch, !IO),
-    popen(Notmuch ++ Command, CommandResult, !IO),
+    call_system_capture_stdout(Notmuch ++ Command, CommandResult, !IO),
     (
         CommandResult = ok(String0),
         fix_utf8(String0, String),
