@@ -154,6 +154,7 @@ do_posix_spawn(pid_t *pid_ptr, const char *Prog, char *argv[], int pipefd[2])
 {
     posix_spawn_file_actions_t file_actions;
     posix_spawnattr_t attr;
+    sigset_t sigmask;
     int rc;
 
     posix_spawn_file_actions_init(&file_actions);
@@ -174,7 +175,15 @@ do_posix_spawn(pid_t *pid_ptr, const char *Prog, char *argv[], int pipefd[2])
             STDOUT_FILENO);
     }
 
+    /*
+    ** Block SIGWINCH in the child so that resizing the terminal
+    ** window does not kill the child.
+    */
+    sigemptyset(&sigmask);
+    sigaddset(&sigmask, SIGWINCH);
     posix_spawnattr_init(&attr);
+    posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK);
+    posix_spawnattr_setsigmask(&attr, &sigmask);
 
     rc = posix_spawnp(pid_ptr, Prog, &file_actions, &attr, argv, ENVIRON);
 
