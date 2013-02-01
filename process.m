@@ -51,6 +51,17 @@
                 fd  :: int
             ).
 
+:- pragma foreign_decl("C", local, "
+static int close_eintr(int fd)
+{
+    int rc;
+    do {
+        rc = close(fd);
+    } while (rc == -1 && errno == EINTR);
+    return rc;
+}
+").
+
 %-----------------------------------------------------------------------------%
 
 posix_spawn(Prog, Args, Res, !IO) :-
@@ -111,15 +122,15 @@ posix_spawn_capture_stdout(Prog, Args, Res, !IO) :-
         PipeRead = pipefd[0];
         /* Close the write end of the pipe in the parent. */
         if (pipefd[1] != -1) {
-            close(pipefd[1]);
+            close_eintr(pipefd[1]);
         }
     } else {
         Pid = -1;
         if (pipefd[0] != -1) {
-            close(pipefd[0]);
+            close_eintr(pipefd[0]);
         }
         if (pipefd[1] != -1) {
-            close(pipefd[1]);
+            close_eintr(pipefd[1]);
         }
     }
 ").
@@ -217,7 +228,9 @@ wait_pid(pid(Pid), Blocking, Res, !IO) :-
     } else {
         options = WNOHANG;
     }
-    RC = waitpid(Pid, &status, options);
+    do {
+        RC = waitpid(Pid, &status, options);
+    } while (RC == -1 && errno == EINTR);
     if (RC == -1) {
         Exited = MR_NO;
         ExitStatus = -1;
@@ -264,7 +277,9 @@ drain_and_close_pipe(pipe_read(Fd), Res, !IO) :-
     RevList = MR_list_empty();
 
     for (;;) {
-        n = read(Fd, buf, sizeof(buf));
+        do {
+            n = read(Fd, buf, sizeof(buf));
+        } while (n == -1 && errno == EINTR);
         if (n < 0) {
             Error = MR_make_string(MR_ALLOC_ID, ""%s"", strerror(errno));
             break;
@@ -278,7 +293,7 @@ drain_and_close_pipe(pipe_read(Fd), Res, !IO) :-
         }
     }
 
-    close(Fd);
+    close_eintr(Fd);
 ").
 
 %-----------------------------------------------------------------------------%
@@ -293,7 +308,7 @@ close_pipe(pipe_read(Fd), !IO) :-
     [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
         may_not_duplicate],
 "
-    close(Fd);
+    close_eintr(Fd);
 ").
 
 %-----------------------------------------------------------------------------%
