@@ -112,7 +112,6 @@
     ;       toggle_select
     ;       unselect_all
     ;       bulk_tag(keep_selection)
-    ;       toggle_async_test
     ;       quit.
 
 :- type action
@@ -132,7 +131,6 @@
     ;       unset_deleted
     ;       prompt_tag(string)
     ;       bulk_tag(keep_selection)
-    ;       toggle_async_test
     ;       quit.
 
 :- type keep_selection
@@ -430,10 +428,6 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         ),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
-        Action = toggle_async_test,
-        toggle_async_test(Screen, !IndexInfo, !IO),
-        index_loop(Screen, !.IndexInfo, !IO)
-    ;
         Action = quit,
         flush_async_with_progress(Screen, !IO)
     ).
@@ -596,10 +590,6 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = bulk_tag(KeepSelection)
         ;
-            Binding = toggle_async_test,
-            MessageUpdate = no_change,
-            Action = toggle_async_test
-        ;
             Binding = quit,
             MessageUpdate = no_change,
             Action = quit
@@ -666,7 +656,6 @@ key_binding_char('t', toggle_select).
 key_binding_char('T', unselect_all).
 key_binding_char('''', bulk_tag(clear_selection)).
 key_binding_char('"', bulk_tag(keep_selection)).
-key_binding_char('@', toggle_async_test).
 key_binding_char('q', quit).
 
 :- pred move_cursor(screen::in, int::in, message_update::out,
@@ -1379,33 +1368,6 @@ common_unread_state([H | T], State0, State) :-
     ).
 
 %-----------------------------------------------------------------------------%
-
-:- pred toggle_async_test(screen::in, index_info::in, index_info::out,
-    io::di, io::uo) is det.
-
-toggle_async_test(Screen, !Info, !IO) :-
-    Scrollable0 = !.Info ^ i_scrollable,
-    ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
-        TagSet0 = CursorLine0 ^ i_tags,
-        TestTag = tag("async-test"),
-        ( set.contains(TagSet0, TestTag) ->
-            set.delete(TestTag, TagSet0, TagSet)
-        ;
-            set.insert(TestTag, TagSet0, TagSet)
-        ),
-        get_nonstandard_tags_width(TagSet, NonstdTagsWidth),
-        CursorLine1 = CursorLine0 ^ i_tags := TagSet,
-        CursorLine = CursorLine1 ^ i_nonstd_tags_width := NonstdTagsWidth,
-        set_cursor_line(CursorLine, Scrollable0, Scrollable),
-        !Info ^ i_scrollable := Scrollable,
-
-        % This is fake.
-        Op = async_shell_command("sleep", ["1"], async_tag_attempts),
-        push_async(Op, !IO)
-    ;
-        MessageUpdate = set_warning("No thread."),
-        update_message(Screen, MessageUpdate, !IO)
-    ).
 
 :- pred async_tag_threads(list(tag_delta)::in, list(thread_id)::in,
     io::di, io::uo) is det.
