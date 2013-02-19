@@ -169,7 +169,13 @@ open_index(Screen, SearchString, !IO) :-
         LimitHistory = init_history
     ;
         predigest_search_string(SearchString, SearchTokens, !IO),
-        search_terms_with_progress(Screen, SearchTokens, Threads, !IO),
+        search_terms_with_progress(Screen, SearchTokens, MaybeThreads, !IO),
+        (
+            MaybeThreads = yes(Threads)
+        ;
+            MaybeThreads = no,
+            Threads = []
+        ),
         add_history_nodup(SearchString, init_history, LimitHistory)
     ),
     setup_index_scrollable(Time, Threads, Scrollable),
@@ -185,18 +191,18 @@ open_index(Screen, SearchString, !IO) :-
     index_loop(Screen, IndexInfo, !IO).
 
 :- pred search_terms_with_progress(screen::in, list(token)::in,
-    list(thread)::out, io::di, io::uo) is det.
+    maybe(list(thread))::out, io::di, io::uo) is det.
 
-search_terms_with_progress(Screen, Tokens, Threads, !IO) :-
+search_terms_with_progress(Screen, Tokens, MaybeThreads, !IO) :-
     flush_async_with_progress(Screen, !IO),
     update_message_immed(Screen, set_info("Searching..."), !IO),
-    search_terms_quiet(Tokens, Threads, MessageUpdate, !IO),
+    search_terms_quiet(Tokens, MaybeThreads, MessageUpdate, !IO),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred search_terms_quiet(list(token)::in, list(thread)::out,
+:- pred search_terms_quiet(list(token)::in, maybe(list(thread))::out,
     message_update::out, io::di, io::uo) is det.
 
-search_terms_quiet(Tokens, Threads, MessageUpdate, !IO) :-
+search_terms_quiet(Tokens, MaybeThreads, MessageUpdate, !IO) :-
     tokens_to_search_terms(Tokens, Terms, ApplyCap, !IO),
     (
         ApplyCap = yes,
@@ -209,6 +215,7 @@ search_terms_quiet(Tokens, Threads, MessageUpdate, !IO) :-
         parse_threads_list, ResThreads, !IO),
     (
         ResThreads = ok(Threads),
+        MaybeThreads = yes(Threads),
         NumThreads = list.length(Threads),
         (
             ApplyCap = yes,
@@ -222,9 +229,9 @@ search_terms_quiet(Tokens, Threads, MessageUpdate, !IO) :-
         MessageUpdate = set_info(Message)
     ;
         ResThreads = error(Error),
+        MaybeThreads = no,
         Message = "Error: " ++ Error,
-        MessageUpdate = set_warning(Message),
-        Threads = []
+        MessageUpdate = set_warning(Message)
     ).
 
 :- pred setup_index_scrollable(time_t::in, list(thread)::in,
@@ -318,24 +325,28 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
             Completion, Return, !IO),
         (
             Return = yes(LimitString),
+            add_history_nodup(LimitString, History0, History),
+            !IndexInfo ^ i_common_history ^ ch_limit_history := History,
             time(Time, !IO),
             predigest_search_string(LimitString, Tokens, !IO),
-            search_terms_with_progress(Screen, Tokens, Threads, !IO),
-            setup_index_scrollable(Time, Threads, Scrollable),
-            add_history_nodup(LimitString, History0, History),
-            !IndexInfo ^ i_scrollable := Scrollable,
-            !IndexInfo ^ i_search_terms := LimitString,
-            !IndexInfo ^ i_search_tokens := Tokens,
-            !IndexInfo ^ i_search_time := Time,
-            !IndexInfo ^ i_next_poll_time := next_poll_time(Time),
-            !IndexInfo ^ i_poll_count := 0,
-            !IndexInfo ^ i_common_history ^ ch_limit_history := History,
-            index_loop(Screen, !.IndexInfo, !IO)
+            search_terms_with_progress(Screen, Tokens, MaybeThreads, !IO),
+            (
+                MaybeThreads = yes(Threads),
+                setup_index_scrollable(Time, Threads, Scrollable),
+                !IndexInfo ^ i_scrollable := Scrollable,
+                !IndexInfo ^ i_search_terms := LimitString,
+                !IndexInfo ^ i_search_tokens := Tokens,
+                !IndexInfo ^ i_search_time := Time,
+                !IndexInfo ^ i_next_poll_time := next_poll_time(Time),
+                !IndexInfo ^ i_poll_count := 0
+            ;
+                MaybeThreads = no
+            )
         ;
             Return = no,
-            update_message(Screen, clear_message, !IO),
-            index_loop(Screen, !.IndexInfo, !IO)
-        )
+            update_message(Screen, clear_message, !IO)
+        ),
+        index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = refresh_all,
         refresh_all(Screen, verbose, !IndexInfo, !IO),
@@ -1438,11 +1449,22 @@ refresh_all(Screen, Verbose, !Info, !IO) :-
     predigest_search_string(Terms, Tokens, !IO),
     (
         Verbose = verbose,
-        search_terms_with_progress(Screen, Tokens, Threads, !IO)
+        search_terms_with_progress(Screen, Tokens, MaybeThreads, !IO)
     ;
         Verbose = quiet,
-        search_terms_quiet(Tokens, Threads, _MessageUpdate, !IO)
+        search_terms_quiet(Tokens, MaybeThreads, _MessageUpdate, !IO)
     ),
+    (
+        MaybeThreads = yes(Threads),
+        refresh_all_2(Screen, Time, Tokens, Threads, !Info, !IO)
+    ;
+        MaybeThreads = no
+    ).
+
+:- pred refresh_all_2(screen::in, time_t::in, list(token)::in,
+    list(thread)::in, index_info::in, index_info::out, io::di, io::uo) is det.
+
+refresh_all_2(Screen, Time, Tokens, Threads, !Info, !IO) :-
     some [!Scrollable] (
         Scrollable0 = !.Info ^ i_scrollable,
         Top0 = get_top(Scrollable0),
