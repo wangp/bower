@@ -31,6 +31,9 @@
     --->    yes
     ;       no.
 
+:- type sigint_received
+    --->    sigint_received.
+
 :- pred create_screen(screen::uo, io::di, io::uo) is det.
 
 :- pred replace_screen_for_resize(screen::in, screen::out, io::di, io::uo)
@@ -92,12 +95,16 @@
 :- implementation.
 
 :- import_module bool.
+:- import_module exception.
 :- import_module int.
 :- import_module mutvar.
 :- import_module require.
 :- import_module string.
 
+:- import_module signal.
 :- import_module string_util.
+
+%-----------------------------------------------------------------------------%
 
 :- type screen == mutvar(screen_version).
 
@@ -361,6 +368,7 @@ get_keycode_timeout(Tenths, Code, !IO) :-
 :- pred get_keycode_2(keycode::out, io::di, io::uo) is det.
 
 get_keycode_2(Code, !IO) :-
+    throw_sigint_if_received(!IO),
     curs.get_wch(C, IsCode, !IO),
     ( C = 12 ->
         % Redraw the whole screen with ^L.
@@ -407,6 +415,18 @@ get_char_blocking(Char, !IO) :-
         ; Code = timeout_or_error
         ),
         get_char_blocking(Char, !IO)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred throw_sigint_if_received(io::di, io::uo) is det.
+
+throw_sigint_if_received(!IO) :-
+    get_sigint_count(Sigints, !IO),
+    ( Sigints > 0 ->
+        throw(sigint_received)
+    ;
+        true
     ).
 
 %-----------------------------------------------------------------------------%

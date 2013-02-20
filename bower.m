@@ -6,13 +6,14 @@
 
 :- import_module io.
 
-:- pred main(io::di, io::uo) is det.
+:- pred main(io::di, io::uo) is cc_multi.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
+:- import_module bool.
 :- import_module list.
 :- import_module string.
 
@@ -21,6 +22,7 @@
 :- import_module index_view.
 :- import_module screen.
 :- import_module search_term.
+:- import_module signal.
 
 %-----------------------------------------------------------------------------%
 
@@ -33,6 +35,8 @@
 
 main(!IO) :-
     setlocale(!IO),
+    % Install our SIGINT, SIGCHLD handlers.
+    signal.ignore_sigint(no, !IO),
     async.install_sigchld_handler(!IO),
     io.command_line_arguments(Args, !IO),
     (
@@ -43,11 +47,17 @@ main(!IO) :-
         Terms = string.join_list(" ", Args)
     ),
     curs.start(!IO),
-    create_screen(Screen, !IO),
-    draw_bar(Screen, !IO),
-    curs.refresh(!IO),
-    open_index(Screen, Terms, !IO),
-    curs.stop(!IO).
+    ( try [io(!IO)] (
+        create_screen(Screen, !IO),
+        draw_bar(Screen, !IO),
+        curs.refresh(!IO),
+        open_index(Screen, Terms, !IO)
+    ) then
+        curs.stop(!IO)
+      catch sigint_received ->
+        curs.stop(!IO),
+        kill_self_with_sigint(!IO)
+    ).
 
 :- pred setlocale(io::di, io::uo) is det.
 
