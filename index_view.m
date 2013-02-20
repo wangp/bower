@@ -40,6 +40,7 @@
 :- import_module recall.
 :- import_module scrollable.
 :- import_module search_term.
+:- import_module signal.
 :- import_module sleep.
 :- import_module string_util.
 :- import_module tags.
@@ -211,8 +212,10 @@ search_terms_quiet(Tokens, MaybeThreads, MessageUpdate, !IO) :-
         ApplyCap = no,
         LimitOption = []
     ),
+    ignore_sigint(yes, !IO),
     run_notmuch(["search", "--format=json" | LimitOption] ++ ["--", Terms],
         parse_threads_list, ResThreads, !IO),
+    ignore_sigint(no, !IO),
     (
         ResThreads = ok(Threads),
         MaybeThreads = yes(Threads),
