@@ -7,6 +7,8 @@
 :- import_module io.
 :- import_module maybe.
 
+:- pred load_prog_config(maybe_error::out, io::di, io::uo) is det.
+
 :- pred get_notmuch_prefix(string::out, io::di, io::uo) is det.
 
 :- pred get_notmuch_deliver_prefix(string::out, io::di, io::uo) is det.
@@ -33,35 +35,27 @@
 
 %-----------------------------------------------------------------------------%
 
-:- mutable(prog_config_var, maybe(config), no, ground,
+:- mutable(prog_config, config, init_config, ground,
     [untrailed, attach_to_io_state]).
 
-:- pred get_prog_config(config::out, io::di, io::uo) is det.
+%-----------------------------------------------------------------------------%
 
-get_prog_config(Config, !IO) :-
-    get_prog_config_var(MaybeConfig, !IO),
+load_prog_config(Res, !IO) :-
+    search_config_file(config_filename, MaybeConfigFile, !IO),
     (
-        MaybeConfig = yes(Config)
+        MaybeConfigFile = yes(ConfigFile),
+        load_config_file(ConfigFile, LoadRes, !IO),
+        (
+            LoadRes = ok(Config),
+            set_prog_config(Config, !IO),
+            Res = ok
+        ;
+            LoadRes = error(Error),
+            Res = error(io.error_message(Error))
+        )
     ;
-        MaybeConfig = no,
-        search_config_file(config_filename, MaybeConfigFile, !IO),
-        some [!Config] (
-            (
-                MaybeConfigFile = yes(ConfigFile),
-                load_config_file(ConfigFile, LoadRes, !IO),
-                (
-                    LoadRes = ok(!:Config)
-                ;
-                    LoadRes = error(_),
-                    !:Config = init_config
-                )
-            ;
-                MaybeConfigFile = no,
-                !:Config = init_config
-            ),
-            Config = !.Config
-        ),
-        set_prog_config_var(yes(Config), !IO)
+        MaybeConfigFile = no,
+        Res = ok
     ).
 
 %-----------------------------------------------------------------------------%
