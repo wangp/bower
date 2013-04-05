@@ -9,13 +9,20 @@
 
 :- pred load_prog_config(maybe_error::out, io::di, io::uo) is det.
 
+:- pred check_sendmail_command(maybe_error::out, io::di, io::uo) is det.
+
 :- pred get_notmuch_prefix(string::out, io::di, io::uo) is det.
 
 :- pred get_notmuch_deliver_prefix(string::out, io::di, io::uo) is det.
 
 :- pred get_editor_command(string::out, io::di, io::uo) is det.
 
-:- pred get_sendmail_command(string::out, io::di, io::uo) is det.
+:- type sendmail_option
+    --->    sendmail_no_read_recipients
+    ;       sendmail_read_recipients. % '-t' option
+
+:- pred get_sendmail_command(sendmail_option::in, string::out, io::di, io::uo)
+    is det.
 
 :- pred get_maybe_post_sendmail_command(maybe(string)::out, io::di, io::uo)
     is det.
@@ -60,6 +67,20 @@ load_prog_config(Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
+check_sendmail_command(Res, !IO) :-
+    get_sendmail_command(sendmail_no_read_recipients, Command, !IO),
+    (
+        ( string.suffix(Command, " -t")
+        ; string.sub_string_search(Command, " -t ", _)
+        )
+    ->
+        Res = error("Please remove -t option from command.sendmail:  " ++ Command)
+    ;
+        Res = ok
+    ).
+
+%-----------------------------------------------------------------------------%
+
 get_notmuch_prefix(Notmuch, !IO) :-
     get_prog_config(Config, !IO),
     ( search_config(Config, "command", "notmuch", Value) ->
@@ -90,12 +111,19 @@ get_editor_command(Command, !IO) :-
         )
     ).
 
-get_sendmail_command(Command, !IO) :-
+get_sendmail_command(Option, Command, !IO) :-
     get_prog_config(Config, !IO),
     ( search_config(Config, "command", "sendmail", Value) ->
-        Command = Value
+        Command0 = Value
     ;
-        Command = default_sendmail_command
+        Command0 = default_sendmail_command
+    ),
+    (
+        Option = sendmail_no_read_recipients,
+        Command = Command0
+    ;
+        Option = sendmail_read_recipients,
+        Command = Command0 ++ " -t"
     ).
 
 get_maybe_post_sendmail_command(MaybeCommand, !IO) :-

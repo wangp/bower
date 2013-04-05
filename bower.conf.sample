@@ -21,8 +21,10 @@
 
 # How to send a message.
 # The default is to use sendmail (untested) but I use msmtp.
+# The command should understand the "-t" option, to read recipients
+# from the message headers itself.
 ; sendmail=/usr/bin/sendmail -oi -oem
-; sendmail=/usr/bin/msmtp -t
+; sendmail=/usr/bin/msmtp
 
 # Command to execute after the sendmail command is successful.
 # The default is to use notmuch-deliver to add the sent message to the

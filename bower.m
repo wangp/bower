@@ -40,7 +40,17 @@ main(!IO) :-
     load_prog_config(ResConfig, !IO),
     (
         ResConfig = ok,
-        main_2(!IO)
+        check_sendmail_command(ResSendmail, !IO),
+        (
+            ResSendmail = ok,
+            main_2(!IO)
+        ;
+            ResSendmail = error(Error2),
+            io.stderr_stream(Stream, !IO),
+            io.write_string(Stream, Error2, !IO),
+            io.nl(Stream, !IO),
+            io.set_exit_status(1, !IO)
+        )
     ;
         ResConfig = error(Error),
         print_error("Error loading config file: " ++ Error, !IO)

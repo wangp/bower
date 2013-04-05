@@ -1128,7 +1128,7 @@ send_mail(Screen, Headers, Text, Attachments, Res, MessageUpdate, !IO) :-
 :- pred call_send_mail(string::in, call_res::out, io::di, io::uo) is det.
 
 call_send_mail(Filename, Res, !IO) :-
-    get_sendmail_command(Command, !IO),
+    get_sendmail_command(sendmail_read_recipients, Command, !IO),
     io.call_system(Command ++ " < " ++ quote_arg(Filename), ResSend, !IO),
     (
         ResSend = ok(ExitStatus),
