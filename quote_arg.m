@@ -12,7 +12,8 @@
 
 :- type redirect_output
     --->    no
-    ;       redirect_output(string).
+    ;       redirect_output(string)
+    ;       redirect_append(string).
 
 :- pred args_to_quoted_command(list(string)::in, string::out) is det.
 
@@ -44,9 +45,11 @@ args_to_quoted_command(Args, MaybeRedirectInput, MaybeRedirectOutput,
         QuotedArgs1 = QuotedArgs0
     ),
     (
-        MaybeRedirectOutput = redirect_output(RedirectOutput),
-        QuotedOutput = quote_arg(RedirectOutput),
-        QuotedArgs = QuotedArgs1 ++ [">", QuotedOutput]
+        MaybeRedirectOutput = redirect_output(TargetFile),
+        QuotedArgs = QuotedArgs1 ++ [">", quote_arg(TargetFile)]
+    ;
+        MaybeRedirectOutput = redirect_append(TargetFile),
+        QuotedArgs = QuotedArgs1 ++ [">>", quote_arg(TargetFile)]
     ;
         MaybeRedirectOutput = no,
         QuotedArgs = QuotedArgs1

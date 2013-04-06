@@ -60,6 +60,7 @@
 :- import_module prog_config.
 :- import_module quote_arg.
 :- import_module recall.
+:- import_module resend.
 :- import_module scrollable.
 :- import_module string_util.
 :- import_module sys_util.
@@ -124,6 +125,7 @@
     --->    continue
     ;       resize
     ;       start_reply(message, reply_kind)
+    ;       prompt_resend(message_id)
     ;       start_recall
     ;       prompt_tag(string)
     ;       bulk_tag(keep_selection)
@@ -642,6 +644,10 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         ),
         thread_pager_loop(NewScreen, !Info, !IO)
     ;
+        Action = prompt_resend(MessageId),
+        handle_resend(Screen, MessageId, !Info, !IO),
+        thread_pager_loop(Screen, !Info, !IO)
+    ;
         Action = start_recall,
         ThreadId = !.Info ^ tp_thread_id,
         handle_recall(Screen, NewScreen, ThreadId, Sent, !Info, !IO),
@@ -940,6 +946,10 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Key = char('L')
     ->
         reply(!.Info, list_reply, Action, MessageUpdate)
+    ;
+        Key = char('B')
+    ->
+        resend(!.Info, Action, MessageUpdate)
     ;
         Key = char('R')
     ->
@@ -1964,6 +1974,33 @@ reply(Info, ReplyKind, Action, MessageUpdate) :-
         MessageUpdate = set_warning("Nothing to reply to."),
         Action = continue
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred resend(thread_pager_info::in, thread_pager_action::out,
+    message_update::out) is det.
+
+resend(Info, Action, MessageUpdate) :-
+    PagerInfo = Info ^ tp_pager,
+    ( get_top_message(PagerInfo, Message) ->
+        MessageUpdate = clear_message,
+        Action = prompt_resend(Message ^ m_id)
+    ;
+        MessageUpdate = set_warning("No message to resend."),
+        Action = continue
+    ).
+
+:- pred handle_resend(screen::in, message_id::in,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+
+handle_resend(Screen, MessageId, !Info, !IO) :-
+    History0 = !.Info ^ tp_common_history,
+    ToHistory0 = History0 ^ ch_to_history,
+    handle_resend(Screen, MessageId, MessageUpdate, ToHistory0, ToHistory,
+        !IO),
+    update_message(Screen, MessageUpdate, !IO),
+    History = History0 ^ ch_to_history := ToHistory,
+    !Info ^ tp_common_history := History.
 
 %-----------------------------------------------------------------------------%
 

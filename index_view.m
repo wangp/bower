@@ -62,8 +62,7 @@
                 i_poll_count        :: int,
                 i_internal_search   :: maybe(string),
                 i_internal_search_dir :: search_direction,
-                i_common_history    :: common_history,
-                i_compose_history   :: compose_history
+                i_common_history    :: common_history
             ).
 
 :- type index_line
@@ -186,10 +185,9 @@ open_index(Screen, SearchString, !IO) :-
     PollCount = 0,
     MaybeSearch = no,
     CommonHistory = common_history(LimitHistory, init_history, init_history,
-        init_history, init_history),
+        init_history, init_history, init_history, init_history),
     IndexInfo = index_info(Scrollable, SearchString, SearchTokens, SearchTime,
-        NextPollTime, PollCount, MaybeSearch, dir_forward, CommonHistory,
-        init_compose_history),
+        NextPollTime, PollCount, MaybeSearch, dir_forward, CommonHistory),
     index_loop(Screen, IndexInfo, !IO).
 
 :- pred search_terms_with_progress(screen::in, list(token)::in,
@@ -357,11 +355,15 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         index_loop(Screen, !.IndexInfo, !IO)
     ;
         Action = start_compose,
-        ComposeHistory0 = !.IndexInfo ^ i_compose_history,
         flush_async_with_progress(Screen, !IO),
-        start_compose(Screen, Transition, ComposeHistory0, ComposeHistory,
-            !IO),
-        !IndexInfo ^ i_compose_history := ComposeHistory,
+        CommonHistory0 = !.IndexInfo ^ i_common_history,
+        ToHistory0 = CommonHistory0 ^ ch_to_history,
+        SubjectHistory0 = CommonHistory0 ^ ch_subject_history,
+        start_compose(Screen, Transition, ToHistory0, ToHistory,
+            SubjectHistory0, SubjectHistory, !IO),
+        CommonHistory1 = CommonHistory0 ^ ch_to_history := ToHistory,
+        CommonHistory = CommonHistory1 ^ ch_subject_history := SubjectHistory,
+        !IndexInfo ^ i_common_history := CommonHistory,
         handle_screen_transition(Screen, NewScreen, Transition, Sent,
             !IndexInfo, !IO),
         (

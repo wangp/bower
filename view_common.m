@@ -11,6 +11,8 @@
                 ch_limit_history    :: history,
                 ch_internal_search_history :: history,
                 ch_tag_history      :: history,
+                ch_to_history       :: history,
+                ch_subject_history  :: history,
                 ch_prog_history     :: history,
                 ch_save_history     :: history
             ).
