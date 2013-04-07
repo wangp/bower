@@ -27,7 +27,7 @@
     ;       retain_pager_pos(pager_info, int).
 
 :- pred setup_pager(setup_mode::in, int::in, list(message)::in,
-    pager_info::out) is det.
+    pager_info::out, io::di, io::uo) is det.
 
 :- pred setup_pager_for_staging(int::in, string::in, retain_pager_pos::in,
     pager_info::out) is det.
@@ -84,6 +84,9 @@
 
 :- pred get_highlighted_url(pager_info::in, string::out) is semidet.
 
+:- pred cycle_alternatives(int::in, message_update::out,
+    pager_info::in, pager_info::out, io::di, io::uo) is det.
+
 :- pred draw_pager(screen::in, pager_info::in, io::di, io::uo) is det.
 
 :- pred draw_pager_lines(list(panel)::in, pager_info::in, io::di, io::uo)
@@ -103,6 +106,7 @@
 :- import_module string.
 :- import_module version_array.
 
+:- import_module copious_output.
 :- import_module string_util.
 :- import_module uri.
 
@@ -117,7 +121,12 @@
     --->    start_message_header(message, string, string)
     ;       header(string, string)
     ;       text(quote_level, string, quote_marker_end, text_type)
-    ;       attachment(part)
+    ;       attachment(
+                att_part            :: part,
+                att_lines           :: int,
+                att_alternatives    :: list(part)
+                % Hidden alternatives for multipart/alternative.
+            )
     ;       message_separator.
 
 :- type quote_level == int.
@@ -156,16 +165,17 @@
 
 %-----------------------------------------------------------------------------%
 
-setup_pager(Mode, Cols, Messages, Info) :-
-    list.foldl(append_message(Mode, Cols), Messages, cord.init, LinesCord),
+setup_pager(Mode, Cols, Messages, Info, !IO) :-
+    list.foldl2(append_message(Mode, Cols), Messages,
+        cord.init, LinesCord, !IO),
     Lines = list(LinesCord),
     Scrollable = scrollable.init(Lines),
     Info = pager_info(Scrollable).
 
 :- pred append_message(setup_mode::in, int::in, message::in,
-    cord(pager_line)::in, cord(pager_line)::out) is det.
+    cord(pager_line)::in, cord(pager_line)::out, io::di, io::uo) is det.
 
-append_message(Mode, Cols, Message, !Lines) :-
+append_message(Mode, Cols, Message, !Lines, !IO) :-
     Headers = Message ^ m_headers,
     StartMessage = start_message_header(Message, "Date", Headers ^ h_date),
     snoc(StartMessage, !Lines),
@@ -186,14 +196,14 @@ append_message(Mode, Cols, Message, !Lines) :-
     ),
     snoc(blank_line, !Lines),
     Body = Message ^ m_body,
-    list.foldl2(append_part(Cols), Body, !Lines, yes, _IsFirst),
+    list.foldl3(append_part(Cols), Body, !Lines, yes, _IsFirst, !IO),
     snoc(message_separator, !Lines),
     snoc(message_separator, !Lines),
     snoc(message_separator, !Lines),
     (
         Mode = include_replies,
         Replies = Message ^ m_replies,
-        list.foldl(append_message(Mode, Cols), Replies, !Lines)
+        list.foldl2(append_message(Mode, Cols), Replies, !Lines, !IO)
     ;
         Mode = toplevel_only
     ).
@@ -206,37 +216,66 @@ append_header(Header, Value, !Lines) :-
     snoc(Line, !Lines).
 
 :- pred append_part(int::in, part::in,
-    cord(pager_line)::in, cord(pager_line)::out, bool::in, bool::out) is det.
+    cord(pager_line)::in, cord(pager_line)::out, bool::in, bool::out,
+    io::di, io::uo) is det.
 
-append_part(Cols, Part, !Lines, !IsFirst) :-
-    Part = part(_MsgId, _Part, Type, Content, _MaybeFilename,
+append_part(Cols, Part, !Lines, !IsFirst, !IO) :-
+    Part = part(_MessageId, _PartId, Type, Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength),
     (
         Content = text(Text),
+        append_text(Cols, Text, cord.init, TextLines),
         (
             !.IsFirst = yes,
             strcase_equal(Type, "text/plain")
         ->
             true
         ;
-            snoc(blank_line, !Lines),
-            snoc(attachment(Part), !Lines)
+            HeadLine = attachment(Part, length(TextLines), []),
+            !:Lines = !.Lines ++ from_list([blank_line, HeadLine])
         ),
-        !:IsFirst = no,
-        append_text(Cols, Text, !Lines)
+        !:Lines = !.Lines ++ TextLines,
+        !:IsFirst = no
     ;
         Content = subparts(SubParts),
-        list.foldl2(append_part(Cols), SubParts, !Lines, !IsFirst)
+        (
+            strcase_equal(Type, "multipart/alternative"),
+            select_alternative(SubParts, [FirstSubPart | RestSubParts])
+        ->
+            append_part(Cols, FirstSubPart, cord.init, SubLines,
+                yes, _SubIsFirst, !IO),
+            HeadLine = attachment(FirstSubPart, length(SubLines),
+                RestSubParts),
+            !:Lines = !.Lines ++ singleton(HeadLine) ++ SubLines,
+            !:IsFirst = no
+        ;
+            list.foldl3(append_part(Cols), SubParts, !Lines, !IsFirst, !IO)
+        )
     ;
         Content = encapsulated_messages(EncapMessages),
-        snoc(attachment(Part), !Lines),
-        list.foldl(append_encapsulated_message(Cols), EncapMessages, !Lines),
+        list.foldl2(append_encapsulated_message(Cols), EncapMessages,
+            cord.init, EncapLines, !IO),
+        HeadLine = attachment(Part, length(EncapLines), []),
+        !:Lines = !.Lines ++ singleton(HeadLine) ++ EncapLines,
         !:IsFirst = no
     ;
         Content = unsupported,
-        snoc(blank_line, !Lines),
-        snoc(attachment(Part), !Lines),
+        append_unsupported_part(Cols, Part, !Lines, !IO),
         !:IsFirst = no
+    ).
+
+:- pred select_alternative(list(part)::in, list(part)::out) is semidet.
+
+select_alternative([X | Xs], Parts) :-
+    % Some HTML emails have a first text/plain "alternative" which is
+    % completely blank; skip those.
+    (
+        X ^ pt_content = text(XText),
+        string.all_match(is_whitespace, XText)
+    ->
+        Parts = Xs ++ [X]
+    ;
+        Parts = [X | Xs]
     ).
 
 %-----------------------------------------------------------------------------%
@@ -531,9 +570,9 @@ detect_diff_end(String, Start) :-
 %-----------------------------------------------------------------------------%
 
 :- pred append_encapsulated_message(int::in, encapsulated_message::in,
-    cord(pager_line)::in, cord(pager_line)::out) is det.
+    cord(pager_line)::in, cord(pager_line)::out, io::di, io::uo) is det.
 
-append_encapsulated_message(Cols, EncapMessage, !Lines) :-
+append_encapsulated_message(Cols, EncapMessage, !Lines, !IO) :-
     EncapMessage = encapsulated_message(Headers, Body),
     append_encapsulated_header("Date", Headers ^ h_date, !Lines),
     append_encapsulated_header("From", Headers ^ h_from, !Lines),
@@ -542,7 +581,7 @@ append_encapsulated_message(Cols, EncapMessage, !Lines) :-
     append_encapsulated_header("Cc", Headers ^ h_cc, !Lines),
     append_encapsulated_header("Reply-To", Headers ^ h_replyto, !Lines),
     snoc(blank_line, !Lines),
-    list.foldl2(append_part(Cols), Body, !Lines, yes, _IsFirst).
+    list.foldl3(append_part(Cols), Body, !Lines, yes, _IsFirst, !IO).
 
 :- pred append_encapsulated_header(string::in, string::in,
     cord(pager_line)::in, cord(pager_line)::out) is det.
@@ -554,6 +593,31 @@ append_encapsulated_header(Header, Value, !Lines) :-
         Line = text(0, Header ++ ": " ++ Value, 0, plain),
         snoc(Line, !Lines)
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred append_unsupported_part(int::in, part::in,
+    cord(pager_line)::in, cord(pager_line)::out, io::di, io::uo) is det.
+
+append_unsupported_part(Cols, Part, !Lines, !IO) :-
+    Part = part(MessageId, PartId, Type, _Content, _MaybeFilename,
+        _MaybeEncoding, _MaybeLength),
+    % XXX we should use mailcap, though we don't want to show everything
+    ( strcase_equal(Type, "text/html") ->
+        expand_html(MessageId, PartId, MaybeText, !IO),
+        (
+            MaybeText = ok(Text),
+            append_text(Cols, Text, !Lines)
+        ;
+            MaybeText = error(Error),
+            append_text(Cols, "(" ++ Error ++ ")", !Lines)
+        )
+    ;
+        HeadLine = attachment(Part, 0, []),
+        !:Lines = !.Lines ++ from_list([blank_line, HeadLine])
+    ).
+
+%-----------------------------------------------------------------------------%
 
 :- func blank_line = pager_line.
 
@@ -975,7 +1039,7 @@ line_matches_search(Search, Line) :-
         set.member(tag(TagName), Tags),
         strcase_str(TagName, Search)
     ;
-        Line = attachment(Part),
+        Line = attachment(Part, _, _),
         (
             Part ^ pt_type = Type,
             strcase_str(Type, Search)
@@ -1031,13 +1095,13 @@ do_highlight(Highlightable, NumRows, !Info) :-
 
 :- pred is_highlightable_part_or_url(pager_line::in) is semidet.
 
-is_highlightable_part_or_url(attachment(_)).
+is_highlightable_part_or_url(attachment(_, _, _)).
 is_highlightable_part_or_url(text(_, _, _, url(_, _))).
 
 :- pred is_highlightable_part_or_message(pager_line::in) is semidet.
 
 is_highlightable_part_or_message(start_message_header(_, _, _)).
-is_highlightable_part_or_message(attachment(_)).
+is_highlightable_part_or_message(attachment(_, _, _)).
 
 get_highlighted_part(Info, Part, MaybeSubject) :-
     Info = pager_info(Scrollable),
@@ -1049,7 +1113,7 @@ get_highlighted_part(Info, Part, MaybeSubject) :-
         Part = part(MessageId, 0, "text/plain", unsupported, no, no, no),
         MaybeSubject = yes(Subject)
     ;
-        Line = attachment(Part),
+        Line = attachment(Part, _, _),
         MaybeSubject = no
     ).
 
@@ -1060,6 +1124,41 @@ get_highlighted_url(Info, Url) :-
         Line = text(_, String, _, url(Start, End))
     ),
     string.between(String, Start, End, Url).
+
+%-----------------------------------------------------------------------------%
+
+cycle_alternatives(Cols, MessageUpdate, Info0, Info, !IO) :-
+    Info0 = pager_info(Scrollable0),
+    (
+        get_cursor_line(Scrollable0, Cursor, Line),
+        Line = attachment(Part0, PartNumLines0, HiddenParts0)
+    ->
+        (
+            HiddenParts0 = [Part | HiddenParts1],
+            HiddenParts = HiddenParts1 ++ [Part0]
+        ->
+            append_part(Cols, Part, cord.init, PartLines, yes, _IsFirst, !IO),
+            HeadLine = attachment(Part, length(PartLines), HiddenParts),
+            PagerLines = cons(HeadLine, PartLines),
+            (
+                replace_lines(Cursor, 1 + PartNumLines0, list(PagerLines),
+                    Scrollable0, Scrollable)
+            ->
+                Info = pager_info(Scrollable),
+                Type = Part ^ pt_type,
+                MessageUpdate = set_info("Showing " ++ Type ++ " alternative.")
+            ;
+                Info = Info0,
+                MessageUpdate = set_warning("An error occurred.")
+            )
+        ;
+            Info = Info0,
+            MessageUpdate = set_warning("Part has no alternatives.")
+        )
+    ;
+        Info = Info0,
+        MessageUpdate = clear_message
+    ).
 
 %-----------------------------------------------------------------------------%
 
@@ -1134,7 +1233,7 @@ draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
             my_addstr(Panel, string.between(Text, UrlEnd, End), !IO)
         )
     ;
-        Line = attachment(Part),
+        Line = attachment(Part, _PartLines, HiddenParts),
         Part = part(_MessageId, _Part, ContentType, _Content, MaybeFilename,
             MaybeEncoding, MaybeLength),
         (
@@ -1160,6 +1259,12 @@ draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
             my_addstr(Panel, format_length(DecodedLength), !IO)
         ;
             MaybeLength = no
+        ),
+        (
+            HiddenParts = []
+        ;
+            HiddenParts = [_ | _],
+            my_addstr(Panel, "; 'z' for alternatives", !IO)
         ),
         my_addstr(Panel, " --]", !IO)
     ;

@@ -52,7 +52,6 @@
 :- import_module addressbook.
 :- import_module callout.
 :- import_module compose.
-:- import_module copious_output.
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module pager.
@@ -133,6 +132,7 @@
     ;       prompt_open_part(part)
     ;       prompt_open_url(string)
     ;       prompt_search(search_direction)
+    ;       cycle_alternatives
     ;       toggle_ordering
     ;       addressbook_add
     ;       refresh_results
@@ -263,8 +263,7 @@ create_thread_pager(Screen, ThreadId, Ordering, MaybeCached, CommonHistory,
     ),
     (
         ParseResult = ok(Messages0),
-        list.filter_map(filter_unwanted_messages, Messages0, Messages1),
-        list.map_foldl(expand_copious_output, Messages1, Messages, !IO)
+        list.filter_map(filter_unwanted_messages, Messages0, Messages)
     ;
         ParseResult = error(_),
         Messages = []
@@ -273,7 +272,7 @@ create_thread_pager(Screen, ThreadId, Ordering, MaybeCached, CommonHistory,
     Nowish = localtime(Time),
     get_rows_cols(Screen, Rows, Cols),
     setup_thread_pager(ThreadId, Ordering, Nowish, Rows - 2, Cols,
-        Messages, CommonHistory, Info, Count),
+        Messages, CommonHistory, Info, Count, !IO),
     (
         ParseResult = ok(_),
         ResCount = ok(Count)
@@ -294,19 +293,19 @@ filter_unwanted_messages(!Message) :-
 
 :- pred setup_thread_pager(thread_id::in, ordering::in, tm::in, int::in,
     int::in, list(message)::in, common_history::in, thread_pager_info::out,
-    int::out) is det.
+    int::out, io::di, io::uo) is det.
 
 setup_thread_pager(ThreadId, Ordering, Nowish, Rows, Cols, Messages,
-        CommonHistory, ThreadPagerInfo, NumThreadLines) :-
+        CommonHistory, ThreadPagerInfo, NumThreadLines, !IO) :-
     (
         Ordering = ordering_threaded,
         append_threaded_messages(Nowish, Messages, ThreadLines),
-        setup_pager(include_replies, Cols, Messages, PagerInfo0)
+        setup_pager(include_replies, Cols, Messages, PagerInfo0, !IO)
     ;
         Ordering = ordering_flat,
         append_flat_messages(Nowish, Messages, ThreadLines,
             SortedFlatMessages),
-        setup_pager(toplevel_only, Cols, SortedFlatMessages, PagerInfo0)
+        setup_pager(toplevel_only, Cols, SortedFlatMessages, PagerInfo0, !IO)
     ),
     Scrollable0 = scrollable.init_with_cursor(ThreadLines),
     NumThreadLines = get_num_lines(Scrollable0),
@@ -699,6 +698,10 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         prompt_search(Screen, SearchDir, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
+        Action = cycle_alternatives,
+        cycle_alternatives(Screen, !Info, !IO),
+        thread_pager_loop(Screen, !Info, !IO)
+    ;
         Action = toggle_ordering,
         toggle_ordering(!.Info, Ordering),
         reopen_thread_pager_with_ordering(Screen, Ordering, !Info, !IO),
@@ -896,6 +899,11 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Key = char('o')
     ->
         open_part(Action, MessageUpdate, !Info)
+    ;
+        Key = char('z')
+    ->
+        Action = cycle_alternatives,
+        MessageUpdate = clear_message
     ;
         Key = char('/')
     ->
@@ -1726,8 +1734,8 @@ do_save_part(MessageId, Part, FileName, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred open_part(thread_pager_action::out, message_update::out,
-    thread_pager_info::in, thread_pager_info::out) is det.
+:- pred open_part(thread_pager_action::out,
+    message_update::out, thread_pager_info::in, thread_pager_info::out) is det.
 
 open_part(Action, MessageUpdate, !Info) :-
     Pager = !.Info ^ tp_pager,
@@ -1893,6 +1901,18 @@ skip_to_search(SearchKind, MessageUpdate, !Info) :-
         MaybeSearch = no,
         MessageUpdate = set_warning("No search string.")
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred cycle_alternatives(screen::in,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+
+cycle_alternatives(Screen, !Info, !IO) :-
+    get_cols(Screen, Cols),
+    Pager0 = !.Info ^ tp_pager,
+    pager.cycle_alternatives(Cols, MessageUpdate, Pager0, Pager, !IO),
+    !Info ^ tp_pager := Pager,
+    update_message(Screen, MessageUpdate, !IO).
 
 %-----------------------------------------------------------------------------%
 
