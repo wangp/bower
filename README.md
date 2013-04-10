@@ -7,7 +7,7 @@ I wrote it for me, but you might like it, too.
 bower is written in [Mercury].
 
 [Notmuch]: http://notmuchmail.org/
-[Mercury]: http://www.mercury.csse.unimelb.edu.au/
+[Mercury]: http://mercurylang.org/
 
 
 Requirements
@@ -18,7 +18,8 @@ require some work to work on other systems.
 
 At compile time:
 
-* Mercury compiler (11.07 or release-of-the-day)
+* Mercury compiler (11.07 or release-of-the-day);
+  currently available at <http://opturion.com/mercury/>
 
 At run time:
 
