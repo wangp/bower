@@ -1260,13 +1260,13 @@ draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         ;
             MaybeLength = no
         ),
-        (
-            HiddenParts = []
+        my_addstr(Panel, " --]", !IO),
+        ( alternative_parts_message(HiddenParts, AltMessage) ->
+            panel.attr_set(Panel, fg_bg(magenta, black), !IO),
+            my_addstr(Panel, AltMessage, !IO)
         ;
-            HiddenParts = [_ | _],
-            my_addstr(Panel, "; 'z' for alternatives", !IO)
-        ),
-        my_addstr(Panel, " --]", !IO)
+            true
+        )
     ;
         Line = message_separator,
         panel.attr_set(Panel, fg_bg(blue, black) + bold, !IO),
@@ -1313,6 +1313,11 @@ format_length(Size) = String :-
         Ms = float(Size) / 1000000.0,
         String = format(" (%.1f MB)", [f(Ms)])
     ).
+
+:- pred alternative_parts_message(list(part)::in, string::out) is semidet.
+
+alternative_parts_message([_],        "  z for alternative").
+alternative_parts_message([_, _ | _], "  z for alternatives").
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
