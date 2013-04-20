@@ -19,7 +19,7 @@ require some work to work on other systems.
 At compile time:
 
 * Mercury compiler (11.07 or release-of-the-day);
-  currently available at <http://opturion.com/mercury/>
+  currently available at <http://dl.mercurylang.org/index.html>
 
 At run time:
 
