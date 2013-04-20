@@ -60,15 +60,17 @@ The bower configuration file is located at `~/.config/bower/bower.conf`.
 See `bower.conf.sample` for details.
 
 In particular, bower is designed such that it can be run locally,
-accessing notmuch (and the mail store) on a remote machine via ssh.
+calling out to notmuch on a remote machine (that holds your mail) via ssh.
+The advantage is that you can start helper programs locally (e.g. web browser),
+and add or save attachments on the local filesystem.
 
 
 Usage
 =======
 
-Run `bower` to start.  By default, Bower displays the last week's worth of
-mail.  You can change that by setting the `~default` search alias; see below.
-Alternatively, you may pass a search query directly on the command-line.
+Run `bower` or `bower SEARCH-TERMS` to start.  By default, Bower displays the
+last week's worth of mail.  You can change that by setting the `~default`
+search alias; see below.
 
 
 Views
@@ -106,8 +108,11 @@ The keys are:
     "               same as ' but retain selections afterwards
     q               quit
 
-The `l` command slightly extends the notmuch search term syntax with these
-macros:
+Index view limit command
+------------------------
+
+The `l` (limit) command slightly extends the notmuch search term syntax with
+these macros:
 
     ~A              disable default cap on number of search results
     ~F              tag:flagged
@@ -120,22 +125,29 @@ macros:
 By default, a maximum of 300 search results will be displayed.
 Add ~A to the search string to get all results.
 
-Until notmuch gains a date parser, bower implements one by passing date strings
-to the date(1) utility, so you can write any date that it understands.  You may
-use curly brackets to surround any date strings containing spaces.
+The ~d syntax currently uses the date(1) utility to parse the date.
+You may use curly brackets to surround any date strings containing spaces.
 Some examples:
 
     ~d 2011-06-01..
     ~d {2 weeks ago}..{last week}
 
-You can add your own search term expansions; see below.
+In future, ~d will be an alias for the date range support introduced in
+notmuch 0.15.  You can use the "date:" prefix directly.
+
+In addition to the built-in macros, you can add your own search term
+expansions.  See below for "Search term aliases".
+
+
+Index view behaviour
+--------------------
 
 Tag modifications are performed (mostly) asynchronously to minimise stutter.
 Remember to quit properly using 'q' to flush all changes.  Tag updates will
 be retried a limited number of time on failure, e.g. because the notmuch
 database is locked.
 
-Bower will call notmuch count every 60 seconds, while in the index view,
+Bower will call notmuch count every 60 seconds while in the index view,
 to notify you of new unread messages matching the current search terms.
 
 
@@ -245,8 +257,10 @@ steps into a single script run at the `sendmail` step, and disable the
 `post_sendmail` step.
 
 
-Contact
-=======
+Author
+======
 
-Contact me at novalazy@gmail.com with any feedback or suggestions!
+Peter Wang <novalazy@gmail.com>
+
+Feel free to contact me with feedback or suggestions.
 
