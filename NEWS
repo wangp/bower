@@ -1,3 +1,23 @@
+Bower 0.5 (2013-04-20)
+======================
+
+* Add 'a' add to addressbook action.
+* Add 'B' resend message action.
+* Add 'z' to cycle alternatives to highlighted part.
+* Make 'O' toggle message ordering without prompting.
+* Toggling message ordering need not call notmuch again.
+* Add completion for search aliases.
+* Add completion and expansion of tilde (~) to home directory in paths.
+* Show approximate attachment sizes in pager (requires notmuch 0.15).
+* Handle interrupts properly.
+* ^C interrupts a running notmuch search without quitting bower.
+* Don't abort when unable to parse invalid json output from notmuch.
+* Pass sendmail -t option ourselves; disallow it in config.
+* Tell lynx to output UTF-8 by default.
+* Replace colons in generated filenames when saving.
+* Fixes for URL detection algorithm.
+* Use _NSGetEnviron to get environ on Darwin (reported by Blake Sweeney).
+
 Bower 0.4 (2012-08-12)
 ======================
 This release requires notmuch 0.13 for addressbook completion.
