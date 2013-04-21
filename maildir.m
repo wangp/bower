@@ -41,12 +41,26 @@
 %-----------------------------------------------------------------------------%
 
 add_sent(FileName, Res, !IO) :-
-    call_notmuch_deliver(FileName, "Sent",
+    get_notmuch_config("bower:maildir.sent_folder", ConfigRes, !IO),
+    (
+        ConfigRes = ok(SentFolder)
+    ;
+        ConfigRes = error(_),
+        SentFolder = default_sent_folder
+    ),
+    call_notmuch_deliver(FileName, SentFolder,
         ["--tag=sent", "--remove-tag=unread"],
         Res, !IO).
 
 add_draft(FileName, Res, !IO) :-
-    call_notmuch_deliver(FileName, "Drafts",
+    get_notmuch_config("bower:maildir.drafts_folder", ConfigRes, !IO),
+    (
+        ConfigRes = ok(DraftsFolder)
+    ;
+        ConfigRes = error(_),
+        DraftsFolder = default_drafts_folder
+    ),
+    call_notmuch_deliver(FileName, DraftsFolder,
         ["--tag=draft", "--remove-tag=inbox", "--remove-tag=unread"],
         Res, !IO).
 
@@ -72,6 +86,14 @@ call_notmuch_deliver(FileName, Folder, TagOps, Res, !IO) :-
         CallRes = error(Error),
         Res = error(io.error_message(Error))
     ).
+
+:- func default_sent_folder = string.
+
+default_sent_folder = "Sent".
+
+:- func default_drafts_folder = string.
+
+default_drafts_folder = "Drafts".
 
 %-----------------------------------------------------------------------------%
 

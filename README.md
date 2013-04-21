@@ -64,6 +64,15 @@ calling out to notmuch on a remote machine (that holds your mail) via ssh.
 The advantage is that you can start helper programs locally (e.g. web browser),
 and add or save attachments on the local filesystem.
 
+Bower also keeps some centralised information in the notmuch configuration
+file `~/.notmuch-config`.  You may wish to tell bower about your Maildir
+hierarchy, namely where to place draft and sent messages.
+The defaults are given here:
+
+    [bower:maildir]
+    drafts_folder = Drafts
+    sent_folder = Sent
+
 
 Usage
 =======
