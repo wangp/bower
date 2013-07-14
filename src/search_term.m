@@ -54,12 +54,7 @@
 predigest_search_string(Config, String, Tokens, !IO) :-
     det_parse(String, tokens, Tokens0),
     Seen = set.init,
-    expand_config_aliases(Config, Seen, Tokens0, Tokens1, !IO),
-    ( list.all_true(should_apply_default_filter, Tokens1) ->
-        add_default_filters(Tokens1, Tokens)
-    ;
-        Tokens = Tokens1
-    ).
+    expand_config_aliases(Config, Seen, Tokens0, Tokens, !IO).
 
 %-----------------------------------------------------------------------------%
 
@@ -242,20 +237,6 @@ expand_config_alias_macro(Config, Seen0, macro(MacroName), Tokens, !IO) :-
     ;
         Tokens = [] % fail
     ).
-
-%-----------------------------------------------------------------------------%
-
-:- pred should_apply_default_filter(token::in) is semidet.
-
-should_apply_default_filter(Token) :-
-    Token \= literal("tag:deleted"),
-    Token \= literal("tag:draft").
-
-:- pred add_default_filters(list(token)::in, list(token)::out) is det.
-
-add_default_filters(Tokens0, Tokens) :-
-    Tokens = [literal("(")] ++ Tokens0 ++
-        [literal(") AND NOT ( tag:deleted OR tag:draft )")].
 
 %-----------------------------------------------------------------------------%
 

@@ -212,7 +212,8 @@ search_terms_quiet(Config, Tokens, MaybeThreads, MessageUpdate, !IO) :-
     ),
     ignore_sigint(yes, !IO),
     run_notmuch(Config,
-        ["search", "--format=json" | LimitOption] ++ ["--", Terms],
+        ["search", "--format=json", "--exclude=all" | LimitOption]
+        ++ ["--", Terms],
         parse_threads_list, ResThreads, !IO),
     ignore_sigint(no, !IO),
     (
@@ -834,8 +835,8 @@ try_reply(!Screen, ThreadId, RequireUnread, ReplyKind, Res, !Info, !IO) :-
         Args0 = []
     ),
     Args = [
-        "search", "--format=json", "--output=messages", "--",
-        thread_id_to_search_term(ThreadId),
+        "search", "--format=json", "--output=messages", "--exclude=all",
+        "--", thread_id_to_search_term(ThreadId),
         "-tag:sent",
         "-tag:replied",
         "-tag:deleted",
@@ -889,8 +890,8 @@ addressbook_add(Screen, Info, !IO) :-
     ( get_cursor_line(Scrollable, _Cursor, Line) ->
         ThreadId = Line ^ i_id,
         Args = [
-            "search", "--format=json", "--output=messages", "--",
-            thread_id_to_search_term(ThreadId)
+            "search", "--format=json", "--output=messages", "--exclude=all",
+            "--", thread_id_to_search_term(ThreadId)
         ],
         run_notmuch(Config, Args, parse_message_id_list, ListRes, !IO),
         ( ListRes = ok([MessageId | _]) ->
@@ -1530,7 +1531,7 @@ refresh_index_line(Screen, ThreadId, !IndexInfo, !IO) :-
     Config = !.IndexInfo ^ i_config,
     Term = thread_id_to_search_term(ThreadId),
     run_notmuch(Config, [
-        "search", "--format=json", "--", Term
+        "search", "--format=json", "--exclude=all", "--", Term
     ], parse_threads_list, Result, !IO),
     (
         Result = ok([Thread]),

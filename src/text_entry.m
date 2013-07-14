@@ -843,7 +843,7 @@ generate_smart_tag_choices(Config, AndTagSet, OrTagSet, EnteredTagSet,
 get_notmuch_all_tags(Config, TagsList, !IO) :-
     get_notmuch_command(Config, Notmuch),
     make_quoted_command(Notmuch, [
-        "search", "--output=tags", "--", "*"
+        "search", "--output=tags", "--exclude=all", "--", "*"
     ], redirect_input("/dev/null"), no_redirect, Command),
     call_system_capture_stdout(Command, no, CallRes, !IO),
     (
