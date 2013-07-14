@@ -72,6 +72,12 @@ The defaults are given here:
     drafts_folder = Drafts
     sent_folder = Sent
 
+It is recommended that your `.notmuch-config` file contains at least
+these search exclusions:
+
+    [search]
+    exclude_tags=deleted;draft
+
 
 Usage
 =======
