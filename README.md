@@ -18,7 +18,7 @@ require some work to work on other systems.
 
 At compile time:
 
-* Mercury compiler (11.07 or release-of-the-day);
+* Mercury compiler (11.07 or later, including release-of-the-day);
   currently available at <http://dl.mercurylang.org/index.html>
 
 At run time:
@@ -37,8 +37,8 @@ Compiling
 
 Firstly, to install Mercury from source you can follow these steps:
 
-    tar xf mercury-compiler-VERSION.tar.gz
-    cd mercury-compiler-VERSION
+    tar xf mercury-srcdist-VERSION.tar.gz
+    cd mercury-srcdist-VERSION
     ./configure --prefix=/path/to/mercury
     make install PARALLEL=-j6 LIBGRADES=
     export PATH=$PATH:/path/to/mercury/bin
