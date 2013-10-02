@@ -369,6 +369,7 @@
 
     initscr();                          /* Start the show */
 
+    use_default_colors();
     start_color();                      /* Enable colour */
 
     nonl();                             /* Don't translate \n */
