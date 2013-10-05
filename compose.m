@@ -929,7 +929,7 @@ draw_header_lines(!.Panels, Headers, !IO) :-
 draw_header_line([], [], _, _, !IO).
 draw_header_line([Panel | Panels], Panels, FieldName, Value, !IO) :-
     panel.erase(Panel, !IO),
-    panel.attr_set(Panel, fg_bg(red, black) + bold, !IO),
+    panel.attr_set(Panel, fg_bg(red, default) + bold, !IO),
     my_addstr(Panel, FieldName, !IO),
     my_addstr(Panel, ": ", !IO),
     panel.attr_set(Panel, normal, !IO),
@@ -986,7 +986,7 @@ draw_attachment_line(Panel, Attachment, LineNr, IsCursor, !IO) :-
 draw_attachments_label([], !IO).
 draw_attachments_label([Panel | _], !IO) :-
     panel.move(Panel, 0, 0, !IO),
-    panel.attr_set(Panel, fg_bg(red, black) + bold, !IO),
+    panel.attr_set(Panel, fg_bg(red, default) + bold, !IO),
     my_addstr(Panel, "  Attach: ", !IO).
 
 :- pred draw_sep_bar(screen::in, maybe(panel)::in, io::di, io::uo) is det.

@@ -2092,12 +2092,12 @@ draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
     ;
         IsCursor = no,
-        panel.attr_set(Panel, fg_bg(blue, black) + bold, !IO)
+        panel.attr_set(Panel, fg_bg(blue, default) + bold, !IO)
     ),
     my_addstr_fixed(Panel, 13, RelDate, ' ', !IO),
     (
         Selected = selected,
-        cond_attr_set(Panel, fg_bg(magenta, black) + bold, IsCursor, !IO),
+        cond_attr_set(Panel, fg_bg(magenta, default) + bold, IsCursor, !IO),
         my_addstr(Panel, "*", !IO)
     ;
         Selected = not_selected,
@@ -2127,13 +2127,13 @@ draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
     ),
     (
         Flagged = flagged,
-        cond_attr_set(Panel, fg_bg(red, black) + bold, IsCursor, !IO),
+        cond_attr_set(Panel, fg_bg(red, default) + bold, IsCursor, !IO),
         my_addstr(Panel, "! ", !IO)
     ;
         Flagged = unflagged,
         my_addstr(Panel, "  ", !IO)
     ),
-    cond_attr_set(Panel, fg_bg(magenta, black), IsCursor, !IO),
+    cond_attr_set(Panel, fg_bg(magenta, default), IsCursor, !IO),
     (
         MaybeGraphics = yes(Graphics),
         list.foldl(draw_graphic(Panel), Graphics, !IO),
@@ -2152,12 +2152,12 @@ draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
     (
         MaybeSubject = yes(Subject),
         my_addstr(Panel, ". ", !IO),
-        cond_attr_set(Panel, fg_bg(green, black), IsCursor, !IO),
+        cond_attr_set(Panel, fg_bg(green, default), IsCursor, !IO),
         my_addstr(Panel, Subject, !IO)
     ;
         MaybeSubject = no
     ),
-    attr_set(Panel, fg_bg(red, black) + bold, !IO),
+    attr_set(Panel, fg_bg(red, default) + bold, !IO),
     set.fold(draw_nonstandard_tag(Panel), CurrTags, !IO).
 
 :- pred draw_nonstandard_tag(panel::in, tag::in, io::di, io::uo) is det.

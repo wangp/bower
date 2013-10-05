@@ -229,10 +229,10 @@ draw_recall_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
     ;
         IsCursor = no,
-        panel.attr_set(Panel, fg_bg(blue, black) + bold, !IO)
+        panel.attr_set(Panel, fg_bg(blue, default) + bold, !IO)
     ),
     my_addstr_fixed(Panel, 13, RelDate, ' ', !IO),
-    FieldAttr = fg_bg(red, black) + bold,
+    FieldAttr = fg_bg(red, default) + bold,
     cond_attr_set(Panel, FieldAttr, IsCursor, !IO),
     my_addstr(Panel, "To: ", !IO),
     cond_attr_set(Panel, normal, IsCursor, !IO),

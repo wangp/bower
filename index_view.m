@@ -1768,7 +1768,7 @@ draw_index_line(Panel, Line, _LineNr, IsCursor, !IO) :-
     my_addstr_fixed(Panel, 10, Date, ' ', !IO),
     (
         Selected = selected,
-        cond_attr_set(Panel, fg_bg(magenta, black) + bold, IsCursor, !IO),
+        cond_attr_set(Panel, fg_bg(magenta, default) + bold, IsCursor, !IO),
         my_addstr(Panel, "*", !IO)
     ;
         Selected = not_selected,
@@ -1829,7 +1829,7 @@ draw_index_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         ;
             true
         ),
-        attr_set(Panel, fg_bg(red, black) + bold, !IO),
+        attr_set(Panel, fg_bg(red, default) + bold, !IO),
         set.fold(draw_nonstandard_tag(Panel), Tags, !IO)
     ;
         true
@@ -1869,7 +1869,7 @@ cond_attr_set(Panel, Attr, IsCursor, !IO) :-
 
 :- func fg(colour) = attr.
 
-fg(C) = curs.fg_bg(C, black).
+fg(C) = curs.fg_bg(C, default).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

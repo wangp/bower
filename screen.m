@@ -318,12 +318,12 @@ update_message(Screen, MessageUpdate, !IO) :-
     ;
         MessageUpdate = set_info(String),
         panel.erase(Panel, !IO),
-        panel.attr_set(Panel, fg_bg(cyan, black) + bold, !IO),
+        panel.attr_set(Panel, fg_bg(cyan, default) + bold, !IO),
         my_addstr(Panel, String, !IO)
     ;
         MessageUpdate = set_warning(String),
         panel.erase(Panel, !IO),
-        panel.attr_set(Panel, fg_bg(red, black) + bold, !IO),
+        panel.attr_set(Panel, fg_bg(red, default) + bold, !IO),
         my_addstr(Panel, String, !IO)
     ;
         MessageUpdate = set_prompt(String),

@@ -1178,7 +1178,7 @@ draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         ( Line = start_message_header(_Message, Header, Value)
         ; Line = header(Header, Value)
         ),
-        panel.attr_set(Panel, fg_bg(red, black) + bold, !IO),
+        panel.attr_set(Panel, fg_bg(red, default) + bold, !IO),
         my_addstr(Panel, "| ", !IO),
         my_addstr(Panel, Header, !IO),
         my_addstr(Panel, ": ", !IO),
@@ -1227,7 +1227,7 @@ draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
             End = string.length(Text),
             panel.attr_set(Panel, Attr0 + Attr1, !IO),
             my_addstr(Panel, string.between(Text, 0, UrlStart), !IO),
-            panel.attr_set(Panel, fg_bg(magenta, black) + Attr1, !IO),
+            panel.attr_set(Panel, fg_bg(magenta, default) + Attr1, !IO),
             my_addstr(Panel, string.between(Text, UrlStart, UrlEnd), !IO),
             panel.attr_set(Panel, Attr0 + Attr1, !IO),
             my_addstr(Panel, string.between(Text, UrlEnd, End), !IO)
@@ -1238,10 +1238,10 @@ draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
             MaybeEncoding, MaybeLength),
         (
             IsCursor = yes,
-            Attr = fg_bg(magenta, black) + reverse
+            Attr = fg_bg(magenta, default) + reverse
         ;
             IsCursor = no,
-            Attr = fg_bg(magenta, black) + bold
+            Attr = fg_bg(magenta, default) + bold
         ),
         panel.attr_set(Panel, Attr, !IO),
         my_addstr(Panel, "[-- ", !IO),
@@ -1262,14 +1262,14 @@ draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         ),
         my_addstr(Panel, " --]", !IO),
         ( alternative_parts_message(HiddenParts, AltMessage) ->
-            panel.attr_set(Panel, fg_bg(magenta, black), !IO),
+            panel.attr_set(Panel, fg_bg(magenta, default), !IO),
             my_addstr(Panel, AltMessage, !IO)
         ;
             true
         )
     ;
         Line = message_separator,
-        panel.attr_set(Panel, fg_bg(blue, black) + bold, !IO),
+        panel.attr_set(Panel, fg_bg(blue, default) + bold, !IO),
         my_addstr(Panel, "~", !IO)
     ).
 
@@ -1279,18 +1279,18 @@ quote_level_to_attr(QuoteLevel) = Attr :-
     ( QuoteLevel = 0 ->
         Attr = normal
     ; int.odd(QuoteLevel) ->
-        Attr = fg_bg(blue, black) + bold
+        Attr = fg_bg(blue, default) + bold
     ;
-        Attr = fg_bg(green, black)
+        Attr = fg_bg(green, default)
     ).
 
 :- func diff_line_to_attr(diff_line) = attr.
 
 diff_line_to_attr(diff_common) = normal.
-diff_line_to_attr(diff_add) = fg_bg(cyan, black) + bold.
-diff_line_to_attr(diff_rem) = fg_bg(red, black) + bold.
-diff_line_to_attr(diff_hunk) = fg_bg(yellow, black) + bold.
-diff_line_to_attr(diff_index) = fg_bg(green, black) + bold.
+diff_line_to_attr(diff_add) = fg_bg(cyan, default) + bold.
+diff_line_to_attr(diff_rem) = fg_bg(red, default) + bold.
+diff_line_to_attr(diff_hunk) = fg_bg(yellow, default) + bold.
+diff_line_to_attr(diff_index) = fg_bg(green, default) + bold.
 
 :- func decoded_length(maybe(string), int) = int.
 
