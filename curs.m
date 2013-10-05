@@ -222,6 +222,7 @@
     %
 :- type colour.
 
+:- func default = colour.               % Ncurses extension
 :- func black = colour.
 :- func red = colour.
 :- func green = colour.
@@ -352,11 +353,14 @@
 #include <panel.h>
 #include <wchar.h>
 
-        /*
-        ** XXX We assume 64 available colour pairs and that the COLOR_s
-        ** are assigned 0..7 (this is true in ncurses.h)
-        */
-#define FG_BG(fg, bg)          (((fg) << 3) | (bg))
+#ifdef NCURSES_VERSION
+    #define COLOR_DEFAULT      (COLOR_WHITE + 1)
+    #define COLOR_MAX          (COLOR_DEFAULT)
+#else
+    #define COLOR_MAX          (COLOR_WHITE)
+#endif
+
+#define FG_BG(fg, bg)          ((fg) * COLOR_MAX + (bg))
 
 ").
 
@@ -368,6 +372,11 @@
 "
 
     initscr();                          /* Start the show */
+
+#ifdef NCURSES_VERSION
+    /* Allow the use of colour -1 */
+    use_default_colors();
+#endif
 
     start_color();                      /* Enable colour */
 
@@ -443,6 +452,27 @@ init_pair(FG_BG(COLOR_WHITE, COLOR_BLUE),       COLOR_WHITE, COLOR_BLUE);
 init_pair(FG_BG(COLOR_WHITE, COLOR_MAGENTA),    COLOR_WHITE, COLOR_MAGENTA);
 init_pair(FG_BG(COLOR_WHITE, COLOR_CYAN),       COLOR_WHITE, COLOR_CYAN);
 init_pair(FG_BG(COLOR_WHITE, COLOR_WHITE),      COLOR_WHITE, COLOR_WHITE);
+
+    /* Set up colour pairs with default colour -1 */
+#ifdef NCURSES_VERSION
+    init_pair(FG_BG(COLOR_BLACK, COLOR_DEFAULT),    COLOR_BLACK, -1);
+    init_pair(FG_BG(COLOR_RED, COLOR_DEFAULT),      COLOR_RED, -1);
+    init_pair(FG_BG(COLOR_GREEN, COLOR_DEFAULT),    COLOR_GREEN, -1);
+    init_pair(FG_BG(COLOR_YELLOW, COLOR_DEFAULT),   COLOR_YELLOW, -1);
+    init_pair(FG_BG(COLOR_BLUE, COLOR_DEFAULT),     COLOR_BLUE, -1);
+    init_pair(FG_BG(COLOR_MAGENTA, COLOR_DEFAULT),  COLOR_MAGENTA, -1);
+    init_pair(FG_BG(COLOR_CYAN, COLOR_DEFAULT),     COLOR_CYAN, -1);
+    init_pair(FG_BG(COLOR_WHITE, COLOR_DEFAULT),    COLOR_WHITE, -1);
+    init_pair(FG_BG(COLOR_DEFAULT, COLOR_BLACK),    -1, COLOR_BLACK);
+    init_pair(FG_BG(COLOR_DEFAULT, COLOR_RED),      -1, COLOR_RED);
+    init_pair(FG_BG(COLOR_DEFAULT, COLOR_GREEN),    -1, COLOR_GREEN);
+    init_pair(FG_BG(COLOR_DEFAULT, COLOR_YELLOW),   -1, COLOR_YELLOW);
+    init_pair(FG_BG(COLOR_DEFAULT, COLOR_BLUE),     -1, COLOR_BLUE);
+    init_pair(FG_BG(COLOR_DEFAULT, COLOR_MAGENTA),  -1, COLOR_MAGENTA);
+    init_pair(FG_BG(COLOR_DEFAULT, COLOR_CYAN),     -1, COLOR_CYAN);
+    init_pair(FG_BG(COLOR_DEFAULT, COLOR_WHITE),    -1, COLOR_WHITE);
+    init_pair(FG_BG(COLOR_DEFAULT, COLOR_DEFAULT),  -1, -1);
+#endif
 
     IO = IO0;
 ").
@@ -1045,6 +1075,17 @@ session(P, !IO) :-
 ").
 
 %-----------------------------------------------------------------------------%
+
+:- pragma foreign_proc("C",
+    default = (C::out),
+    [will_not_call_mercury, promise_pure],
+"
+#ifdef NCURSES_VERSION
+    C = COLOR_DEFAULT;
+#else
+    C = COLOR_BLACK;
+#endif
+").
 
 :- pragma foreign_proc("C",
     black = (C::out),
