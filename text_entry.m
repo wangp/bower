@@ -149,6 +149,7 @@ text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO) :-
         ( Key = char('\x17\') % ^W
         ; Key = meta('\x7f\') % DEL
         ; Key = meta('\x08\') % BS
+        ; Key = metacode(key_backspace)
         )
     ->
         delete_word(Before, Before1),

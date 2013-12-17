@@ -81,6 +81,7 @@
     --->    char(char)
     ;       meta(char)
     ;       code(int)
+    ;       metacode(int)
     ;       timeout_or_error.
 
 :- pred get_keycode_blocking(keycode::out, io::di, io::uo) is det.
@@ -388,13 +389,18 @@ get_keycode_2(Code, !IO) :-
             curs.get_wch(C2, IsCode2, !IO),
             nodelay(no, !IO),
             (
-                IsCode2 = no,
-                C2 \= 0,
-                char.from_int(C2, Char2)
-            ->
-                Code = meta(Char2)
+                IsCode2 = yes,
+                Code = metacode(C2)
             ;
-                Code = char('\033') % ESC
+                IsCode2 = no,
+                (
+                    C2 \= 0,
+                    char.from_int(C2, Char2)
+                ->
+                    Code = meta(Char2)
+                ;
+                    Code = char('\033') % ESC
+                )
             )
         ;
             ( char.from_int(C, Char0) ->
@@ -412,6 +418,7 @@ get_char_blocking(Char, !IO) :-
     ;
         ( Code = code(_)
         ; Code = meta(_)
+        ; Code = metacode(_)
         ; Code = timeout_or_error
         ),
         get_char_blocking(Char, !IO)
