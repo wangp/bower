@@ -146,7 +146,8 @@ text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO) :-
         delete_char(Before, Before1),
         text_entry(Screen, Prompt, Before1, After, SubInfo, Return, !IO)
     ;
-        ( Key = meta('\x7f\') % DEL
+        ( Key = char('\x17\') % ^W
+        ; Key = meta('\x7f\') % DEL
         ; Key = meta('\x08\') % BS
         )
     ->
