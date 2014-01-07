@@ -157,7 +157,7 @@ start_reply(Screen, Message, ReplyKind, Transition, !IO) :-
     call_system_capture_stdout(Notmuch ++ Command, CommandResult, !IO),
     (
         CommandResult = ok(String),
-        read_headers_from_string(String, 0, init_headers, Headers0, Text),
+        parse_message(String, Headers0, Text),
         (
             ReplyKind = direct_reply,
             OrigFrom = Message ^ m_headers ^ h_from,
@@ -268,7 +268,7 @@ continue_postponed(Screen, Message, Transition, !IO) :-
     call_system_capture_stdout(Notmuch ++ Command, CallRes, !IO),
     (
         CallRes = ok(String),
-        read_headers_from_string(String, 0, init_headers, HeadersB, _Body),
+        parse_message(String, HeadersB, _Body),
         some [!Headers] (
             !:Headers = Headers0,
             !Headers ^ h_replyto := (HeadersB ^ h_replyto),

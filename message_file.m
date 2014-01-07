@@ -14,17 +14,17 @@
 :- pred parse_message_file(string::in, io.res(pair(headers, string))::out,
     io::di, io::uo) is det.
 
-:- pred read_headers_from_string(string::in, int::in,
-    headers::in, headers::out, string::out) is det.
+:- pred parse_message(string::in, headers::out, string::out) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
+:- import_module char.
 :- import_module int.
+:- import_module list.
 :- import_module map.
-:- import_module maybe.
 :- import_module string.
 
 :- import_module string_util.
@@ -35,27 +35,13 @@ parse_message_file(Filename, Res, !IO) :-
     io.open_input(Filename, ResOpen, !IO),
     (
         ResOpen = ok(Stream),
-        read_headers_from_stream(Stream, ResHeaders, MaybeBodyLine,
-            init_headers, Headers, !IO),
+        read_file_as_string(Stream, ResRead, !IO),
         (
-            ResHeaders = ok,
-            read_file_as_string(Stream, ResBody, !IO),
-            (
-                ResBody = ok(Body0),
-                (
-                    MaybeBodyLine = yes(BodyLine),
-                    Body = BodyLine ++ Body0
-                ;
-                    MaybeBodyLine = no,
-                    Body = Body0
-                ),
-                Res = ok(Headers - Body)
-            ;
-                ResBody = error(_, Error),
-                Res = error(Error)
-            )
+            ResRead = ok(String),
+            parse_message(String, Headers, Body),
+            Res = ok(Headers - Body)
         ;
-            ResHeaders = error(Error),
+            ResRead = error(_, Error),
             Res = error(Error)
         ),
         io.close_input(Stream, !IO)
@@ -64,53 +50,82 @@ parse_message_file(Filename, Res, !IO) :-
         Res = error(Error)
     ).
 
-    % XXX implement proper parser
-:- pred read_headers_from_stream(io.input_stream::in, io.res::out,
-    maybe(string)::out, headers::in, headers::out, io::di, io::uo) is det.
+parse_message(String, Headers, Body) :-
+    read_headers(String, 0, PosBody, init_headers, Headers),
+    string.between(String, PosBody, count_code_units(String), Body).
 
-read_headers_from_stream(Stream, Res, MaybeBodyLine, !Headers, !IO) :-
-    io.read_line_as_string(Stream, ResRead, !IO),
-    (
-        ResRead = ok(Line),
-        ( Line = "\n" ->
-            Res = ok,
-            MaybeBodyLine = no
-        ; is_header_line(Line, Name, Value) ->
-            add_header(Name, Value, !Headers),
-            read_headers_from_stream(Stream, Res, MaybeBodyLine, !Headers, !IO)
-        ;
-            Res = ok,
-            MaybeBodyLine = yes(Line)
-        )
+:- pred read_headers(string::in, int::in, int::out, headers::in, headers::out)
+    is det.
+
+read_headers(String, Pos0, Pos, !Headers) :-
+    unfolded_line(String, Pos0, Pos1, Line),
+    ( Line = "" ->
+        Pos = Pos1
+    ; is_header_line(Line, Name, Value) ->
+        add_header(Name, Value, !Headers),
+        read_headers(String, Pos1, Pos, !Headers)
     ;
-        ResRead = eof,
-        Res = ok,
-        MaybeBodyLine = no
-    ;
-        ResRead = error(Error),
-        Res = error(Error),
-        MaybeBodyLine = no
+        Pos = Pos0
     ).
 
-read_headers_from_string(String, Pos0, !Headers, Body) :-
-    ( string.sub_string_search_start(String, "\n", Pos0, Nl) ->
-        ( Pos0 = Nl ->
-            End = string.count_code_units(String),
-            string.between(String, Nl + 1, End, Body)
-        ;
-            string.unsafe_between(String, Pos0, Nl, Line),
-            ( is_header_line(Line, Name, Value) ->
-                add_header(Name, Value, !Headers),
-                read_headers_from_string(String, Nl + 1, !Headers, Body)
+:- pred unfolded_line(string::in, int::in, int::out, string::out) is det.
+
+unfolded_line(String, Start, End, Line) :-
+    unfolded_line_2(String, Start, Start, End, [], RevPieces),
+    string.append_list(reverse(RevPieces), Line).
+
+:- pred unfolded_line_2(string::in, int::in, int::in, int::out,
+    list(string)::in, list(string)::out) is det.
+
+unfolded_line_2(String, Start, Pos0, LineEnd, !Acc) :-
+    ( string.unsafe_index_next(String, Pos0, Pos1, Char0) ->
+        (
+            (
+                % CR LF
+                Char0 = '\r',
+                skip_lf(String, Pos1, Pos2)
             ;
-                End = string.count_code_units(String),
-                string.between(String, Pos0, End, Body)
+                % LF
+                Char0 = '\n',
+                Pos2 = Pos1
             )
+        ->
+            % Drop the CRLF / LF.
+            string.between(String, Start, Pos0, Piece),
+            cons(Piece, !Acc),
+            % "Unfolding is accomplished by regarding CRLF immediately followed
+            % by a LWSP-char as equivalent to the LWSP-char."
+            (
+                string.unsafe_index_next(String, Pos2, _, Char2),
+                lwsp(Char2)
+            ->
+                unfolded_line_2(String, Pos2, Pos2, LineEnd, !Acc)
+            ;
+                LineEnd = Pos2
+            )
+        ;
+            unfolded_line_2(String, Start, Pos1, LineEnd, !Acc)
         )
     ;
-        End = string.count_code_units(String),
-        string.between(String, Pos0, End, Body)
+        % End of string.
+        LineEnd = Pos0,
+        string.between(String, Start, LineEnd, Piece),
+        cons(Piece, !Acc)
     ).
+
+:- pred skip_lf(string::in, int::in, int::out) is det.
+
+skip_lf(String, Pos0, Pos) :-
+    ( string.unsafe_index_next(String, Pos0, Pos1, '\n') ->
+        Pos = Pos1
+    ;
+        Pos = Pos0
+    ).
+
+:- pred lwsp(char::in) is semidet. % linear whitespace
+
+lwsp(' ').
+lwsp('\t').
 
 :- pred is_header_line(string::in, string::out, string::out) is semidet.
 
