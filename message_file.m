@@ -72,7 +72,7 @@ read_headers(String, Pos0, Pos, !Headers) :-
 
 unfolded_line(String, Start, End, Line) :-
     unfolded_line_2(String, Start, Start, End, [], RevPieces),
-    string.append_list(reverse(RevPieces), Line).
+    Line = string.join_list(" ", reverse(RevPieces)).
 
 :- pred unfolded_line_2(string::in, int::in, int::in, int::out,
     list(string)::in, list(string)::out) is det.
@@ -95,11 +95,13 @@ unfolded_line_2(String, Start, Pos0, LineEnd, !Acc) :-
             cons(Piece, !Acc),
             % "Unfolding is accomplished by regarding CRLF immediately followed
             % by a LWSP-char as equivalent to the LWSP-char."
+            % But we'll squeeze them to a single space.
             (
-                string.unsafe_index_next(String, Pos2, _, Char2),
-                lwsp(Char2)
+                string.unsafe_index_next(String, Pos2, Pos3, Char2),
+                lwsp(Char2),
+                advance_while(lwsp, String, Pos3, Pos4)
             ->
-                unfolded_line_2(String, Pos2, Pos2, LineEnd, !Acc)
+                unfolded_line_2(String, Pos4, Pos4, LineEnd, !Acc)
             ;
                 LineEnd = Pos2
             )

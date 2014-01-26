@@ -541,18 +541,6 @@ skip_nls(String, I0, I) :-
         I = I0
     ).
 
-:- pred skip_whitespace(string::in, int::in, int::out) is det.
-
-skip_whitespace(String, I0, I) :-
-    (
-        string.unsafe_index_next(String, I0, I1, Char),
-        char.is_whitespace(Char)
-    ->
-        skip_whitespace(String, I1, I)
-    ;
-        I = I0
-    ).
-
 :- pred detect_diff_end(string::in, int::in) is semidet.
 
 detect_diff_end(String, Start) :-

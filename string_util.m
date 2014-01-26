@@ -25,6 +25,13 @@
 
 :- pred unsafe_strstr(string::in, string::in, int::in, int::out) is semidet.
 
+:- pred advance_while(pred(char)::in(pred(in) is semidet), string::in,
+    int::in, int::out) is det.
+
+:- pred skip_whitespace(string::in, int::in, int::out) is det.
+
+:- pred until_whitespace(string::in, int::in, int::out) is det.
+
 :- pred get_extension(string::in, string::out) is semidet.
 
 :- pred fix_utf8(string::in, string::out) is det.
@@ -44,6 +51,7 @@
 :- import_module int.
 :- import_module char.
 :- import_module require.
+:- import_module std_util.
 :- import_module string.
 
 %-----------------------------------------------------------------------------%
@@ -131,6 +139,24 @@ string_wcwidth_2(C, Width, Width + wcwidth(C)).
         Index = -1;
     }
 ").
+
+%-----------------------------------------------------------------------------%
+
+advance_while(Pred, String, I0, I) :-
+    (
+        string.unsafe_index_next(String, I0, I1, Char),
+        Pred(Char)
+    ->
+        advance_while(Pred, String, I1, I)
+    ;
+        I = I0
+    ).
+
+skip_whitespace(String, I0, I) :-
+    advance_while(char.is_whitespace, String, I0, I).
+
+until_whitespace(String, I0, I) :-
+    advance_while(isnt(char.is_whitespace), String, I0, I).
 
 %-----------------------------------------------------------------------------%
 
