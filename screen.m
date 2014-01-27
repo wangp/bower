@@ -252,8 +252,7 @@ get_real_screen(Screen, RealScreen) :-
 my_addstr(Panel, String, !IO) :-
     getyx(Panel, _, X, !IO),
     getmaxyx(Panel, _, MaxX, !IO),
-    % XXX stops drawing one column early
-    ( X >= MaxX - 1 ->
+    ( X >= MaxX ->
         true
     ;
         addstr(Panel, String, !IO)
@@ -264,8 +263,7 @@ my_addstr(Panel, String, !IO) :-
 my_addstr_fixed(Panel, NrCols, String, PadChar, !IO) :-
     getyx(Panel, _, X0, !IO),
     getmaxyx(Panel, _, MaxX, !IO),
-    % XXX stops drawing one column early
-    ( X0 >= MaxX - 1 ->
+    ( X0 >= MaxX ->
         true
     ;
         MaxRemCols = MaxX - X0,
