@@ -5,8 +5,11 @@
 :- interface.
 
 :- import_module char.
+:- import_module list.
 
 :- func wcwidth(char) = int.
+
+:- func list_wcwidth(list(char)) = int.
 
 :- func string_wcwidth(string) = int.
 
@@ -56,6 +59,9 @@
 "
     Width = (C < 256) ? 1 : wcwidth(C);
 ").
+
+list_wcwidth([]) = 0.
+list_wcwidth([C | Cs]) = wcwidth(C) + list_wcwidth(Cs).
 
 string_wcwidth(S) = Width :-
     string.foldl(string_wcwidth_2, S, 0, Width).

@@ -56,6 +56,7 @@
 :- import_module dir.
 :- import_module int.
 :- import_module list.
+:- import_module require.
 :- import_module string.
 
 :- import_module curs.
@@ -64,12 +65,14 @@
 :- import_module call_system.
 :- import_module prog_config.
 :- import_module quote_arg.
+:- import_module string_util.
 
 :- type history == list(string). % reverse
 
 :- type sub_info
     --->    sub_info(
                 first_time      :: bool,
+                left_offset     :: int,
                 pre_history     :: history,
                 post_history    :: history,
                 compl_type      :: completion_type,
@@ -113,18 +116,24 @@ text_entry_initial(Screen, Prompt, History, Initial, CompleteType, Return,
 
 text_entry_full(Screen, Prompt, History, Initial, CompleteType, FirstTime,
         Return, !IO) :-
+    LeftOffset = 0,
     string.to_char_list(Initial, Before0),
     list.reverse(Before0, Before),
     After = [],
-    SubInfo = sub_info(FirstTime, History, [], CompleteType, [], 0),
+    SubInfo = sub_info(FirstTime, LeftOffset, History, [],
+        CompleteType, [], 0),
     text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO),
     update_message(Screen, clear_message, !IO).
 
 :- pred text_entry_real(screen::in, string::in, list(char)::in, list(char)::in,
     sub_info::in, maybe(string)::out, io::di, io::uo) is det.
 
-text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO) :-
-    draw_text_entry(Screen, Prompt, Before, After, !IO),
+text_entry_real(Screen, Prompt, Before, After, SubInfo0, Return, !IO) :-
+    LeftOffset0 = SubInfo0 ^ left_offset,
+    draw_text_entry(Screen, Prompt, Before, After, LeftOffset0, LeftOffset,
+        !IO),
+    SubInfo = SubInfo0 ^ left_offset := LeftOffset,
+
     get_keycode_blocking(Key, !IO),
     (
         ( Key = char('\x07\') % BEL (^G)
@@ -742,6 +751,15 @@ find_first_char(S, FindChar, I0, I) :-
 non_whitespace(C) :-
     not char.is_whitespace(C).
 
+:- pred det_take(int::in, list(char)::in, list(char)::out) is det.
+
+det_take(N, List, Start) :-
+    ( list.take(N, List, StartPrime) ->
+        Start = StartPrime
+    ;
+        unexpected($module, $pred, "not enough elements")
+    ).
+
 :- pred det_take_tail(int::in, list(char)::in, list(char)::out) is det.
 
 det_take_tail(N, Xs, XsTail) :-
@@ -757,18 +775,71 @@ reverse_onto([X | Xs], Acc0, Acc) :-
 %-----------------------------------------------------------------------------%
 
 :- pred draw_text_entry(screen::in, string::in, list(char)::in, list(char)::in,
-    io::di, io::uo) is det.
+    int::in, int::out, io::di, io::uo) is det.
 
-draw_text_entry(Screen, Prompt, Before, After, !IO) :-
+draw_text_entry(Screen, Prompt, Before, After, LeftOffset0, LeftOffset, !IO) :-
+    get_cols(Screen, Cols),
+    RemainCols = Cols - string_wcwidth(Prompt),
+    calc_draw(RemainCols, Before, BeforeDraw, After, AfterDraw,
+        LeftOffset0, LeftOffset),
+
     get_msgentry_panel(Screen, Panel),
     panel.erase(Panel, !IO),
     panel.attr_set(Panel, normal, !IO),
     my_addstr(Panel, Prompt, !IO),
-    my_addstr(Panel, string.from_rev_char_list(Before), !IO),
+    my_addstr(Panel, string.from_rev_char_list(BeforeDraw), !IO),
     panel.getyx(Panel, Y, X, !IO),
-    my_addstr(Panel, string.from_char_list(After), !IO),
+    my_addstr(Panel, string.from_char_list(AfterDraw), !IO),
     panel.move(Panel, Y, X, !IO),
     panel.update_panels(!IO).
+
+:- pred calc_draw(int::in, list(char)::in, list(char)::out,
+    list(char)::in, list(char)::out, int::in, int::out) is det.
+
+calc_draw(TotalCols, Before, BeforeDraw, After, AfterDraw, !LeftOffset) :-
+    NumBefore = list.length(Before),
+    % Check if the cursor moved past the previous left offset.
+    !:LeftOffset = min(!.LeftOffset, NumBefore),
+    (
+        After = [],
+        ReservedAfterCols = 1 % cursor
+    ;
+        After = [AfterChar | _],
+        ReservedAfterCols = wcwidth(AfterChar)
+    ),
+    % Check if code points from Before after LeftOffset will fit in the
+    % available screen columns.
+    det_take(NumBefore - !.LeftOffset, Before, BeforeDraw0),
+    BeforeCols0 = list_wcwidth(BeforeDraw0),
+    ( BeforeCols0 =< TotalCols - ReservedAfterCols ->
+        % BeforeDraw0 fits.
+        BeforeDraw = BeforeDraw0,
+        AfterCols = TotalCols - BeforeCols0
+    ;
+        % BeforeDraw0 is too wide.
+        take_upto_width(Before, BeforeDraw,
+            TotalCols - ReservedAfterCols, RemainingCols),
+        AfterCols = RemainingCols + ReservedAfterCols,
+        !:LeftOffset = NumBefore - length(BeforeDraw)
+    ),
+    % Draw as many After code points as will fit in the remaining columns.
+    take_upto_width(After, AfterDraw, AfterCols, _).
+
+:- pred take_upto_width(list(char)::in, list(char)::out, int::in, int::out)
+    is det.
+
+take_upto_width([], [], !RemainCols).
+take_upto_width([C | Cs], TakeChars, RemainCols0, RemainCols) :-
+    RemainCols1 = RemainCols0 - wcwidth(C),
+    ( RemainCols1 < 0 ->
+        TakeChars = [],
+        RemainCols = RemainCols0
+    ;
+        take_upto_width(Cs, TakeChars1, RemainCols1, RemainCols),
+        TakeChars = [C | TakeChars1]
+    ).
+
+%-----------------------------------------------------------------------------%
 
 :- pred isprint(char::in) is semidet.
 
