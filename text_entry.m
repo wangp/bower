@@ -847,7 +847,10 @@ take_upto_width([C | Cs], TakeChars, RemainCols0, RemainCols) :-
     isprint(Char::in),
     [will_not_call_mercury, promise_pure, thread_safe],
 "
-    SUCCESS_INDICATOR = isprint(Char) || Char >= 0x80;
+    /* The argument to isprint must be representable by an unsigned char
+     * or equal to EOF.
+     */
+    SUCCESS_INDICATOR = (Char >= 0x80) || isprint(Char);
 ").
 
 %-----------------------------------------------------------------------------%
