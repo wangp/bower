@@ -122,10 +122,10 @@ generate_resent_headers(FileName, to_addr(To), Res, !IO) :-
     io.open_output(FileName, ResOpen, !IO),
     (
         ResOpen = ok(Stream),
-        write_header(Stream, "Resent-From", From, !IO),
-        write_header(Stream, "Resent-Date", Date, !IO),
-        write_header(Stream, "Resent-Message-ID", MessageId, !IO),
-        write_header(Stream, "Resent-To", To, !IO),
+        write_address_list_header(Stream, "Resent-From", From, !IO),
+        write_unstructured_header(Stream, "Resent-Date", Date, !IO),
+        write_unstructured_header(Stream, "Resent-Message-ID", MessageId, !IO),
+        write_address_list_header(Stream, "Resent-To", To, !IO),
         io.close_output(Stream, !IO),
         Res = ok
     ;

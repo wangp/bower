@@ -10,7 +10,13 @@
 
 :- pred generate_date_msg_id(string::out, string::out, io::di, io::uo) is det.
 
-:- pred write_header(io.output_stream::in, string::in, string::in,
+:- pred write_unstructured_header(io.output_stream::in, string::in, string::in,
+    io::di, io::uo) is det.
+
+:- pred write_address_list_header(io.output_stream::in, string::in, string::in,
+    io::di, io::uo) is det.
+
+:- pred write_references_header(io.output_stream::in, string::in, string::in,
     io::di, io::uo) is det.
 
 :- pred generate_boundary(string::out, io::di, io::uo) is det.
@@ -29,6 +35,7 @@
 :- import_module time.
 
 :- import_module callout.
+:- import_module fold_lines.
 :- import_module sys_util.
 :- import_module time_util.
 
@@ -98,12 +105,47 @@ generate_date_msg_id(Date, MessageId, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-write_header(Stream, Header, Value, !IO) :-
-    io.write_string(Stream, Header, !IO),
-    io.write_string(Stream, ": ", !IO),
-    % XXX quote if non-ASCII
-    io.write_string(Stream, Value, !IO),
+% XXX quote non-ASCII Values; or can we get away with UTF-8 now?
+
+write_unstructured_header(Stream, Field, Value, !IO) :-
+    get_spans_by_whitespace(Value, ValueSpans),
+    add_field_span(Field, ValueSpans, Spans),
+    fill_lines(soft_line_length, Spans, Lines),
+    do_write_header(Stream, Lines, !IO).
+
+write_address_list_header(Stream, Field, Value, !IO) :-
+    get_spans_by_comma(Value, ValueSpans),
+    add_field_span(Field, ValueSpans, Spans),
+    fill_lines(soft_line_length, Spans, Lines),
+    do_write_header(Stream, Lines, !IO).
+
+write_references_header(Stream, Field, Value, !IO) :-
+    write_unstructured_header(Stream, Field, Value, !IO).
+
+:- pred add_field_span(string::in, list(span)::in, list(span)::out) is det.
+
+add_field_span(Field, Spans0, Spans) :-
+    FieldColon = Field ++ ":",
+    (
+        Spans0 = [],
+        Spans = [span(FieldColon, "")]
+    ;
+        Spans0 = [Head0 | Tail],
+        Head0 = span(Mandatory, Trailer),
+        Head = span(FieldColon ++ " " ++ lstrip(Mandatory), Trailer),
+        Spans = [Head | Tail]
+    ).
+
+:- pred do_write_header(io.output_stream::in, list(string)::in,
+    io::di, io::uo) is det.
+
+do_write_header(Stream, Lines, !IO) :-
+    io.write_list(Stream, Lines, "\n ", io.write_string, !IO),
     io.nl(Stream, !IO).
+
+:- func soft_line_length = int.
+
+soft_line_length = 78.
 
 %-----------------------------------------------------------------------------%
 

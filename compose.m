@@ -1207,34 +1207,40 @@ create_temp_message_file(Headers, Text, Attachments, Prepare, Res, !IO) :-
         (
             Prepare = prepare_send,
             generate_date_msg_id(Date, MessageId, !IO),
-            write_header(Stream, "Date", Date, !IO),
-            write_header(Stream, "Message-ID", MessageId, !IO),
-            Write = write_header_opt(Stream)
+            write_unstructured_header(Stream, "Date", Date, !IO),
+            write_unstructured_header(Stream, "Message-ID", MessageId, !IO),
+            WriteUnstruc = skip_if_empty(write_unstructured_header(Stream)),
+            WriteAddrs = skip_if_empty(write_address_list_header(Stream)),
+            WriteRefs = skip_if_empty(write_references_header(Stream))
         ;
             Prepare = prepare_postpone,
             generate_date_msg_id(Date, _MessageId, !IO),
-            write_header(Stream, "Date", Date, !IO),
-            Write = write_header(Stream)
+            write_unstructured_header(Stream, "Date", Date, !IO),
+            WriteUnstruc = write_unstructured_header(Stream),
+            WriteAddrs = write_address_list_header(Stream),
+            WriteRefs = write_references_header(Stream)
         ;
             Prepare = prepare_edit,
-            Write = write_header(Stream)
+            WriteUnstruc = write_unstructured_header(Stream),
+            WriteAddrs = write_address_list_header(Stream),
+            WriteRefs = write_references_header(Stream)
         ),
-        Write("From", From, !IO),
-        Write("To", To, !IO),
-        Write("Cc", Cc, !IO),
-        Write("Bcc", Bcc, !IO),
-        Write("Subject", Subject, !IO),
-        Write("Reply-To", ReplyTo, !IO),
-        Write("In-Reply-To", InReplyTo, !IO),
+        WriteAddrs("From", From, !IO),
+        WriteAddrs("To", To, !IO),
+        WriteAddrs("Cc", Cc, !IO),
+        WriteAddrs("Bcc", Bcc, !IO),
+        WriteUnstruc("Subject", Subject, !IO),
+        WriteAddrs("Reply-To", ReplyTo, !IO),
+        WriteRefs("In-Reply-To", InReplyTo, !IO),
         (
             ( Prepare = prepare_send
             ; Prepare = prepare_postpone
             ),
-            Write("References", References, !IO)
+            WriteRefs("References", References, !IO)
         ;
             Prepare = prepare_edit
         ),
-        map.foldl(Write, RestHeaders, !IO),
+        map.foldl(WriteUnstruc, RestHeaders, !IO),
         (
             MIME = no
         ;
@@ -1278,14 +1284,14 @@ create_temp_message_file(Headers, Text, Attachments, Prepare, Res, !IO) :-
         Res = error(Message)
     ).
 
-:- pred write_header_opt(io.output_stream::in, string::in, string::in,
-    io::di, io::uo) is det.
+:- pred skip_if_empty(pred(string, string, io, io)::in(pred(in, in, di, uo) is det),
+    string::in, string::in, io::di, io::uo) is det.
 
-write_header_opt(Stream, Name, Value, !IO) :-
+skip_if_empty(Pred, Field, Value, !IO) :-
     ( Value = "" ->
         true
     ;
-        write_header(Stream, Name, Value, !IO)
+        Pred(Field, Value, !IO)
     ).
 
 :- pred write_mime_version(io.output_stream::in, io::di, io::uo) is det.
