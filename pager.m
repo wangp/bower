@@ -127,7 +127,8 @@
     --->    leaf(pager_line)
     ;       node(
                 node_id     :: node_id,
-                subtrees    :: list(tree)
+                subtrees    :: list(tree),
+                preblank    :: bool
             ).
 
 :- type id_pager_line
@@ -185,6 +186,10 @@
 allocate_node_id(node_id(N), !Counter) :-
     counter.allocate(N, !Counter).
 
+:- func dummy_node_id = node_id.
+
+dummy_node_id = node_id(-1).
+
 %-----------------------------------------------------------------------------%
 
 :- pred add_leaf(pager_line::in, cord(tree)::in, cord(tree)::out) is det.
@@ -199,36 +204,52 @@ add_tree(Tree, Cord, snoc(Cord, Tree)).
 :- func flatten(tree) = list(id_pager_line).
 
 flatten(Tree) = list(Cord) :-
-    flatten(node_id(-1), Tree, Cord).
+    flatten(dummy_node_id, Tree, Cord, no, _LastBlank).
 
-:- pred flatten(node_id::in, tree::in, cord(id_pager_line)::out) is det.
+:- pred flatten(node_id::in, tree::in, cord(id_pager_line)::out,
+    bool::in, bool::out) is det.
 
-flatten(ParentId, Tree, Cord) :-
+flatten(ParentId, Tree, Cord, LastBlank0, LastBlank) :-
     (
         Tree = leaf(Line),
         % This is slightly wasteful as the user cannot do anything on most
         % lines that would require the id.
-        Cord = cord.singleton(ParentId - Line)
+        Cord = cord.singleton(ParentId - Line),
+        LastBlank = pred_to_bool(is_blank_line(Line))
     ;
-        Tree = node(NodeId, SubTrees),
-        list.map(flatten(NodeId), SubTrees, SubCords),
-        Cord = cord_list_to_cord(SubCords)
+        Tree = node(NodeId, SubTrees, PreBlank),
+        list.map_foldl(flatten(NodeId), SubTrees, SubCords,
+            LastBlank0, LastBlank),
+        (
+            LastBlank0 = no,
+            PreBlank = yes
+        ->
+            Cord = singleton(NodeId - blank_line)
+                ++ cord_list_to_cord(SubCords)
+        ;
+            Cord = cord_list_to_cord(SubCords)
+        )
     ).
 
-:- pred replace_node(node_id::in, list(tree)::in, tree::in, tree::out) is det.
+:- pred is_blank_line(pager_line::in) is semidet.
 
-replace_node(FindId, NewSubTrees, Tree0, Tree) :-
+is_blank_line(text(_, "", _, _)).
+is_blank_line(message_separator).
+
+:- pred replace_node(node_id::in, tree::in, tree::in, tree::out) is det.
+
+replace_node(FindId, NewTree, Tree0, Tree) :-
     (
         Tree0 = leaf(_),
         Tree = Tree0
     ;
-        Tree0 = node(NodeId, SubTrees0),
+        Tree0 = node(NodeId, SubTrees0, PreBlank),
         ( NodeId = FindId ->
-            SubTrees = NewSubTrees
+            Tree = NewTree
         ;
-            list.map(replace_node(FindId, NewSubTrees), SubTrees0, SubTrees)
-        ),
-        Tree = node(NodeId, SubTrees)
+            list.map(replace_node(FindId, NewTree), SubTrees0, SubTrees),
+            Tree = node(NodeId, SubTrees, PreBlank)
+        )
     ).
 
 %-----------------------------------------------------------------------------%
@@ -238,7 +259,7 @@ setup_pager(Mode, Cols, Messages, Info, !IO) :-
     allocate_node_id(NodeId, Counter0, Counter1),
     list.map_foldl2(make_message_tree(Mode, Cols), Messages, Trees,
         Counter1, Counter, !IO),
-    Tree = node(NodeId, Trees),
+    Tree = node(NodeId, Trees, no),
     Scrollable = scrollable.init(flatten(Tree)),
     Info = pager_info(Tree, Counter, Scrollable).
 
@@ -275,7 +296,7 @@ make_message_tree(Mode, Cols, Message, Tree, !Counter, !IO) :-
         Body = Message ^ m_body,
         list.map_foldl3(make_part_tree(Cols), Body, BodyTrees,
             yes, _IsFirst, !Counter, !IO),
-        BodyNode = node(NodeId, BodyTrees),
+        BodyNode = node(NodeId, BodyTrees, no),
         add_tree(BodyNode, !Cord),
         add_leaf(message_separator, !Cord),
         add_leaf(message_separator, !Cord),
@@ -293,7 +314,7 @@ make_message_tree(Mode, Cols, Message, Tree, !Counter, !IO) :-
 
         SubTrees = list(!.Cord)
     ),
-    Tree = node(NodeId, SubTrees).
+    Tree = node(NodeId, SubTrees, no).
 
 :- pred add_header(string::in, string::in, cord(tree)::in, cord(tree)::out)
     is det.
@@ -315,10 +336,12 @@ make_part_tree(Cols, Part, Tree, !IsFirst, !Counter, !IO) :-
             !.IsFirst = yes,
             strcase_equal(Type, "text/plain")
         ->
-            SubTrees = Lines
+            SubTrees = Lines,
+            PreBlank = no
         ;
             HeadLine = attachment(Part, []),
-            SubTrees = [leaf(blank_line), leaf(HeadLine) | Lines]
+            SubTrees = [leaf(HeadLine) | Lines],
+            PreBlank = yes
         ),
         !:IsFirst = no
     ;
@@ -331,10 +354,12 @@ make_part_tree(Cols, Part, Tree, !IsFirst, !Counter, !IO) :-
                 yes, _SubIsFirst, !Counter, !IO),
             HeadLine = attachment(FirstSubPart, RestSubParts),
             SubTrees = [leaf(HeadLine), SubTree],
+            PreBlank = yes,
             !:IsFirst = no
         ;
             list.map_foldl3(make_part_tree(Cols), SubParts, SubTrees,
-                !IsFirst, !Counter, !IO)
+                !IsFirst, !Counter, !IO),
+            PreBlank = no
         )
     ;
         Content = encapsulated_messages(EncapMessages),
@@ -342,13 +367,14 @@ make_part_tree(Cols, Part, Tree, !IsFirst, !Counter, !IO) :-
             EncapMessages, SubTrees0, !Counter, !IO),
         HeadLine = attachment(Part, []),
         SubTrees = [leaf(HeadLine) | SubTrees0],
+        PreBlank = yes,
         !:IsFirst = no
     ;
         Content = unsupported,
-        make_unsupported_part_lines(Cols, Part, SubTrees, !IO),
+        make_unsupported_part_lines(Cols, Part, SubTrees, PreBlank, !IO),
         !:IsFirst = no
     ),
-    Tree = node(PartNodeId, SubTrees).
+    Tree = node(PartNodeId, SubTrees, PreBlank).
 
 :- pred select_alternative(list(part)::in, list(part)::out) is semidet.
 
@@ -663,7 +689,8 @@ make_encapsulated_message_tree(Cols, EncapMessage, Tree, !Counter, !IO) :-
     list.map_foldl3(make_part_tree(Cols), Body, PartTrees, yes, _IsFirst,
         !Counter, !IO),
     SubTrees = HeaderLines ++ PartTrees,
-    Tree = node(NodeId, SubTrees).
+    PreBlank = no,
+    Tree = node(NodeId, SubTrees, PreBlank).
 
 :- pred add_encapsulated_header(string::in, string::in,
     cord(tree)::in, cord(tree)::out) is det.
@@ -679,9 +706,9 @@ add_encapsulated_header(Header, Value, !Lines) :-
 %-----------------------------------------------------------------------------%
 
 :- pred make_unsupported_part_lines(int::in, part::in, list(tree)::out,
-    io::di, io::uo) is det.
+    bool::out, io::di, io::uo) is det.
 
-make_unsupported_part_lines(Cols, Part, Lines, !IO) :-
+make_unsupported_part_lines(Cols, Part, Lines, PreBlank, !IO) :-
     Part = part(MessageId, PartId, Type, _Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength),
     % XXX we should use mailcap, though we don't want to show everything
@@ -693,10 +720,12 @@ make_unsupported_part_lines(Cols, Part, Lines, !IO) :-
         ;
             MaybeText = error(Error),
             make_text_lines(Cols, "(" ++ Error ++ ")", Lines)
-        )
+        ),
+        PreBlank = no
     ;
         HeadLine = attachment(Part, []),
-        Lines = [leaf(blank_line), leaf(HeadLine)]
+        Lines = [leaf(HeadLine)],
+        PreBlank = yes
     ).
 
 %-----------------------------------------------------------------------------%
@@ -716,7 +745,7 @@ setup_pager_for_staging(Cols, Text, RetainPagerPos, Info) :-
     ],
     counter.init(0, Counter0),
     allocate_node_id(NodeId, Counter0, Counter),
-    Tree = node(NodeId, Lines),
+    Tree = node(NodeId, Lines, no),
     Scrollable0 = scrollable.init(flatten(Tree)),
     Info0 = pager_info(Tree, Counter, Scrollable0),
     (
@@ -1231,7 +1260,9 @@ cycle_alternatives(Cols, MessageUpdate, Info0, Info, !IO) :-
                 Counter0, Counter, !IO),
             HeadLine = attachment(Part, HiddenParts),
             NewSubTrees = [leaf(HeadLine), PartTree],
-            replace_node(NodeId, NewSubTrees, Tree0, Tree),
+            PreBlank = yes,
+            NewNode = node(NodeId, NewSubTrees, PreBlank),
+            replace_node(NodeId, NewNode, Tree0, Tree),
             scrollable.reinit(flatten(Tree), Scrollable0, Scrollable),
             Info = pager_info(Tree, Counter, Scrollable),
             Type = Part ^ pt_type,
