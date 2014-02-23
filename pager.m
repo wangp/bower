@@ -138,9 +138,9 @@
     --->    start_message_header(message, string, string)
     ;       header(string, string)
     ;       text(quote_level, string, quote_marker_end, text_type)
-    ;       attachment(
-                att_part            :: part,
-                att_alternatives    :: list(part)
+    ;       part_head(
+                part            :: part,
+                alternatives    :: list(part)
                 % Hidden alternatives for multipart/alternative.
             )
     ;       message_separator.
@@ -295,7 +295,7 @@ make_message_tree(Mode, Cols, Message, Tree, !Counter, !IO) :-
 
         Body = Message ^ m_body,
         list.map_foldl3(make_part_tree(Cols), Body, BodyTrees,
-            yes, _IsFirst, !Counter, !IO),
+            yes, _ElideInitialHeadLine, !Counter, !IO),
         BodyNode = node(NodeId, BodyTrees, no),
         add_tree(BodyNode, !Cord),
         add_leaf(message_separator, !Cord),
@@ -325,7 +325,15 @@ add_header(Header, Value, !Cord) :-
 :- pred make_part_tree(int::in, part::in, tree::out, bool::in, bool::out,
     counter::in, counter::out, io::di, io::uo) is det.
 
-make_part_tree(Cols, Part, Tree, !IsFirst, !Counter, !IO) :-
+make_part_tree(Cols, Part, Tree, !ElideInitialHeadLine, !Counter, !IO) :-
+    make_part_tree_with_alts(Cols, [], Part, Tree, !ElideInitialHeadLine,
+        !Counter, !IO).
+
+:- pred make_part_tree_with_alts(int::in, list(part)::in, part::in, tree::out,
+    bool::in, bool::out, counter::in, counter::out, io::di, io::uo) is det.
+
+make_part_tree_with_alts(Cols, AltParts, Part, Tree,
+        !ElideInitialHeadLine, !Counter, !IO) :-
     Part = part(_MessageId, _PartId, Type, Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength),
     allocate_node_id(PartNodeId, !Counter),
@@ -333,48 +341,53 @@ make_part_tree(Cols, Part, Tree, !IsFirst, !Counter, !IO) :-
         Content = text(Text),
         make_text_lines(Cols, Text, Lines),
         (
-            !.IsFirst = yes,
-            strcase_equal(Type, "text/plain")
+            !.ElideInitialHeadLine = yes,
+            AltParts = []
         ->
-            SubTrees = Lines,
-            PreBlank = no
+            SubTree = Lines
         ;
-            HeadLine = attachment(Part, []),
-            SubTrees = [leaf(HeadLine) | Lines],
-            PreBlank = yes
+            HeadLine = part_head(Part, AltParts),
+            SubTree = [leaf(HeadLine) | Lines]
         ),
-        !:IsFirst = no
+        Tree = node(PartNodeId, SubTree, yes),
+        !:ElideInitialHeadLine = no
     ;
         Content = subparts(SubParts),
         (
             strcase_equal(Type, "multipart/alternative"),
             select_alternative(SubParts, [FirstSubPart | RestSubParts])
         ->
-            make_part_tree(Cols, FirstSubPart, SubTree,
-                yes, _SubIsFirst, !Counter, !IO),
-            HeadLine = attachment(FirstSubPart, RestSubParts),
-            SubTrees = [leaf(HeadLine), SubTree],
-            PreBlank = yes,
-            !:IsFirst = no
+            make_part_tree_with_alts(Cols, RestSubParts, FirstSubPart, Tree,
+                no, _ElideInitialHeadLine, !Counter, !IO)
         ;
-            list.map_foldl3(make_part_tree(Cols), SubParts, SubTrees,
-                !IsFirst, !Counter, !IO),
-            PreBlank = no
+            AltParts = [],
+            hide_multipart_head_line(Type)
+        ->
+            list.map_foldl3(make_part_tree(Cols), SubParts, SubPartsTrees,
+                !ElideInitialHeadLine, !Counter, !IO),
+            Tree = node(PartNodeId, SubPartsTrees, no)
+        ;
+            list.map_foldl3(make_part_tree(Cols), SubParts, SubPartsTrees,
+                yes, _ElideInitialHeadLine, !Counter, !IO),
+            HeadLine = part_head(Part, AltParts),
+            SubTrees = [leaf(HeadLine) | SubPartsTrees],
+            Tree = node(PartNodeId, SubTrees, yes),
+            !:ElideInitialHeadLine = no
         )
     ;
         Content = encapsulated_messages(EncapMessages),
         list.map_foldl2(make_encapsulated_message_tree(Cols),
             EncapMessages, SubTrees0, !Counter, !IO),
-        HeadLine = attachment(Part, []),
+        HeadLine = part_head(Part, AltParts),
         SubTrees = [leaf(HeadLine) | SubTrees0],
-        PreBlank = yes,
-        !:IsFirst = no
+        Tree = node(PartNodeId, SubTrees, yes),
+        !:ElideInitialHeadLine = no
     ;
         Content = unsupported,
-        make_unsupported_part_lines(Cols, Part, SubTrees, PreBlank, !IO),
-        !:IsFirst = no
-    ),
-    Tree = node(PartNodeId, SubTrees, PreBlank).
+        make_unsupported_part_tree(Cols, PartNodeId, Part, AltParts, Tree,
+            !IO),
+        !:ElideInitialHeadLine = no
+    ).
 
 :- pred select_alternative(list(part)::in, list(part)::out) is semidet.
 
@@ -388,6 +401,17 @@ select_alternative([X | Xs], Parts) :-
         Parts = Xs ++ [X]
     ;
         Parts = [X | Xs]
+    ).
+
+:- pred hide_multipart_head_line(string::in) is semidet.
+
+hide_multipart_head_line(PartType) :-
+    (
+        strcase_equal(PartType, "multipart/mixed")
+    ;
+        strcase_equal(PartType, "multipart/related")
+    ;
+        strcase_equal(PartType, "multipart/signed")
     ).
 
 %-----------------------------------------------------------------------------%
@@ -686,8 +710,8 @@ make_encapsulated_message_tree(Cols, EncapMessage, Tree, !Counter, !IO) :-
         add_leaf(blank_line, !Lines),
         HeaderLines = list(!.Lines)
     ),
-    list.map_foldl3(make_part_tree(Cols), Body, PartTrees, yes, _IsFirst,
-        !Counter, !IO),
+    list.map_foldl3(make_part_tree(Cols), Body, PartTrees,
+        yes, _ElideInitialHeadLine, !Counter, !IO),
     SubTrees = HeaderLines ++ PartTrees,
     PreBlank = no,
     Tree = node(NodeId, SubTrees, PreBlank).
@@ -705,10 +729,10 @@ add_encapsulated_header(Header, Value, !Lines) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred make_unsupported_part_lines(int::in, part::in, list(tree)::out,
-    bool::out, io::di, io::uo) is det.
+:- pred make_unsupported_part_tree(int::in, node_id::in, part::in,
+    list(part)::in, tree::out, io::di, io::uo) is det.
 
-make_unsupported_part_lines(Cols, Part, Lines, PreBlank, !IO) :-
+make_unsupported_part_tree(Cols, PartNodeId, Part, AltParts, Tree, !IO) :-
     Part = part(MessageId, PartId, Type, _Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength),
     % XXX we should use mailcap, though we don't want to show everything
@@ -716,17 +740,17 @@ make_unsupported_part_lines(Cols, Part, Lines, PreBlank, !IO) :-
         expand_html(MessageId, PartId, MaybeText, !IO),
         (
             MaybeText = ok(Text),
-            make_text_lines(Cols, Text, Lines)
+            make_text_lines(Cols, Text, TextLines)
         ;
             MaybeText = error(Error),
-            make_text_lines(Cols, "(" ++ Error ++ ")", Lines)
-        ),
-        PreBlank = no
+            make_text_lines(Cols, "(" ++ Error ++ ")", TextLines)
+        )
     ;
-        HeadLine = attachment(Part, []),
-        Lines = [leaf(HeadLine)],
-        PreBlank = yes
-    ).
+        TextLines = []
+    ),
+    HeadLine = part_head(Part, AltParts),
+    Lines = [leaf(HeadLine) | TextLines],
+    Tree = node(PartNodeId, Lines, yes).
 
 %-----------------------------------------------------------------------------%
 
@@ -1154,7 +1178,7 @@ line_matches_search(Search, _Id - Line) :-
         set.member(tag(TagName), Tags),
         strcase_str(TagName, Search)
     ;
-        Line = attachment(Part, _),
+        Line = part_head(Part, _),
         (
             Part ^ pt_type = Type,
             strcase_str(Type, Search)
@@ -1211,7 +1235,7 @@ do_highlight(Highlightable, NumRows, !Info) :-
 :- pred is_highlightable_part_or_url(id_pager_line::in) is semidet.
 
 is_highlightable_part_or_url(_Id - Line) :-
-    ( Line = attachment(_, _)
+    ( Line = part_head(_, _)
     ; Line = text(_, _, _, url(_, _))
     ).
 
@@ -1219,7 +1243,7 @@ is_highlightable_part_or_url(_Id - Line) :-
 
 is_highlightable_part_or_message(_Id - Line) :-
     ( Line = start_message_header(_, _, _)
-    ; Line = attachment(_, _)
+    ; Line = part_head(_, _)
     ).
 
 get_highlighted_part(Info, Part, MaybeSubject) :-
@@ -1232,7 +1256,7 @@ get_highlighted_part(Info, Part, MaybeSubject) :-
         Part = part(MessageId, 0, "text/plain", unsupported, no, no, no),
         MaybeSubject = yes(Subject)
     ;
-        Line = attachment(Part, _),
+        Line = part_head(Part, _),
         MaybeSubject = no
     ).
 
@@ -1250,24 +1274,20 @@ cycle_alternatives(Cols, MessageUpdate, Info0, Info, !IO) :-
     Info0 = pager_info(Tree0, Counter0, Scrollable0),
     (
         get_cursor_line(Scrollable0, _Cursor, NodeId - Line),
-        Line = attachment(Part0, HiddenParts0)
+        Line = part_head(Part0, HiddenParts0)
     ->
         (
             HiddenParts0 = [Part | HiddenParts1],
-            HiddenParts = HiddenParts1 ++ [Part0]
-        ->
-            make_part_tree(Cols, Part, PartTree, yes, _IsFirst,
-                Counter0, Counter, !IO),
-            HeadLine = attachment(Part, HiddenParts),
-            NewSubTrees = [leaf(HeadLine), PartTree],
-            PreBlank = yes,
-            NewNode = node(NodeId, NewSubTrees, PreBlank),
+            HiddenParts = HiddenParts1 ++ [Part0],
+            make_part_tree_with_alts(Cols, HiddenParts, Part, NewNode,
+                no, _ElideInitialHeadLine, Counter0, Counter, !IO),
             replace_node(NodeId, NewNode, Tree0, Tree),
             scrollable.reinit(flatten(Tree), Scrollable0, Scrollable),
             Info = pager_info(Tree, Counter, Scrollable),
             Type = Part ^ pt_type,
             MessageUpdate = set_info("Showing " ++ Type ++ " alternative.")
         ;
+            HiddenParts0 = [],
             Info = Info0,
             MessageUpdate = set_warning("Part has no alternatives.")
         )
@@ -1349,7 +1369,7 @@ draw_pager_line(Panel, _Id - Line, _LineNr, IsCursor, !IO) :-
             my_addstr(Panel, string.between(Text, UrlEnd, End), !IO)
         )
     ;
-        Line = attachment(Part, HiddenParts),
+        Line = part_head(Part, HiddenParts),
         Part = part(_MessageId, _Part, ContentType, _Content, MaybeFilename,
             MaybeEncoding, MaybeLength),
         (
