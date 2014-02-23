@@ -27,7 +27,8 @@
 :- pred get_maybe_post_sendmail_command(maybe(string)::out, io::di, io::uo)
     is det.
 
-:- pred get_html_dump_command(string::out, io::di, io::uo) is det.
+:- pred get_maybe_html_dump_command(maybe(string)::out, io::di, io::uo)
+    is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -134,12 +135,16 @@ get_maybe_post_sendmail_command(MaybeCommand, !IO) :-
         MaybeCommand = no
     ).
 
-get_html_dump_command(Command, !IO) :-
+get_maybe_html_dump_command(MaybeCommand, !IO) :-
     get_prog_config(Config, !IO),
     ( search_config(Config, "command", "html_dump", Value) ->
-        Command = Value
+        ( Value = "" ->
+            MaybeCommand = no
+        ;
+            MaybeCommand = yes(Value)
+        )
     ;
-        Command = default_html_dump_command
+        MaybeCommand = yes(default_html_dump_command)
     ).
 
 %-----------------------------------------------------------------------------%

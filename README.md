@@ -198,7 +198,7 @@ This view pages through an entire thread.  The keys are:
     V               highlight next visible attachment or top of message
     s               save highlighted message/part
     o               open highlighted message/part/URL with external program
-    z               cycle alternative parts
+    z               cycle alternative parts / toggle inline display
 
     i, q            return to index
     I               return to index, removing 'unread' tag on all messages

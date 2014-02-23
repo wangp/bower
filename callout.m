@@ -207,6 +207,9 @@ parse_part(MessageId, JSON, Part) :-
             % Leaf part.
             ( JSON/"content" = unesc_string(ContentString) ->
                 Content = text(ContentString)
+            ; strcase_equal(ContentType, "text/html") ->
+                % As a special case, display text/html parts inline by default.
+                Content = unsupported_inline
             ;
                 % "content" is unavailable for non-text parts.
                 % We can those by running notmuch show --part=N id:NNN

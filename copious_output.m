@@ -9,8 +9,8 @@
 
 :- import_module data.
 
-:- pred expand_html(message_id::in, int::in, maybe_error(string)::out,
-    io::di, io::uo) is det.
+:- pred expand_part(message_id::in, int::in, maybe(string)::in,
+    maybe_error(string)::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -26,17 +26,18 @@
 
 %-----------------------------------------------------------------------------%
 
-expand_html(MessageId, PartId, Res, !IO) :-
+expand_part(MessageId, PartId, MaybeFilterCommand, Res, !IO) :-
     get_notmuch_prefix(Notmuch, !IO),
     args_to_quoted_command([
         "show", "--format=raw", "--part=" ++ from_int(PartId),
         message_id_to_search_term(MessageId)
     ], ShowCommand),
-    get_html_dump_command(DumpCommand, !IO),
-    ( DumpCommand = "" ->
-        Command = Notmuch ++ ShowCommand
+    (
+        MaybeFilterCommand = yes(Filter),
+        Command = Notmuch ++ ShowCommand ++ " | " ++ Filter
     ;
-        Command = Notmuch ++ ShowCommand ++ " | " ++ DumpCommand
+        MaybeFilterCommand = no,
+        Command = Notmuch ++ ShowCommand
     ),
     call_system_capture_stdout(Command, CallRes, !IO),
     (

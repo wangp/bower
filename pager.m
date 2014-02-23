@@ -108,6 +108,7 @@
 :- import_module version_array.
 
 :- import_module copious_output.
+:- import_module prog_config.
 :- import_module string_util.
 :- import_module uri.
 
@@ -383,7 +384,9 @@ make_part_tree_with_alts(Cols, AltParts, Part, Tree,
         Tree = node(PartNodeId, SubTrees, yes),
         !:ElideInitialHeadLine = no
     ;
-        Content = unsupported,
+        ( Content = unsupported
+        ; Content = unsupported_inline
+        ),
         make_unsupported_part_tree(Cols, PartNodeId, Part, AltParts, Tree,
             !IO),
         !:ElideInitialHeadLine = no
@@ -733,20 +736,25 @@ add_encapsulated_header(Header, Value, !Lines) :-
     list(part)::in, tree::out, io::di, io::uo) is det.
 
 make_unsupported_part_tree(Cols, PartNodeId, Part, AltParts, Tree, !IO) :-
-    Part = part(MessageId, PartId, Type, _Content, _MaybeFilename,
+    Part = part(MessageId, PartId, Type, Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength),
     % XXX we should use mailcap, though we don't want to show everything
-    ( strcase_equal(Type, "text/html") ->
-        expand_html(MessageId, PartId, MaybeText, !IO),
-        (
-            MaybeText = ok(Text),
-            make_text_lines(Cols, Text, TextLines)
+    ( Content = unsupported_inline ->
+        ( strcase_equal(Type, "text/html") ->
+            get_maybe_html_dump_command(MaybeFilterCommand, !IO)
         ;
-            MaybeText = error(Error),
-            make_text_lines(Cols, "(" ++ Error ++ ")", TextLines)
-        )
+            MaybeFilterCommand = no
+        ),
+        expand_part(MessageId, PartId, MaybeFilterCommand, MaybeText, !IO)
     ;
-        TextLines = []
+        MaybeText = ok("")
+    ),
+    (
+        MaybeText = ok(Text),
+        make_text_lines(Cols, Text, TextLines)
+    ;
+        MaybeText = error(Error),
+        make_text_lines(Cols, "(" ++ Error ++ ")", TextLines)
     ),
     HeadLine = part_head(Part, AltParts),
     Lines = [leaf(HeadLine) | TextLines],
@@ -1276,18 +1284,14 @@ cycle_alternatives(Cols, MessageUpdate, Info0, Info, !IO) :-
         get_cursor_line(Scrollable0, _Cursor, NodeId - Line),
         Line = part_head(Part0, HiddenParts0)
     ->
-        (
-            HiddenParts0 = [Part | HiddenParts1],
-            HiddenParts = HiddenParts1 ++ [Part0],
-            make_part_tree_with_alts(Cols, HiddenParts, Part, NewNode,
-                no, _ElideInitialHeadLine, Counter0, Counter, !IO),
+        ( cycle(Part0, HiddenParts0, Part, HiddenParts, MessageUpdatePrime) ->
+            make_part_tree_with_alts(Cols, HiddenParts, Part, NewNode, no,
+                _ElideInitialHeadLine, Counter0, Counter, !IO),
             replace_node(NodeId, NewNode, Tree0, Tree),
             scrollable.reinit(flatten(Tree), Scrollable0, Scrollable),
             Info = pager_info(Tree, Counter, Scrollable),
-            Type = Part ^ pt_type,
-            MessageUpdate = set_info("Showing " ++ Type ++ " alternative.")
+            MessageUpdate = MessageUpdatePrime
         ;
-            HiddenParts0 = [],
             Info = Info0,
             MessageUpdate = set_warning("Part has no alternatives.")
         )
@@ -1295,6 +1299,29 @@ cycle_alternatives(Cols, MessageUpdate, Info0, Info, !IO) :-
         Info = Info0,
         MessageUpdate = clear_message
     ).
+
+:- pred cycle(part::in, list(part)::in, part::out, list(part)::out,
+    message_update::out) is semidet.
+
+cycle(Part0, HiddenParts0, Part, HiddenParts, MessageUpdate) :-
+    HiddenParts0 = [Part | HiddenParts1],
+    HiddenParts = HiddenParts1 ++ [Part0],
+    Type = Part ^ pt_type,
+    MessageUpdate = set_info("Showing " ++ Type ++ " alternative.").
+
+cycle(Part0, HiddenParts0, Part, HiddenParts, MessageUpdate) :-
+    HiddenParts0 = [],
+    HiddenParts = [],
+    Content0 = Part0 ^ pt_content,
+    toggle_inline(Content0, Content, Message),
+    Part = Part0 ^ pt_content := Content,
+    MessageUpdate = set_info(Message).
+
+:- pred toggle_inline(part_content::in, part_content::out, string::out)
+    is semidet.
+
+toggle_inline(unsupported, unsupported_inline, "Showing part.").
+toggle_inline(unsupported_inline, unsupported, "Part hidden.").
 
 %-----------------------------------------------------------------------------%
 
@@ -1397,7 +1424,7 @@ draw_pager_line(Panel, _Id - Line, _LineNr, IsCursor, !IO) :-
             MaybeLength = no
         ),
         my_addstr(Panel, " --]", !IO),
-        ( alternative_parts_message(HiddenParts, AltMessage) ->
+        ( toggle_part_message(Part, HiddenParts, AltMessage) ->
             panel.attr_set(Panel, fg_bg(magenta, default), !IO),
             my_addstr(Panel, AltMessage, !IO)
         ;
@@ -1450,10 +1477,26 @@ format_length(Size) = String :-
         String = format(" (%.1f MB)", [f(Ms)])
     ).
 
-:- pred alternative_parts_message(list(part)::in, string::out) is semidet.
+:- pred toggle_part_message(part::in, list(part)::in, string::out) is semidet.
 
-alternative_parts_message([_],        "  z for alternative").
-alternative_parts_message([_, _ | _], "  z for alternatives").
+toggle_part_message(Part, HiddenParts, Message) :-
+    (
+        HiddenParts = [],
+        Content = Part ^ pt_content,
+        (
+            Content = unsupported,
+            Message = "  z to show"
+        ;
+            Content = unsupported_inline,
+            Message = "  z to hide"
+        )
+    ;
+        HiddenParts = [_],
+        Message = "  z for alternative"
+    ;
+        HiddenParts = [_, _ | _],
+        Message = "  z for alternatives"
+    ).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

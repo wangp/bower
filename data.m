@@ -72,7 +72,8 @@
     --->    text(string)
     ;       subparts(list(part))
     ;       encapsulated_messages(list(encapsulated_message))
-    ;       unsupported.
+    ;       unsupported
+    ;       unsupported_inline.
 
 :- type encapsulated_message
     --->    encapsulated_message(
