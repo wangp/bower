@@ -751,6 +751,8 @@ find_first_char(S, FindChar, I0, I) :-
 non_whitespace(C) :-
     not char.is_whitespace(C).
 
+    % Note: Mercury 14.01 list.m also defines this.
+    %
 :- pred det_take(int::in, list(char)::in, list(char)::out) is det.
 
 det_take(N, List, Start) :-
@@ -809,7 +811,7 @@ calc_draw(TotalCols, Before, BeforeDraw, After, AfterDraw, !LeftOffset) :-
     ),
     % Check if code points from Before after LeftOffset will fit in the
     % available screen columns.
-    det_take(NumBefore - !.LeftOffset, Before, BeforeDraw0),
+    text_entry.det_take(NumBefore - !.LeftOffset, Before, BeforeDraw0),
     BeforeCols0 = list_wcwidth(BeforeDraw0),
     ( BeforeCols0 =< TotalCols - ReservedAfterCols ->
         % BeforeDraw0 fits.
