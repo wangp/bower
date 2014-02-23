@@ -28,6 +28,8 @@
 
 :- func init_with_cursor(list(T)) = scrollable(T).
 
+:- pred reinit(list(T)::in, scrollable(T)::in, scrollable(T)::out) is det.
+
 :- func get_lines(scrollable(T)) = version_array(T).
 
 :- func get_lines_list(scrollable(T)) = list(T).
@@ -89,9 +91,6 @@
 
 :- pred delete_cursor_line(scrollable(T)::in, scrollable(T)::out) is semidet.
 
-:- pred replace_lines(int::in, int::in, list(T)::in,
-    scrollable(T)::in, scrollable(T)::out) is semidet.
-
 :- pred draw(list(panel)::in, scrollable(T)::in, io::di, io::uo) is det
     <= scrollable.line(T).
 
@@ -129,6 +128,12 @@ init_with_cursor(Lines) = Scrollable :-
         Lines = [_ | _],
         MaybeCursor = yes(0)
     ),
+    Scrollable = scrollable(LinesArray, Top, MaybeCursor).
+
+reinit(Lines, Scrollable0, Scrollable) :-
+    % For now keeping the same Top and MaybeCursor values is good enough.
+    Scrollable0 = scrollable(_LinesArray0, Top, MaybeCursor),
+    LinesArray = version_array.from_list(Lines),
     Scrollable = scrollable(LinesArray, Top, MaybeCursor).
 
 get_lines(Scrollable) = Scrollable ^ s_lines.
@@ -340,15 +345,6 @@ delete_cursor_line(Scrollable0, Scrollable) :-
         Top = Top0
     ),
     Array = version_array.from_list(Start ++ End),
-    Scrollable = scrollable(Array, Top, MaybeCursor).
-
-replace_lines(Start, Count, ReplacementLines, Scrollable0, Scrollable) :-
-    % For now keeping the same Top and MaybeCursor values is good enough.
-    Scrollable0 = scrollable(Array0, Top, MaybeCursor),
-    List0 = version_array.to_list(Array0),
-    list.split_list(Start, List0, StartList, AfterStartList),
-    list.split_list(Count, AfterStartList, _, EndList),
-    Array = version_array.from_list(StartList ++ ReplacementLines ++ EndList),
     Scrollable = scrollable(Array, Top, MaybeCursor).
 
 %-----------------------------------------------------------------------------%

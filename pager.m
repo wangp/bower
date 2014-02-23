@@ -100,6 +100,7 @@
 :- import_module bool.
 :- import_module char.
 :- import_module cord.
+:- import_module counter.
 :- import_module float.
 :- import_module int.
 :- import_module set.
@@ -114,8 +115,23 @@
 
 :- type pager_info
     --->    pager_info(
-                p_scrollable :: scrollable(pager_line)
+                p_tree          :: tree,
+                p_id_counter    :: counter,
+                p_scrollable    :: scrollable(id_pager_line)
             ).
+
+:- type node_id
+    --->    node_id(int).
+
+:- type tree
+    --->    leaf(pager_line)
+    ;       node(
+                node_id     :: node_id,
+                subtrees    :: list(tree)
+            ).
+
+:- type id_pager_line
+    --->    node_id - pager_line.
 
 :- type pager_line
     --->    start_message_header(message, string, string)
@@ -123,7 +139,6 @@
     ;       text(quote_level, string, quote_marker_end, text_type)
     ;       attachment(
                 att_part            :: part,
-                att_lines           :: int,
                 att_alternatives    :: list(part)
                 % Hidden alternatives for multipart/alternative.
             )
@@ -159,82 +174,152 @@
     ;       prev_message
     ;       skip_quoted_text.
 
-:- instance scrollable.line(pager_line) where [
+:- instance scrollable.line(id_pager_line) where [
     pred(draw_line/6) is draw_pager_line
 ].
 
 %-----------------------------------------------------------------------------%
 
-setup_pager(Mode, Cols, Messages, Info, !IO) :-
-    list.foldl2(append_message(Mode, Cols), Messages,
-        cord.init, LinesCord, !IO),
-    Lines = list(LinesCord),
-    Scrollable = scrollable.init(Lines),
-    Info = pager_info(Scrollable).
+:- pred allocate_node_id(node_id::out, counter::in, counter::out) is det.
 
-:- pred append_message(setup_mode::in, int::in, message::in,
-    cord(pager_line)::in, cord(pager_line)::out, io::di, io::uo) is det.
+allocate_node_id(node_id(N), !Counter) :-
+    counter.allocate(N, !Counter).
 
-append_message(Mode, Cols, Message, !Lines, !IO) :-
-    Headers = Message ^ m_headers,
-    StartMessage = start_message_header(Message, "Date", Headers ^ h_date),
-    snoc(StartMessage, !Lines),
-    append_header("From", Headers ^ h_from, !Lines),
-    append_header("Subject", Headers ^ h_subject, !Lines),
-    append_header("To", Headers ^ h_to, !Lines),
-    Cc = Headers ^ h_cc,
-    ( Cc = "" ->
-        true
-    ;
-        append_header("Cc", Cc, !Lines)
-    ),
-    ReplyTo = Headers ^ h_replyto,
-    ( ReplyTo = "" ->
-        true
-    ;
-        append_header("Reply-To", ReplyTo, !Lines)
-    ),
-    snoc(blank_line, !Lines),
-    Body = Message ^ m_body,
-    list.foldl3(append_part(Cols), Body, !Lines, yes, _IsFirst, !IO),
-    snoc(message_separator, !Lines),
-    snoc(message_separator, !Lines),
-    snoc(message_separator, !Lines),
+%-----------------------------------------------------------------------------%
+
+:- pred add_leaf(pager_line::in, cord(tree)::in, cord(tree)::out) is det.
+
+add_leaf(Line, Cord0, Cord) :-
+    Cord = snoc(Cord0, leaf(Line)).
+
+:- pred add_tree(tree::in, cord(tree)::in, cord(tree)::out) is det.
+
+add_tree(Tree, Cord, snoc(Cord, Tree)).
+
+:- func flatten(tree) = list(id_pager_line).
+
+flatten(Tree) = list(Cord) :-
+    flatten(node_id(-1), Tree, Cord).
+
+:- pred flatten(node_id::in, tree::in, cord(id_pager_line)::out) is det.
+
+flatten(ParentId, Tree, Cord) :-
     (
-        Mode = include_replies,
-        Replies = Message ^ m_replies,
-        list.foldl2(append_message(Mode, Cols), Replies, !Lines, !IO)
+        Tree = leaf(Line),
+        % This is slightly wasteful as the user cannot do anything on most
+        % lines that would require the id.
+        Cord = cord.singleton(ParentId - Line)
     ;
-        Mode = toplevel_only
+        Tree = node(NodeId, SubTrees),
+        list.map(flatten(NodeId), SubTrees, SubCords),
+        Cord = cord_list_to_cord(SubCords)
     ).
 
-:- pred append_header(string::in, string::in,
-    cord(pager_line)::in, cord(pager_line)::out) is det.
+:- pred replace_node(node_id::in, list(tree)::in, tree::in, tree::out) is det.
 
-append_header(Header, Value, !Lines) :-
-    Line = header(Header, Value),
-    snoc(Line, !Lines).
+replace_node(FindId, NewSubTrees, Tree0, Tree) :-
+    (
+        Tree0 = leaf(_),
+        Tree = Tree0
+    ;
+        Tree0 = node(NodeId, SubTrees0),
+        ( NodeId = FindId ->
+            SubTrees = NewSubTrees
+        ;
+            list.map(replace_node(FindId, NewSubTrees), SubTrees0, SubTrees)
+        ),
+        Tree = node(NodeId, SubTrees)
+    ).
 
-:- pred append_part(int::in, part::in,
-    cord(pager_line)::in, cord(pager_line)::out, bool::in, bool::out,
-    io::di, io::uo) is det.
+%-----------------------------------------------------------------------------%
 
-append_part(Cols, Part, !Lines, !IsFirst, !IO) :-
+setup_pager(Mode, Cols, Messages, Info, !IO) :-
+    counter.init(0, Counter0),
+    allocate_node_id(NodeId, Counter0, Counter1),
+    list.map_foldl2(make_message_tree(Mode, Cols), Messages, Trees,
+        Counter1, Counter, !IO),
+    Tree = node(NodeId, Trees),
+    Scrollable = scrollable.init(flatten(Tree)),
+    Info = pager_info(Tree, Counter, Scrollable).
+
+:- pred make_message_tree(setup_mode::in, int::in, message::in, tree::out,
+    counter::in, counter::out, io::di, io::uo) is det.
+
+make_message_tree(Mode, Cols, Message, Tree, !Counter, !IO) :-
+    Headers = Message ^ m_headers,
+    counter.allocate(NodeIdInt, !Counter),
+    NodeId = node_id(NodeIdInt),
+
+    some [!Cord] (
+        !:Cord = cord.init,
+
+        StartMessage = start_message_header(Message, "Date", Headers ^ h_date),
+        add_leaf(StartMessage, !Cord),
+        add_header("From", Headers ^ h_from, !Cord),
+        add_header("Subject", Headers ^ h_subject, !Cord),
+        add_header("To", Headers ^ h_to, !Cord),
+        Cc = Headers ^ h_cc,
+        ( Cc = "" ->
+            true
+        ;
+            add_header("Cc", Cc, !Cord)
+        ),
+        ReplyTo = Headers ^ h_replyto,
+        ( ReplyTo = "" ->
+            true
+        ;
+            add_header("Reply-To", ReplyTo, !Cord)
+        ),
+        add_leaf(blank_line, !Cord),
+
+        Body = Message ^ m_body,
+        list.map_foldl3(make_part_tree(Cols), Body, BodyTrees,
+            yes, _IsFirst, !Counter, !IO),
+        BodyNode = node(NodeId, BodyTrees),
+        add_tree(BodyNode, !Cord),
+        add_leaf(message_separator, !Cord),
+        add_leaf(message_separator, !Cord),
+        add_leaf(message_separator, !Cord),
+
+        (
+            Mode = include_replies,
+            Replies = Message ^ m_replies,
+            list.map_foldl2(make_message_tree(Mode, Cols), Replies, ReplyTrees,
+                !Counter, !IO),
+            !:Cord = !.Cord ++ from_list(ReplyTrees)
+        ;
+            Mode = toplevel_only
+        ),
+
+        SubTrees = list(!.Cord)
+    ),
+    Tree = node(NodeId, SubTrees).
+
+:- pred add_header(string::in, string::in, cord(tree)::in, cord(tree)::out)
+    is det.
+
+add_header(Header, Value, !Cord) :-
+    add_leaf(header(Header, Value), !Cord).
+
+:- pred make_part_tree(int::in, part::in, tree::out, bool::in, bool::out,
+    counter::in, counter::out, io::di, io::uo) is det.
+
+make_part_tree(Cols, Part, Tree, !IsFirst, !Counter, !IO) :-
     Part = part(_MessageId, _PartId, Type, Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength),
+    allocate_node_id(PartNodeId, !Counter),
     (
         Content = text(Text),
-        append_text(Cols, Text, cord.init, TextLines),
+        make_text_lines(Cols, Text, Lines),
         (
             !.IsFirst = yes,
             strcase_equal(Type, "text/plain")
         ->
-            true
+            SubTrees = Lines
         ;
-            HeadLine = attachment(Part, length(TextLines), []),
-            !:Lines = !.Lines ++ from_list([blank_line, HeadLine])
+            HeadLine = attachment(Part, []),
+            SubTrees = [leaf(blank_line), leaf(HeadLine) | Lines]
         ),
-        !:Lines = !.Lines ++ TextLines,
         !:IsFirst = no
     ;
         Content = subparts(SubParts),
@@ -242,27 +327,28 @@ append_part(Cols, Part, !Lines, !IsFirst, !IO) :-
             strcase_equal(Type, "multipart/alternative"),
             select_alternative(SubParts, [FirstSubPart | RestSubParts])
         ->
-            append_part(Cols, FirstSubPart, cord.init, SubLines,
-                yes, _SubIsFirst, !IO),
-            HeadLine = attachment(FirstSubPart, length(SubLines),
-                RestSubParts),
-            !:Lines = !.Lines ++ singleton(HeadLine) ++ SubLines,
+            make_part_tree(Cols, FirstSubPart, SubTree,
+                yes, _SubIsFirst, !Counter, !IO),
+            HeadLine = attachment(FirstSubPart, RestSubParts),
+            SubTrees = [leaf(HeadLine), SubTree],
             !:IsFirst = no
         ;
-            list.foldl3(append_part(Cols), SubParts, !Lines, !IsFirst, !IO)
+            list.map_foldl3(make_part_tree(Cols), SubParts, SubTrees,
+                !IsFirst, !Counter, !IO)
         )
     ;
         Content = encapsulated_messages(EncapMessages),
-        list.foldl2(append_encapsulated_message(Cols), EncapMessages,
-            cord.init, EncapLines, !IO),
-        HeadLine = attachment(Part, length(EncapLines), []),
-        !:Lines = !.Lines ++ singleton(HeadLine) ++ EncapLines,
+        list.map_foldl2(make_encapsulated_message_tree(Cols),
+            EncapMessages, SubTrees0, !Counter, !IO),
+        HeadLine = attachment(Part, []),
+        SubTrees = [leaf(HeadLine) | SubTrees0],
         !:IsFirst = no
     ;
         Content = unsupported,
-        append_unsupported_part(Cols, Part, !Lines, !IO),
+        make_unsupported_part_lines(Cols, Part, SubTrees, !IO),
         !:IsFirst = no
-    ).
+    ),
+    Tree = node(PartNodeId, SubTrees).
 
 :- pred select_alternative(list(part)::in, list(part)::out) is semidet.
 
@@ -290,10 +376,9 @@ select_alternative([X | Xs], Parts) :-
                 atc_diff_quote_levels   :: set(quote_level)
             ).
 
-:- pred append_text(int::in, string::in,
-    cord(pager_line)::in, cord(pager_line)::out) is det.
+:- pred make_text_lines(int::in, string::in, list(tree)::out) is det.
 
-append_text(Max, String, !Lines) :-
+make_text_lines(Max, String, Lines) :-
     Start = 0,
     LastBreak = 0,
     Cur = 0,
@@ -301,25 +386,26 @@ append_text(Max, String, !Lines) :-
     DiffLine = no,
     DiffQuoteLevels = set.init,
     Context0 = append_text_context(QuoteLevel, DiffLine, DiffQuoteLevels),
-    append_text_2(Max, String, Start, LastBreak, Cur, Context0, _Context,
-        !Lines).
+    append_text(Max, String, Start, LastBreak, Cur, Context0, _Context,
+        cord.init, LinesCord),
+    Lines = cord.list(LinesCord).
 
-:- pred append_text_2(int::in, string::in, int::in, int::in, int::in,
+:- pred append_text(int::in, string::in, int::in, int::in, int::in,
     append_text_context::in, append_text_context::out,
-    cord(pager_line)::in, cord(pager_line)::out) is det.
+    cord(tree)::in, cord(tree)::out) is det.
 
-append_text_2(Max, String, Start, LastBreak, Cur, !Context, !Lines) :-
+append_text(Max, String, Start, LastBreak, Cur, !Context, !Lines) :-
     ( string.unsafe_index_next(String, Cur, Next, Char) ->
         (
             Char = '\n'
         ->
             append_substring(String, Start, Cur, !Context, !Lines),
             reset_context(!Context),
-            append_text_2(Max, String, Next, Next, Next, !Context, !Lines)
+            append_text(Max, String, Next, Next, Next, !Context, !Lines)
         ;
             char.is_whitespace(Char)
         ->
-            append_text_2(Max, String, Start, Cur, Next, !Context, !Lines)
+            append_text(Max, String, Start, Cur, Next, !Context, !Lines)
         ;
             % Wrap long lines.
             % XXX this should actually count with wcwidth
@@ -327,11 +413,10 @@ append_text_2(Max, String, Start, LastBreak, Cur, !Context, !Lines) :-
         ->
             maybe_append_substring(String, Start, LastBreak, !Context, !Lines),
             skip_whitespace(String, LastBreak, NextStart),
-            append_text_2(Max, String, NextStart, NextStart, Next, !Context,
+            append_text(Max, String, NextStart, NextStart, Next, !Context,
                 !Lines)
         ;
-            append_text_2(Max, String, Start, LastBreak, Next, !Context,
-                !Lines)
+            append_text(Max, String, Start, LastBreak, Next, !Context, !Lines)
         )
     ;
         % End of string.
@@ -347,7 +432,7 @@ reset_context(!Context) :-
 
 :- pred maybe_append_substring(string::in, int::in, int::in,
     append_text_context::in, append_text_context::out,
-    cord(pager_line)::in, cord(pager_line)::out) is det.
+    cord(tree)::in, cord(tree)::out) is det.
 
 maybe_append_substring(String, Start, End, !Context, !Lines) :-
     ( End > Start ->
@@ -358,7 +443,7 @@ maybe_append_substring(String, Start, End, !Context, !Lines) :-
 
 :- pred append_substring(string::in, int::in, int::in,
     append_text_context::in, append_text_context::out,
-    cord(pager_line)::in, cord(pager_line)::out) is det.
+    cord(tree)::in, cord(tree)::out) is det.
 
 append_substring(String, Start, End, Context0, Context, !Lines) :-
     Context0 = append_text_context(MaybeQuoteLevel0, MaybeLineType0,
@@ -418,7 +503,7 @@ append_substring(String, Start, End, Context0, Context, !Lines) :-
         )
     ),
     Text = text(QuoteLevel, SubString, QuoteMarkerEnd, LineType),
-    snoc(Text, !Lines),
+    add_leaf(Text, !Lines),
     Context = append_text_context(yes(QuoteLevel), yes(LineType),
         DiffQuoteLevels).
 
@@ -557,37 +642,46 @@ detect_diff_end(String, Start) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred append_encapsulated_message(int::in, encapsulated_message::in,
-    cord(pager_line)::in, cord(pager_line)::out, io::di, io::uo) is det.
+:- pred make_encapsulated_message_tree(int::in, encapsulated_message::in,
+    tree::out, counter::in, counter::out, io::di, io::uo) is det.
 
-append_encapsulated_message(Cols, EncapMessage, !Lines, !IO) :-
+make_encapsulated_message_tree(Cols, EncapMessage, Tree, !Counter, !IO) :-
     EncapMessage = encapsulated_message(Headers, Body),
-    append_encapsulated_header("Date", Headers ^ h_date, !Lines),
-    append_encapsulated_header("From", Headers ^ h_from, !Lines),
-    append_encapsulated_header("Subject", Headers ^ h_subject, !Lines),
-    append_encapsulated_header("To", Headers ^ h_to, !Lines),
-    append_encapsulated_header("Cc", Headers ^ h_cc, !Lines),
-    append_encapsulated_header("Reply-To", Headers ^ h_replyto, !Lines),
-    snoc(blank_line, !Lines),
-    list.foldl3(append_part(Cols), Body, !Lines, yes, _IsFirst, !IO).
+    allocate_node_id(NodeId, !Counter),
+    % Could simplify.
+    some [!Lines] (
+        !:Lines = cord.init,
+        add_encapsulated_header("Date", Headers ^ h_date, !Lines),
+        add_encapsulated_header("From", Headers ^ h_from, !Lines),
+        add_encapsulated_header("Subject", Headers ^ h_subject, !Lines),
+        add_encapsulated_header("To", Headers ^ h_to, !Lines),
+        add_encapsulated_header("Cc", Headers ^ h_cc, !Lines),
+        add_encapsulated_header("Reply-To", Headers ^ h_replyto, !Lines),
+        add_leaf(blank_line, !Lines),
+        HeaderLines = list(!.Lines)
+    ),
+    list.map_foldl3(make_part_tree(Cols), Body, PartTrees, yes, _IsFirst,
+        !Counter, !IO),
+    SubTrees = HeaderLines ++ PartTrees,
+    Tree = node(NodeId, SubTrees).
 
-:- pred append_encapsulated_header(string::in, string::in,
-    cord(pager_line)::in, cord(pager_line)::out) is det.
+:- pred add_encapsulated_header(string::in, string::in,
+    cord(tree)::in, cord(tree)::out) is det.
 
-append_encapsulated_header(Header, Value, !Lines) :-
+add_encapsulated_header(Header, Value, !Lines) :-
     ( Value = "" ->
         true
     ;
         Line = text(0, Header ++ ": " ++ Value, 0, plain),
-        snoc(Line, !Lines)
+        add_leaf(Line, !Lines)
     ).
 
 %-----------------------------------------------------------------------------%
 
-:- pred append_unsupported_part(int::in, part::in,
-    cord(pager_line)::in, cord(pager_line)::out, io::di, io::uo) is det.
+:- pred make_unsupported_part_lines(int::in, part::in, list(tree)::out,
+    io::di, io::uo) is det.
 
-append_unsupported_part(Cols, Part, !Lines, !IO) :-
+make_unsupported_part_lines(Cols, Part, Lines, !IO) :-
     Part = part(MessageId, PartId, Type, _Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength),
     % XXX we should use mailcap, though we don't want to show everything
@@ -595,14 +689,14 @@ append_unsupported_part(Cols, Part, !Lines, !IO) :-
         expand_html(MessageId, PartId, MaybeText, !IO),
         (
             MaybeText = ok(Text),
-            append_text(Cols, Text, !Lines)
+            make_text_lines(Cols, Text, Lines)
         ;
             MaybeText = error(Error),
-            append_text(Cols, "(" ++ Error ++ ")", !Lines)
+            make_text_lines(Cols, "(" ++ Error ++ ")", Lines)
         )
     ;
-        HeadLine = attachment(Part, 0, []),
-        !:Lines = !.Lines ++ from_list([blank_line, HeadLine])
+        HeadLine = attachment(Part, []),
+        Lines = [leaf(blank_line), leaf(HeadLine)]
     ).
 
 %-----------------------------------------------------------------------------%
@@ -614,23 +708,24 @@ blank_line = text(0, "", 0, plain).
 %-----------------------------------------------------------------------------%
 
 setup_pager_for_staging(Cols, Text, RetainPagerPos, Info) :-
-    some [!Lines] (
-        !:Lines = cord.init,
-        append_text(Cols, Text, !Lines),
-        snoc(message_separator, !Lines),
-        snoc(message_separator, !Lines),
-        snoc(message_separator, !Lines),
-        Lines = list(!.Lines)
-    ),
-    Scrollable0 = scrollable.init(Lines),
-    Info0 = pager_info(Scrollable0),
+    make_text_lines(Cols, Text, Lines0),
+    Lines = Lines0 ++ [
+        leaf(message_separator),
+        leaf(message_separator),
+        leaf(message_separator)
+    ],
+    counter.init(0, Counter0),
+    allocate_node_id(NodeId, Counter0, Counter),
+    Tree = node(NodeId, Lines),
+    Scrollable0 = scrollable.init(flatten(Tree)),
+    Info0 = pager_info(Tree, Counter, Scrollable0),
     (
         RetainPagerPos = new_pager,
         Info = Info0
     ;
         RetainPagerPos = retain_pager_pos(OldPager, NumRows),
         % Make an attempt to retain the pager position.
-        OldPager = pager_info(OldScrollable),
+        OldScrollable = OldPager ^ p_scrollable,
         Top = get_top(OldScrollable),
         scroll(NumRows, Top, _, Info0, Info)
     ).
@@ -735,9 +830,9 @@ char_binding('S', skip_quoted_text).
 %-----------------------------------------------------------------------------%
 
 scroll(NumRows, Delta, MessageUpdate, !Info) :-
-    !.Info = pager_info(Scrollable0),
+    Scrollable0 = !.Info ^ p_scrollable,
     scroll(NumRows, Delta, HitLimit, Scrollable0, Scrollable),
-    !:Info = pager_info(Scrollable),
+    !Info ^ p_scrollable := Scrollable,
     (
         HitLimit = yes,
         ( Delta < 0 ->
@@ -754,13 +849,13 @@ scroll(NumRows, Delta, MessageUpdate, !Info) :-
     is det.
 
 scroll_home(MessageUpdate, !Info) :-
-    !.Info = pager_info(Scrollable0),
+    Scrollable0 = !.Info ^ p_scrollable,
     Top0 = scrollable.get_top(Scrollable0),
     ( Top0 = 0 ->
         MessageUpdate = top_limit_message
     ;
         scrollable.set_top(0, Scrollable0, Scrollable),
-        !:Info = pager_info(Scrollable),
+        !Info ^ p_scrollable := Scrollable,
         MessageUpdate = clear_message
     ).
 
@@ -768,7 +863,7 @@ scroll_home(MessageUpdate, !Info) :-
     pager_info::in, pager_info::out) is det.
 
 scroll_end(NumRows, MessageUpdate, !Info) :-
-    !.Info = pager_info(Scrollable0),
+    Scrollable0 = !.Info ^ p_scrollable,
     Top0 = scrollable.get_top(Scrollable0),
     NumLines = scrollable.get_num_lines(Scrollable0),
     Top = int.max(0, NumLines - NumRows),
@@ -776,7 +871,7 @@ scroll_end(NumRows, MessageUpdate, !Info) :-
         MessageUpdate = bottom_limit_message
     ;
         scrollable.set_top(Top, Scrollable0, Scrollable),
-        !:Info = pager_info(Scrollable),
+        !Info ^ p_scrollable := Scrollable,
         MessageUpdate = clear_message
     ).
 
@@ -791,7 +886,7 @@ bottom_limit_message = set_warning("Bottom of message is shown.").
 %-----------------------------------------------------------------------------%
 
 scroll_but_stop_at_message(NumRows, Delta, MessageUpdate, !Info) :-
-    !.Info = pager_info(Scrollable0),
+    Scrollable0 = !.Info ^ p_scrollable,
     Top0 = get_top(Scrollable0),
     (
         ( Delta > 0 ->
@@ -807,41 +902,41 @@ scroll_but_stop_at_message(NumRows, Delta, MessageUpdate, !Info) :-
         )
     ->
         set_top(MessageTop, Scrollable0, Scrollable),
-        !:Info = pager_info(Scrollable),
+        !Info ^ p_scrollable := Scrollable,
         MessageUpdate = clear_message
     ;
         scroll(NumRows, Delta, MessageUpdate, !Info)
     ).
 
 next_message(MessageUpdate, !Info) :-
-    !.Info = pager_info(Scrollable0),
+    Scrollable0 = !.Info ^ p_scrollable,
     Top0 = get_top(Scrollable0),
     ( search_forward(is_message_start, Scrollable0, Top0 + 1, Top, _) ->
         set_top(Top, Scrollable0, Scrollable),
-        !:Info = pager_info(Scrollable),
+        !Info ^ p_scrollable := Scrollable,
         MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("Already at last message.")
     ).
 
 prev_message(MessageUpdate, !Info) :-
-    !.Info = pager_info(Scrollable0),
+    Scrollable0 = !.Info ^ p_scrollable,
     Top0 = get_top(Scrollable0),
     ( search_reverse(is_message_start, Scrollable0, Top0 - 1, Top) ->
         set_top(Top, Scrollable0, Scrollable),
-        !:Info = pager_info(Scrollable),
+        !Info ^ p_scrollable := Scrollable,
         MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("Already at first message.")
     ).
 
 goto_first_message(!Info) :-
-    !.Info = pager_info(Scrollable0),
+    Scrollable0 = !.Info ^ p_scrollable,
     set_top(0, Scrollable0, Scrollable),
-    !:Info = pager_info(Scrollable).
+    !Info ^ p_scrollable := Scrollable.
 
 goto_end(NumRows, !Info) :-
-    !.Info = pager_info(Scrollable0),
+    Scrollable0 = !.Info ^ p_scrollable,
     Top0 = get_top(Scrollable0),
     NumLines = scrollable.get_num_lines(Scrollable0),
     ( search_reverse(is_message_start, Scrollable0, NumLines, TopMin) ->
@@ -851,17 +946,17 @@ goto_end(NumRows, !Info) :-
             Top = max(TopMin, NumLines - NumRows)
         ),
         set_top(Top, Scrollable0, Scrollable),
-        !:Info = pager_info(Scrollable)
+        !Info ^ p_scrollable := Scrollable
     ;
         true
     ).
 
-:- pred is_message_start(pager_line::in) is semidet.
+:- pred is_message_start(id_pager_line::in) is semidet.
 
-is_message_start(start_message_header(_, _, _)).
+is_message_start(_Id - start_message_header(_, _, _)).
 
 skip_quoted_text(MessageUpdate, !Info) :-
-    !.Info = pager_info(Scrollable0),
+    Scrollable0 = !.Info ^ p_scrollable,
     Top0 = get_top(Scrollable0),
     (
         search_forward(is_quoted_text_or_message_start, Scrollable0,
@@ -869,15 +964,15 @@ skip_quoted_text(MessageUpdate, !Info) :-
         search_forward(is_unquoted_text, Scrollable0, Top1, Top, _)
     ->
         set_top(Top, Scrollable0, Scrollable),
-        !:Info = pager_info(Scrollable),
+        !Info ^ p_scrollable := Scrollable,
         MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("No more quoted text.")
     ).
 
-:- pred is_quoted_text_or_message_start(pager_line::in) is semidet.
+:- pred is_quoted_text_or_message_start(id_pager_line::in) is semidet.
 
-is_quoted_text_or_message_start(Line) :-
+is_quoted_text_or_message_start(_Id - Line) :-
     (
         Line = text(Level, _, _, _),
         Level > 0
@@ -885,9 +980,9 @@ is_quoted_text_or_message_start(Line) :-
         Line = start_message_header(_, _, _)
     ).
 
-:- pred is_unquoted_text(pager_line::in) is semidet.
+:- pred is_unquoted_text(id_pager_line::in) is semidet.
 
-is_unquoted_text(Line) :-
+is_unquoted_text(_Id - Line) :-
     not (
         Line = text(Level, _, _, _),
         Level > 0
@@ -897,7 +992,7 @@ is_unquoted_text(Line) :-
 
 get_top_message(Info, Message) :-
     % XXX we could keep an array for binary search
-    Info = pager_info(Scrollable),
+    Scrollable = Info ^ p_scrollable,
     Top = get_top(Scrollable),
     Lines = get_lines(Scrollable),
     ( Top < version_array.size(Lines) ->
@@ -906,12 +1001,12 @@ get_top_message(Info, Message) :-
         fail
     ).
 
-:- pred get_top_message_2(version_array(pager_line)::in, int::in, int::out,
+:- pred get_top_message_2(version_array(id_pager_line)::in, int::in, int::out,
     message::out) is semidet.
 
 get_top_message_2(Lines, I, J, Message) :-
     ( I >= 0 ->
-        Line = version_array.lookup(Lines, I),
+        version_array.lookup(Lines, I) = _Id - Line,
         ( Line = start_message_header(Message0, _, _) ->
             J = I,
             Message = Message0
@@ -925,7 +1020,7 @@ get_top_message_2(Lines, I, J, Message) :-
 %-----------------------------------------------------------------------------%
 
 get_top_offset(Info, Offset) :-
-    Info = pager_info(Scrollable),
+    Scrollable = Info ^ p_scrollable,
     Top = get_top(Scrollable),
     Lines = get_lines(Scrollable),
     ( Top < version_array.size(Lines) ->
@@ -938,23 +1033,25 @@ get_top_offset(Info, Offset) :-
 %-----------------------------------------------------------------------------%
 
 skip_to_message(MessageId, !Info) :-
-    !.Info = pager_info(Scrollable0),
+    Scrollable0 = !.Info ^ p_scrollable,
     ( search_forward(is_message_start(MessageId), Scrollable0, 0, Top, _) ->
         set_top(Top, Scrollable0, Scrollable),
-        !:Info = pager_info(Scrollable)
+        !Info ^ p_scrollable := Scrollable
     ;
         true
     ).
 
-:- pred is_message_start(message_id::in, pager_line::in) is semidet.
+:- pred is_message_start(message_id::in, id_pager_line::in)
+    is semidet.
 
-is_message_start(MessageId, start_message_header(Message, _, _)) :-
+is_message_start(MessageId, _Id - Line) :-
+    Line = start_message_header(Message, _, _),
     Message ^ m_id = MessageId.
 
 %-----------------------------------------------------------------------------%
 
-skip_to_search(NumRows, SearchKind, Search, SearchDir, MessageUpdate,
-        pager_info(Scrollable0), pager_info(Scrollable)) :-
+skip_to_search(NumRows, SearchKind, Search, SearchDir, MessageUpdate, !Info) :-
+    Scrollable0 = !.Info ^ p_scrollable,
     Top0 = get_top(Scrollable0),
     Bot = Top0 + NumRows,
     choose_search_start(Scrollable0, Top0, Bot, SearchKind, SearchDir, Start),
@@ -980,7 +1077,8 @@ skip_to_search(NumRows, SearchKind, Search, SearchDir, MessageUpdate,
     ;
         set_cursor_none(Scrollable0, Scrollable),
         MessageUpdate = set_warning("Not found.")
-    ).
+    ),
+    !Info ^ p_scrollable := Scrollable.
 
 :- pred choose_search_start(scrollable(T)::in, int::in, int::in,
     search_kind::in, search_direction::in, int::out) is det.
@@ -1010,9 +1108,9 @@ choose_search_start(Scrollable, Top, Bot, continue_search, SearchDir, Start) :-
         choose_search_start(Scrollable, Top, Bot, new_search, SearchDir, Start)
     ).
 
-:- pred line_matches_search(string::in, pager_line::in) is semidet.
+:- pred line_matches_search(string::in, id_pager_line::in) is semidet.
 
-line_matches_search(Search, Line) :-
+line_matches_search(Search, _Id - Line) :-
     require_complete_switch [Line]
     (
         ( Line = start_message_header(_, _, String)
@@ -1027,7 +1125,7 @@ line_matches_search(Search, Line) :-
         set.member(tag(TagName), Tags),
         strcase_str(TagName, Search)
     ;
-        Line = attachment(Part, _, _),
+        Line = attachment(Part, _),
         (
             Part ^ pt_type = Type,
             strcase_str(Type, Search)
@@ -1056,11 +1154,11 @@ highlight_part_or_message(NumRows, MessageUpdate, !Info) :-
         MessageUpdate = set_warning("No attachment or top of message visible.")
     ).
 
-:- pred do_highlight(pred(pager_line)::in(pred(in) is semidet), int::in,
+:- pred do_highlight(pred(id_pager_line)::in(pred(in) is semidet), int::in,
     pager_info::in, pager_info::out) is semidet.
 
 do_highlight(Highlightable, NumRows, !Info) :-
-    !.Info = pager_info(Scrollable0),
+    Scrollable0 = !.Info ^ p_scrollable,
     Top = get_top(Scrollable0),
     Bot = Top + NumRows,
     (
@@ -1079,21 +1177,25 @@ do_highlight(Highlightable, NumRows, !Info) :-
     ;
         fail
     ),
-    !:Info = pager_info(Scrollable).
+    !Info ^ p_scrollable := Scrollable.
 
-:- pred is_highlightable_part_or_url(pager_line::in) is semidet.
+:- pred is_highlightable_part_or_url(id_pager_line::in) is semidet.
 
-is_highlightable_part_or_url(attachment(_, _, _)).
-is_highlightable_part_or_url(text(_, _, _, url(_, _))).
+is_highlightable_part_or_url(_Id - Line) :-
+    ( Line = attachment(_, _)
+    ; Line = text(_, _, _, url(_, _))
+    ).
 
-:- pred is_highlightable_part_or_message(pager_line::in) is semidet.
+:- pred is_highlightable_part_or_message(id_pager_line::in) is semidet.
 
-is_highlightable_part_or_message(start_message_header(_, _, _)).
-is_highlightable_part_or_message(attachment(_, _, _)).
+is_highlightable_part_or_message(_Id - Line) :-
+    ( Line = start_message_header(_, _, _)
+    ; Line = attachment(_, _)
+    ).
 
 get_highlighted_part(Info, Part, MaybeSubject) :-
-    Info = pager_info(Scrollable),
-    get_cursor_line(Scrollable, _, Line),
+    Scrollable = Info ^ p_scrollable,
+    get_cursor_line(Scrollable, _, _Id - Line),
     (
         Line = start_message_header(Message, _, _),
         MessageId = Message ^ m_id,
@@ -1101,13 +1203,13 @@ get_highlighted_part(Info, Part, MaybeSubject) :-
         Part = part(MessageId, 0, "text/plain", unsupported, no, no, no),
         MaybeSubject = yes(Subject)
     ;
-        Line = attachment(Part, _, _),
+        Line = attachment(Part, _),
         MaybeSubject = no
     ).
 
 get_highlighted_url(Info, Url) :-
-    Info = pager_info(Scrollable),
-    get_cursor_line(Scrollable, _, Line),
+    Scrollable = Info ^ p_scrollable,
+    get_cursor_line(Scrollable, _, _Id - Line),
     (
         Line = text(_, String, _, url(Start, End))
     ),
@@ -1116,29 +1218,24 @@ get_highlighted_url(Info, Url) :-
 %-----------------------------------------------------------------------------%
 
 cycle_alternatives(Cols, MessageUpdate, Info0, Info, !IO) :-
-    Info0 = pager_info(Scrollable0),
+    Info0 = pager_info(Tree0, Counter0, Scrollable0),
     (
-        get_cursor_line(Scrollable0, Cursor, Line),
-        Line = attachment(Part0, PartNumLines0, HiddenParts0)
+        get_cursor_line(Scrollable0, _Cursor, NodeId - Line),
+        Line = attachment(Part0, HiddenParts0)
     ->
         (
             HiddenParts0 = [Part | HiddenParts1],
             HiddenParts = HiddenParts1 ++ [Part0]
         ->
-            append_part(Cols, Part, cord.init, PartLines, yes, _IsFirst, !IO),
-            HeadLine = attachment(Part, length(PartLines), HiddenParts),
-            PagerLines = cons(HeadLine, PartLines),
-            (
-                replace_lines(Cursor, 1 + PartNumLines0, list(PagerLines),
-                    Scrollable0, Scrollable)
-            ->
-                Info = pager_info(Scrollable),
-                Type = Part ^ pt_type,
-                MessageUpdate = set_info("Showing " ++ Type ++ " alternative.")
-            ;
-                Info = Info0,
-                MessageUpdate = set_warning("An error occurred.")
-            )
+            make_part_tree(Cols, Part, PartTree, yes, _IsFirst,
+                Counter0, Counter, !IO),
+            HeadLine = attachment(Part, HiddenParts),
+            NewSubTrees = [leaf(HeadLine), PartTree],
+            replace_node(NodeId, NewSubTrees, Tree0, Tree),
+            scrollable.reinit(flatten(Tree), Scrollable0, Scrollable),
+            Info = pager_info(Tree, Counter, Scrollable),
+            Type = Part ^ pt_type,
+            MessageUpdate = set_info("Showing " ++ Type ++ " alternative.")
         ;
             Info = Info0,
             MessageUpdate = set_warning("Part has no alternatives.")
@@ -1155,13 +1252,13 @@ draw_pager(Screen, Info, !IO) :-
     draw_pager_lines(MainPanels, Info, !IO).
 
 draw_pager_lines(Panels, Info, !IO) :-
-    Info = pager_info(Scrollable),
+    Scrollable = Info ^ p_scrollable,
     scrollable.draw(Panels, Scrollable, !IO).
 
-:- pred draw_pager_line(panel::in, pager_line::in, int::in, bool::in,
+:- pred draw_pager_line(panel::in, id_pager_line::in, int::in, bool::in,
     io::di, io::uo) is det.
 
-draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
+draw_pager_line(Panel, _Id - Line, _LineNr, IsCursor, !IO) :-
     (
         ( Line = start_message_header(_Message, Header, Value)
         ; Line = header(Header, Value)
@@ -1221,7 +1318,7 @@ draw_pager_line(Panel, Line, _LineNr, IsCursor, !IO) :-
             my_addstr(Panel, string.between(Text, UrlEnd, End), !IO)
         )
     ;
-        Line = attachment(Part, _PartLines, HiddenParts),
+        Line = attachment(Part, HiddenParts),
         Part = part(_MessageId, _Part, ContentType, _Content, MaybeFilename,
             MaybeEncoding, MaybeLength),
         (
