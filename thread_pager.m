@@ -2137,7 +2137,7 @@ draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
     (
         MaybeGraphics = yes(Graphics),
         list.foldl(draw_graphic(Panel), Graphics, !IO),
-        my_addstr(Panel, "> ", !IO)
+        my_addstr(Panel, "• ", !IO)
     ;
         MaybeGraphics = no
     ),
