@@ -241,7 +241,7 @@ check_multibyte_seq(S, I, Imax, C, MinC) :-
         MinC =< C
     ;
         string.unsafe_index_code_unit(S, I, D),
-        D /\ 0x80 = 0x80,
+        D /\ 0xC0 = 0x80,
         C1 = (C `unchecked_left_shift` 6) \/ (D /\ 0x3F),
         check_multibyte_seq(S, I + 1, Imax, C1, MinC)
     ).
