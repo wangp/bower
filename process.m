@@ -32,8 +32,7 @@
 :- pred wait_pid(pid::in, wait_pid_blocking::in, wait_pid_result::out,
     io::di, io::uo) is det.
 
-:- pred drain_and_close_pipe(pipe_read::in, io.res(string)::out,
-    io::di, io::uo) is det.
+:- pred drain_pipe(pipe_read::in, io.res(string)::out, io::di, io::uo) is det.
 
 :- pred close_pipe(pipe_read::in, io::di, io::uo) is det.
 
@@ -44,7 +43,10 @@
 
 :- import_module bool.
 :- import_module int.
-:- import_module string.
+:- import_module maybe.
+
+:- import_module byte_array.
+:- import_module make_utf8.
 
 :- type pipe_read
     --->    pipe_read(
@@ -260,50 +262,67 @@ wait_pid(pid(Pid), Blocking, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-drain_and_close_pipe(pipe_read(Fd), Res, !IO) :-
-    drain_and_close_pipe_2(Fd, Error, RevList, !IO),
-    ( Error \= "" ->
-        Res = error(io.make_io_error(Error))
-    ; RevList = [String] ->
+drain_pipe(pipe_read(Fd), Res, !IO) :-
+    drain(Fd, Result, [], RevBuffers, !IO),
+    (
+        Result = ok,
+        uniq_reverse(RevBuffers, Buffers),
+        make_utf8_string(Buffers, String),
         Res = ok(String)
     ;
-        list.reverse(RevList, List),
-        string.append_list(List, String),
-        Res = ok(String)
+        Result = error(Error),
+        Res = error(io.make_io_error(Error))
     ).
 
-:- pred drain_and_close_pipe_2(int::in, string::out, list(string)::uo,
-    io::di, io::uo) is det.
+:- pred drain(int::in, maybe_error::out,
+    list(byte_array)::di, list(byte_array)::uo, io::di, io::uo) is det.
+
+drain(Fd, Result, !RevBuffers, !IO) :-
+    Capacity = 16384,
+    MaxRead = Capacity - make_utf8.buffer_margin,
+    byte_array.allocate(Capacity, Buffer0),
+    read(Fd, MaxRead, N, Error, Buffer0, Buffer, !IO),
+    ( N < 0 ->
+        Result = error(Error)
+    ; N = 0 ->
+        Result = ok
+    ;
+        !:RevBuffers = [Buffer | !.RevBuffers],
+        drain(Fd, Result, !RevBuffers, !IO)
+    ).
+
+:- pred read(int::in, int::in, int::out, string::out,
+    byte_array::di, byte_array::uo, io::di, io::uo) is det.
 
 :- pragma foreign_proc("C",
-    drain_and_close_pipe_2(Fd::in, Error::out, RevList::uo, _IO0::di, _IO::uo),
+    read(Fd::in, MaxRead::in, N::out, Error::out, Buffer0::di, Buffer::uo,
+        _IO0::di, _IO::uo),
     [will_not_call_mercury, promise_pure, tabled_for_io, may_not_duplicate],
 "
-    static char buf[16384];
-    MR_String s;
-    int n;
-
-    RevList = MR_list_empty();
-
-    for (;;) {
-        do {
-            n = read(Fd, buf, sizeof(buf));
-        } while (n == -1 && errno == EINTR);
-        if (n < 0) {
-            Error = MR_make_string(MR_ALLOC_ID, ""%s"", strerror(errno));
-            break;
-        } else if (n == 0) {
-            Error = MR_make_string_const("""");
-            break;
-        } else {
-            buf[n] = '\\0';
-            MR_make_aligned_string_copy_msg(s, buf, MR_ALLOC_ID);
-            RevList = MR_list_cons((MR_Word)s, RevList);
-        }
+    Buffer = Buffer0;
+    assert(Buffer->len == 0);
+    do {
+        N = read(Fd, Buffer->data, MaxRead);
+    } while (N == -1 && errno == EINTR);
+    if (N < 0) {
+        Error = MR_make_string(MR_ALLOC_ID, ""%s"", strerror(errno));
+    } else {
+        Buffer->len = N;
+        Error = MR_make_string_const("""");
     }
-
-    close_eintr(Fd);
 ").
+
+:- pred uniq_reverse(list(T)::di, list(T)::uo) is det.
+
+uniq_reverse([], []).
+uniq_reverse([X | Xs], Rev) :-
+    uniq_reverse(Xs, [X], Rev).
+
+:- pred uniq_reverse(list(T)::di, list(T)::di, list(T)::uo) is det.
+
+uniq_reverse([], Acc, Acc).
+uniq_reverse([X | Xs], Acc0, Acc) :-
+    uniq_reverse(Xs, [X | Acc0], Acc).
 
 %-----------------------------------------------------------------------------%
 

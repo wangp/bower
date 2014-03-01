@@ -72,8 +72,7 @@ run_notmuch(Args, P, Result, !IO) :-
     get_notmuch_prefix(Notmuch, !IO),
     call_system_capture_stdout(Notmuch ++ Command, CommandResult, !IO),
     (
-        CommandResult = ok(String0),
-        fix_utf8(String0, String),
+        CommandResult = ok(String),
         parse_json(String, ParseResult),
         (
             ParseResult = ok(JSON),

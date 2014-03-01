@@ -27,7 +27,8 @@ call_system_capture_stdout(Command, Res, !IO) :-
     posix_spawn_capture_stdout("/bin/sh", ["-c", Command], SpawnRes, !IO),
     (
         SpawnRes = ok({Pid, PipeRead}),
-        drain_and_close_pipe(PipeRead, DrainRes, !IO),
+        drain_pipe(PipeRead, DrainRes, !IO),
+        close_pipe(PipeRead, !IO),
         wait_pid(Pid, blocking, WaitRes, !IO),
         (
             WaitRes = no_hang,
