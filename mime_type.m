@@ -21,6 +21,7 @@
 :- implementation.
 
 :- import_module list.
+:- import_module maybe.
 :- import_module string.
 
 :- import_module call_system.
@@ -30,7 +31,7 @@
 
 lookup_mime_type(FileName, Res, !IO) :-
     args_to_quoted_command(["file", "--brief", "--mime", FileName], Command),
-    call_system_capture_stdout(Command, CallRes, !IO),
+    call_system_capture_stdout(Command, no, CallRes, !IO),
     (
         CallRes = ok(String0),
         String = string.chomp(String0),

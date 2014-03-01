@@ -234,7 +234,7 @@ do_poll_in_progress(Child, Blocking, Return, !Info, !IO) :-
                     Return = child_succeeded
                 ;
                     MaybePipe = yes(PipeRead),
-                    drain_pipe(PipeRead, DrainRes, !IO),
+                    drain_pipe(PipeRead, no, DrainRes, !IO),
                     close_pipe(PipeRead, !IO),
                     (
                         DrainRes = ok(String),

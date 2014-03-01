@@ -5,6 +5,7 @@
 :- interface.
 
 :- import_module list.
+:- import_module maybe.
 
 :- import_module byte_array.
 
@@ -17,7 +18,8 @@
     % Each buffer must have at least buffer_margin bytes available at
     % the tail, i.e. buf->len + buffer_margin <= buf->cap.
     %
-:- pred make_utf8_string(list(buffer)::di, string::out) is det.
+:- pred make_utf8_string(maybe(int)::in, list(buffer)::di, string::out)
+    is semidet.
 
 :- func buffer_margin = int.
 
@@ -51,8 +53,9 @@
 
 %-----------------------------------------------------------------------------%
 
-make_utf8_string(Buffers0, String) :-
-    preflight(Buffers0, Buffers, 0, FirstBads, 0, TotalLength),
+make_utf8_string(ErrorLimit, Buffers0, String) :-
+    preflight(Buffers0, Buffers, 0, FirstBads, ErrorLimit, 0, _Errors,
+        0, TotalLength),
 
     allocate(TotalLength + 1, Enc0),
     second_pass(Buffers, 0, FirstBads, 0, EncPos, Enc0, Enc1),
@@ -69,11 +72,11 @@ make_utf8_string(Buffers0, String) :-
 %-----------------------------------------------------------------------------%
 
 :- pred preflight(list(buffer)::di, list(buffer)::uo, int::in, list(int)::out,
-    int::in, int::out) is det.
+    maybe(int)::in, int::in, int::out, int::in, int::out) is semidet.
 
-preflight([], [], _BufPos0, [], !TotalLength).
+preflight([], [], _BufPos0, [], _ErrorLimit, !Errors, !TotalLength).
 preflight([Buf0 | Bufs0], [Buf | Bufs], BufPos0, [FirstBad | FirstBads],
-        !TotalLength) :-
+        ErrorLimit, !Errors, !TotalLength) :-
     clear_margin(Buf0, Buf1),
     (
         Bufs0 = [],
@@ -85,12 +88,21 @@ preflight([Buf0 | Bufs0], [Buf | Bufs], BufPos0, [FirstBad | FirstBads],
     ),
 
     MarginPos = length(Buf),
-    scan(Buf, BufPos0, BufPos1, MarginPos, -1, FirstBad, !TotalLength,
-        preflight, _),
+    scan(Buf, BufPos0, BufPos1, MarginPos, -1, FirstBad, 0, Errors,
+        !TotalLength, preflight, _),
     expect(FirstBad >= 0, $module, $pred, "FirstBad < 0"),
 
+    !:Errors = !.Errors + Errors,
+    (
+        ErrorLimit = yes(MaxError),
+        !.Errors =< MaxError
+    ;
+        ErrorLimit = no
+    ),
+
     unsafe_promise_unique(Bufs0, Bufs0_uniq),
-    preflight(Bufs0_uniq, Bufs, BufPos1 - MarginPos, FirstBads, !TotalLength).
+    preflight(Bufs0_uniq, Bufs, BufPos1 - MarginPos, FirstBads, ErrorLimit,
+        !Errors, !TotalLength).
 
 :- pred clear_margin(buffer::di, buffer::uo) is det.
 
@@ -130,7 +142,8 @@ second_pass([Buf | Bufs], BufPos0, [FirstBad | FirstBads], !EncPos, !Enc) :-
     add_run(Buf, BufPos0, BufPos1, !EncPos, !Enc),
 
     MarginPos = length(Buf),
-    scan(Buf, BufPos1, BufPos, MarginPos, FirstBad, _FirstBad, !EncPos, !Enc),
+    scan(Buf, BufPos1, BufPos, MarginPos, FirstBad, _FirstBad, 0, _Errors,
+        !EncPos, !Enc),
 
     NextBufPos = BufPos - MarginPos,
     second_pass(Bufs, NextBufPos, FirstBads, !EncPos, !Enc).
@@ -143,37 +156,46 @@ second_pass([], _, [_ | _], !EncPos, !Enc) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred scan(buffer::ui, int::in, int::out, int::in,
+:- pred scan(buffer::ui, int::in, int::out, int::in, int::in, int::out,
     int::in, int::out, int::in, int::out, T::di, T::uo) is det <= encode(T).
 
-scan(Buf, BufPos0, BufPos, MarginPos, !FirstBad, !EncPos, !Enc) :-
+scan(Buf, BufPos0, BufPos, MarginPos, !FirstBad, !Errors, !EncPos, !Enc) :-
     ( BufPos0 >= MarginPos ->
         % End of current buffer.
         BufPos = BufPos0,
-        update_firstbad(BufPos, !FirstBad)
+        ( !.FirstBad < 0 ->
+            % Entire buffer was valid.
+            !:FirstBad = BufPos
+        ;
+            true
+        )
     ;
         unsafe_byte(Buf, BufPos0, C0),
         ( C0 = 0x00 ->
             % Replace NUL.
             % XXX and unprintables?
-            update_firstbad(BufPos0, !FirstBad),
+            on_error(BufPos0, !FirstBad, !Errors),
             add_replacement_char(!EncPos, !Enc),
-            scan(Buf, BufPos0 + 1, BufPos, MarginPos, !FirstBad, !EncPos, !Enc)
+            scan(Buf, BufPos0 + 1, BufPos, MarginPos, !FirstBad, !Errors,
+                !EncPos, !Enc)
         ; C0 =< 0x7F ->
             % Plain ASCII.
             add_octet(C0, !EncPos, !Enc),
-            scan(Buf, BufPos0 + 1, BufPos, MarginPos, !FirstBad, !EncPos, !Enc)
+            scan(Buf, BufPos0 + 1, BufPos, MarginPos, !FirstBad, !Errors,
+                !EncPos, !Enc)
         ;
             MaxPos = MarginPos + buffer_margin,
             extract_multibyte(Buf, BufPos0, SeqEnd, MaxPos, C0, _Char)
         ->
             add_run(Buf, BufPos0, SeqEnd, !EncPos, !Enc),
-            scan(Buf, SeqEnd, BufPos, MarginPos, !FirstBad, !EncPos, !Enc)
+            scan(Buf, SeqEnd, BufPos, MarginPos, !FirstBad, !Errors,
+                !EncPos, !Enc)
         ;
             % Otherwise invalid.
-            update_firstbad(BufPos0, !FirstBad),
+            on_error(BufPos0, !FirstBad, !Errors),
             add_latin1(C0, !EncPos, !Enc),
-            scan(Buf, BufPos0 + 1, BufPos, MarginPos, !FirstBad, !EncPos, !Enc)
+            scan(Buf, BufPos0 + 1, BufPos, MarginPos, !FirstBad, !Errors,
+                !EncPos, !Enc)
         )
     ).
 
@@ -236,9 +258,9 @@ extract_trail_byte(Buf, I, Acc0, Acc) :-
     TrailByte /\ 0xC0 = 0x80,
     Acc = (Acc0 `unchecked_left_shift` 6) \/ (TrailByte /\ 0x3F).
 
-:- pred update_firstbad(int::in, int::in, int::out) is det.
+:- pred on_error(int::in, int::in, int::out, int::in, int::out) is det.
 
-update_firstbad(Pos, Bad0, Bad) :-
+on_error(Pos, Bad0, Bad, Errors, Errors + 1) :-
     ( Bad0 < 0 ->
         Bad = Pos
     ;

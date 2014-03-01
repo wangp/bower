@@ -154,7 +154,7 @@ start_reply(Screen, Message, ReplyKind, Transition, !IO) :-
     Args = ["reply", message_id_to_search_term(MessageId)],
     args_to_quoted_command(Args, Command),
     get_notmuch_prefix(Notmuch, !IO),
-    call_system_capture_stdout(Notmuch ++ Command, CommandResult, !IO),
+    call_system_capture_stdout(Notmuch ++ Command, no, CommandResult, !IO),
     (
         CommandResult = ok(String),
         parse_message(String, Headers0, Text),
@@ -265,7 +265,7 @@ continue_postponed(Screen, Message, Transition, !IO) :-
         "show", "--format=raw", "--", message_id_to_search_term(MessageId)
     ], Command),
     get_notmuch_prefix(Notmuch, !IO),
-    call_system_capture_stdout(Notmuch ++ Command, CallRes, !IO),
+    call_system_capture_stdout(Notmuch ++ Command, no, CallRes, !IO),
     (
         CallRes = ok(String),
         parse_message(String, HeadersB, _Body),
@@ -774,7 +774,7 @@ do_attach_text_file(FileName, BaseName, Type, NumRows, MessageUpdate,
 do_attach_binary_file(FileName, BaseName, Type, NumRows, MessageUpdate,
         !AttachInfo, !IO) :-
     args_to_quoted_command(["base64", FileName], Command),
-    call_system_capture_stdout(Command, CallRes, !IO),
+    call_system_capture_stdout(Command, no, CallRes, !IO),
     (
         CallRes = ok(Content),
         string.length(Content, Size),
@@ -1441,7 +1441,8 @@ get_non_text_part_base64(Part, Content, !IO) :-
         message_id_to_search_term(MessageId)
     ], Command),
     get_notmuch_prefix(Notmuch, !IO),
-    call_system_capture_stdout(Notmuch ++ Command ++ " |base64", CallRes, !IO),
+    call_system_capture_stdout(Notmuch ++ Command ++ " |base64", no, CallRes,
+        !IO),
     (
         CallRes = ok(Content)
     ;

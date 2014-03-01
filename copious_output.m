@@ -39,7 +39,8 @@ expand_part(MessageId, PartId, MaybeFilterCommand, Res, !IO) :-
         MaybeFilterCommand = no,
         Command = Notmuch ++ ShowCommand
     ),
-    call_system_capture_stdout(Command, CallRes, !IO),
+    ErrorLimit = yes(100),
+    call_system_capture_stdout(Command, ErrorLimit, CallRes, !IO),
     (
         CallRes = ok(ContentString),
         Res = ok(ContentString)

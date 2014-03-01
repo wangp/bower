@@ -5,11 +5,12 @@
 :- interface.
 
 :- import_module io.
+:- import_module maybe.
 
     % Replacement for popen() which blocks SIGWINCH signals in the child.
     %
-:- pred call_system_capture_stdout(string::in, io.res(string)::out,
-    io::di, io::uo) is det.
+:- pred call_system_capture_stdout(string::in, maybe(int)::in,
+    io.res(string)::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -23,11 +24,11 @@
 
 %-----------------------------------------------------------------------------%
 
-call_system_capture_stdout(Command, Res, !IO) :-
+call_system_capture_stdout(Command, ErrorLimit, Res, !IO) :-
     posix_spawn_capture_stdout("/bin/sh", ["-c", Command], SpawnRes, !IO),
     (
         SpawnRes = ok({Pid, PipeRead}),
-        drain_pipe(PipeRead, DrainRes, !IO),
+        drain_pipe(PipeRead, ErrorLimit, DrainRes, !IO),
         close_pipe(PipeRead, !IO),
         wait_pid(Pid, blocking, WaitRes, !IO),
         (

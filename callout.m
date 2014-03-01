@@ -52,7 +52,7 @@ get_notmuch_config(Key, Res, !IO) :-
     get_notmuch_prefix(Notmuch, !IO),
     % Key is assumed to be quoted already.
     Command = Notmuch ++ "config get " ++ Key ++ " 2>/dev/null",
-    call_system_capture_stdout(Command, Res0, !IO),
+    call_system_capture_stdout(Command, no, Res0, !IO),
     (
         Res0 = ok(Value0),
         Value = string.strip(Value0),
@@ -70,7 +70,7 @@ get_notmuch_config(Section, Key, Res, !IO) :-
 run_notmuch(Args, P, Result, !IO) :-
     args_to_quoted_command(Args, Command),
     get_notmuch_prefix(Notmuch, !IO),
-    call_system_capture_stdout(Notmuch ++ Command, CommandResult, !IO),
+    call_system_capture_stdout(Notmuch ++ Command, no, CommandResult, !IO),
     (
         CommandResult = ok(String),
         parse_json(String, ParseResult),

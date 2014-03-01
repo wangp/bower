@@ -28,6 +28,7 @@
 :- import_module char.
 :- import_module int.
 :- import_module list.
+:- import_module maybe.
 :- import_module parsing_utils.
 :- import_module require.
 :- import_module set.
@@ -306,7 +307,7 @@ date_string_to_time(DateString, Time, !IO) :-
 
 call_date(Arg, Res, !IO) :-
     args_to_quoted_command(["date", "+%s", "-d", Arg], Command),
-    call_system_capture_stdout(Command, CallRes, !IO),
+    call_system_capture_stdout(Command, no, CallRes, !IO),
     (
         CallRes = ok(Line),
         Res = string.rstrip(Line)

@@ -6,6 +6,7 @@
 
 :- import_module io.
 :- import_module list.
+:- import_module maybe.
 
 :- type pid
     --->    pid(int).
@@ -32,7 +33,8 @@
 :- pred wait_pid(pid::in, wait_pid_blocking::in, wait_pid_result::out,
     io::di, io::uo) is det.
 
-:- pred drain_pipe(pipe_read::in, io.res(string)::out, io::di, io::uo) is det.
+:- pred drain_pipe(pipe_read::in, maybe(int)::in, io.res(string)::out,
+    io::di, io::uo) is det.
 
 :- pred close_pipe(pipe_read::in, io::di, io::uo) is det.
 
@@ -262,13 +264,16 @@ wait_pid(pid(Pid), Blocking, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-drain_pipe(pipe_read(Fd), Res, !IO) :-
+drain_pipe(pipe_read(Fd), ErrorLimit, Res, !IO) :-
     drain(Fd, Result, [], RevBuffers, !IO),
     (
         Result = ok,
         uniq_reverse(RevBuffers, Buffers),
-        make_utf8_string(Buffers, String),
-        Res = ok(String)
+        ( make_utf8_string(ErrorLimit, Buffers, String) ->
+            Res = ok(String)
+        ;
+            Res = error(io.make_io_error("not UTF-8 text"))
+        )
     ;
         Result = error(Error),
         Res = error(io.make_io_error(Error))
