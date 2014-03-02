@@ -67,18 +67,25 @@
 :- import_module quote_arg.
 :- import_module string_util.
 
-:- type history == list(string). % reverse
-
-:- type sub_info
-    --->    sub_info(
+:- type info
+    --->    info(
+                prompt          :: string,          % static
+                before          :: list(char),
+                after           :: list(char),
                 first_time      :: bool,
                 left_offset     :: int,
                 pre_history     :: history,
                 post_history    :: history,
-                compl_type      :: completion_type,
+                compl_type      :: completion_type, % static
                 compl_choices   :: list(string),
                 compl_point     :: int
             ).
+
+:- type history == list(string). % reverse
+
+:- type move_history_dir
+    --->    pre
+    ;       post.
 
 %-----------------------------------------------------------------------------%
 
@@ -120,20 +127,16 @@ text_entry_full(Screen, Prompt, History, Initial, CompleteType, FirstTime,
     string.to_char_list(Initial, Before0),
     list.reverse(Before0, Before),
     After = [],
-    SubInfo = sub_info(FirstTime, LeftOffset, History, [],
+    Info0 = info(Prompt, Before, After, FirstTime, LeftOffset, History, [],
         CompleteType, [], 0),
-    text_entry_real(Screen, Prompt, Before, After, SubInfo, Return, !IO),
+    text_entry_loop(Screen, Return, Info0, _Info, !IO),
     update_message(Screen, clear_message, !IO).
 
-:- pred text_entry_real(screen::in, string::in, list(char)::in, list(char)::in,
-    sub_info::in, maybe(string)::out, io::di, io::uo) is det.
+:- pred text_entry_loop(screen::in, maybe(string)::out, info::in, info::out,
+    io::di, io::uo) is det.
 
-text_entry_real(Screen, Prompt, Before, After, SubInfo0, Return, !IO) :-
-    LeftOffset0 = SubInfo0 ^ left_offset,
-    draw_text_entry(Screen, Prompt, Before, After, LeftOffset0, LeftOffset,
-        !IO),
-    SubInfo = SubInfo0 ^ left_offset := LeftOffset,
-
+text_entry_loop(Screen, Return, !Info, !IO) :-
+    draw_text_entry(Screen, !Info, !IO),
     get_keycode_blocking(Key, !IO),
     (
         ( Key = char('\x07\') % BEL (^G)
@@ -144,6 +147,8 @@ text_entry_real(Screen, Prompt, Before, After, SubInfo0, Return, !IO) :-
     ;
         Key = char('\r') % CR
     ->
+        !.Info ^ before = Before,
+        !.Info ^ after = After,
         String = char_lists_to_string(Before, After),
         Return = yes(String)
     ;
@@ -152,8 +157,8 @@ text_entry_real(Screen, Prompt, Before, After, SubInfo0, Return, !IO) :-
         ; Key = code(key_backspace)
         )
     ->
-        delete_char(Before, Before1),
-        text_entry(Screen, Prompt, Before1, After, SubInfo, Return, !IO)
+        modify_before(delete_char, !Info),
+        continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x17\') % ^W
         ; Key = meta('\x7f\') % DEL
@@ -161,161 +166,149 @@ text_entry_real(Screen, Prompt, Before, After, SubInfo0, Return, !IO) :-
         ; Key = metacode(key_backspace)
         )
     ->
-        delete_word(Before, Before1),
-        text_entry(Screen, Prompt, Before1, After, SubInfo, Return, !IO)
+        modify_before(delete_word, !Info),
+        continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x04\') % ^D
         ; Key = code(key_del)
         )
     ->
-        delete_char(After, After1),
-        text_entry(Screen, Prompt, Before, After1, SubInfo, Return, !IO)
+        modify_after(delete_char, !Info),
+        continue_text_entry(Screen, Return, !Info, !IO)
     ;
         Key = meta('d')
     ->
-        delete_word(After, After1),
-        text_entry(Screen, Prompt, Before, After1, SubInfo, Return, !IO)
+        modify_after(delete_word, !Info),
+        continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x02\') % ^B
         ; Key = code(key_left)
         )
     ->
-        move_char(Before, Before1, After, After1),
-        text_entry(Screen, Prompt, Before1, After1, SubInfo, Return, !IO)
+        modify_before_after(left_char, !Info),
+        continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x06\') % ^F
         ; Key = code(key_right)
         )
     ->
-        move_char(After, After1, Before, Before1),
-        text_entry(Screen, Prompt, Before1, After1, SubInfo, Return, !IO)
+        modify_before_after(right_char, !Info),
+        continue_text_entry(Screen, Return, !Info, !IO)
     ;
         Key = meta('b')
     ->
-        back_word(Before, Before1, After, After1),
-        text_entry(Screen, Prompt, Before1, After1, SubInfo, Return, !IO)
+        modify_before_after(back_word, !Info),
+        continue_text_entry(Screen, Return, !Info, !IO)
     ;
         Key = meta('f')
     ->
-        forward_word(Before, Before1, After, After1),
-        text_entry(Screen, Prompt, Before1, After1, SubInfo, Return, !IO)
+        modify_before_after(forward_word, !Info),
+        continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x01\') % ^A
         ; Key = code(key_home)
         )
     ->
-        bol_eol(Before, After, After1),
-        text_entry(Screen, Prompt, [], After1, SubInfo, Return, !IO)
+        modify_before_after(bol, !Info),
+        continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x05\') % ^E
         ; Key = code(key_end)
         )
     ->
-        bol_eol(After, Before, Before1),
-        text_entry(Screen, Prompt, Before1, [], SubInfo, Return, !IO)
+        modify_before_after(eol, !Info),
+        continue_text_entry(Screen, Return, !Info, !IO)
     ;
         Key = char('\x15\') % ^U
     ->
-        text_entry(Screen, Prompt, [], [], SubInfo, Return, !IO)
+        !Info ^ before := [],
+        !Info ^ after := [],
+        continue_text_entry(Screen, Return, !Info, !IO)
     ;
         Key = char('\x0b\') % ^K
     ->
-        text_entry(Screen, Prompt, Before, [], SubInfo, Return, !IO)
+        !Info ^ after := [],
+        continue_text_entry(Screen, Return, !Info, !IO)
     ;
         Key = char('\x14\') % ^T
     ->
-        transpose(Before, Before1, After, After1),
-        text_entry(Screen, Prompt, Before1, After1, SubInfo, Return, !IO)
+        modify_before_after(transpose, !Info),
+        continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x10\') % ^P
         ; Key = code(key_up)
         )
     ->
-        get_history(SubInfo, Pre, Post),
-        move_history(Before, Before1, After, After1, Pre, Pre1, Post, Post1),
-        set_history(Pre1, Post1, SubInfo, SubInfo1),
-        text_entry(Screen, Prompt, Before1, After1, SubInfo1, Return, !IO)
+        move_history(pre, !Info),
+        continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\xe\') % ^N
         ; Key = code(key_down)
         )
     ->
-        get_history(SubInfo, Pre, Post),
-        move_history(Before, Before1, After, After1, Post, Post1, Pre, Pre1),
-        set_history(Pre1, Post1, SubInfo, SubInfo1),
-        text_entry(Screen, Prompt, Before1, After1, SubInfo1, Return, !IO)
+        move_history(post, !Info),
+        continue_text_entry(Screen, Return, !Info, !IO)
     ;
         Key = char('\x09\') % Tab
     ->
-        Type = SubInfo ^ compl_type,
-        forward_for_completion(Type, Before, Before1, After, After1),
-        do_completion(Before1, Before2, After1, SubInfo, MaybeSubInfo1,
-            !IO),
+        !.Info ^ compl_type = Type,
+        !.Info ^ before = Before0,
+        !.Info ^ after = After0,
+        forward_for_completion(Type, Before0, Before1, After0, After),
+        do_completion(Before1, Before, After, !.Info, MaybeInfo, !IO),
         (
-            MaybeSubInfo1 = yes(SubInfo1),
-            clear_first_time_flag(SubInfo1, SubInfo2),
-            text_entry_real(Screen, Prompt, Before2, After1, SubInfo2, Return,
-                !IO)
+            MaybeInfo = yes(!:Info),
+            !Info ^ before := Before,
+            !Info ^ after := After,
+            clear_first_time_flag(!Info),
+            text_entry_loop(Screen, Return, !Info, !IO)
         ;
-            MaybeSubInfo1 = no,
+            MaybeInfo = no,
             % XXX type tab?
-            text_entry(Screen, Prompt, Before, After, SubInfo, Return, !IO)
+            continue_text_entry(Screen, Return, !Info, !IO)
         )
     ;
         (
             Key = char(Char),
             isprint(Char)
         ->
-            (
-                SubInfo ^ first_time = yes,
-                not char.is_whitespace(Char)
-            ->
-                Before1 = [Char],
-                get_history(SubInfo, Pre, Post),
-                String = char_lists_to_string(Before, After),
-                Pre1 = [String | Pre],
-                set_history(Pre1, Post, SubInfo, SubInfo1)
-            ;
-                Before1 = [Char | Before],
-                SubInfo1 = SubInfo
-            ),
-            text_entry(Screen, Prompt, Before1, After, SubInfo1, Return, !IO)
+            insert(Char, !Info),
+            continue_text_entry(Screen, Return, !Info, !IO)
         ;
             Key = timeout_or_error
         ->
             % Don't clear first time flag on a timeout.
-            text_entry_real(Screen, Prompt, Before, After, SubInfo, Return,
-                !IO)
+            text_entry_loop(Screen, Return, !Info, !IO)
         ;
-            text_entry(Screen, Prompt, Before, After, SubInfo, Return, !IO)
+            continue_text_entry(Screen, Return, !Info, !IO)
         )
     ).
 
-:- pred text_entry(screen::in, string::in, list(char)::in, list(char)::in,
-    sub_info::in, maybe(string)::out, io::di, io::uo) is det.
+:- pred continue_text_entry(screen::in, maybe(string)::out,
+    info::in, info::out, io::di, io::uo) is det.
 
-:- pragma inline(text_entry/8).
+:- pragma inline(continue_text_entry/6).
 
-text_entry(Screen, Prompt, Before, After, !.SubInfo, Return, !IO) :-
-    clear_first_time_flag(!SubInfo),
-    clear_completion_choices(!SubInfo),
-    text_entry_real(Screen, Prompt, Before, After, !.SubInfo, Return, !IO).
+continue_text_entry(Screen, Return, !Info, !IO) :-
+    clear_first_time_flag(!Info),
+    clear_completion_choices(!Info),
+    text_entry_loop(Screen, Return, !Info, !IO).
 
-:- pred clear_first_time_flag(sub_info::in, sub_info::out) is det.
+:- pred clear_first_time_flag(info::in, info::out) is det.
 
-clear_first_time_flag(!SubInfo) :-
-    ( !.SubInfo ^ first_time = yes ->
-        !SubInfo ^ first_time := no
+clear_first_time_flag(!Info) :-
+    ( !.Info ^ first_time = yes ->
+        !Info ^ first_time := no
     ;
         true
     ).
 
-:- pred clear_completion_choices(sub_info::in, sub_info::out) is det.
+:- pred clear_completion_choices(info::in, info::out) is det.
 
-clear_completion_choices(!SubInfo) :-
-    ( !.SubInfo ^ compl_choices = [_ | _] ->
-        !SubInfo ^ compl_choices := [],
-        !SubInfo ^ compl_point := 0
+clear_completion_choices(!Info) :-
+    ( !.Info ^ compl_choices = [_ | _] ->
+        !Info ^ compl_choices := [],
+        !Info ^ compl_point := 0
     ;
         true
     ).
@@ -325,6 +318,32 @@ clear_completion_choices(!SubInfo) :-
 char_lists_to_string(Before, After) = BeforeString ++ AfterString :-
     string.from_rev_char_list(Before, BeforeString),
     string.from_char_list(After, AfterString).
+
+:- pred modify_before(pred(list(char), list(char)), info, info).
+:- mode modify_before(in(pred(in, out) is det), in, out) is det.
+
+modify_before(P, !Info) :-
+    !.Info ^ before = Before0,
+    P(Before0, Before),
+    !Info ^ before := Before.
+
+:- pred modify_after(pred(list(char), list(char)), info, info).
+:- mode modify_after(in(pred(in, out) is det), in, out) is det.
+
+modify_after(P, !Info) :-
+    !.Info ^ after = After0,
+    P(After0, After),
+    !Info ^ after := After.
+
+:- pred modify_before_after(pred(list(char), list(char), list(char), list(char)), info, info).
+:- mode modify_before_after(in(pred(in, out, in, out) is det), in, out) is det.
+
+modify_before_after(P, !Info) :-
+    !.Info ^ before = Before0,
+    !.Info ^ after = After0,
+    P(Before0, Before, After0, After),
+    !Info ^ before := Before,
+    !Info ^ after := After.
 
 :- pred delete_char(list(char)::in, list(char)::out) is det.
 
@@ -337,11 +356,17 @@ delete_word(Cs0, Cs) :-
     list.takewhile(non_word_char, Cs0, _, Cs1),
     list.takewhile(is_word_char, Cs1, _, Cs).
 
-:- pred move_char(list(char)::in, list(char)::out,
+:- pred left_char(list(char)::in, list(char)::out,
     list(char)::in, list(char)::out) is det.
 
-move_char([], [], Ys, Ys).
-move_char([C | Xs], Xs, Ys, [C | Ys]).
+left_char([], [], Ys, Ys).
+left_char([C | Xs], Xs, Ys, [C | Ys]).
+
+:- pred right_char(list(char)::in, list(char)::out,
+    list(char)::in, list(char)::out) is det.
+
+right_char(!Xs, !Ys) :-
+    left_char(!Ys, !Xs).
 
 :- pred back_word(list(char)::in, list(char)::out,
     list(char)::in, list(char)::out) is det.
@@ -359,9 +384,16 @@ forward_word(Before0, Before, After0, After) :-
     list.takewhile(non_word_char, After1, Take1, After),
     Before = list.reverse(Take0 ++ Take1) ++ Before0.
 
-:- pred bol_eol(list(char)::in, list(char)::in, list(char)::out) is det.
+:- pred bol(list(char)::in, list(char)::out, list(char)::in, list(char)::out)
+    is det.
 
-bol_eol(Xs, Ys, reverse(Xs) ++ Ys).
+bol(Before, [], After, reverse(Before) ++ After).
+
+:- pred eol(list(char)::in, list(char)::out, list(char)::in, list(char)::out)
+    is det.
+
+eol(!Before, !After) :-
+    bol(!After, !Before).
 
 :- pred transpose(list(char)::in, list(char)::out,
     list(char)::in, list(char)::out) is det.
@@ -384,24 +416,49 @@ transpose(Before0, Before, After0, After) :-
         After = After0
     ).
 
-:- pred get_history(sub_info::in, history::out, history::out) is det.
+:- pred insert(char::in, info::in, info::out) is det.
 
-get_history(SubInfo, Pre, Post) :-
-    Pre = SubInfo ^ pre_history,
-    Post = SubInfo ^ post_history.
+insert(Char, !Info) :-
+    !.Info ^ before = Before0,
+    !.Info ^ after = After0,
+    (
+        !.Info ^ first_time = yes,
+        not char.is_whitespace(Char)
+    ->
+        !.Info ^ pre_history = Pre0,
+        String = char_lists_to_string(Before0, After0),
+        Pre = [String | Pre0],
+        !Info ^ pre_history := Pre,
+        !Info ^ before := [Char]
+    ;
+        !Info ^ before := [Char | Before0]
+    ).
 
-:- pred set_history(history::in, history::in, sub_info::in, sub_info::out)
-    is det.
+:- pred move_history(move_history_dir::in, info::in, info::out) is det.
 
-set_history(Pre, Post, !SubInfo) :-
-    !SubInfo ^ pre_history := Pre,
-    !SubInfo ^ post_history := Post.
+move_history(Dir, !Info) :-
+    !.Info ^ before = Before0,
+    !.Info ^ after = After0,
+    !.Info ^ pre_history = Pre0,
+    !.Info ^ post_history = Post0,
+    (
+        Dir = pre,
+        move_history_2(Before0, Before, After0, After, Pre0, Pre, Post0, Post)
+    ;
+        Dir = post,
+        move_history_2(Before0, Before, After0, After, Post0, Post, Pre0, Pre)
+    ),
+    !Info ^ before := Before,
+    !Info ^ after := After,
+    !Info ^ pre_history := Pre,
+    !Info ^ post_history := Post.
 
-:- pred move_history(list(char)::in, list(char)::out,
+:- pred move_history_2(list(char)::in, list(char)::out,
     list(char)::in, list(char)::out,
     history::in, history::out, history::in, history::out) is det.
 
-move_history(Before0, Before, After0, After, Hist0, Hist, HistOpp0, HistOpp) :-
+move_history_2(Before0, Before, After0, After, Hist0, Hist, HistOpp0, HistOpp)
+        :-
     (
         Hist0 = [],
         Before = Before0,
@@ -428,8 +485,7 @@ forward_for_completion(Type, Before0, Before, After0, After) :-
         After = After0
     ;
         Type = complete_path(_),
-        bol_eol(After0, Before0, Before),
-        After = []
+        eol(Before0, Before, After0, After)
     ;
         ( Type = complete_limit(_, _)
         ; Type = complete_tags_smart(_, _)
@@ -440,11 +496,11 @@ forward_for_completion(Type, Before0, Before, After0, After) :-
     ).
 
 :- pred do_completion(list(char)::in, list(char)::out, list(char)::in,
-    sub_info::in, maybe(sub_info)::out, io::di, io::uo) is det.
+    info::in, maybe(info)::out, io::di, io::uo) is det.
 
-do_completion(Orig, Replacement, After, SubInfo0, MaybeSubInfo, !IO) :-
-    Type = SubInfo0 ^ compl_type,
-    Choices0 = SubInfo0 ^ compl_choices,
+do_completion(Orig, Replacement, After, Info0, MaybeInfo, !IO) :-
+    Type = Info0 ^ compl_type,
+    Choices0 = Info0 ^ compl_choices,
     (
         Choices0 = [],
         Type = complete_none,
@@ -483,26 +539,26 @@ do_completion(Orig, Replacement, After, SubInfo0, MaybeSubInfo, !IO) :-
     ;
         Choices0 = [_ | _],
         Choices = Choices0,
-        CompletionPoint = SubInfo0 ^ compl_point
+        CompletionPoint = Info0 ^ compl_point
     ),
     (
         Choices = [],
         Replacement = Orig,
-        MaybeSubInfo = no
+        MaybeInfo = no
     ;
         Choices = [FirstChoice | MoreChoices],
         det_take_tail(CompletionPoint, Orig, OrigKeep),
         reverse_onto(string.to_char_list(FirstChoice), OrigKeep, Replacement),
         (
             MoreChoices = [],
-            SubInfo = SubInfo0 ^ compl_choices := []
+            Info = Info0 ^ compl_choices := []
         ;
             MoreChoices = [_ | _],
             RotateChoices = MoreChoices ++ [FirstChoice],
-            SubInfo1 = SubInfo0 ^ compl_choices := RotateChoices,
-            SubInfo = SubInfo1 ^ compl_point := CompletionPoint
+            Info1 = Info0 ^ compl_choices := RotateChoices,
+            Info = Info1 ^ compl_point := CompletionPoint
         ),
-        MaybeSubInfo = yes(SubInfo)
+        MaybeInfo = yes(Info)
     ).
 
 %-----------------------------------------------------------------------------%
@@ -776,14 +832,21 @@ reverse_onto([X | Xs], Acc0, Acc) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred draw_text_entry(screen::in, string::in, list(char)::in, list(char)::in,
-    int::in, int::out, io::di, io::uo) is det.
+:- pred draw_text_entry(screen::in, info::in, info::out, io::di, io::uo)
+    is det.
 
-draw_text_entry(Screen, Prompt, Before, After, LeftOffset0, LeftOffset, !IO) :-
+draw_text_entry(Screen, !Info, !IO) :-
+    !.Info ^ prompt = Prompt,
+    !.Info ^ before = Before,
+    !.Info ^ after = After,
+    !.Info ^ left_offset = LeftOffset0,
+
     get_cols(Screen, Cols),
     RemainCols = Cols - string_wcwidth(Prompt),
     calc_draw(RemainCols, Before, BeforeDraw, After, AfterDraw,
         LeftOffset0, LeftOffset),
+
+    !Info ^ left_offset := LeftOffset,
 
     get_msgentry_panel(Screen, Panel),
     panel.erase(Panel, !IO),
