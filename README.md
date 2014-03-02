@@ -194,11 +194,11 @@ This view pages through an entire thread.  The keys are:
     R               recall postponed message
     a               add to addressbook
 
-    v               highlight next visible attachment or URL
+    v               highlight next visible attachment or URL or folded text
     V               highlight next visible attachment or top of message
     s               save highlighted message/part
     o               open highlighted message/part/URL with external program
-    z               cycle alternative parts / toggle inline display
+    z               cycle alternative parts / inline display / folded text
 
     i, q            return to index
     I               return to index, removing 'unread' tag on all messages

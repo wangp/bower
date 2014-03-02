@@ -132,7 +132,7 @@
     ;       prompt_open_part(part)
     ;       prompt_open_url(string)
     ;       prompt_search(search_direction)
-    ;       cycle_alternatives
+    ;       toggle_content
     ;       toggle_ordering
     ;       addressbook_add
     ;       refresh_results
@@ -698,8 +698,8 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         prompt_search(Screen, SearchDir, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
-        Action = cycle_alternatives,
-        cycle_alternatives(Screen, !Info, !IO),
+        Action = toggle_content,
+        toggle_content(Screen, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = toggle_ordering,
@@ -884,12 +884,12 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ;
         Key = char('v')
     ->
-        highlight_part_or_url(MessageUpdate, !Info),
+        highlight_minor(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('V')
     ->
-        highlight_part_or_message(MessageUpdate, !Info),
+        highlight_major(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('s')
@@ -902,7 +902,7 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ;
         Key = char('z')
     ->
-        Action = cycle_alternatives,
+        Action = toggle_content,
         MessageUpdate = clear_message
     ;
         Key = char('/')
@@ -1575,22 +1575,22 @@ common_unread_state([H | T], State0, State) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred highlight_part_or_url(message_update::out,
+:- pred highlight_minor(message_update::out,
     thread_pager_info::in, thread_pager_info::out) is det.
 
-highlight_part_or_url(MessageUpdate, !Info) :-
+highlight_minor(MessageUpdate, !Info) :-
     Pager0 = !.Info ^ tp_pager,
     NumRows = !.Info ^ tp_num_pager_rows,
-    highlight_part_or_url(NumRows, MessageUpdate, Pager0, Pager),
+    highlight_minor(NumRows, MessageUpdate, Pager0, Pager),
     !Info ^ tp_pager := Pager.
 
-:- pred highlight_part_or_message(message_update::out,
+:- pred highlight_major(message_update::out,
     thread_pager_info::in, thread_pager_info::out) is det.
 
-highlight_part_or_message(MessageUpdate, !Info) :-
+highlight_major(MessageUpdate, !Info) :-
     Pager0 = !.Info ^ tp_pager,
     NumRows = !.Info ^ tp_num_pager_rows,
-    highlight_part_or_message(NumRows, MessageUpdate, Pager0, Pager),
+    highlight_major(NumRows, MessageUpdate, Pager0, Pager),
     !Info ^ tp_pager := Pager.
 
 %-----------------------------------------------------------------------------%
@@ -1904,13 +1904,13 @@ skip_to_search(SearchKind, MessageUpdate, !Info) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred cycle_alternatives(screen::in,
+:- pred toggle_content(screen::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
-cycle_alternatives(Screen, !Info, !IO) :-
+toggle_content(Screen, !Info, !IO) :-
     get_cols(Screen, Cols),
     Pager0 = !.Info ^ tp_pager,
-    pager.cycle_alternatives(Cols, MessageUpdate, Pager0, Pager, !IO),
+    pager.toggle_content(Cols, MessageUpdate, Pager0, Pager, !IO),
     !Info ^ tp_pager := Pager,
     update_message(Screen, MessageUpdate, !IO).
 
