@@ -34,8 +34,6 @@
 
 :- pred get_extension(string::in, string::out) is semidet.
 
-:- pred fix_utf8(string::in, string::out) is det.
-
 :- type pieces
     --->    empty
     ;       literal(string, pieces)
@@ -178,90 +176,6 @@ get_extension_2(FileName, !Index) :-
     ;
         get_extension_2(FileName, !Index)
     ).
-
-%-----------------------------------------------------------------------------%
-
-fix_utf8(String0, String) :-
-    fix_utf8_loop(String0, length(String0), 0, 0, empty, Pieces),
-    ( Pieces = substring(_, _, _, empty) ->
-        % Common case.
-        String = String0
-    ;
-        string_from_rev_pieces(Pieces, String)
-    ).
-
-:- pred fix_utf8_loop(string::in, int::in, int::in, int::in,
-    pieces::in, pieces::out) is det.
-
-fix_utf8_loop(S, Max, Anchor, I0, !Pieces) :-
-    ( I0 < Max ->
-        string.unsafe_index_code_unit(S, I0, C0),
-        I1 = I0 + 1,
-        ( C0 =< 0x7f ->
-            % Plain ASCII.
-            fix_utf8_loop(S, Max, Anchor, I1, !Pieces)
-        ;
-            ( C0 =< 0xDF ->
-                C0 > 0xC1,
-                % 2-byte sequence.
-                Imax = I0 + 2,
-                C1 = C0 /\ 0x1F,
-                MinC = 0x80
-            ; C0 =< 0xEF ->
-                % 3-byte sequence.
-                Imax = I0 + 3,
-                C1 = C0 /\ 0x0F,
-                MinC = 0x800
-            ;
-                C0 =< 0xF4,
-                % 4-byte sequence.
-                Imax = I0 + 4,
-                C1 = C0 /\ 0x07,
-                MinC = 0x10000
-            ),
-            Imax =< Max,
-            check_multibyte_seq(S, I1, Imax, C1, MinC)
-        ->
-            fix_utf8_loop(S, Max, Anchor, Imax, !Pieces)
-        ;
-            % Otherwise invalid.
-            add_substring_piece(S, Anchor, I0, !Pieces),
-            add_bad_code_unit(C0, !Pieces),
-            fix_utf8_loop(S, Max, I1, I1, !Pieces)
-        )
-    ;
-        add_substring_piece(S, Anchor, I0, !Pieces)
-    ).
-
-:- pred check_multibyte_seq(string::in, int::in, int::in, int::in, int::in)
-    is semidet.
-
-check_multibyte_seq(S, I, Imax, C, MinC) :-
-    ( I = Imax ->
-        MinC =< C
-    ;
-        string.unsafe_index_code_unit(S, I, D),
-        D /\ 0xC0 = 0x80,
-        C1 = (C `unchecked_left_shift` 6) \/ (D /\ 0x3F),
-        check_multibyte_seq(S, I + 1, Imax, C1, MinC)
-    ).
-
-:- pred add_substring_piece(string::in, int::in, int::in,
-    pieces::in, pieces::out) is det.
-
-add_substring_piece(BaseString, Start, End, Pieces0, Pieces) :-
-    ( End > Start ->
-        Pieces = substring(BaseString, Start, End, Pieces0)
-    ;
-        Pieces = Pieces0
-    ).
-
-:- pred add_bad_code_unit(int::in, pieces::in, pieces::out) is det.
-
-add_bad_code_unit(C, Pieces0, Pieces) :-
-    % Treat code unit as iso-8859-1 character code.
-    Literal = string.from_char(char.det_from_int(C)),
-    Pieces = literal(Literal, Pieces0).
 
 %-----------------------------------------------------------------------------%
 
