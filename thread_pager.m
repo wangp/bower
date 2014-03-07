@@ -2136,11 +2136,11 @@ draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
     cond_attr_set(Panel, fg_bg(magenta, default), IsCursor, !IO),
     (
         MaybeGraphics = yes(Graphics),
-        list.foldl(draw_graphic(Panel), Graphics, !IO),
-        my_addstr(Panel, "• ", !IO)
+        list.foldl(draw_graphic(Panel), Graphics, !IO)
     ;
         MaybeGraphics = no
     ),
+    my_addstr(Panel, "• ", !IO),
     (
         Unread = unread,
         cond_attr_set(Panel, bold, IsCursor, !IO)
