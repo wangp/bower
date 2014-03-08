@@ -57,6 +57,7 @@
 :- import_module int.
 :- import_module list.
 :- import_module require.
+:- import_module stack.
 :- import_module string.
 
 :- import_module curs.
@@ -70,15 +71,21 @@
 :- type info
     --->    info(
                 prompt          :: string,          % static
-                before          :: list(char),
-                after           :: list(char),
+                state           :: te_state,
+                states          :: stack(te_state),
                 first_time      :: bool,
                 left_offset     :: int,
-                pre_history     :: history,
-                post_history    :: history,
                 compl_type      :: completion_type, % static
                 compl_choices   :: list(string),
                 compl_point     :: int
+            ).
+
+:- type te_state
+    --->    te_state(
+                before          :: list(char),
+                after           :: list(char),
+                pre_history     :: history,
+                post_history    :: history
             ).
 
 :- type history == list(string). % reverse
@@ -123,11 +130,11 @@ text_entry_initial(Screen, Prompt, History, Initial, CompleteType, Return,
 
 text_entry_full(Screen, Prompt, History, Initial, CompleteType, FirstTime,
         Return, !IO) :-
+    Before = list.reverse(string.to_char_list(Initial)),
+    State = te_state(Before, [], History, []),
+    States = stack.init,
     LeftOffset = 0,
-    string.to_char_list(Initial, Before0),
-    list.reverse(Before0, Before),
-    After = [],
-    Info0 = info(Prompt, Before, After, FirstTime, LeftOffset, History, [],
+    Info0 = info(Prompt, State, States, FirstTime, LeftOffset,
         CompleteType, [], 0),
     text_entry_loop(Screen, Return, Info0, _Info, !IO),
     update_message(Screen, clear_message, !IO).
@@ -147,8 +154,9 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
     ;
         Key = char('\r') % CR
     ->
-        !.Info ^ before = Before,
-        !.Info ^ after = After,
+        State = !.Info ^ state,
+        Before = State ^ before,
+        After = State ^ after,
         String = char_lists_to_string(Before, After),
         Return = yes(String)
     ;
@@ -157,7 +165,7 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
         ; Key = code(key_backspace)
         )
     ->
-        modify_before(delete_char, !Info),
+        modify_before(delete_char, yes, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x17\') % ^W
@@ -166,73 +174,72 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
         ; Key = metacode(key_backspace)
         )
     ->
-        modify_before(delete_word, !Info),
+        modify_before(delete_word, yes, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x04\') % ^D
         ; Key = code(key_del)
         )
     ->
-        modify_after(delete_char, !Info),
+        modify_after(delete_char, yes, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         Key = meta('d')
     ->
-        modify_after(delete_word, !Info),
+        modify_after(delete_word, yes, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x02\') % ^B
         ; Key = code(key_left)
         )
     ->
-        modify_before_after(left_char, !Info),
+        modify_before_after(left_char, no, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x06\') % ^F
         ; Key = code(key_right)
         )
     ->
-        modify_before_after(right_char, !Info),
+        modify_before_after(right_char, no, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         Key = meta('b')
     ->
-        modify_before_after(back_word, !Info),
+        modify_before_after(back_word, no, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         Key = meta('f')
     ->
-        modify_before_after(forward_word, !Info),
+        modify_before_after(forward_word, no, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x01\') % ^A
         ; Key = code(key_home)
         )
     ->
-        modify_before_after(bol, !Info),
+        modify_before_after(bol, no, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x05\') % ^E
         ; Key = code(key_end)
         )
     ->
-        modify_before_after(eol, !Info),
+        modify_before_after(eol, no, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         Key = char('\x15\') % ^U
     ->
-        !Info ^ before := [],
-        !Info ^ after := [],
+        modify_before_after(kill_all, yes, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         Key = char('\x0b\') % ^K
     ->
-        !Info ^ after := [],
+        modify_after(kill_eol, yes, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         Key = char('\x14\') % ^T
     ->
-        modify_before_after(transpose, !Info),
+        modify_before_after(transpose, yes, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x10\') % ^P
@@ -252,14 +259,14 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
         Key = char('\x09\') % Tab
     ->
         !.Info ^ compl_type = Type,
-        !.Info ^ before = Before0,
-        !.Info ^ after = After0,
+        !.Info ^ state = State0,
+        State0 = te_state(Before0, After0, Pre, Post),
         forward_for_completion(Type, Before0, Before1, After0, After),
         do_completion(Before1, Before, After, !.Info, MaybeInfo, !IO),
         (
             MaybeInfo = yes(!:Info),
-            !Info ^ before := Before,
-            !Info ^ after := After,
+            State = te_state(Before, After, Pre, Post),
+            enter_state(State, yes, !Info),
             clear_first_time_flag(!Info),
             text_entry_loop(Screen, Return, !Info, !IO)
         ;
@@ -267,6 +274,11 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
             % XXX type tab?
             continue_text_entry(Screen, Return, !Info, !IO)
         )
+    ;
+        Key = char('\x1f\') % ^_
+    ->
+        undo(!Info),
+        continue_text_entry(Screen, Return, !Info, !IO)
     ;
         (
             Key = char(Char),
@@ -319,51 +331,82 @@ char_lists_to_string(Before, After) = BeforeString ++ AfterString :-
     string.from_rev_char_list(Before, BeforeString),
     string.from_char_list(After, AfterString).
 
-:- pred modify_before(pred(list(char), list(char)), info, info).
-:- mode modify_before(in(pred(in, out) is det), in, out) is det.
+:- pred enter_state(te_state::in, bool::in, info::in, info::out) is det.
 
-modify_before(P, !Info) :-
-    !.Info ^ before = Before0,
-    P(Before0, Before),
-    !Info ^ before := Before.
+enter_state(State, Push, !Info) :-
+    (
+        Push = yes,
+        OldState = !.Info ^ state,
+        States0 = !.Info ^ states,
+        stack.push(OldState, States0, States),
+        !Info ^ states := States
+    ;
+        Push = no
+    ),
+    !Info ^ state := State.
 
-:- pred modify_after(pred(list(char), list(char)), info, info).
-:- mode modify_after(in(pred(in, out) is det), in, out) is det.
+:- pred modify_before(pred(list(char), list(char)), bool, info, info).
+:- mode modify_before(in(pred(in, out) is semidet), in, in, out) is det.
 
-modify_after(P, !Info) :-
-    !.Info ^ after = After0,
-    P(After0, After),
-    !Info ^ after := After.
+modify_before(P, Push, !Info) :-
+    State0 = !.Info ^ state,
+    Before0 = State0 ^ before,
+    ( P(Before0, Before) ->
+        State = State0 ^ before := Before,
+        enter_state(State, Push, !Info)
+    ;
+        true
+    ).
 
-:- pred modify_before_after(pred(list(char), list(char), list(char), list(char)), info, info).
-:- mode modify_before_after(in(pred(in, out, in, out) is det), in, out) is det.
+:- pred modify_after(pred(list(char), list(char)), bool, info, info).
+:- mode modify_after(in(pred(in, out) is semidet), in, in, out) is det.
 
-modify_before_after(P, !Info) :-
-    !.Info ^ before = Before0,
-    !.Info ^ after = After0,
-    P(Before0, Before, After0, After),
-    !Info ^ before := Before,
-    !Info ^ after := After.
+modify_after(P, Push, !Info) :-
+    State0 = !.Info ^ state,
+    After0 = State0 ^ after,
+    ( P(After0, After) ->
+        State = State0 ^ after := After,
+        enter_state(State, Push, !Info)
+    ;
+        true
+    ).
 
-:- pred delete_char(list(char)::in, list(char)::out) is det.
+:- pred modify_before_after(pred(list(char), list(char), list(char),
+    list(char)), bool, info, info).
+:- mode modify_before_after(in(pred(in, out, in, out) is det), in, in, out)
+    is det.
+:- mode modify_before_after(in(pred(in, out, in, out) is semidet), in, in, out)
+    is det.
 
-delete_char([], []).
+modify_before_after(P, Push, !Info) :-
+    !.Info ^ state = te_state(Before0, After0, Pre, Post),
+    ( P(Before0, Before, After0, After) ->
+        State = te_state(Before, After, Pre, Post),
+        enter_state(State, Push, !Info)
+    ;
+        true
+    ).
+
+:- pred delete_char(list(char)::in, list(char)::out) is semidet.
+
+delete_char([], []) :- fail.
 delete_char([_ | Cs], Cs).
 
-:- pred delete_word(list(char)::in, list(char)::out) is det.
+:- pred delete_word(list(char)::in, list(char)::out) is semidet.
 
 delete_word(Cs0, Cs) :-
     list.takewhile(non_word_char, Cs0, _, Cs1),
-    list.takewhile(is_word_char, Cs1, _, Cs).
+    list.takewhile(is_word_char, Cs1, _, Cs),
+    Cs \= Cs0.
 
 :- pred left_char(list(char)::in, list(char)::out,
-    list(char)::in, list(char)::out) is det.
+    list(char)::in, list(char)::out) is semidet.
 
-left_char([], [], Ys, Ys).
+left_char([], [], Ys, Ys) :- fail.
 left_char([C | Xs], Xs, Ys, [C | Ys]).
 
 :- pred right_char(list(char)::in, list(char)::out,
-    list(char)::in, list(char)::out) is det.
+    list(char)::in, list(char)::out) is semidet.
 
 right_char(!Xs, !Ys) :-
     left_char(!Ys, !Xs).
@@ -385,15 +428,28 @@ forward_word(Before0, Before, After0, After) :-
     Before = list.reverse(Take0 ++ Take1) ++ Before0.
 
 :- pred bol(list(char)::in, list(char)::out, list(char)::in, list(char)::out)
-    is det.
+    is semidet.
 
-bol(Before, [], After, reverse(Before) ++ After).
+bol(Before, [], After, reverse(Before) ++ After) :-
+    Before = [_ | _].
 
 :- pred eol(list(char)::in, list(char)::out, list(char)::in, list(char)::out)
-    is det.
+    is semidet.
 
 eol(!Before, !After) :-
     bol(!After, !Before).
+
+:- pred kill_all(list(char)::in, list(char)::out,
+    list(char)::in, list(char)::out) is semidet.
+
+kill_all(Before, [], After, []) :-
+    ( Before = [_ | _]
+    ; After = [_ | _]
+    ).
+
+:- pred kill_eol(list(char)::in, list(char)::out) is semidet.
+
+kill_eol([_ | _], []).
 
 :- pred transpose(list(char)::in, list(char)::out,
     list(char)::in, list(char)::out) is det.
@@ -419,59 +475,60 @@ transpose(Before0, Before, After0, After) :-
 :- pred insert(char::in, info::in, info::out) is det.
 
 insert(Char, !Info) :-
-    !.Info ^ before = Before0,
-    !.Info ^ after = After0,
+    State0 = !.Info ^ state,
+    State0 = te_state(Before0, After0, Pre0, Post),
     (
         !.Info ^ first_time = yes,
         not char.is_whitespace(Char)
     ->
-        !.Info ^ pre_history = Pre0,
+        Before = [Char],
         String = char_lists_to_string(Before0, After0),
-        Pre = [String | Pre0],
-        !Info ^ pre_history := Pre,
-        !Info ^ before := [Char]
+        Pre = [String | Pre0]
     ;
-        !Info ^ before := [Char | Before0]
+        Before = [Char | Before0],
+        Pre = Pre0
+    ),
+    State = te_state(Before, After0, Pre, Post),
+    enter_state(State, yes, !Info).
+
+:- pred undo(info::in, info::out) is det.
+
+undo(!Info) :-
+    !.Info ^ states = States0,
+    ( stack.pop(State, States0, States) ->
+        !Info ^ state := State,
+        !Info ^ states := States
+    ;
+        true
     ).
 
 :- pred move_history(move_history_dir::in, info::in, info::out) is det.
 
 move_history(Dir, !Info) :-
-    !.Info ^ before = Before0,
-    !.Info ^ after = After0,
-    !.Info ^ pre_history = Pre0,
-    !.Info ^ post_history = Post0,
+    !.Info ^ state = State0,
+    ( move_history_2(Dir, State0, State) ->
+        enter_state(State, yes, !Info)
+    ;
+        true
+    ).
+
+:- pred move_history_2(move_history_dir::in, te_state::in, te_state::out)
+    is semidet.
+
+move_history_2(Dir, State0, State) :-
+    State0 = te_state(Before0, After0, Pre0, Post0),
+    SaveString = char_lists_to_string(Before0, After0),
     (
         Dir = pre,
-        move_history_2(Before0, Before, After0, After, Pre0, Pre, Post0, Post)
+        Pre0 = [Edit | Pre],
+        Post = [SaveString | Post0]
     ;
         Dir = post,
-        move_history_2(Before0, Before, After0, After, Post0, Post, Pre0, Pre)
+        Post0 = [Edit | Post],
+        Pre = [SaveString | Pre0]
     ),
-    !Info ^ before := Before,
-    !Info ^ after := After,
-    !Info ^ pre_history := Pre,
-    !Info ^ post_history := Post.
-
-:- pred move_history_2(list(char)::in, list(char)::out,
-    list(char)::in, list(char)::out,
-    history::in, history::out, history::in, history::out) is det.
-
-move_history_2(Before0, Before, After0, After, Hist0, Hist, HistOpp0, HistOpp)
-        :-
-    (
-        Hist0 = [],
-        Before = Before0,
-        After = After0,
-        Hist = Hist0,
-        HistOpp = HistOpp0
-    ;
-        Hist0 = [Edit | Hist],
-        Before = list.reverse(string.to_char_list(Edit)),
-        After = [],
-        SaveString = char_lists_to_string(Before0, After0),
-        HistOpp = [SaveString | HistOpp0]
-    ).
+    Before = list.reverse(string.to_char_list(Edit)),
+    State = te_state(Before, [], Pre, Post).
 
 %-----------------------------------------------------------------------------%
 
@@ -485,7 +542,8 @@ forward_for_completion(Type, Before0, Before, After0, After) :-
         After = After0
     ;
         Type = complete_path(_),
-        eol(Before0, Before, After0, After)
+        Before = reverse(After0) ++ Before0,
+        After = []
     ;
         ( Type = complete_limit(_, _)
         ; Type = complete_tags_smart(_, _)
@@ -837,8 +895,7 @@ reverse_onto([X | Xs], Acc0, Acc) :-
 
 draw_text_entry(Screen, !Info, !IO) :-
     !.Info ^ prompt = Prompt,
-    !.Info ^ before = Before,
-    !.Info ^ after = After,
+    !.Info ^ state = te_state(Before, After, _Pre, _Post),
     !.Info ^ left_offset = LeftOffset0,
 
     get_cols(Screen, Cols),
