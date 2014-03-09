@@ -79,10 +79,13 @@
 :- pred highlight_major(int::in, message_update::out,
     pager_info::in, pager_info::out) is det.
 
-:- pred get_highlighted_part(pager_info::in, part::out, maybe(string)::out)
-    is semidet.
+:- type highlighted_thing
+    --->    highlighted_part(part, maybe(string))
+    ;       highlighted_url(string)
+    ;       highlighted_fold_marker.
 
-:- pred get_highlighted_url(pager_info::in, string::out) is semidet.
+:- pred get_highlighted_thing(pager_info::in, highlighted_thing::out)
+    is semidet.
 
 :- pred toggle_content(int::in, message_update::out,
     pager_info::in, pager_info::out, io::di, io::uo) is det.
@@ -1341,44 +1344,35 @@ is_highlightable_major(_Id - Line) :-
     ; Line = part_head(_, _)
     ).
 
-get_highlighted_part(Info, Part, MaybeSubject) :-
+get_highlighted_thing(Info, Thing) :-
     Scrollable = Info ^ p_scrollable,
-    get_cursor_line(Scrollable, _, _Id - Line),
-    get_highlighted_part_2(Line, Part, MaybeSubject).
-
-:- pred get_highlighted_part_2(pager_line::in, part::out, maybe(string)::out)
-    is semidet.
-
-get_highlighted_part_2(Line, Part, MaybeSubject) :-
+    get_cursor_line(Scrollable, _, _NodeId - Line),
     require_complete_switch [Line]
     (
         Line = start_message_header(Message, _, _),
         MessageId = Message ^ m_id,
         Subject = Message ^ m_headers ^ h_subject,
         Part = part(MessageId, 0, "text/plain", unsupported, no, no, no),
-        MaybeSubject = yes(Subject)
+        MaybeSubject = yes(Subject),
+        Thing = highlighted_part(Part, MaybeSubject)
     ;
         Line = part_head(Part, _),
-        MaybeSubject = no
+        MaybeSubject = no,
+        Thing = highlighted_part(Part, MaybeSubject)
     ;
-        ( Line = header(_, _)
-        ; Line = text(_, _, _, _)
-        ; Line = fold_marker(_, _)
-        ; Line = message_separator
-        ),
+        Line = text(_, String, _, url(Start, End)),
+        string.between(String, Start, End, Url),
+        Thing = highlighted_url(Url)
+    ;
+        Line = fold_marker(_, _),
+        Thing = highlighted_fold_marker
+    ;
+        Line = header(_, _),
+        fail
+    ;
+        Line = message_separator,
         fail
     ).
-
-get_highlighted_url(Info, Url) :-
-    Scrollable = Info ^ p_scrollable,
-    get_cursor_line(Scrollable, _, _Id - Line),
-    get_highlighted_url_2(Line, Url).
-
-:- pred get_highlighted_url_2(pager_line::in, string::out) is semidet.
-
-get_highlighted_url_2(Line, Url) :-
-    Line = text(_, String, _, url(Start, End)),
-    string.between(String, Start, End, Url).
 
 %-----------------------------------------------------------------------------%
 

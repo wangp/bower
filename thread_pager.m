@@ -1600,7 +1600,7 @@ highlight_major(MessageUpdate, !Info) :-
 
 save_part(Action, MessageUpdate, !Info) :-
     Pager = !.Info ^ tp_pager,
-    ( get_highlighted_part(Pager, Part, MaybeSubject) ->
+    ( get_highlighted_thing(Pager, highlighted_part(Part, MaybeSubject)) ->
         Action = prompt_save_part(Part, MaybeSubject),
         MessageUpdate = clear_message
     ;
@@ -1739,11 +1739,18 @@ do_save_part(MessageId, Part, FileName, Res, !IO) :-
 
 open_part(Action, MessageUpdate, !Info) :-
     Pager = !.Info ^ tp_pager,
-    ( get_highlighted_part(Pager, Part, _MaybeFilename) ->
-        Action = prompt_open_part(Part),
-        MessageUpdate = clear_message
-    ; get_highlighted_url(Pager, Url) ->
-        Action = prompt_open_url(Url),
+    ( get_highlighted_thing(Pager, Thing) ->
+        (
+            Thing = highlighted_part(Part, _MaybeFilename),
+            Action = prompt_open_part(Part)
+        ;
+            Thing = highlighted_url(Url),
+            Action = prompt_open_url(Url)
+        ;
+            Thing = highlighted_fold_marker,
+            % This is a bit ugly as we will end up looking up the line again.
+            Action = toggle_content
+        ),
         MessageUpdate = clear_message
     ;
         Action = continue,
