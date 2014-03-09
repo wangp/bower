@@ -94,12 +94,9 @@
                 tp_clean_from   :: string,
                 tp_prev_tags    :: set(tag),
                 tp_curr_tags    :: set(tag),
+                tp_std_tags     :: standard_tags,   % cached from tp_curr_tags
                 tp_nonstd_tags_width :: int,
                 tp_selected     :: selected,
-                tp_unread       :: unread,          % cached from tp_curr_tags
-                tp_replied      :: replied,         % cached from tp_curr_tags
-                tp_deleted      :: deleted,         % cached from tp_curr_tags
-                tp_flagged      :: flagged,         % cached from tp_curr_tags
                 tp_graphics     :: maybe(list(graphic)),
                 tp_reldate      :: string,
                 tp_subject      :: maybe(string)
@@ -498,8 +495,7 @@ make_thread_line(Nowish, Message, MaybeParentId, MaybeGraphics, PrevSubject,
     Timestamp = Message ^ m_timestamp,
     Tags = Message ^ m_tags,
     From = clean_email_address(Message ^ m_headers ^ h_from),
-    get_standard_tag_state(Tags, Unread, Replied, Deleted, Flagged),
-    get_nonstandard_tags_width(Tags, NonstdTagsWidth),
+    get_standard_tags(Tags, StdTags, NonstdTagsWidth),
     Subject = Message ^ m_headers ^ h_subject,
     timestamp_to_tm(Timestamp, TM),
     Shorter = no,
@@ -509,9 +505,8 @@ make_thread_line(Nowish, Message, MaybeParentId, MaybeGraphics, PrevSubject,
     ;
         MaybeSubject = yes(Subject)
     ),
-    Line = thread_line(Message, MaybeParentId, From, Tags, Tags,
-        NonstdTagsWidth, not_selected, Unread, Replied, Deleted, Flagged,
-        MaybeGraphics, RelDate, MaybeSubject).
+    Line = thread_line(Message, MaybeParentId, From, Tags, Tags, StdTags,
+        NonstdTagsWidth, not_selected, MaybeGraphics, RelDate, MaybeSubject).
 
 :- func clean_email_address(string) = string.
 
@@ -569,18 +564,17 @@ create_tag_delta_map(ThreadLine, !DeltaMap) :-
 
 restore_tag_deltas(DeltaMap, ThreadLine0, ThreadLine) :-
     ThreadLine0 = thread_line(Message, ParentId, From, PrevTags, CurrTags0,
-        _NonstdTagsWidth, Selected, _Unread, _Replied, _Deleted, _Flagged,
-        ModeGraphics, RelDate, MaybeSubject),
+        _StdTags0, _NonstdTagsWidth0, Selected, ModeGraphics, RelDate,
+        MaybeSubject),
     MessageId = Message ^ m_id,
     ( map.search(DeltaMap, MessageId, Deltas) ->
         Deltas = message_tag_deltas(AddTags, RemoveTags),
         set.difference(CurrTags0, RemoveTags, CurrTags1),
         set.union(CurrTags1, AddTags, CurrTags),
-        get_standard_tag_state(CurrTags, Unread, Replied, Deleted, Flagged),
-        get_nonstandard_tags_width(CurrTags, NonstdTagsWidth),
+        get_standard_tags(CurrTags, StdTags, NonstdTagsWidth),
         ThreadLine = thread_line(Message, ParentId, From, PrevTags, CurrTags,
-            NonstdTagsWidth, Selected, Unread, Replied, Deleted, Flagged,
-            ModeGraphics, RelDate, MaybeSubject)
+            StdTags, NonstdTagsWidth, Selected, ModeGraphics, RelDate,
+            MaybeSubject)
     ;
         ThreadLine = ThreadLine0
     ).
@@ -1129,7 +1123,7 @@ is_message(MessageId, Line) :-
 :- pred is_unread_line(thread_line::in) is semidet.
 
 is_unread_line(Line) :-
-    Line ^ tp_unread = unread.
+    Line ^ tp_std_tags ^ unread = unread.
 
 :- pred set_current_line_read(thread_pager_info::in, thread_pager_info::out)
     is det.
@@ -1184,7 +1178,7 @@ set_line_read(!Line) :-
     Tags0 = !.Line ^ tp_curr_tags,
     set.delete(tag("unread"), Tags0, Tags),
     !Line ^ tp_curr_tags := Tags,
-    !Line ^ tp_unread := read.
+    !Line ^ tp_std_tags ^ unread := read.
 
 :- pred set_line_unread(thread_line::in, thread_line::out) is det.
 
@@ -1192,14 +1186,14 @@ set_line_unread(!Line) :-
     Tags0 = !.Line ^ tp_curr_tags,
     set.insert(tag("unread"), Tags0, Tags),
     !Line ^ tp_curr_tags := Tags,
-    !Line ^ tp_unread := unread.
+    !Line ^ tp_std_tags ^ unread := unread.
 
 :- pred toggle_unread(thread_pager_info::in, thread_pager_info::out) is det.
 
 toggle_unread(!Info) :-
     Scrollable0 = !.Info ^ tp_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
-        Unread0 = Line0 ^ tp_unread,
+        Unread0 = Line0 ^ tp_std_tags ^ unread,
         (
             Unread0 = unread,
             set_line_read(Line0, Line)
@@ -1219,7 +1213,7 @@ toggle_flagged(!Info) :-
     Scrollable0 = !.Info ^ tp_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
         TagSet0 = Line0 ^ tp_curr_tags,
-        Flagged0 = Line0 ^ tp_flagged,
+        Flagged0 = Line0 ^ tp_std_tags ^ flagged,
         (
             Flagged0 = flagged,
             set.delete(tag("flagged"), TagSet0, TagSet),
@@ -1229,7 +1223,8 @@ toggle_flagged(!Info) :-
             set.insert(tag("flagged"), TagSet0, TagSet),
             Flagged = flagged
         ),
-        Line = (Line0 ^ tp_curr_tags := TagSet) ^ tp_flagged := Flagged,
+        Line1 = Line0 ^ tp_curr_tags := TagSet,
+        Line = Line1 ^ tp_std_tags ^ flagged := Flagged,
         set_cursor_line(Line, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
     ;
@@ -1250,7 +1245,8 @@ toggle_deleted(Deleted, !Info) :-
             Deleted = deleted,
             set.insert(tag("deleted"), TagSet0, TagSet)
         ),
-        Line = (Line0 ^ tp_curr_tags := TagSet) ^ tp_deleted := Deleted,
+        Line1 = Line0 ^ tp_curr_tags := TagSet,
+        Line = Line1 ^ tp_std_tags ^ deleted := Deleted,
         set_cursor_line(Line, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
     ;
@@ -1271,19 +1267,15 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
         (
             TagChanges = yes(AddTags, RemoveTags),
             CursorLine0 = thread_line(Message, ParentId, From,
-                PrevTags, CurrTags0, _NonstdTagsWidth0, Selected,
-                _Unread, _Replied, _Deleted, _Flagged,
-                ModeGraphics, RelDate, MaybeSubject),
+                PrevTags, CurrTags0, _StdTags0, _NonstdTagsWidth0,
+                Selected, ModeGraphics, RelDate, MaybeSubject),
             % Notmuch performs tag removals before addition.
             set.difference(CurrTags0, RemoveTags, CurrTags1),
             set.union(CurrTags1, AddTags, CurrTags),
-            get_standard_tag_state(CurrTags, Unread, Replied, Deleted,
-                Flagged),
-            get_nonstandard_tags_width(CurrTags, NonstdTagsWidth),
+            get_standard_tags(CurrTags, StdTags, NonstdTagsWidth),
             CursorLine = thread_line(Message, ParentId, From,
-                PrevTags, CurrTags, NonstdTagsWidth, Selected,
-                Unread, Replied, Deleted, Flagged,
-                ModeGraphics, RelDate, MaybeSubject),
+                PrevTags, CurrTags, StdTags, NonstdTagsWidth,
+                Selected, ModeGraphics, RelDate, MaybeSubject),
             set_cursor_line(CursorLine, Scrollable0, Scrollable),
             !Info ^ tp_scrollable := Scrollable
         ;
@@ -1455,10 +1447,9 @@ gather_bulk_initial_tags(Line, MaybeAndTagSet0, MaybeAndTagSet, !OrTagSet) :-
 
 gather_initial_tags(Line, MaybeAndTagSet0, AndTagSet, !OrTagSet) :-
     Line = thread_line(_Message, _MaybeParentId, _From, _PrevTags, CurrTags0,
-        _NonstdTagsWidth0, _Selected, Unread, Replied, Deleted, Flagged,
-        _MaybeGraphics, _RelDate, _MaybeSubject),
-    apply_standard_tag_state(Unread, Replied, Deleted, Flagged,
-        CurrTags0, TagSet),
+        StdTags, _NonstdTagsWidth0, _Selected, _MaybeGraphics, _RelDate,
+        _MaybeSubject),
+    apply_standard_tag_state(StdTags, CurrTags0, TagSet),
     (
         MaybeAndTagSet0 = no,
         AndTagSet = TagSet
@@ -1512,8 +1503,8 @@ bulk_tag_changes(AddTags, RemoveTags, MessageUpdate, !Info, !IO) :-
 update_selected_line_for_tag_changes(AddTags, RemoveTags, Line0, Line,
         !MessageIds) :-
     Line0 = thread_line(Message, MaybeParentId, From, PrevTags, CurrTags0,
-        _NonstdTagsWidth0, Selected, _Unread, _Replied, _Deleted, _Flagged,
-        MaybeGraphics, RelDate, MaybeSubject),
+        _StdTags0, _NonstdTagsWidth0, Selected, MaybeGraphics, RelDate,
+        MaybeSubject),
     MessageId = Message ^ m_id,
     (
         Selected = selected,
@@ -1524,11 +1515,10 @@ update_selected_line_for_tag_changes(AddTags, RemoveTags, Line0, Line,
         TagSet \= TagSet0
     ->
         CurrTags = TagSet,
-        get_standard_tag_state(CurrTags, Unread, Replied, Deleted, Flagged),
-        get_nonstandard_tags_width(CurrTags, NonstdTagsWidth),
+        get_standard_tags(CurrTags, StdTags, NonstdTagsWidth),
         Line = thread_line(Message, MaybeParentId, From, PrevTags, CurrTags,
-            NonstdTagsWidth, Selected, Unread, Replied, Deleted, Flagged,
-            MaybeGraphics, RelDate, MaybeSubject),
+            StdTags, NonstdTagsWidth, Selected, MaybeGraphics, RelDate,
+            MaybeSubject),
         list.cons(MessageId, !MessageIds)
     ;
         Line = Line0
@@ -1567,11 +1557,11 @@ common_unread_state([H | T], State0, State) :-
     (
         Selected = selected,
         State0 = no,
-        State1 = yes(H ^ tp_unread),
+        State1 = yes(H ^ tp_std_tags ^ unread),
         common_unread_state(T, State1, State)
     ;
         Selected = selected,
-        State0 = yes(H ^ tp_unread),
+        State0 = yes(H ^ tp_std_tags ^ unread),
         common_unread_state(T, State0, State)
     ;
         Selected = not_selected,
@@ -2097,8 +2087,8 @@ draw_sep(Cols, MaybeSepPanel, !IO) :-
 
 draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
     Line = thread_line(_Message, _ParentId, From, _PrevTags, CurrTags,
-        NonstdTagsWidth, Selected, Unread, Replied, Deleted, Flagged,
-        MaybeGraphics, RelDate, MaybeSubject),
+        StdTags, NonstdTagsWidth, Selected, MaybeGraphics, RelDate,
+        MaybeSubject),
     (
         IsCursor = yes,
         panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
@@ -2116,6 +2106,7 @@ draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         my_addstr(Panel, " ", !IO)
     ),
     cond_attr_set(Panel, normal, IsCursor, !IO),
+    StdTags = standard_tags(Unread, Replied, Deleted, Flagged),
     (
         Unread = unread,
         my_addstr(Panel, "n", !IO)
@@ -2188,20 +2179,20 @@ draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
             true
         ),
         attr_set(Panel, fg_bg(red, default) + bold, !IO),
-        set.fold(draw_nonstandard_tag(Panel), CurrTags, !IO)
+        set.fold(draw_display_tag(Panel), CurrTags, !IO)
     ;
         true
     ).
 
-:- pred draw_nonstandard_tag(panel::in, tag::in, io::di, io::uo) is det.
+:- pred draw_display_tag(panel::in, tag::in, io::di, io::uo) is det.
 
-draw_nonstandard_tag(Panel, Tag, !IO) :-
-    ( standard_tag(Tag) ->
-        true
-    ;
+draw_display_tag(Panel, Tag, !IO) :-
+    ( display_tag(Tag) ->
         Tag = tag(TagName),
         my_addstr(Panel, " ", !IO),
         my_addstr(Panel, TagName, !IO)
+    ;
+        true
     ).
 
 :- pred draw_graphic(panel::in, graphic::in, io::di, io::uo) is det.

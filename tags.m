@@ -29,20 +29,25 @@
     --->    flagged
     ;       unflagged.
 
+:- type standard_tags
+    --->    standard_tags(
+                unread :: unread,
+                replied :: replied,
+                deleted :: deleted,
+                flagged :: flagged
+            ).
+
 :- type tag_delta
     --->    tag_delta(string). % +tag or -tag
 
 :- func tag_delta_to_string(tag_delta) = string.
 
-:- pred standard_tag(tag::in) is semidet.
+:- pred display_tag(tag::in) is semidet.
 
-:- pred get_standard_tag_state(set(tag)::in,
-    unread::out, replied::out, deleted::out, flagged::out) is det.
+:- pred get_standard_tags(set(tag)::in, standard_tags::out, int::out) is det.
 
-:- pred apply_standard_tag_state(unread::in, replied::in, deleted::in,
-    flagged::in, set(tag)::in, set(tag)::out) is det.
-
-:- pred get_nonstandard_tags_width(set(tag)::in, int::out) is det.
+:- pred apply_standard_tag_state(standard_tags::in,
+    set(tag)::in, set(tag)::out) is det.
 
 :- pred validate_tag_deltas(list(string)::in, list(tag_delta)::out,
     set(tag)::out, set(tag)::out) is semidet.
@@ -63,26 +68,51 @@ tag_delta_to_string(tag_delta(String)) = String.
 
 %-----------------------------------------------------------------------------%
 
-standard_tag(tag("deleted")).
-standard_tag(tag("flagged")).
-standard_tag(tag("inbox")).
-standard_tag(tag("new")).
-standard_tag(tag("replied")).
-standard_tag(tag("sent")).
-standard_tag(tag("signed")).
-standard_tag(tag("unread")).
+display_tag(Tag) :-
+    not nondisplay_tag(Tag).
+
+:- pred nondisplay_tag(tag::in) is semidet.
+
+nondisplay_tag(tag("deleted")).
+nondisplay_tag(tag("flagged")).
+nondisplay_tag(tag("inbox")).
+nondisplay_tag(tag("new")).
+nondisplay_tag(tag("replied")).
+nondisplay_tag(tag("sent")).
+nondisplay_tag(tag("signed")).
+nondisplay_tag(tag("unread")).
 
 %-----------------------------------------------------------------------------%
 
-get_standard_tag_state(Tags, Unread, Replied, Deleted, Flagged) :-
-    Unread = ( set.contains(Tags, tag("unread")) -> unread ; read ),
-    Replied = ( set.contains(Tags, tag("replied")) -> replied ; not_replied ),
-    Deleted = ( set.contains(Tags, tag("deleted")) -> deleted ; not_deleted ),
-    Flagged = ( set.contains(Tags, tag("flagged")) -> flagged ; unflagged ).
+get_standard_tags(Tags, StdTags, DisplayTagsWidth) :-
+    StdTags0 = standard_tags(read, not_replied, not_deleted, unflagged),
+    set.foldl2(get_standard_tags_2, Tags, StdTags0, StdTags,
+        0, DisplayTagsWidth).
+
+:- pred get_standard_tags_2(tag::in, standard_tags::in, standard_tags::out,
+    int::in, int::out) is det.
+
+get_standard_tags_2(Tag, !StdTags, !DisplayTagsWidth) :-
+    ( Tag = tag("unread") ->
+        !StdTags ^ unread := unread
+    ; Tag = tag("replied") ->
+        !StdTags ^ replied := replied
+    ; Tag = tag("deleted") ->
+        !StdTags ^ deleted := deleted
+    ; Tag = tag("flagged") ->
+        !StdTags ^ flagged := flagged
+    ; display_tag(Tag) ->
+        Tag = tag(TagName),
+        % Add one for separator.
+        !:DisplayTagsWidth = !.DisplayTagsWidth + string_wcwidth(TagName) + 1
+    ;
+        true
+    ).
 
 %-----------------------------------------------------------------------------%
 
-apply_standard_tag_state(Unread, Replied, Deleted, Flagged, !TagSet) :-
+apply_standard_tag_state(standard_tags(Unread, Replied, Deleted, Flagged),
+        !TagSet) :-
     (
         Unread = unread,
         set.insert(tag("unread"), !TagSet)
@@ -111,23 +141,6 @@ apply_standard_tag_state(Unread, Replied, Deleted, Flagged, !TagSet) :-
         Flagged = unflagged,
         set.delete(tag("flagged"), !TagSet)
     ).
-
-%-----------------------------------------------------------------------------%
-
-get_nonstandard_tags_width(Tags, Length) :-
-    set.to_sorted_list(Tags, TagList),
-    list.negated_filter(standard_tag, TagList, NonstdTags),
-    list.length(NonstdTags, NumNonstdTags),
-    ( NumNonstdTags > 0 ->
-        SepLength = NumNonstdTags,
-        list.foldl(sum_tag_length, NonstdTags, SepLength, Length)
-    ;
-        Length = 0
-    ).
-
-:- pred sum_tag_length(tag::in, int::in, int::out) is det.
-
-sum_tag_length(tag(TagName), Len, Len + string_wcwidth(TagName)).
 
 %-----------------------------------------------------------------------------%
 

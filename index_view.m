@@ -69,14 +69,11 @@
     --->    index_line(
                 i_id        :: thread_id,
                 i_selected  :: selected,
-                i_unread    :: unread,
-                i_replied   :: replied,
-                i_deleted   :: deleted,
-                i_flagged   :: flagged,
                 i_date      :: string,
                 i_authors   :: string,
                 i_subject   :: string,
                 i_tags      :: set(tag),
+                i_std_tags  :: standard_tags, % overrides i_tags
                 i_nonstd_tags_width :: int,
                 i_matched   :: int,
                 i_total     :: int
@@ -265,10 +262,9 @@ thread_to_index_line(Nowish, Thread, Line) :-
     timestamp_to_tm(Timestamp, TM),
     Shorter = yes,
     make_reldate(Nowish, TM, Shorter, Date),
-    get_standard_tag_state(Tags, Unread, Replied, Deleted, Flagged),
-    get_nonstandard_tags_width(Tags, NonstdTagsWidth),
-    Line = index_line(Id, not_selected, Unread, Replied, Deleted, Flagged,
-        Date, Authors, Subject, Tags, NonstdTagsWidth, Matched, Total).
+    get_standard_tags(Tags, StdTags, DisplayTagsWidth),
+    Line = index_line(Id, not_selected, Date, Authors, Subject, Tags, StdTags,
+        DisplayTagsWidth, Matched, Total).
 
 :- func default_max_threads = int.
 
@@ -722,7 +718,7 @@ skip_to_unread(Screen, MessageUpdate, !Info) :-
 :- pred is_unread_line(index_line::in) is semidet.
 
 is_unread_line(Line) :-
-    Line ^ i_unread = unread.
+    Line ^ i_std_tags ^ unread = unread.
 
 :- pred enter(index_info::in, action::out) is det.
 
@@ -760,14 +756,11 @@ effect_thread_pager_changes(Effects, !Info, !IO) :-
     is det.
 
 set_index_line_tags(TagSet, Line0, Line) :-
-    Line0 = index_line(ThreadId, Selected,
-        _Unread0, _Replied0, _Deleted0, _Flagged0, Date, Authors, Subject,
-        _TagSet0, _NonstdTagsWidth, Matched, Total),
-    get_standard_tag_state(TagSet, Unread, Replied, Deleted, Flagged),
-    get_nonstandard_tags_width(TagSet, NonstdTagsWidth),
-    Line = index_line(ThreadId, Selected,
-        Unread, Replied, Deleted, Flagged, Date, Authors, Subject,
-        TagSet, NonstdTagsWidth, Matched, Total).
+    Line0 = index_line(ThreadId, Selected, Date, Authors, Subject,
+        _TagSet0, _StdTags0, _NonstdTagsWidth, Matched, Total),
+    get_standard_tags(TagSet, StdTags, NonstdTagsWidth),
+    Line = index_line(ThreadId, Selected, Date, Authors, Subject,
+        TagSet, StdTags, NonstdTagsWidth, Matched, Total).
 
 %-----------------------------------------------------------------------------%
 
@@ -987,8 +980,8 @@ skip_to_internal_search_2(Search, SearchDir, Start, WrapStart, WrapMessage,
 :- pred line_matches_internal_search(string::in, index_line::in) is semidet.
 
 line_matches_internal_search(Search, Line) :-
-    Line = index_line(_Id, _Selected, _Unread, _Replied, _Flagged, _Deleted,
-        _Date, Authors, Subject, Tags, _TagsWidth, _Matched, _Total),
+    Line = index_line(_Id, _Selected, _Date, Authors, Subject, Tags, _StdTags,
+        _TagsWidth, _Matched, _Total),
     (
         strcase_str(Authors, Search)
     ;
@@ -1028,7 +1021,7 @@ modify_tag_cursor_line(ModifyPred, Screen, !Info, !IO) :-
 :- pred toggle_unread(index_line::in, index_line::out, tag_delta::out) is det.
 
 toggle_unread(Line0, Line, TagDelta) :-
-    Unread0 = Line0 ^ i_unread,
+    Unread0 = Line0 ^ i_std_tags ^ unread,
     (
         Unread0 = unread,
         TagDelta = tag_delta("-unread"),
@@ -1038,13 +1031,13 @@ toggle_unread(Line0, Line, TagDelta) :-
         TagDelta = tag_delta("+unread"),
         Unread = unread
     ),
-    Line = Line0 ^ i_unread := Unread.
+    Line = Line0 ^ i_std_tags ^ unread := Unread.
 
 :- pred toggle_flagged(index_line::in, index_line::out, tag_delta::out)
     is semidet.
 
 toggle_flagged(Line0, Line, TagDelta) :-
-    Flagged0 = Line0 ^ i_flagged,
+    Flagged0 = Line0 ^ i_std_tags ^ flagged,
     (
         Flagged0 = flagged,
         TagDelta = tag_delta("-flagged"),
@@ -1057,18 +1050,18 @@ toggle_flagged(Line0, Line, TagDelta) :-
         NumMessages = Line0 ^ i_total,
         NumMessages = 1
     ),
-    Line = Line0 ^ i_flagged := Flagged.
+    Line = Line0 ^ i_std_tags ^ flagged := Flagged.
 
 :- pred set_deleted(index_line::in, index_line::out, tag_delta::out) is det.
 
 set_deleted(Line0, Line, TagDelta) :-
-    Line = Line0 ^ i_deleted := deleted,
+    Line = Line0 ^ i_std_tags ^ deleted := deleted,
     TagDelta = tag_delta("+deleted").
 
 :- pred unset_deleted(index_line::in, index_line::out, tag_delta::out) is det.
 
 unset_deleted(Line0, Line, TagDelta) :-
-    Line = Line0 ^ i_deleted := not_deleted,
+    Line = Line0 ^ i_std_tags ^ deleted := not_deleted,
     TagDelta = tag_delta("-deleted").
 
 %-----------------------------------------------------------------------------%
@@ -1133,20 +1126,16 @@ prompt_arbitrary_tag_changes(Screen, Initial, Completion, TagChanges,
     io::di, io::uo) is det.
 
 apply_tag_changes(CursorLine0, TagDeltas, AddTags, RemoveTags, !Info, !IO) :-
-    CursorLine0 = index_line(ThreadId, Selected,
-        Unread0, Replied0, Deleted0, Flagged0, Date, Authors, Subject,
-        TagSet0, _NonstdTagsWidth, Matched, Total),
-    apply_standard_tag_state(Unread0, Replied0, Deleted0, Flagged0,
-        TagSet0, TagSet1),
+    CursorLine0 = index_line(ThreadId, Selected, Date, Authors, Subject,
+        TagSet0, StdTags0, _NonstdTagsWidth, Matched, Total),
+    apply_standard_tag_state(StdTags0, TagSet0, TagSet1),
     async_tag_threads(TagDeltas, [ThreadId], !IO),
     % Notmuch performs tag removals before addition.
     set.difference(TagSet1, RemoveTags, TagSet2),
     set.union(TagSet2, AddTags, TagSet),
-    get_standard_tag_state(TagSet, Unread, Replied, Deleted, Flagged),
-    get_nonstandard_tags_width(TagSet, NonstdTagsWidth),
-    CursorLine = index_line(ThreadId, Selected,
-        Unread, Replied, Deleted, Flagged, Date, Authors, Subject,
-        TagSet, NonstdTagsWidth, Matched, Total),
+    get_standard_tags(TagSet, StdTags, NonstdTagsWidth),
+    CursorLine = index_line(ThreadId, Selected, Date, Authors, Subject,
+        TagSet, StdTags, NonstdTagsWidth, Matched, Total),
     Scrollable0 = !.Info ^ i_scrollable,
     set_cursor_line(CursorLine, Scrollable0, Scrollable),
     !Info ^ i_scrollable := Scrollable.
@@ -1286,11 +1275,9 @@ gather_bulk_initial_tags(Line, MaybeAndTagSet0, MaybeAndTagSet, !OrTagSet) :-
     set(tag)::in, set(tag)::out) is det.
 
 gather_initial_tags(Line, MaybeAndTagSet0, AndTagSet, !OrTagSet) :-
-    Line = index_line(_ThreadId, _Selected,
-        Unread, Replied, Deleted, Flagged, _Date, _Authors, _Subject,
-        TagSet0, _NonstdTagsWidth, _Matched, _Total),
-    apply_standard_tag_state(Unread, Replied, Deleted, Flagged,
-        TagSet0, TagSet),
+    Line = index_line(_ThreadId, _Selected, _Date, _Authors, _Subject,
+        TagSet0, StdTags, _NonstdTagsWidth, _Matched, _Total),
+    apply_standard_tag_state(StdTags, TagSet0, TagSet),
     (
         MaybeAndTagSet0 = no,
         AndTagSet = TagSet
@@ -1347,9 +1334,8 @@ bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate, !Info, !IO) :-
 
 update_selected_line_for_tag_changes(AddTags, RemoveTags, Line0, Line,
         !ThreadIds) :-
-    Line0 = index_line(ThreadId, Selected,
-        _Unread, _Replied, _Deleted, _Flagged, Date, Authors, Subject,
-        TagSet0, _NonstdTagsWidth, Matched, Total),
+    Line0 = index_line(ThreadId, Selected, Date, Authors, Subject,
+        TagSet0, _StdTags0, _NonstdTagsWidth0, Matched, Total),
     (
         Selected = selected,
         % Notmuch performs tag removals before addition.
@@ -1358,11 +1344,9 @@ update_selected_line_for_tag_changes(AddTags, RemoveTags, Line0, Line,
         set.union(TagSet1, AddTags, TagSet),
         TagSet \= TagSet0
     ->
-        get_standard_tag_state(TagSet, Unread, Replied, Deleted, Flagged),
-        get_nonstandard_tags_width(TagSet, NonstdTagsWidth),
-        Line = index_line(ThreadId, Selected,
-            Unread, Replied, Deleted, Flagged, Date, Authors, Subject,
-            TagSet, NonstdTagsWidth, Matched, Total),
+        get_standard_tags(TagSet, StdTags, NonstdTagsWidth),
+        Line = index_line(ThreadId, Selected, Date, Authors, Subject, TagSet,
+            StdTags, NonstdTagsWidth, Matched, Total),
         list.cons(ThreadId, !ThreadIds)
     ;
         Line = Line0
@@ -1404,11 +1388,11 @@ common_unread_state([H | T], State0, State) :-
     (
         Selected = selected,
         State0 = no,
-        State1 = yes(H ^ i_unread),
+        State1 = yes(H ^ i_std_tags ^ unread),
         common_unread_state(T, State1, State)
     ;
         Selected = selected,
-        State0 = yes(H ^ i_unread),
+        State0 = yes(H ^ i_std_tags ^ unread),
         common_unread_state(T, State0, State)
     ;
         Selected = not_selected,
@@ -1756,8 +1740,8 @@ draw_index_view(Screen, Info, !IO) :-
     io::di, io::uo) is det.
 
 draw_index_line(Panel, Line, _LineNr, IsCursor, !IO) :-
-    Line = index_line(_Id, Selected, Unread, Replied, Deleted, Flagged,
-        Date, Authors, Subject, Tags, NonstdTagsWidth, Matched, Total),
+    Line = index_line(_Id, Selected, Date, Authors, Subject, Tags, StdTags,
+        NonstdTagsWidth, Matched, Total),
     (
         IsCursor = yes,
         panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
@@ -1775,6 +1759,7 @@ draw_index_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         my_addstr(Panel, " ", !IO)
     ),
     cond_attr_set(Panel, normal, IsCursor, !IO),
+    StdTags = standard_tags(Unread, Replied, Deleted, Flagged),
     (
         Unread = unread,
         Base = bold,
@@ -1830,20 +1815,20 @@ draw_index_line(Panel, Line, _LineNr, IsCursor, !IO) :-
             true
         ),
         attr_set(Panel, fg_bg(red, default) + bold, !IO),
-        set.fold(draw_nonstandard_tag(Panel), Tags, !IO)
+        set.fold(draw_display_tag(Panel), Tags, !IO)
     ;
         true
     ).
 
-:- pred draw_nonstandard_tag(panel::in, tag::in, io::di, io::uo) is det.
+:- pred draw_display_tag(panel::in, tag::in, io::di, io::uo) is det.
 
-draw_nonstandard_tag(Panel, Tag, !IO) :-
-    ( standard_tag(Tag) ->
-        true
-    ;
+draw_display_tag(Panel, Tag, !IO) :-
+    ( display_tag(Tag) ->
         Tag = tag(TagName),
         my_addstr(Panel, " ", !IO),
         my_addstr(Panel, TagName, !IO)
+    ;
+        true
     ).
 
 :- pred draw_index_bar(screen::in, index_info::in, io::di, io::uo) is det.
