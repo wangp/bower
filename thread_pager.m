@@ -94,6 +94,7 @@
                 tp_clean_from   :: string,
                 tp_prev_tags    :: set(tag),
                 tp_curr_tags    :: set(tag),
+                tp_nonstd_tags_width :: int,
                 tp_selected     :: selected,
                 tp_unread       :: unread,          % cached from tp_curr_tags
                 tp_replied      :: replied,         % cached from tp_curr_tags
@@ -498,6 +499,7 @@ make_thread_line(Nowish, Message, MaybeParentId, MaybeGraphics, PrevSubject,
     Tags = Message ^ m_tags,
     From = clean_email_address(Message ^ m_headers ^ h_from),
     get_standard_tag_state(Tags, Unread, Replied, Deleted, Flagged),
+    get_nonstandard_tags_width(Tags, NonstdTagsWidth),
     Subject = Message ^ m_headers ^ h_subject,
     timestamp_to_tm(Timestamp, TM),
     Shorter = no,
@@ -508,8 +510,8 @@ make_thread_line(Nowish, Message, MaybeParentId, MaybeGraphics, PrevSubject,
         MaybeSubject = yes(Subject)
     ),
     Line = thread_line(Message, MaybeParentId, From, Tags, Tags,
-        not_selected, Unread, Replied, Deleted, Flagged, MaybeGraphics,
-        RelDate, MaybeSubject).
+        NonstdTagsWidth, not_selected, Unread, Replied, Deleted, Flagged,
+        MaybeGraphics, RelDate, MaybeSubject).
 
 :- func clean_email_address(string) = string.
 
@@ -567,17 +569,18 @@ create_tag_delta_map(ThreadLine, !DeltaMap) :-
 
 restore_tag_deltas(DeltaMap, ThreadLine0, ThreadLine) :-
     ThreadLine0 = thread_line(Message, ParentId, From, PrevTags, CurrTags0,
-        Selected, _Unread, _Replied, _Deleted, _Flagged, ModeGraphics, RelDate,
-        MaybeSubject),
+        _NonstdTagsWidth, Selected, _Unread, _Replied, _Deleted, _Flagged,
+        ModeGraphics, RelDate, MaybeSubject),
     MessageId = Message ^ m_id,
     ( map.search(DeltaMap, MessageId, Deltas) ->
         Deltas = message_tag_deltas(AddTags, RemoveTags),
         set.difference(CurrTags0, RemoveTags, CurrTags1),
         set.union(CurrTags1, AddTags, CurrTags),
         get_standard_tag_state(CurrTags, Unread, Replied, Deleted, Flagged),
+        get_nonstandard_tags_width(CurrTags, NonstdTagsWidth),
         ThreadLine = thread_line(Message, ParentId, From, PrevTags, CurrTags,
-            Selected, Unread, Replied, Deleted, Flagged, ModeGraphics, RelDate,
-            MaybeSubject)
+            NonstdTagsWidth, Selected, Unread, Replied, Deleted, Flagged,
+            ModeGraphics, RelDate, MaybeSubject)
     ;
         ThreadLine = ThreadLine0
     ).
@@ -1268,7 +1271,7 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
         (
             TagChanges = yes(AddTags, RemoveTags),
             CursorLine0 = thread_line(Message, ParentId, From,
-                PrevTags, CurrTags0, Selected,
+                PrevTags, CurrTags0, _NonstdTagsWidth0, Selected,
                 _Unread, _Replied, _Deleted, _Flagged,
                 ModeGraphics, RelDate, MaybeSubject),
             % Notmuch performs tag removals before addition.
@@ -1276,8 +1279,9 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
             set.union(CurrTags1, AddTags, CurrTags),
             get_standard_tag_state(CurrTags, Unread, Replied, Deleted,
                 Flagged),
+            get_nonstandard_tags_width(CurrTags, NonstdTagsWidth),
             CursorLine = thread_line(Message, ParentId, From,
-                PrevTags, CurrTags, Selected,
+                PrevTags, CurrTags, NonstdTagsWidth, Selected,
                 Unread, Replied, Deleted, Flagged,
                 ModeGraphics, RelDate, MaybeSubject),
             set_cursor_line(CursorLine, Scrollable0, Scrollable),
@@ -1451,8 +1455,8 @@ gather_bulk_initial_tags(Line, MaybeAndTagSet0, MaybeAndTagSet, !OrTagSet) :-
 
 gather_initial_tags(Line, MaybeAndTagSet0, AndTagSet, !OrTagSet) :-
     Line = thread_line(_Message, _MaybeParentId, _From, _PrevTags, CurrTags0,
-        _Selected, Unread, Replied, Deleted, Flagged, _MaybeGraphics,
-        _RelDate, _MaybeSubject),
+        _NonstdTagsWidth0, _Selected, Unread, Replied, Deleted, Flagged,
+        _MaybeGraphics, _RelDate, _MaybeSubject),
     apply_standard_tag_state(Unread, Replied, Deleted, Flagged,
         CurrTags0, TagSet),
     (
@@ -1508,8 +1512,8 @@ bulk_tag_changes(AddTags, RemoveTags, MessageUpdate, !Info, !IO) :-
 update_selected_line_for_tag_changes(AddTags, RemoveTags, Line0, Line,
         !MessageIds) :-
     Line0 = thread_line(Message, MaybeParentId, From, PrevTags, CurrTags0,
-        Selected, _Unread, _Replied, _Deleted, _Flagged, MaybeGraphics,
-        RelDate, MaybeSubject),
+        _NonstdTagsWidth0, Selected, _Unread, _Replied, _Deleted, _Flagged,
+        MaybeGraphics, RelDate, MaybeSubject),
     MessageId = Message ^ m_id,
     (
         Selected = selected,
@@ -1521,9 +1525,10 @@ update_selected_line_for_tag_changes(AddTags, RemoveTags, Line0, Line,
     ->
         CurrTags = TagSet,
         get_standard_tag_state(CurrTags, Unread, Replied, Deleted, Flagged),
+        get_nonstandard_tags_width(CurrTags, NonstdTagsWidth),
         Line = thread_line(Message, MaybeParentId, From, PrevTags, CurrTags,
-            Selected, Unread, Replied, Deleted, Flagged, MaybeGraphics,
-            RelDate, MaybeSubject),
+            NonstdTagsWidth, Selected, Unread, Replied, Deleted, Flagged,
+            MaybeGraphics, RelDate, MaybeSubject),
         list.cons(MessageId, !MessageIds)
     ;
         Line = Line0
@@ -2092,8 +2097,8 @@ draw_sep(Cols, MaybeSepPanel, !IO) :-
 
 draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
     Line = thread_line(_Message, _ParentId, From, _PrevTags, CurrTags,
-        Selected, Unread, Replied, Deleted, Flagged, MaybeGraphics, RelDate,
-        MaybeSubject),
+        NonstdTagsWidth, Selected, Unread, Replied, Deleted, Flagged,
+        MaybeGraphics, RelDate, MaybeSubject),
     (
         IsCursor = yes,
         panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
@@ -2159,13 +2164,34 @@ draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
     (
         MaybeSubject = yes(Subject),
         my_addstr(Panel, ". ", !IO),
+        panel.getyx(Panel, Row, SubjectX0, !IO),
         cond_attr_set(Panel, fg_bg(green, default), IsCursor, !IO),
-        my_addstr(Panel, Subject, !IO)
+        my_addstr(Panel, Subject, !IO),
+        panel.getyx(Panel, _, SubjectX, !IO),
+        panel.getmaxyx(Panel, _, MaxX, !IO)
     ;
-        MaybeSubject = no
+        MaybeSubject = no,
+        panel.getmaxyx(Panel, Row, MaxX, !IO),
+        SubjectX0 = MaxX,
+        SubjectX = MaxX
     ),
-    attr_set(Panel, fg_bg(red, default) + bold, !IO),
-    set.fold(draw_nonstandard_tag(Panel), CurrTags, !IO).
+    % Draw non-standard tags, overlapping up to half of the subject.
+    ( NonstdTagsWidth > 0 ->
+        (
+            MaybeSubject = yes(_),
+            MaxX - SubjectX < NonstdTagsWidth
+        ->
+            SubjectMidX = (MaxX + SubjectX0)/2,
+            MoveX = max(SubjectMidX, MaxX - NonstdTagsWidth),
+            panel.move(Panel, Row, MoveX, !IO)
+        ;
+            true
+        ),
+        attr_set(Panel, fg_bg(red, default) + bold, !IO),
+        set.fold(draw_nonstandard_tag(Panel), CurrTags, !IO)
+    ;
+        true
+    ).
 
 :- pred draw_nonstandard_tag(panel::in, tag::in, io::di, io::uo) is det.
 
