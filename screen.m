@@ -58,6 +58,7 @@
     % end of the panel.
     %
 :- pred my_addstr(panel::in, string::in, io::di, io::uo) is det.
+:- pred my_addstr(panel::in, string::in, string::in, io::di, io::uo) is det.
 
     % my_addstr_fixed(Panel, NrCols, String, PadChar, !IO)
     %
@@ -260,6 +261,17 @@ my_addstr(Panel, String, !IO) :-
         true
     ;
         addstr(Panel, String, !IO)
+    ).
+
+my_addstr(Panel, StringA, StringB, !IO) :-
+    getyx(Panel, _, X, !IO),
+    getmaxyx(Panel, _, MaxX, !IO),
+    % XXX See comment in my_addstr.
+    ( X >= MaxX - 1 ->
+        true
+    ;
+        addstr(Panel, StringA, !IO),
+        addstr(Panel, StringB, !IO)
     ).
 
 %-----------------------------------------------------------------------------%

@@ -2189,8 +2189,7 @@ draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
 draw_display_tag(Panel, Tag, !IO) :-
     ( display_tag(Tag) ->
         Tag = tag(TagName),
-        my_addstr(Panel, " ", !IO),
-        my_addstr(Panel, TagName, !IO)
+        my_addstr(Panel, " ", TagName, !IO)
     ;
         true
     ).
