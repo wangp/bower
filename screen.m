@@ -252,7 +252,11 @@ get_real_screen(Screen, RealScreen) :-
 my_addstr(Panel, String, !IO) :-
     getyx(Panel, _, X, !IO),
     getmaxyx(Panel, _, MaxX, !IO),
-    ( X >= MaxX ->
+    % XXX We cannot tell if we have already hit the last column, before or
+    % after having drawn to it.  This hack checks the second last column
+    % instead, which means it actually prevents drawing one column early.
+    % A solution may be to use a curses pad larger than the screen.
+    ( X >= MaxX - 1 ->
         true
     ;
         addstr(Panel, String, !IO)
@@ -263,7 +267,8 @@ my_addstr(Panel, String, !IO) :-
 my_addstr_fixed(Panel, NrCols, String, PadChar, !IO) :-
     getyx(Panel, _, X0, !IO),
     getmaxyx(Panel, _, MaxX, !IO),
-    ( X0 >= MaxX ->
+    % XXX See comment in my_addstr.
+    ( X0 >= MaxX - 1 ->
         true
     ;
         MaxRemCols = MaxX - X0,
