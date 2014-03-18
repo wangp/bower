@@ -557,21 +557,46 @@ forward_for_completion(Type, Before0, Before, After0, After) :-
     info::in, maybe(info)::out, io::di, io::uo) is det.
 
 do_completion(Orig, Replacement, After, Info0, MaybeInfo, !IO) :-
-    Type = Info0 ^ compl_type,
     Choices0 = Info0 ^ compl_choices,
     (
         Choices0 = [],
+        Type = Info0 ^ compl_type,
+        generate_choices(Type, Orig, After, Choices, CompletionPoint, !IO),
+        IsNew = yes
+    ;
+        Choices0 = [_ | _],
+        Choices = Choices0,
+        CompletionPoint = Info0 ^ compl_point,
+        IsNew = no
+    ),
+    (
+        Choices = [],
+        Replacement = Orig,
+        MaybeInfo = no
+    ;
+        Choices = [_ | _],
+        choose_expansion(IsNew, Choices, Expansion, RotateChoices),
+        det_take_tail(CompletionPoint, Orig, OrigKeep),
+        reverse_onto(Expansion, OrigKeep, Replacement),
+        Info1 = Info0 ^ compl_choices := RotateChoices,
+        Info = Info1 ^ compl_point := CompletionPoint,
+        MaybeInfo = yes(Info)
+    ).
+
+:- pred generate_choices(completion_type::in, list(char)::in, list(char)::in,
+    list(string)::out, int::out, io::di, io::uo) is det.
+
+generate_choices(Type, Orig, After, Choices, CompletionPoint, !IO) :-
+    (
         Type = complete_none,
         Choices = [],
         CompletionPoint = 0
     ;
-        Choices0 = [],
         Type = complete_path(Home),
         string.from_rev_char_list(Orig, OrigString),
         generate_path_choices(Home, OrigString, Choices, !IO),
         CompletionPoint = 0
     ;
-        Choices0 = [],
         Type = complete_limit(SearchAliasSection, TagCompletionTriggers),
         list.takewhile(non_whitespace, Orig, Word, Untouched),
         list.length(Untouched, CompletionPoint),
@@ -579,7 +604,6 @@ do_completion(Orig, Replacement, After, Info0, MaybeInfo, !IO) :-
         generate_limit_choices(SearchAliasSection, TagCompletionTriggers,
             WordString, Choices, !IO)
     ;
-        Choices0 = [],
         Type = complete_tags_smart(AndTags, OrTags),
         list.takewhile(non_whitespace, Orig, Word, Untouched),
         list.length(Untouched, CompletionPoint),
@@ -588,35 +612,36 @@ do_completion(Orig, Replacement, After, Info0, MaybeInfo, !IO) :-
         generate_smart_tag_choices(AndTags, OrTags, EnteredTags, WordString,
             Choices, !IO)
     ;
-        Choices0 = [],
         Type = complete_config_key(SectionName),
         list.takewhile(non_whitespace, Orig, Word, Untouched),
         list.length(Untouched, CompletionPoint),
         string.from_rev_char_list(Word, WordString),
         generate_config_key_choices(SectionName, WordString, Choices, !IO)
-    ;
-        Choices0 = [_ | _],
-        Choices = Choices0,
-        CompletionPoint = Info0 ^ compl_point
-    ),
+    ).
+
+:- pred choose_expansion(bool::in, list(string)::in(non_empty_list),
+    list(char)::out, list(string)::out) is det.
+
+choose_expansion(IsNew, Choices, Expansion, RotateChoices) :-
     (
-        Choices = [],
-        Replacement = Orig,
-        MaybeInfo = no
+        Choices = [Choice],
+        Expansion = to_char_list(Choice),
+        RotateChoices = []
     ;
         Choices = [FirstChoice | MoreChoices],
-        det_take_tail(CompletionPoint, Orig, OrigKeep),
-        reverse_onto(string.to_char_list(FirstChoice), OrigKeep, Replacement),
+        MoreChoices = [_ | _],
+        string.to_char_list(FirstChoice, FirstChoiceChars),
         (
-            MoreChoices = [],
-            Info = Info0 ^ compl_choices := []
+            IsNew = yes,
+            common_prefix_strings(MoreChoices, FirstChoiceChars, CommonPrefix),
+            CommonPrefix \= FirstChoiceChars
+        ->
+            Expansion = CommonPrefix,
+            RotateChoices = Choices
         ;
-            MoreChoices = [_ | _],
-            RotateChoices = MoreChoices ++ [FirstChoice],
-            Info1 = Info0 ^ compl_choices := RotateChoices,
-            Info = Info1 ^ compl_point := CompletionPoint
-        ),
-        MaybeInfo = yes(Info)
+            Expansion = FirstChoiceChars,
+            RotateChoices = MoreChoices ++ [FirstChoice]
+        )
     ).
 
 %-----------------------------------------------------------------------------%
@@ -887,6 +912,30 @@ det_take_tail(N, Xs, XsTail) :-
 reverse_onto([], Acc, Acc).
 reverse_onto([X | Xs], Acc0, Acc) :-
     reverse_onto(Xs, [X | Acc0], Acc).
+
+:- pred common_prefix_strings(list(string)::in,
+    list(char)::in, list(char)::out) is semidet.
+
+common_prefix_strings([], !Prefix).
+common_prefix_strings([String | Strings], Prefix0, Prefix) :-
+    string.to_char_list(String, Chars),
+    common_prefix(Chars, Prefix0, Prefix1),
+    Prefix1 = [_ | _],
+    common_prefix_strings(Strings, Prefix1, Prefix).
+
+:- pred common_prefix(list(char)::in, list(char)::in, list(char)::out)
+    is det.
+
+common_prefix(A, B, CommonPrefix) :-
+    (
+        A = [X | As],
+        B = [X | Bs]
+    ->
+        common_prefix(As, Bs, CommonPrefixRest),
+        CommonPrefix = [X | CommonPrefixRest]
+    ;
+        CommonPrefix = []
+    ).
 
 %-----------------------------------------------------------------------------%
 
