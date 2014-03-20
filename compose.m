@@ -706,8 +706,8 @@ edit_header(Screen, HeaderType, !StagingInfo, !IO) :-
         CompleteAddressbook = no,
         Completion = complete_none
     ),
-    text_entry_initial(Screen, Prompt, init_history, InitialString, Completion,
-        Return, !IO),
+    text_entry_full(Screen, Prompt, init_history, InitialString, Completion,
+        no, Return, !IO),
     (
         Return = yes(ReturnString),
         (
@@ -971,8 +971,8 @@ edit_attachment_type(Screen, !AttachInfo, !IO) :-
             History0 = init_history,
             add_history_nodup("application/octet-stream", History0, History1),
             add_history_nodup("text/plain", History1, History),
-            text_entry_initial(Screen, "Media type: ", History, Type0,
-                complete_none, Return, !IO),
+            text_entry_full(Screen, "Media type: ", History, Type0,
+                complete_none, no, Return, !IO),
             (
                 Return = yes(Type),
                 Type \= ""
