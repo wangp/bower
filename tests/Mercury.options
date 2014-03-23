@@ -1,0 +1,2 @@
+# Add workspace-specific options here.
+-include Mercury.params

@@ -6,14 +6,16 @@
 
 :- import_module io.
 
-:- pred get_from(string::out, io::di, io::uo) is det.
+:- import_module rfc5322.
+
+:- pred get_from_address(address::out, io::di, io::uo) is det.
 
 :- pred generate_date_msg_id(string::out, string::out, io::di, io::uo) is det.
 
-:- pred write_unstructured_header(io.output_stream::in, string::in, string::in,
-    io::di, io::uo) is det.
+:- pred write_address_list_header(io.output_stream::in, string::in,
+    address_list::in, io::di, io::uo) is det.
 
-:- pred write_address_list_header(io.output_stream::in, string::in, string::in,
+:- pred write_unstructured_header(io.output_stream::in, string::in, string::in,
     io::di, io::uo) is det.
 
 :- pred write_references_header(io.output_stream::in, string::in, string::in,
@@ -26,6 +28,7 @@
 
 :- implementation.
 
+:- import_module bool.
 :- import_module char.
 :- import_module int.
 :- import_module list.
@@ -36,6 +39,8 @@
 
 :- import_module callout.
 :- import_module fold_lines.
+:- import_module rfc5322.parser.
+:- import_module rfc5322.writer.
 :- import_module sys_util.
 :- import_module time_util.
 
@@ -43,21 +48,27 @@
 
 %-----------------------------------------------------------------------------%
 
-get_from(From, !IO) :-
+get_from_address(Address, !IO) :-
     get_notmuch_config("user.name", ResName, !IO),
     (
         ResName = ok(Name),
         get_notmuch_config("user.primary_email", ResEmail, !IO),
         (
             ResEmail = ok(Email),
-            From = string.append_list([Name, " <", Email, ">"])
+            % XXX Name and Email better be valid
+            String = string.append_list([Name, " <", Email, ">"]),
+            ( parse_address(String, AddressPrime) ->
+                Address = AddressPrime
+            ;
+                Address = mailbox(bad_mailbox(String))
+            )
         ;
             ResEmail = error(_),
-            From = Name
+            Address = mailbox(bad_mailbox(Name))
         )
     ;
         ResName = error(_),
-        From = ""
+        Address = mailbox(bad_mailbox("unknown"))
     ).
 
 %-----------------------------------------------------------------------------%
@@ -107,14 +118,96 @@ generate_date_msg_id(Date, MessageId, !IO) :-
 
 % XXX quote non-ASCII Values; or can we get away with UTF-8 now?
 
-write_unstructured_header(Stream, Field, Value, !IO) :-
-    get_spans_by_whitespace(Value, ValueSpans),
-    add_field_span(Field, ValueSpans, Spans),
+write_address_list_header(Stream, Field, Addresses, !IO) :-
+    % XXX reject invalid syntax
+    address_list_to_spans(Addresses, [], Spans0, yes, _AllValid),
+    add_field_span(Field, Spans0, Spans),
     fill_lines(soft_line_length, Spans, Lines),
     do_write_header(Stream, Lines, !IO).
 
-write_address_list_header(Stream, Field, Value, !IO) :-
-    get_spans_by_comma(Value, ValueSpans),
+:- pred address_list_to_spans(address_list::in,
+    list(span)::in, list(span)::out, bool::in, bool::out) is det.
+
+address_list_to_spans([], !Spans, !AllValid).
+address_list_to_spans([Address | Addresses], !Spans, !AllValid) :-
+    (
+        Addresses = [],
+        LastElement = yes
+    ;
+        Addresses = [_ | _],
+        address_list_to_spans(Addresses, !Spans, !AllValid),
+        LastElement = no
+    ),
+    address_to_span(Address, LastElement, !Spans, !AllValid).
+
+:- pred address_to_span(address::in, bool::in,
+    list(span)::in, list(span)::out, bool::in, bool::out) is det.
+
+address_to_span(Address, LastElement, !Spans, !AllValid) :-
+    Address = mailbox(_),
+    address_to_string(Address, String, Valid),
+    (
+        LastElement = yes,
+        Span = span(String, "")
+    ;
+        LastElement = no,
+        Span = span(String ++ ",", " ")
+    ),
+    cons(Span, !Spans),
+    bool.and(Valid, !AllValid).
+address_to_span(Address, LastElement, !Spans, !AllValid) :-
+    Address = group(DisplayName, Mailboxes),
+    (
+        LastElement = yes,
+        CloseSpan = span(";", "")
+    ;
+        LastElement = no,
+        CloseSpan = span(";,", " ")
+    ),
+    cons(CloseSpan, !Spans),
+    mailboxes_to_spans(Mailboxes, !Spans, !AllValid),
+    group_name_to_span(DisplayName, !Spans, !AllValid).
+
+:- pred group_name_to_span(display_name::in, list(span)::in, list(span)::out,
+    bool::in, bool::out) is det.
+
+group_name_to_span(DisplayName, !Spans, !AllValid) :-
+    display_name_to_string(DisplayName, String, Valid),
+    cons(span(String ++ ":", " "), !Spans),
+    bool.and(Valid, !AllValid).
+
+:- pred mailboxes_to_spans(list(mailbox)::in,
+    list(span)::in, list(span)::out, bool::in, bool::out) is det.
+
+mailboxes_to_spans([], !Spans, !AllValid).
+mailboxes_to_spans([Mailbox | Mailboxes], !Spans, !AllValid) :-
+    (
+        Mailboxes = [],
+        LastElement = yes
+    ;
+        Mailboxes = [_ | _],
+        mailboxes_to_spans(Mailboxes, !Spans, !AllValid),
+        LastElement = no
+    ),
+    mailbox_to_span(Mailbox, LastElement, !Spans, !AllValid).
+
+:- pred mailbox_to_span(mailbox::in, bool::in,
+    list(span)::in, list(span)::out, bool::in, bool::out) is det.
+
+mailbox_to_span(Mailbox, LastElement, !Spans, !AllValid) :-
+    mailbox_to_string(Mailbox, MailboxString, Valid),
+    bool.and(Valid, !AllValid),
+    (
+        LastElement = yes,
+        Span = span(MailboxString, "")
+    ;
+        LastElement = no,
+        Span = span(MailboxString ++ ",", " ")
+    ),
+    cons(Span, !Spans).
+
+write_unstructured_header(Stream, Field, Value, !IO) :-
+    get_spans_by_whitespace(Value, ValueSpans),
     add_field_span(Field, ValueSpans, Spans),
     fill_lines(soft_line_length, Spans, Lines),
     do_write_header(Stream, Lines, !IO).

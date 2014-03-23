@@ -14,8 +14,6 @@
 
 :- pred get_spans_by_whitespace(string::in, list(span)::out) is det.
 
-:- pred get_spans_by_comma(string::in, list(span)::out) is det.
-
 :- pred fill_lines(int::in, list(span)::in, list(string)::out) is det.
 
 %-----------------------------------------------------------------------------%
@@ -55,29 +53,6 @@ make_span(String, Pos0, Pos1, Pos2, Span) :-
     string.unsafe_between(String, Pos0, Pos1, Mandatory),
     string.unsafe_between(String, Pos1, Pos2, Trailer),
     Span = span(Mandatory, Trailer).
-
-%-----------------------------------------------------------------------------%
-
-get_spans_by_comma(String, Spans) :-
-    get_spans_comma(String, 0, Spans).
-
-:- pred get_spans_comma(string::in, int::in, list(span)::out) is det.
-
-get_spans_comma(String, Pos0, Spans) :-
-    ( string.sub_string_search_start(String, ",", Pos0, CommaPos) ->
-        Pos1 = CommaPos + 1,
-        skip_whitespace(String, Pos1, Pos2)
-    ;
-        Pos1 = string.count_code_units(String),
-        Pos2 = Pos1
-    ),
-    ( Pos2 = Pos0 ->
-        Spans = []
-    ;
-        make_span(String, Pos0, Pos1, Pos2, Span),
-        get_spans_comma(String, Pos2, RestSpans),
-        Spans = [Span | RestSpans]
-    ).
 
 %-----------------------------------------------------------------------------%
 

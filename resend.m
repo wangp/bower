@@ -26,12 +26,11 @@
 :- import_module string.
 
 :- import_module addressbook.
+:- import_module compose.
 :- import_module prog_config.
 :- import_module quote_arg.
+:- import_module rfc5322.
 :- import_module send_util.
-
-:- type to_addr
-    --->    to_addr(string).
 
 :- type sent
     --->    sent
@@ -47,13 +46,13 @@ handle_resend(Screen, MessageId, MessageUpdate, !ToHistory, !IO) :-
         To0 \= ""
     ->
         add_history_nodup(To0, !ToHistory),
-        expand_aliases(To0, To, !IO),
-        ToAddr = to_addr(To),
-        confirm_resend(Screen, ToAddr, Confirmation, !IO),
+        parse_and_expand_addresses(To0, To, ToAddresses, !IO),
+        % XXX reject invalid syntax
+        confirm_resend(Screen, To, Confirmation, !IO),
         (
             Confirmation = yes,
-            create_temp_message_file_and_resend(Screen, MessageId, ToAddr,
-                MessageUpdate, !IO)
+            create_temp_message_file_and_resend(Screen, MessageId,
+                ToAddresses, MessageUpdate, !IO)
         ;
             Confirmation = no,
             MessageUpdate = set_info("Message not resent.")
@@ -62,10 +61,10 @@ handle_resend(Screen, MessageId, MessageUpdate, !ToHistory, !IO) :-
         MessageUpdate = set_info("Message not resent.")
     ).
 
-:- pred confirm_resend(screen::in, to_addr::in, bool::out, io::di, io::uo)
+:- pred confirm_resend(screen::in, string::in, bool::out, io::di, io::uo)
     is det.
 
-confirm_resend(Screen, to_addr(To), Confirmation, !IO) :-
+confirm_resend(Screen, To, Confirmation, !IO) :-
     Prompt = "Resend message to " ++ To ++ "? (Y/n) ",
     update_message_immed(Screen, set_prompt(Prompt), !IO),
     get_keycode_blocking(Code, !IO),
@@ -78,7 +77,7 @@ confirm_resend(Screen, to_addr(To), Confirmation, !IO) :-
 %-----------------------------------------------------------------------------%
 
 :- pred create_temp_message_file_and_resend(screen::in, message_id::in,
-    to_addr::in, message_update::out, io::di, io::uo) is det.
+    address_list::in, message_update::out, io::di, io::uo) is det.
 
 create_temp_message_file_and_resend(Screen, MessageId, ToAddr, MessageUpdate,
         !IO) :-
@@ -113,19 +112,19 @@ create_temp_message_file_and_resend(Screen, MessageId, ToAddr, MessageUpdate,
     ),
     io.remove_file(Filename, _, !IO).
 
-:- pred generate_resent_headers(string::in, to_addr::in, maybe_error::out,
+:- pred generate_resent_headers(string::in, address_list::in, maybe_error::out,
     io::di, io::uo) is det.
 
-generate_resent_headers(FileName, to_addr(To), Res, !IO) :-
-    get_from(From, !IO),
+generate_resent_headers(FileName, ToAddresses, Res, !IO) :-
+    get_from_address(FromAddress, !IO),
     generate_date_msg_id(Date, MessageId, !IO),
     io.open_output(FileName, ResOpen, !IO),
     (
         ResOpen = ok(Stream),
-        write_address_list_header(Stream, "Resent-From", From, !IO),
+        write_address_list_header(Stream, "Resent-From", [FromAddress], !IO),
         write_unstructured_header(Stream, "Resent-Date", Date, !IO),
         write_unstructured_header(Stream, "Resent-Message-ID", MessageId, !IO),
-        write_address_list_header(Stream, "Resent-To", To, !IO),
+        write_address_list_header(Stream, "Resent-To", ToAddresses, !IO),
         io.close_output(Stream, !IO),
         Res = ok
     ;

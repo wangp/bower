@@ -5,6 +5,7 @@
 :- interface.
 
 :- import_module io.
+:- import_module maybe.
 
 :- import_module screen.
 
@@ -12,7 +13,8 @@
 
 :- func addressbook_section = string.
 
-:- pred expand_aliases(string::in, string::out, io::di, io::uo) is det.
+:- pred search_addressbook(string::in, maybe(string)::out, io::di, io::uo)
+    is det.
 
 :- pred prompt_addressbook_add(screen::in, string::in, io::di, io::uo)
     is det.
@@ -25,7 +27,6 @@
 :- import_module char.
 :- import_module int.
 :- import_module list.
-:- import_module maybe.
 :- import_module string.
 
 :- import_module callout.
@@ -48,30 +49,19 @@ is_alias_char('.').
 
 %-----------------------------------------------------------------------------%
 
-expand_aliases(String0, String, !IO) :-
-    Words0 = string.split_at_string(", ", String0),
-    list.map_foldl(expand_aliases_2, Words0, Words1, !IO),
-    ( Words0 = Words1 ->
-        String = String0
-    ;
-        String = string.join_list(", ", Words1)
-    ).
-
-:- pred expand_aliases_2(string::in, string::out, io::di, io::uo) is det.
-
-expand_aliases_2(Word0, Expansion, !IO) :-
-    Word1 = string.strip(Word0),
-    ( string.all_match(is_alias_char, Word1) ->
-        Key = addressbook_section ++ "." ++ Word1,
-        get_notmuch_config(Key, MaybeValue, !IO),
+search_addressbook(Alias, MaybeFound, !IO) :-
+    ( string.all_match(is_alias_char, Alias) ->
+        Key = addressbook_section ++ "." ++ Alias,
+        get_notmuch_config(Key, Res, !IO),
         (
-            MaybeValue = ok(Expansion)
+            Res = ok(Expansion),
+            MaybeFound = yes(Expansion)
         ;
-            MaybeValue = error(_),
-            Expansion = Word0
+            Res = error(_),
+            MaybeFound = no
         )
     ;
-        Expansion = Word0
+        MaybeFound = no
     ).
 
 %-----------------------------------------------------------------------------%

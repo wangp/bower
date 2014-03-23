@@ -1,0 +1,698 @@
+input: «»
+
+[]
+--------
+input: «user»
+invalid: «user»
+
+[mailbox(bad_mailbox("user"))]
+--------
+input: «user1 , user2»
+invalid: «user1»
+invalid: «user2»
+
+[mailbox(bad_mailbox("user1")), mailbox(bad_mailbox("user2"))]
+--------
+input: «user1 ,user2»
+invalid: «user1»
+invalid: «user2»
+
+[mailbox(bad_mailbox("user1")), mailbox(bad_mailbox("user2"))]
+--------
+input: «user@»
+invalid: «user@»
+
+[mailbox(bad_mailbox("user@"))]
+--------
+input: «@»
+invalid: «@»
+
+[mailbox(bad_mailbox("@"))]
+--------
+input: «@example.com»
+invalid: «@example.com»
+
+[mailbox(bad_mailbox("@example.com"))]
+--------
+input: «user@example.com»
+valid: «user@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «user.name@example.com»
+valid: «user.name@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user.name"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «user.name@example.com.org»
+valid: «user.name@example.com.org»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user.name"))), 
+       domain_name(dot_atom(ascii("example.com.org"))))))]
+--------
+input: «user..name@example.com»
+invalid: «user..name@example.com»
+
+[mailbox(bad_mailbox("user..name@example.com"))]
+--------
+input: «.@example.com»
+invalid: «.@example.com»
+
+[mailbox(bad_mailbox(".@example.com"))]
+--------
+input: «.user@example.com»
+invalid: «.user@example.com»
+
+[mailbox(bad_mailbox(".user@example.com"))]
+--------
+input: «user.@example.com»
+invalid: «user.@example.com»
+
+[mailbox(bad_mailbox("user.@example.com"))]
+--------
+input: «""@example.com»
+valid: «""@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_quoted_string(quoted_string(ascii(""))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «"user name"@example.com»
+valid: «"user name"@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_quoted_string(quoted_string(ascii("user name"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «"user..name"@example.com»
+valid: «"user..name"@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_quoted_string(quoted_string(ascii("user..name"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «"user\name"@example.com»
+valid: «"username"@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_quoted_string(quoted_string(ascii("username"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «"user\\name"@example.com»
+valid: «"user\\name"@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_quoted_string(quoted_string(ascii("user\name"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «"user\"name"@example.com»
+valid: «"user\"name"@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_quoted_string(quoted_string(ascii("user"name"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «user @example.com»
+valid: «user@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «user@ example.com»
+valid: «user@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «user@[]»
+valid: «user@[]»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_literal(ascii("")))))]
+--------
+input: «user@[127.0.0.1]»
+valid: «user@[127.0.0.1]»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_literal(ascii("127.0.0.1")))))]
+--------
+input: «user@[ 127.0.0.1 ]»
+valid: «user@[ 127.0.0.1 ]»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_literal(ascii(" 127.0.0.1 ")))))]
+--------
+input: «user@[»
+invalid: «user@[»
+
+[mailbox(bad_mailbox("user@["))]
+--------
+input: «user@[\]»
+invalid: «user@[\]»
+
+[mailbox(bad_mailbox("user@[\]"))]
+--------
+input: «user@[[]»
+invalid: «user@[[]»
+
+[mailbox(bad_mailbox("user@[[]"))]
+--------
+input: «user@[]]»
+invalid: «user@[]]»
+
+[mailbox(bad_mailbox("user@[]]"))]
+--------
+input: «uśer@example.com»
+invalid: «uśer@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(unicode("uśer"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «user@éxample.com»
+invalid: «user@éxample.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(unicode("éxample.com"))))))]
+--------
+input: «<user@example.com>»
+valid: «user@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «< user@example.com>»
+valid: «user@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «< user@example.com	>»
+valid: «user@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «Display Name <user@example.com>»
+valid: «Display Name <user@example.com>»
+
+[mailbox(
+   mailbox(
+     yes(
+       [word_atom(atom(ascii("Display"))), word_atom(atom(ascii("Name")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «Display\Name <user@example.com>»
+invalid: «Display\Name <user@example.com>»
+
+[mailbox(bad_mailbox("Display\Name <user@example.com>"))]
+--------
+input: «Display\\Name <user@example.com>»
+invalid: «Display\\Name <user@example.com>»
+
+[mailbox(bad_mailbox("Display\\Name <user@example.com>"))]
+--------
+input: «Display\"Name <user@example.com>»
+invalid: «Display\"Name <user@example.com>»
+
+[mailbox(bad_mailbox("Display\"Name <user@example.com>"))]
+--------
+input: «"Display Name" <user@example.com>»
+valid: «"Display Name" <user@example.com>»
+
+[mailbox(
+   mailbox(yes([word_quoted_string(quoted_string(ascii("Display Name")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «"Display Name" Name2 <user@example.com>»
+valid: «"Display Name" Name2 <user@example.com>»
+
+[mailbox(
+   mailbox(
+     yes(
+       [word_quoted_string(quoted_string(ascii("Display Name"))), 
+        word_atom(atom(ascii("Name2")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «"Display\Name" Name2 <user@example.com>»
+valid: «"DisplayName" Name2 <user@example.com>»
+
+[mailbox(
+   mailbox(
+     yes(
+       [word_quoted_string(quoted_string(ascii("DisplayName"))), 
+        word_atom(atom(ascii("Name2")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «"Display\\Name" Name2 <user@example.com>»
+valid: «"Display\\Name" Name2 <user@example.com>»
+
+[mailbox(
+   mailbox(
+     yes(
+       [word_quoted_string(quoted_string(ascii("Display\Name"))), 
+        word_atom(atom(ascii("Name2")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «"Display\"Name" Name2 <user@example.com>»
+valid: «"Display\"Name" Name2 <user@example.com>»
+
+[mailbox(
+   mailbox(
+     yes(
+       [word_quoted_string(quoted_string(ascii("Display"Name"))), 
+        word_atom(atom(ascii("Name2")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «D. Name <user@example.com>»
+valid: «"D. Name" <user@example.com>»
+
+[mailbox(
+   mailbox(yes([word_quoted_string(quoted_string(ascii("D. Name")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «Display X. Name <user@example.com>»
+valid: «"Display X. Name" <user@example.com>»
+
+[mailbox(
+   mailbox(
+     yes([word_quoted_string(quoted_string(ascii("Display X. Name")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «Display..Name <user@example.com>»
+valid: «"Display..Name" <user@example.com>»
+
+[mailbox(
+   mailbox(yes([word_quoted_string(quoted_string(ascii("Display..Name")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «Display. .Name <user@example.com>»
+valid: «"Display. .Name" <user@example.com>»
+
+[mailbox(
+   mailbox(yes([word_quoted_string(quoted_string(ascii("Display. .Name")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «"Dísplay Name" Name2 <user@example.com>»
+invalid: «"Dísplay Name" Name2 <user@example.com>»
+
+[mailbox(
+   mailbox(
+     yes(
+       [word_quoted_string(quoted_string(unicode("Dísplay Name"))), 
+        word_atom(atom(ascii("Name2")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «()»
+invalid: «()»
+
+[mailbox(bad_mailbox("()"))]
+--------
+input: «user()@example.com»
+valid: «user@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «user@()example.com»
+valid: «user@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «user@example.com ( here is a comment )»
+valid: «user@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «(comment one)user@example.com(comment two)»
+valid: «user@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «(comment one)Display Name<user@example.com>(comment two)»
+valid: «Display Name <user@example.com>»
+
+[mailbox(
+   mailbox(
+     yes(
+       [word_atom(atom(ascii("Display"))), word_atom(atom(ascii("Name")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «(comment one)Display Name()<user@example.com>(comment two)»
+valid: «Display Name <user@example.com>»
+
+[mailbox(
+   mailbox(
+     yes(
+       [word_atom(atom(ascii("Display"))), word_atom(atom(ascii("Name")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «group:»
+valid: «group: ;»
+
+[group([word_atom(atom(ascii("group")))], [])]
+--------
+input: «group:,»
+valid: «group: ;»
+
+[group([word_atom(atom(ascii("group")))], [])]
+--------
+input: «group:;»
+valid: «group: ;»
+
+[group([word_atom(atom(ascii("group")))], [])]
+--------
+input: «group :;»
+valid: «group: ;»
+
+[group([word_atom(atom(ascii("group")))], [])]
+--------
+input: «group : ;»
+valid: «group: ;»
+
+[group([word_atom(atom(ascii("group")))], [])]
+--------
+input: «group :,;»
+valid: «group: ;»
+
+[group([word_atom(atom(ascii("group")))], [])]
+--------
+input: «group :,,,;»
+valid: «group: ;»
+
+[group([word_atom(atom(ascii("group")))], [])]
+--------
+input: «group(comment):(comment);(comment)»
+valid: «group: ;»
+
+[group([word_atom(atom(ascii("group")))], [])]
+--------
+input: «"group name":;»
+valid: «"group name": ;»
+
+[group([word_quoted_string(quoted_string(ascii("group name")))], [])]
+--------
+input: «gróup:;»
+invalid: «gróup: ;»
+
+[group([word_atom(atom(unicode("gróup")))], [])]
+--------
+input: «group : user@example.com ;»
+valid: «group: user@example.com;»
+
+[group([word_atom(atom(ascii("group")))], 
+   [mailbox(no, 
+      addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+        domain_name(dot_atom(ascii("example.com")))))])]
+--------
+input: «group : user@example.com (comment) ;»
+valid: «group: user@example.com;»
+
+[group([word_atom(atom(ascii("group")))], 
+   [mailbox(no, 
+      addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+        domain_name(dot_atom(ascii("example.com")))))])]
+--------
+input: «group : user@example.com junk ;»
+invalid: «group : user@example.com junk ;»
+
+[mailbox(bad_mailbox("group : user@example.com junk ;"))]
+--------
+input: «group : user1@example.com, user@example.com;»
+valid: «group: user1@example.com, user@example.com;»
+
+[group([word_atom(atom(ascii("group")))], 
+   [mailbox(no, 
+      addr_spec(lpart_atom(dot_atom(ascii("user1"))), 
+        domain_name(dot_atom(ascii("example.com"))))), 
+    mailbox(no, 
+      addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+        domain_name(dot_atom(ascii("example.com")))))])]
+--------
+input: «group : user@example.com, ;»
+valid: «group: user@example.com;»
+
+[group([word_atom(atom(ascii("group")))], 
+   [mailbox(no, 
+      addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+        domain_name(dot_atom(ascii("example.com")))))])]
+--------
+input: «group : ,user@example.com ;»
+valid: «group: user@example.com;»
+
+[group([word_atom(atom(ascii("group")))], 
+   [mailbox(no, 
+      addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+        domain_name(dot_atom(ascii("example.com")))))])]
+--------
+input: «group : ,user@example.com,;»
+valid: «group: user@example.com;»
+
+[group([word_atom(atom(ascii("group")))], 
+   [mailbox(no, 
+      addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+        domain_name(dot_atom(ascii("example.com")))))])]
+--------
+input: «group : User One <user1@example.com>;»
+valid: «group: User One <user1@example.com>;»
+
+[group([word_atom(atom(ascii("group")))], 
+   [mailbox(
+      yes([word_atom(atom(ascii("User"))), word_atom(atom(ascii("One")))]), 
+      addr_spec(lpart_atom(dot_atom(ascii("user1"))), 
+        domain_name(dot_atom(ascii("example.com")))))])]
+--------
+input: «group : User One <user1@example.com>, ;»
+valid: «group: User One <user1@example.com>;»
+
+[group([word_atom(atom(ascii("group")))], 
+   [mailbox(
+      yes([word_atom(atom(ascii("User"))), word_atom(atom(ascii("One")))]), 
+      addr_spec(lpart_atom(dot_atom(ascii("user1"))), 
+        domain_name(dot_atom(ascii("example.com")))))])]
+--------
+input: «group : ,User One <user1@example.com> ;»
+valid: «group: User One <user1@example.com>;»
+
+[group([word_atom(atom(ascii("group")))], 
+   [mailbox(
+      yes([word_atom(atom(ascii("User"))), word_atom(atom(ascii("One")))]), 
+      addr_spec(lpart_atom(dot_atom(ascii("user1"))), 
+        domain_name(dot_atom(ascii("example.com")))))])]
+--------
+input: «group : User One <user1@example.com>, user2@example.com ;»
+valid: «group: User One <user1@example.com>, user2@example.com;»
+
+[group([word_atom(atom(ascii("group")))], 
+   [mailbox(
+      yes([word_atom(atom(ascii("User"))), word_atom(atom(ascii("One")))]), 
+      addr_spec(lpart_atom(dot_atom(ascii("user1"))), 
+        domain_name(dot_atom(ascii("example.com"))))), 
+    mailbox(no, 
+      addr_spec(lpart_atom(dot_atom(ascii("user2"))), 
+        domain_name(dot_atom(ascii("example.com")))))])]
+--------
+input: «group : user1, user2@example.com ;»
+invalid: «group: user1, user2@example.com;»
+
+[group([word_atom(atom(ascii("group")))], 
+   [bad_mailbox("user1"), 
+    mailbox(no, 
+      addr_spec(lpart_atom(dot_atom(ascii("user2"))), 
+        domain_name(dot_atom(ascii("example.com")))))])]
+--------
+input: «,»
+invalid: «,»
+
+[mailbox(bad_mailbox(","))]
+--------
+input: «user@example.com, user2@example.com»
+valid: «user@example.com»
+valid: «user2@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com")))))), 
+ mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user2"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «user@example.com ,user2@example.com»
+valid: «user@example.com»
+valid: «user2@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com")))))), 
+ mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user2"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «user@example.com , user2@example.com»
+valid: «user@example.com»
+valid: «user2@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com")))))), 
+ mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user2"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «user@example.com, user2@example.com, user3@example.com»
+valid: «user@example.com»
+valid: «user2@example.com»
+valid: «user3@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com")))))), 
+ mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user2"))), 
+       domain_name(dot_atom(ascii("example.com")))))), 
+ mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user3"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «user@example.com,»
+valid: «user@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «user@example.com,,,»
+valid: «user@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «,,,user@example.com»
+valid: «user@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «,,,user@example.com,,,user2@example.com,,,»
+valid: «user@example.com»
+valid: «user2@example.com»
+
+[mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user"))), 
+       domain_name(dot_atom(ascii("example.com")))))), 
+ mailbox(
+   mailbox(no, 
+     addr_spec(lpart_atom(dot_atom(ascii("user2"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «Name1 <user1@example.com>, Name2 <user2@example.com>»
+valid: «Name1 <user1@example.com>»
+valid: «Name2 <user2@example.com>»
+
+[mailbox(
+   mailbox(yes([word_atom(atom(ascii("Name1")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user1"))), 
+       domain_name(dot_atom(ascii("example.com")))))), 
+ mailbox(
+   mailbox(yes([word_atom(atom(ascii("Name2")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user2"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «()Name1()<user1@example.com>(),()Name2 <user2@example.com>()»
+valid: «Name1 <user1@example.com>»
+valid: «Name2 <user2@example.com>»
+
+[mailbox(
+   mailbox(yes([word_atom(atom(ascii("Name1")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user1"))), 
+       domain_name(dot_atom(ascii("example.com")))))), 
+ mailbox(
+   mailbox(yes([word_atom(atom(ascii("Name2")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user2"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
+input: «Name1 <user1@example.com>,, Name2 <user2@example.com>»
+valid: «Name1 <user1@example.com>»
+valid: «Name2 <user2@example.com>»
+
+[mailbox(
+   mailbox(yes([word_atom(atom(ascii("Name1")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user1"))), 
+       domain_name(dot_atom(ascii("example.com")))))), 
+ mailbox(
+   mailbox(yes([word_atom(atom(ascii("Name2")))]), 
+     addr_spec(lpart_atom(dot_atom(ascii("user2"))), 
+       domain_name(dot_atom(ascii("example.com"))))))]
+--------
