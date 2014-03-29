@@ -1,4 +1,5 @@
-%-----------------------------------------------------------------------------%
+% Bower - a frontend for the Notmuch email system
+% Copyright (C) 2014 Peter Wang
 
 :- module byte_array.
 :- interface.
@@ -9,7 +10,15 @@
 
 :- type byte == int.
 
+    % allocate(Capacity, ByteArray)
+    %
 :- pred allocate(int::in, byte_array::uo) is det.
+
+    % allocate_for_string(MaxCodeUnits, ByteArray)
+    % Allocate a byte array with enough space to hold MaxCodeUnits
+    % followed by a NUL terminator.
+    %
+:- pred allocate_for_string(int::in, byte_array::uo) is det.
 
 :- func length(byte_array::ui) = (int::out) is det.
 
@@ -23,12 +32,17 @@
 :- pred unsafe_copy_bytes(byte_array::ui, int::in, int::in,
     byte_array::di, byte_array::uo, int::in) is det.
 
+    % Convert a byte array to a string.  Fail if there is not enough space
+    % remaining in the byte array for the NUL terminator.
+    %
 :- pred finalise_as_string(byte_array::di, string::uo) is semidet.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
+
+:- import_module int.
 
 :- pragma foreign_type("C", byte_array, "struct byte_array *").
 
@@ -46,12 +60,19 @@ struct byte_array {
 "
     MR_String data;
 
-    MR_allocate_aligned_string_msg(data, Cap, MR_ALLOC_ID);
+    /*
+    ** MR_allocate_aligned_string_msg allocates at least one more byte
+    ** for the NUL terminator so subtract it.
+    */
+    MR_allocate_aligned_string_msg(data, Cap - 1, MR_ALLOC_ID);
     ByteArray = MR_GC_NEW_ATTRIB(struct byte_array, MR_ALLOC_ID);
     ByteArray->len = 0;
     ByteArray->cap = Cap;
     ByteArray->data = (unsigned char *) data;
 ").
+
+allocate_for_string(MaxCodeUnits, ByteArray) :-
+    allocate(MaxCodeUnits + 1, ByteArray).
 
 :- pragma foreign_proc("C",
     length(ByteArray::ui) = (Length::out),

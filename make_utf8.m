@@ -57,7 +57,7 @@ make_utf8_string(ErrorLimit, Buffers0, String) :-
     preflight(Buffers0, Buffers, 0, FirstBads, ErrorLimit, 0, _Errors,
         0, TotalLength),
 
-    allocate(TotalLength + 1, Enc0),
+    allocate_for_string(TotalLength, Enc0),
     second_pass(Buffers, 0, FirstBads, 0, EncPos, Enc0, Enc1),
     unsafe_set_length(EncPos, Enc1, Enc),
     expect(unify(EncPos, TotalLength), $module, $pred, "wrong length: " ++
