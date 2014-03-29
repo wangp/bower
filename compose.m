@@ -143,7 +143,7 @@ start_compose(Screen, Transition, !ToHistory, !SubjectHistory, !IO) :-
         (
             MaybeSubject = yes(Subject),
             add_history_nodup(Subject, !SubjectHistory),
-            address_to_string(FromAddress, From, _FromValid),
+            address_to_string(no_encoding, FromAddress, From, _FromValid),
             expand_aliases(To, ExpandTo, !IO),
             some [!Headers] (
                 !:Headers = init_headers,
@@ -236,8 +236,8 @@ set_headers_for_group_reply(!Headers) :-
     ->
         ToList = [ToHead],
         CcList = ToTail ++ CcList0,
-        address_list_to_string(ToList, To, _ToValid),
-        address_list_to_string(CcList, Cc, _CcValid),
+        address_list_to_string(no_encoding, ToList, To, _ToValid),
+        address_list_to_string(no_encoding, CcList, Cc, _CcValid),
         !Headers ^ h_to := To,
         !Headers ^ h_cc := Cc
     ;
@@ -261,7 +261,7 @@ set_headers_for_list_reply(OrigFrom, !Headers) :-
         list.negated_filter(similar_mailbox(FromAddrSpec), ToList0, ToList),
         ToList = [_ | _]
     ->
-        address_list_to_string(ToList, To, _ToValid),
+        address_list_to_string(no_encoding, ToList, To, _ToValid),
         !Headers ^ h_to := To
     ;
         true
@@ -478,7 +478,7 @@ parse_and_expand_headers(Headers0, Headers, Parsed, !IO) :-
 parse_and_expand_addresses(Input, Output, Addresses, !IO) :-
     parse_address_list(Input, Addresses0),
     list.map_foldl(maybe_expand_address, Addresses0, Addresses, !IO),
-    address_list_to_string(Addresses, Output, _Valid).
+    address_list_to_string(no_encoding, Addresses, Output, _Valid).
 
 :- pred maybe_expand_address(address::in, address::out, io::di, io::uo) is det.
 
@@ -1123,7 +1123,7 @@ draw_address(Panel, Address, !IO) :-
 :- pred draw_display_name(panel::in, display_name::in, io::di, io::uo) is det.
 
 draw_display_name(Panel, DisplayName, !IO) :-
-    display_name_to_string(DisplayName, String, Valid),
+    display_name_to_string(no_encoding, DisplayName, String, Valid),
     (
         Valid = yes,
         attr_set(Panel, normal, !IO)
@@ -1469,21 +1469,26 @@ write_temp_message_file(Stream, Headers, ParsedHeaders, Text, Attachments,
         Prepare = prepare_send,
         generate_date_msg_id(Date, MessageId, !IO),
         write_unstructured_header(Stream, "Date", Date, !IO),
-        write_unstructured_header(Stream, "Message-ID", MessageId, !IO),
-        WriteUnstruc = skip_if_empty_string(write_unstructured_header(Stream)),
-        WriteAddrs = skip_if_empty_list(write_address_list_header(Stream)),
-        WriteRefs = skip_if_empty_string(write_references_header(Stream))
+        write_unstructured_header(Stream, "Message-ID", MessageId, !IO)
     ;
         Prepare = prepare_postpone,
         generate_date_msg_id(Date, _MessageId, !IO),
-        write_unstructured_header(Stream, "Date", Date, !IO),
-        WriteUnstruc = write_unstructured_header(Stream),
-        WriteAddrs = write_address_list_header(Stream),
-        WriteRefs = write_references_header(Stream)
+        write_unstructured_header(Stream, "Date", Date, !IO)
+    ;
+        Prepare = prepare_edit
+    ),
+    (
+        ( Prepare = prepare_send
+        ; Prepare = prepare_postpone
+        ),
+        WriteUnstruc = skip_if_empty_string(write_unstructured_header(Stream)),
+        WriteAddrs = skip_if_empty_list(write_address_list_header(
+                        rfc2047_encoding, Stream)),
+        WriteRefs = skip_if_empty_string(write_references_header(Stream))
     ;
         Prepare = prepare_edit,
         WriteUnstruc = write_unstructured_header(Stream),
-        WriteAddrs = write_address_list_header(Stream),
+        WriteAddrs = write_address_list_header(no_encoding, Stream),
         WriteRefs = write_references_header(Stream)
     ),
     WriteAddrs("From", From, !IO),

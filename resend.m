@@ -121,10 +121,12 @@ generate_resent_headers(FileName, ToAddresses, Res, !IO) :-
     io.open_output(FileName, ResOpen, !IO),
     (
         ResOpen = ok(Stream),
-        write_address_list_header(Stream, "Resent-From", [FromAddress], !IO),
+        Opt = rfc2047_encoding,
+        write_address_list_header(Opt, Stream, "Resent-From", [FromAddress],
+            !IO),
         write_unstructured_header(Stream, "Resent-Date", Date, !IO),
         write_unstructured_header(Stream, "Resent-Message-ID", MessageId, !IO),
-        write_address_list_header(Stream, "Resent-To", ToAddresses, !IO),
+        write_address_list_header(Opt, Stream, "Resent-To", ToAddresses, !IO),
         io.close_output(Stream, !IO),
         Res = ok
     ;

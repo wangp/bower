@@ -6,15 +6,21 @@
 
 :- import_module bool.
 
-:- pred address_list_to_string(address_list::in, string::out, bool::out)
+:- type options
+    --->    no_encoding
+    ;       rfc2047_encoding.
+
+:- pred address_list_to_string(options::in, address_list::in,
+    string::out, bool::out) is det.
+
+:- pred address_to_string(options::in, address::in, string::out, bool::out)
     is det.
 
-:- pred address_to_string(address::in, string::out, bool::out) is det.
-
-:- pred mailbox_to_string(mailbox::in, string::out, bool::out) is det.
-
-:- pred display_name_to_string(display_name::in, string::out, bool::out)
+:- pred mailbox_to_string(options::in, mailbox::in, string::out, bool::out)
     is det.
+
+:- pred display_name_to_string(options::in, display_name::in, string::out,
+    bool::out) is det.
 
 :- pred addr_spec_to_string(addr_spec::in, string::out, bool::out) is det.
 
@@ -26,24 +32,31 @@
 :- import_module char.
 :- import_module string.
 
+:- use_module rfc2047.
+:- use_module rfc2047.encoder.
+
+:- type allow_unicode
+    --->    ascii_only
+    ;       unicode_allowed.
+
 :- type acc == list(string). % reverse
 
 %-----------------------------------------------------------------------------%
 
-address_list_to_string(Addresses, String, Ok) :-
-    intersperse(address, ", ", Addresses, [], Acc, yes, Ok),
+address_list_to_string(Opt, Addresses, String, Ok) :-
+    intersperse(address(Opt), ", ", Addresses, [], Acc, yes, Ok),
     String = to_string(Acc).
 
-address_to_string(Address, String, Ok) :-
-    address(Address, [], Acc, yes, Ok),
+address_to_string(Opt, Address, String, Ok) :-
+    address(Opt, Address, [], Acc, yes, Ok),
     String = to_string(Acc).
 
-mailbox_to_string(Mailbox, String, Ok) :-
-    mailbox(Mailbox, [], Acc, yes, Ok),
+mailbox_to_string(Opt, Mailbox, String, Ok) :-
+    mailbox(Opt, Mailbox, [], Acc, yes, Ok),
     String = to_string(Acc).
 
-display_name_to_string(DisplayName, String, Ok) :-
-    display_name(DisplayName, [], Acc, yes, Ok),
+display_name_to_string(Opt, DisplayName, String, Ok) :-
+    display_name(Opt, DisplayName, [], Acc, yes, Ok),
     String = to_string(Acc).
 
 addr_spec_to_string(AddrSpec, String, Ok) :-
@@ -78,40 +91,46 @@ intersperse(P, Sep, [X | Xs], !Acc, !Ok) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred ascii_unicode(ascii_unicode::in, acc::in, acc::out,
+:- pred atom(allow_unicode::in, atom::in, acc::in, acc::out,
     bool::in, bool::out) is det.
 
-ascii_unicode(ascii(String), !Acc, !Ok) :-
+atom(AllowUnicode, atom(Atom), !Acc, !Ok) :-
+    (
+        Atom = ascii(String)
+    ;
+        Atom = unicode(String),
+        AllowUnicode = ascii_only,
+        !:Ok = no
+    ;
+        Atom = unicode(String),
+        AllowUnicode = unicode_allowed
+        % In a context where we could have encoded the Unicode string.
+    ),
     add(String, !Acc).
-ascii_unicode(unicode(String), !Acc, _Ok0, Ok) :-
-    % In certain contexts we can encode to ASCII.
-    add(String, !Acc),
-    Ok = no.
 
-:- pred atom(atom::in, acc::in, acc::out, bool::in, bool::out) is det.
-
-atom(atom(Atom), !Acc, !Ok) :-
-    ascii_unicode(Atom, !Acc, !Ok).
-
-:- pred dot_atom(dot_atom::in, acc::in, acc::out, bool::in, bool::out) is det.
-
-dot_atom(dot_atom(Atom), !Acc, !Ok) :-
-    ascii_unicode(Atom, !Acc, !Ok).
-
-:- pred quoted_string(quoted_string::in, acc::in, acc::out,
+:- pred dot_atom(allow_unicode::in, dot_atom::in, acc::in, acc::out,
     bool::in, bool::out) is det.
 
-quoted_string(quoted_string(QuotedString), !Acc, !Ok) :-
+dot_atom(AllowUnicode, dot_atom(Atom), !Acc, !Ok) :-
+    atom(AllowUnicode, atom(Atom), !Acc, !Ok).
+
+:- pred quoted_string(allow_unicode::in, quoted_string::in, acc::in, acc::out,
+    bool::in, bool::out) is det.
+
+quoted_string(AllowUnicode, quoted_string(QuotedString), !Acc, !Ok) :-
     RevChars0 = ['"'],
     (
-        QuotedString = ascii(String),
-        quoted_string_loop(String, 0, _, RevChars0, RevChars1)
+        QuotedString = ascii(String)
     ;
         QuotedString = unicode(String),
-        % Requires encoding.
-        quoted_string_loop(String, 0, _, RevChars0, RevChars1),
+        AllowUnicode = ascii_only,
         !:Ok = no
+    ;
+        QuotedString = unicode(String),
+        AllowUnicode = unicode_allowed
+        % In a context where we could have encoded the Unicode string.
     ),
+    quoted_string_loop(String, 0, _, RevChars0, RevChars1),
     RevChars = ['"' | RevChars1],
     string.from_rev_char_list(RevChars, EscString),
     add(EscString, !Acc).
@@ -136,37 +155,47 @@ quoted_string_loop(String, !Pos, !RevChars) :-
         true
     ).
 
-:- pred word(word::in, acc::in, acc::out, bool::in, bool::out) is det.
+:- pred word(allow_unicode::in, word::in, acc::in, acc::out,
+    bool::in, bool::out) is det.
 
-word(word_atom(Atom), !Acc, !Ok) :-
-    atom(Atom, !Acc, !Ok).
-word(word_quoted_string(QuotedString), !Acc, !Ok) :-
-    quoted_string(QuotedString, !Acc, !Ok).
+word(AllowUnicode, word_atom(Atom), !Acc, !Ok) :-
+    atom(AllowUnicode, Atom, !Acc, !Ok).
+word(AllowUnicode, word_quoted_string(QuotedString), !Acc, !Ok) :-
+    quoted_string(AllowUnicode, QuotedString, !Acc, !Ok).
 
-:- pred phrase(display_name::in, acc::in, acc::out, bool::in, bool::out)
-    is det.
+:- pred phrase(options::in, phrase::in, acc::in, acc::out,
+    bool::in, bool::out) is det.
 
-phrase(Words, !Acc, !Ok) :-
-    intersperse(word, " ", Words, !Acc, !Ok).
+phrase(Opt, Words0, !Acc, !Ok) :-
+    (
+        Opt = no_encoding,
+        Words = Words0
+    ;
+        Opt = rfc2047_encoding,
+        rfc2047.encoder.encode_phrase(Words0, Words)
+    ),
+    intersperse(word(unicode_allowed), " ", Words, !Acc, !Ok).
 
 %-----------------------------------------------------------------------------%
 
-:- pred address(address::in, acc::in, acc::out, bool::in, bool::out) is det.
+:- pred address(options::in, address::in, acc::in, acc::out,
+    bool::in, bool::out) is det.
 
-address(mailbox(Mailbox), !Acc, !Ok) :-
-    mailbox(Mailbox, !Acc, !Ok).
-address(group(DisplayName, Mailboxes), !Acc, !Ok) :-
-    display_name(DisplayName, !Acc, !Ok),
+address(Opt, mailbox(Mailbox), !Acc, !Ok) :-
+    mailbox(Opt, Mailbox, !Acc, !Ok).
+address(Opt, group(DisplayName, Mailboxes), !Acc, !Ok) :-
+    display_name(Opt, DisplayName, !Acc, !Ok),
     add(": ", !Acc),
-    intersperse(mailbox, ", ", Mailboxes, !Acc, !Ok),
+    intersperse(mailbox(Opt), ", ", Mailboxes, !Acc, !Ok),
     add(";", !Acc).
 
-:- pred mailbox(mailbox::in, acc::in, acc::out, bool::in, bool::out) is det.
+:- pred mailbox(options::in, mailbox::in, acc::in, acc::out,
+    bool::in, bool::out) is det.
 
-mailbox(Mailbox, !Acc, !Ok) :-
+mailbox(Opt, Mailbox, !Acc, !Ok) :-
     (
         Mailbox = mailbox(yes(DisplayName), AddrSpec),
-        display_name(DisplayName, !Acc, !Ok),
+        display_name(Opt, DisplayName, !Acc, !Ok),
         add(" <", !Acc),
         addr_spec(AddrSpec, !Acc, !Ok),
         add(">", !Acc)
@@ -179,11 +208,11 @@ mailbox(Mailbox, !Acc, !Ok) :-
         !:Ok = no
     ).
 
-:- pred display_name(display_name::in, acc::in, acc::out, bool::in, bool::out)
-    is det.
+:- pred display_name(options::in, display_name::in, acc::in, acc::out,
+    bool::in, bool::out) is det.
 
-display_name(Phrase, !Acc, !Ok) :-
-    phrase(Phrase, !Acc, !Ok).
+display_name(Opt, Phrase, !Acc, !Ok) :-
+    phrase(Opt, Phrase, !Acc, !Ok).
 
 :- pred addr_spec(addr_spec::in, acc::in, acc::out, bool::in, bool::out)
     is det.
@@ -197,14 +226,14 @@ addr_spec(addr_spec(LocalPart, Domain), !Acc, !Ok) :-
     is det.
 
 local_part(lpart_atom(Atom), !Acc, !Ok) :-
-    dot_atom(Atom, !Acc, !Ok).
+    dot_atom(ascii_only, Atom, !Acc, !Ok).
 local_part(lpart_quoted_string(QuotedString), !Acc, !Ok) :-
-    quoted_string(QuotedString, !Acc, !Ok).
+    quoted_string(ascii_only, QuotedString, !Acc, !Ok).
 
 :- pred domain(domain::in, acc::in, acc::out, bool::in, bool::out) is det.
 
 domain(domain_name(Atom), !Acc, !Ok) :-
-    dot_atom(Atom, !Acc, !Ok).
+    dot_atom(ascii_only, Atom, !Acc, !Ok).
 domain(domain_literal(Literal), !Acc, !Ok) :-
     add("[", !Acc),
     (

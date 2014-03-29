@@ -12,8 +12,12 @@
 
 :- pred generate_date_msg_id(string::out, string::out, io::di, io::uo) is det.
 
-:- pred write_address_list_header(io.output_stream::in, string::in,
-    address_list::in, io::di, io::uo) is det.
+:- type write_address_list_options
+    --->    no_encoding
+    ;       rfc2047_encoding.
+
+:- pred write_address_list_header(write_address_list_options::in,
+    io.output_stream::in, string::in, address_list::in, io::di, io::uo) is det.
 
 :- pred write_unstructured_header(io.output_stream::in, string::in, string::in,
     io::di, io::uo) is det.
@@ -116,36 +120,41 @@ generate_date_msg_id(Date, MessageId, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-% XXX quote non-ASCII Values; or can we get away with UTF-8 now?
-
-write_address_list_header(Stream, Field, Addresses, !IO) :-
+write_address_list_header(Opt0, Stream, Field, Addresses, !IO) :-
+    (
+        Opt0 = no_encoding,
+        Opt = no_encoding
+    ;
+        Opt0 = rfc2047_encoding,
+        Opt = rfc2047_encoding
+    ),
     % XXX reject invalid syntax
-    address_list_to_spans(Addresses, [], Spans0, yes, _AllValid),
+    address_list_to_spans(Opt, Addresses, [], Spans0, yes, _AllValid),
     add_field_span(Field, Spans0, Spans),
     fill_lines(soft_line_length, Spans, Lines),
     do_write_header(Stream, Lines, !IO).
 
-:- pred address_list_to_spans(address_list::in,
+:- pred address_list_to_spans(options::in, address_list::in,
     list(span)::in, list(span)::out, bool::in, bool::out) is det.
 
-address_list_to_spans([], !Spans, !AllValid).
-address_list_to_spans([Address | Addresses], !Spans, !AllValid) :-
+address_list_to_spans(_Opt, [], !Spans, !AllValid).
+address_list_to_spans(Opt, [Address | Addresses], !Spans, !AllValid) :-
     (
         Addresses = [],
         LastElement = yes
     ;
         Addresses = [_ | _],
-        address_list_to_spans(Addresses, !Spans, !AllValid),
+        address_list_to_spans(Opt, Addresses, !Spans, !AllValid),
         LastElement = no
     ),
-    address_to_span(Address, LastElement, !Spans, !AllValid).
+    address_to_span(Opt, Address, LastElement, !Spans, !AllValid).
 
-:- pred address_to_span(address::in, bool::in,
+:- pred address_to_span(options::in, address::in, bool::in,
     list(span)::in, list(span)::out, bool::in, bool::out) is det.
 
-address_to_span(Address, LastElement, !Spans, !AllValid) :-
+address_to_span(Opt, Address, LastElement, !Spans, !AllValid) :-
     Address = mailbox(_),
-    address_to_string(Address, String, Valid),
+    address_to_string(Opt, Address, String, Valid),
     (
         LastElement = yes,
         Span = span(String, "")
@@ -155,7 +164,7 @@ address_to_span(Address, LastElement, !Spans, !AllValid) :-
     ),
     cons(Span, !Spans),
     bool.and(Valid, !AllValid).
-address_to_span(Address, LastElement, !Spans, !AllValid) :-
+address_to_span(Opt, Address, LastElement, !Spans, !AllValid) :-
     Address = group(DisplayName, Mailboxes),
     (
         LastElement = yes,
@@ -165,37 +174,37 @@ address_to_span(Address, LastElement, !Spans, !AllValid) :-
         CloseSpan = span(";,", " ")
     ),
     cons(CloseSpan, !Spans),
-    mailboxes_to_spans(Mailboxes, !Spans, !AllValid),
-    group_name_to_span(DisplayName, !Spans, !AllValid).
+    mailboxes_to_spans(Opt, Mailboxes, !Spans, !AllValid),
+    group_name_to_span(Opt, DisplayName, !Spans, !AllValid).
 
-:- pred group_name_to_span(display_name::in, list(span)::in, list(span)::out,
-    bool::in, bool::out) is det.
+:- pred group_name_to_span(options::in, display_name::in,
+    list(span)::in, list(span)::out, bool::in, bool::out) is det.
 
-group_name_to_span(DisplayName, !Spans, !AllValid) :-
-    display_name_to_string(DisplayName, String, Valid),
+group_name_to_span(Opt, DisplayName, !Spans, !AllValid) :-
+    display_name_to_string(Opt, DisplayName, String, Valid),
     cons(span(String ++ ":", " "), !Spans),
     bool.and(Valid, !AllValid).
 
-:- pred mailboxes_to_spans(list(mailbox)::in,
+:- pred mailboxes_to_spans(options::in, list(mailbox)::in,
     list(span)::in, list(span)::out, bool::in, bool::out) is det.
 
-mailboxes_to_spans([], !Spans, !AllValid).
-mailboxes_to_spans([Mailbox | Mailboxes], !Spans, !AllValid) :-
+mailboxes_to_spans(_Opt, [], !Spans, !AllValid).
+mailboxes_to_spans(Opt, [Mailbox | Mailboxes], !Spans, !AllValid) :-
     (
         Mailboxes = [],
         LastElement = yes
     ;
         Mailboxes = [_ | _],
-        mailboxes_to_spans(Mailboxes, !Spans, !AllValid),
+        mailboxes_to_spans(Opt, Mailboxes, !Spans, !AllValid),
         LastElement = no
     ),
-    mailbox_to_span(Mailbox, LastElement, !Spans, !AllValid).
+    mailbox_to_span(Opt, Mailbox, LastElement, !Spans, !AllValid).
 
-:- pred mailbox_to_span(mailbox::in, bool::in,
+:- pred mailbox_to_span(options::in, mailbox::in, bool::in,
     list(span)::in, list(span)::out, bool::in, bool::out) is det.
 
-mailbox_to_span(Mailbox, LastElement, !Spans, !AllValid) :-
-    mailbox_to_string(Mailbox, MailboxString, Valid),
+mailbox_to_span(Opt, Mailbox, LastElement, !Spans, !AllValid) :-
+    mailbox_to_string(Opt, Mailbox, MailboxString, Valid),
     bool.and(Valid, !AllValid),
     (
         LastElement = yes,

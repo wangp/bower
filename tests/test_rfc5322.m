@@ -54,7 +54,7 @@ test(Input, !IO) :-
 :- pred show_address(address::in, io::di, io::uo) is det.
 
 show_address(Address, !IO) :-
-    address_to_string(Address, String, Valid),
+    address_to_string(rfc2047_encoding, Address, String, Valid),
     (
         Valid = yes,
         io.write_string("valid: «", !IO)

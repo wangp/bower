@@ -20,6 +20,9 @@
 :- import_module string.
 :- import_module unit.
 
+:- use_module rfc2047.
+:- use_module rfc2047.decoder.
+
 %-----------------------------------------------------------------------------%
 
 parse_address_list(Input, Addresses) :-
@@ -421,6 +424,12 @@ group(Src, group(DisplayName, Mailboxes), !PS) :-
 :- pred display_name(src::in, display_name::out, ps::in, ps::out) is semidet.
 
 display_name(Src, DisplayName, !PS) :-
+    display_name_2(Src, Phrase, !PS),
+    rfc2047.decoder.decode_phrase(Phrase, DisplayName).
+
+:- pred display_name_2(src::in, display_name::out, ps::in, ps::out) is semidet.
+
+display_name_2(Src, DisplayName, !PS) :-
     word(allow_dot_for_obs_phrase, Src, FirstWord, !PS),
     zero_or_more(word(allow_dot_for_obs_phrase), Src, RestWords, !PS),
     Words = [FirstWord | RestWords],

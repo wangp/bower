@@ -337,7 +337,7 @@ valid: «"Display. .Name" <user@example.com>»
        domain_name(dot_atom(ascii("example.com"))))))]
 --------
 input: «"Dísplay Name" Name2 <user@example.com>»
-invalid: «"Dísplay Name" Name2 <user@example.com>»
+valid: «=?UTF-8?Q?D=C3=ADsplay_Name?= Name2 <user@example.com>»
 
 [mailbox(
    mailbox(
@@ -450,7 +450,7 @@ valid: «"group name": ;»
 [group([word_quoted_string(quoted_string(ascii("group name")))], [])]
 --------
 input: «gróup:;»
-invalid: «gróup: ;»
+valid: «=?UTF-8?B?Z3LDs3Vw?=: ;»
 
 [group([word_atom(atom(unicode("gróup")))], [])]
 --------
