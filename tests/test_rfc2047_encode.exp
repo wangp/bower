@@ -1,0 +1,77 @@
+[word_atom(atom(unicode("abc")))]
+[word_atom(atom(ascii("=?UTF-8?Q?abc?=")))]
+[word_atom(atom(ascii("abc")))]
+--------
+[word_atom(atom(unicode("噸")))]
+[word_atom(atom(ascii("=?UTF-8?B?5Zm4?=")))]
+[word_atom(atom(unicode("噸")))]
+--------
+[word_quoted_string(quoted_string(unicode("now only €15")))]
+[word_atom(atom(ascii("=?UTF-8?Q?now_only_=E2=82=AC15?=")))]
+[word_quoted_string(quoted_string(unicode("now only €15")))]
+--------
+[word_atom(atom(unicode("=??=")))]
+[word_atom(atom(ascii("=?UTF-8?B?PT8/PQ==?=")))]
+[word_atom(atom(ascii("=??=")))]
+--------
+[word_quoted_string(quoted_string(unicode("=??=")))]
+[word_atom(atom(ascii("=?UTF-8?B?PT8/PQ==?=")))]
+[word_atom(atom(ascii("=??=")))]
+--------
+[word_atom(atom(unicode("=?abc?=")))]
+[word_atom(atom(ascii("=?UTF-8?B?PT9hYmM/PQ==?=")))]
+[word_atom(atom(ascii("=?abc?=")))]
+--------
+[word_quoted_string(quoted_string(unicode("=?abc?=")))]
+[word_atom(atom(ascii("=?UTF-8?B?PT9hYmM/PQ==?=")))]
+[word_atom(atom(ascii("=?abc?=")))]
+--------
+[word_atom(atom(unicode("=?UTF-8?Q??=")))]
+[word_atom(atom(ascii("=?UTF-8?B?PT9VVEYtOD9RPz89?=")))]
+[word_atom(atom(ascii("=?UTF-8?Q??=")))]
+--------
+[word_quoted_string(quoted_string(unicode("=?UTF-8?Q??=")))]
+[word_atom(atom(ascii("=?UTF-8?B?PT9VVEYtOD9RPz89?=")))]
+[word_atom(atom(ascii("=?UTF-8?Q??=")))]
+--------
+[word_quoted_string(
+   quoted_string(unicode("Svifnökkvinn minn er fullur af álum")))]
+[word_atom(
+   atom(ascii("=?UTF-8?Q?Svifn=C3=B6kkvinn_minn_er_fullur_af_=C3=A1lum?=")))]
+[word_quoted_string(
+   quoted_string(unicode("Svifnökkvinn minn er fullur af álum")))]
+--------
+[word_atom(atom(unicode("Svifnökkvinn"))), word_atom(atom(unicode("álum")))]
+[word_atom(atom(ascii("=?UTF-8?Q?Svifn=C3=B6kkvinn_=C3=A1lum?=")))]
+[word_quoted_string(quoted_string(unicode("Svifnökkvinn álum")))]
+--------
+[word_quoted_string(
+   quoted_string(
+     unicode("Τὸ πλοῖόν μου τὸ μετεωριζόμενον ἐστι πλῆρες ἐγχελέων")))]
+[word_atom(
+   atom(
+     ascii(
+       "=?UTF-8?B?zqThvbggz4DOu86/4b+Wz4zOvSDOvM6/z4Ugz4ThvbggzrzOtc+EzrXPic+B?="))), 
+ word_atom(
+   atom(
+     ascii(
+       "=?UTF-8?B?zrnOts+MzrzOtc69zr/OvSDhvJDPg8+Ezrkgz4DOu+G/hs+BzrXPgiDhvJA=?="))), 
+ word_atom(atom(ascii("=?UTF-8?B?zrPPh861zrvOrc+Jzr0=?=")))]
+[word_quoted_string(
+   quoted_string(
+     unicode("Τὸ πλοῖόν μου τὸ μετεωριζόμενον ἐστι πλῆρες ἐγχελέων")))]
+--------
+[word_atom(
+   atom(
+     unicode(
+       "123456789-123456789-123456789-123456789-123456789-123456789-123x")))]
+[word_atom(
+   atom(
+     ascii(
+       "=?UTF-8?Q?123456789-123456789-123456789-123456789-123456789-123456789-123?="))), 
+ word_atom(atom(ascii("=?UTF-8?Q?x?=")))]
+[word_atom(
+   atom(
+     ascii(
+       "123456789-123456789-123456789-123456789-123456789-123456789-123x")))]
+--------

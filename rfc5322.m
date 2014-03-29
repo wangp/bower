@@ -4,6 +4,8 @@
 :- module rfc5322.
 :- interface.
 
+:- import_module bool.
+:- import_module char.
 :- import_module list.
 :- import_module maybe.
 
@@ -59,6 +61,101 @@
 :- type domain
     --->    domain_name(dot_atom)
     ;       domain_literal(ascii_unicode). % [blah]
+
+%-----------------------------------------------------------------------------%
+
+    % Exports for rfc2047.
+
+:- pred nonascii(char::in) is semidet.
+
+:- pred 'WSP'(char::in) is semidet.
+
+:- pred not_WSP(char::in) is semidet.
+
+:- pred atext(char::in) is semidet.
+
+:- pred atext_or_nonascii(char::in) is semidet.
+
+:- pred atext_or_nonascii(char::in, bool::in, bool::out) is semidet.
+
+:- func word_to_string(word) = string.
+
+%-----------------------------------------------------------------------------%
+%-----------------------------------------------------------------------------%
+
+:- implementation.
+
+:- import_module int.
+
+nonascii(C) :-
+    char.to_int(C, I),
+    I > 0x7f.
+
+%-----------------------------------------------------------------------------%
+
+% 3.1. Syntax
+
+:- pred 'ALPHA'(char::in) is semidet.
+
+'ALPHA'(C) :-
+    char.is_alpha(C).
+
+:- pred 'DIGIT'(char::in) is semidet.
+
+'DIGIT'(C) :-
+    char.is_digit(C).
+
+'WSP'(' ').
+'WSP'('\t').
+
+not_WSP(C) :-
+    not 'WSP'(C).
+
+%-----------------------------------------------------------------------------%
+
+% 3.2.3. Atom
+
+atext(C) :-
+    (
+        'ALPHA'(C)
+    ;
+        'DIGIT'(C)
+    ;
+        ( C = ('!') ; C = ('#')
+        ; C = ('$') ; C = ('%')
+        ; C = ('&') ; C = ('\'')
+        ; C = ('*') ; C = ('+')
+        ; C = ('-') ; C = ('/')
+        ; C = ('=') ; C = ('?')
+        ; C = ('^') ; C = ('_')
+        ; C = ('`') ; C = ('{')
+        ; C = ('|') ; C = ('}')
+        ; C = ('~')
+        )
+    ).
+
+atext_or_nonascii(C) :-
+    (
+        atext(C)
+    ;
+        nonascii(C)
+    ).
+
+atext_or_nonascii(C, !AllAscii) :-
+    ( atext(C) ->
+        true
+    ;
+        nonascii(C),
+        !:AllAscii = no
+    ).
+
+word_to_string(Word) = String :-
+    ( Word = word_atom(atom(Wrap))
+    ; Word = word_quoted_string(quoted_string(Wrap))
+    ),
+    ( Wrap = ascii(String)
+    ; Wrap = unicode(String)
+    ).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

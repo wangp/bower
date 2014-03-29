@@ -128,20 +128,9 @@ separated_list_skip_nulls_2(Sep, P, Src, !RevXs, !PS) :-
 
 % 3.1. Syntax
 
-:- pred 'ALPHA'(char::in) is semidet.
-
-'ALPHA'(C) :-
-    char.is_alpha(C).
-
-:- pred 'DIGIT'(char::in) is semidet.
-
-'DIGIT'(C) :-
-    char.is_digit(C).
-
-:- pred 'WSP'(char::in) is semidet.
-
-'WSP'(' ').
-'WSP'('\t').
+% ALPHA
+% DIGIT
+% WSP
 
 :- pred 'VCHAR'(char::in) is semidet.
 
@@ -159,12 +148,6 @@ separated_list_skip_nulls_2(Sep, P, Src, !RevXs, !PS) :-
 ascii(C) :-
     char.to_int(C, I),
     I =< 0x7f.
-
-:- pred nonascii(char::in) is semidet.
-
-nonascii(C) :-
-    char.to_int(C, I),
-    I > 0x7f.
 
 %-----------------------------------------------------------------------------%
 
@@ -253,38 +236,16 @@ comment_tail(Src, !PS) :-
     --->    normal
     ;       allow_dot_for_obs_phrase.
 
-:- pred atext(char::in) is semidet.
+% atext
+% atext_or_nonascii
 
-atext(C) :-
-    (
-        'ALPHA'(C)
-    ;
-        'DIGIT'(C)
-    ;
-        ( C = ('!') ; C = ('#')
-        ; C = ('$') ; C = ('%')
-        ; C = ('&') ; C = ('\'')
-        ; C = ('*') ; C = ('+')
-        ; C = ('-') ; C = ('/')
-        ; C = ('=') ; C = ('?')
-        ; C = ('^') ; C = ('_')
-        ; C = ('`') ; C = ('{')
-        ; C = ('|') ; C = ('}')
-        ; C = ('~')
-        )
-    ).
+:- pred atext_or_dot_or_nonascii(char::in, bool::in, bool::out) is semidet.
 
-:- pred atext_extended(atom_opt::in, char::in, bool::in, bool::out)
-    is semidet.
-
-atext_extended(Opt, C, !AllAscii) :-
-    ( atext(C) ->
+atext_or_dot_or_nonascii(C, !AllAscii) :-
+    ( C = ('.') ->
         true
-    ; C = ('.') ->
-        Opt = allow_dot_for_obs_phrase
     ;
-        nonascii(C),
-        !:AllAscii = no
+        atext_or_nonascii(C, !AllAscii)
     ).
 
 :- pred atom(atom_opt::in, src::in, atom::out, ps::in, ps::out)
@@ -292,7 +253,14 @@ atext_extended(Opt, C, !AllAscii) :-
 
 atom(Opt, Src, atom(Atom), !PS) :-
     skip_CFWS(Src, !PS),
-    one_or_more_chars(atext_extended(Opt), Src, String, yes, AllAscii, !PS),
+    (
+        Opt = normal,
+        Pred = atext_or_nonascii
+    ;
+        Opt = allow_dot_for_obs_phrase,
+        Pred = atext_or_dot_or_nonascii
+    ),
+    one_or_more_chars(Pred, Src, String, yes, AllAscii, !PS),
     skip_CFWS(Src, !PS),
     ascii_unicode(AllAscii, String, Atom).
 
@@ -309,7 +277,7 @@ dot_atom(Src, dot_atom(Atom), !PS) :-
 
 dot_atom_text(Src, String, !AllAscii, !PS) :-
     current_offset(Src, Start, !PS),
-    while1(atext_extended(normal), Src, !AllAscii, !PS),
+    while1(atext_or_nonascii, Src, !AllAscii, !PS),
     dot_atom_tail(Src, !AllAscii, !PS),
     current_offset(Src, End, !PS),
     input_substring(Src, Start, End, String).
@@ -320,7 +288,7 @@ dot_atom_text(Src, String, !AllAscii, !PS) :-
 dot_atom_tail(Src, !AllAscii, !PS) :-
     (
         next_char(Src, '.', !PS),
-        while1(atext_extended(normal), Src, !AllAscii, !PS)
+        while1(atext_or_nonascii, Src, !AllAscii, !PS)
     ->
         dot_atom_tail(Src, !AllAscii, !PS)
     ;
@@ -603,21 +571,11 @@ obsolete_word(word_atom(atom(Atom))) :-
 :- func quoted_string_from_words(list(word)) = quoted_string.
 
 quoted_string_from_words(Words) = quoted_string(Wrap) :-
-    String = string.join_list(" ", list.map(get_word_string, Words)),
+    String = string.join_list(" ", list.map(word_to_string, Words)),
     ( string.all_match(ascii, String) ->
         Wrap = ascii(String)
     ;
         Wrap = unicode(String)
-    ).
-
-:- func get_word_string(word) = string.
-
-get_word_string(Word) = String :-
-    ( Word = word_atom(atom(Wrap))
-    ; Word = word_quoted_string(quoted_string(Wrap))
-    ),
-    ( Wrap = ascii(String)
-    ; Wrap = unicode(String)
     ).
 
 %-----------------------------------------------------------------------------%

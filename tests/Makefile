@@ -5,7 +5,9 @@ DIFF = diff -u
 files = $(wildcard *.m ../*.m)
 
 TESTS = test_base64 \
-	test_rfc5322
+	test_rfc5322 \
+	test_rfc2047_decode \
+	test_rfc2047_encode
 
 .PHONY: default
 default: $(addsuffix .runtest,$(TESTS))
@@ -22,7 +24,13 @@ test_base64.runtest: test_base64
 		./test_base64 -d > test_base64.out && \
 		$(DIFF) test_base64.m test_base64.out
 
-.PHONY: test_rfc5322.runtest
-test_rfc5322.runtest: test_rfc5322
-	./test_rfc5322 > test_rfc5322.out && \
-		$(DIFF) test_rfc5322.exp test_rfc5322.out
+.PHONY: %.runtest
+%.runtest: %
+	./$(<) > $(<).out && \
+		$(DIFF) $(<).exp $(<).out
+
+# Prevent building targets in parallel to avoid multiple instances of
+# mmc trying to make the same target files at once.
+test_rfc5322: | test_base64
+test_rfc2047_decode: | test_rfc5322
+test_rfc2047_encode: | test_rfc2047_decode

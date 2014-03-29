@@ -1,0 +1,90 @@
+input: [""]
+[word_atom(atom(ascii("")))]
+--------
+input: ["=??="]
+[word_atom(atom(ascii("=??=")))]
+--------
+input: ["=????="]
+[word_atom(atom(ascii("=????=")))]
+--------
+input: ["=?UTF-x?Q??="]
+[word_atom(atom(ascii("=?UTF-x?Q??=")))]
+--------
+input: ["=?UTF-8?x??="]
+[word_atom(atom(ascii("=?UTF-8?x??=")))]
+--------
+input: ["=?UTF-8?Q??="]
+[word_atom(atom(ascii("")))]
+--------
+input: ["=?UTF-8?Q?a?="]
+[word_atom(atom(ascii("a")))]
+--------
+input: ["=?UTF-8?Q?abc?="]
+[word_atom(atom(ascii("abc")))]
+--------
+input: ["=?UTF-8?Q? ?="]
+[word_quoted_string(quoted_string(ascii(" ")))]
+--------
+input: ["=?UTF-8?Q???="]
+[word_atom(atom(ascii("?")))]
+--------
+input: ["=?UTF-8?Q?=?="]
+[word_atom(atom(ascii("=?UTF-8?Q?=?=")))]
+--------
+input: ["=?UTF-8?Q?=x?="]
+[word_atom(atom(ascii("=?UTF-8?Q?=x?=")))]
+--------
+input: ["=?UTF-8?Q?=xx?="]
+[word_atom(atom(ascii("=?UTF-8?Q?=xx?=")))]
+--------
+input: ["=?UTF-8?Q?=A?="]
+[word_atom(atom(ascii("=?UTF-8?Q?=A?=")))]
+--------
+input: ["=?UTF-8?Q?=00?="]
+[word_atom(atom(ascii("=?UTF-8?Q?=00?=")))]
+--------
+input: ["=?UTF-8?Q?=09?="]
+[word_quoted_string(quoted_string(ascii("\t")))]
+--------
+input: ["=?UTF-8?Q?=20?="]
+[word_quoted_string(quoted_string(ascii(" ")))]
+--------
+input: ["=?UTF-8?Q?_?="]
+[word_quoted_string(quoted_string(ascii(" ")))]
+--------
+input: ["=?UTF-8?Q?=5F?="]
+[word_atom(atom(ascii("_")))]
+--------
+input: ["=?UTF-8?Q?é?="]
+[word_atom(atom(ascii("=?UTF-8?Q?é?=")))]
+--------
+input: ["=?UTF-8?Q?=C3?="]
+[word_atom(atom(ascii("=?UTF-8?Q?=C3?=")))]
+--------
+input: ["=?UTF-8?Q?=C3=A9?="]
+[word_atom(atom(unicode("é")))]
+--------
+input: ["=?utf-8?q?=C3=A9?="]
+[word_atom(atom(unicode("é")))]
+--------
+input: ["=?UTF-8?Q?c_a_f_=C3=A9?="]
+[word_quoted_string(quoted_string(unicode("c a f é")))]
+--------
+input: ["=?UTF-8?Q?=22=C3=A9=22?="]
+[word_quoted_string(quoted_string(unicode("\"é\"")))]
+--------
+input: ["=?UTF-8?Q?=e5=99=b8?="]
+[word_atom(atom(unicode("噸")))]
+--------
+input: ["=?UTF-8?Q?caf?=", "=?UTF-8?Q?=C3=A9?="]
+[word_atom(atom(unicode("café")))]
+--------
+input: ["=?UTF-8?Q?caf=C3?=", "=?UTF-8?Q?=A9?="]
+[word_atom(atom(ascii("=?UTF-8?Q?caf=C3?="))), word_atom(atom(ascii("=?UTF-8?Q?=A9?=")))]
+--------
+input: ["=?UTF-8?Q?h=C3=BA?=", "=?UTF-8?Q?h=C3=BA?=", "=?UTF-8?Q?h=C3=BA?="]
+[word_atom(atom(unicode("húhúhú")))]
+--------
+input: ["=?UTF-8?Q?h=C3=BA?=", "hu", "=?UTF-8?Q?h=C3=BA?="]
+[word_atom(atom(unicode("hú"))), word_atom(atom(ascii("hu"))), word_atom(atom(unicode("hú")))]
+--------
