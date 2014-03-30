@@ -6,11 +6,13 @@
 
 :- import_module io.
 
+:- import_module data.
 :- import_module rfc5322.
 
 :- pred get_from_address(address::out, io::di, io::uo) is det.
 
-:- pred generate_date_msg_id(string::out, string::out, io::di, io::uo) is det.
+:- pred generate_date_msg_id(header_value::out, header_value::out,
+    io::di, io::uo) is det.
 
 :- type write_address_list_options
     --->    no_encoding
@@ -19,11 +21,11 @@
 :- pred write_address_list_header(write_address_list_options::in,
     io.output_stream::in, string::in, address_list::in, io::di, io::uo) is det.
 
-:- pred write_unstructured_header(io.output_stream::in, string::in, string::in,
-    io::di, io::uo) is det.
+:- pred write_unstructured_header(io.output_stream::in,
+    string::in, header_value::in, io::di, io::uo) is det.
 
-:- pred write_references_header(io.output_stream::in, string::in, string::in,
-    io::di, io::uo) is det.
+:- pred write_references_header(io.output_stream::in,
+    string::in, header_value::in, io::di, io::uo) is det.
 
 :- pred generate_boundary(string::out, io::di, io::uo) is det.
 
@@ -77,7 +79,7 @@ get_from_address(Address, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-generate_date_msg_id(Date, MessageId, !IO) :-
+generate_date_msg_id(header_value(Date), header_value(MessageId), !IO) :-
     time(Time, !IO),
     TM = localtime(Time),
     Year = 1900 + TM ^ tm_year,
@@ -216,7 +218,7 @@ mailbox_to_span(Opt, Mailbox, LastElement, !Spans, !AllValid) :-
     cons(Span, !Spans).
 
 write_unstructured_header(Stream, Field, Value, !IO) :-
-    get_spans_by_whitespace(Value, ValueSpans),
+    get_spans_by_whitespace(header_value_string(Value), ValueSpans),
     add_field_span(Field, ValueSpans, Spans),
     fill_lines(soft_line_length, Spans, Lines),
     do_write_header(Stream, Lines, !IO).

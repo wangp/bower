@@ -99,7 +99,7 @@
                 tp_selected     :: selected,
                 tp_graphics     :: maybe(list(graphic)),
                 tp_reldate      :: string,
-                tp_subject      :: maybe(string)
+                tp_subject      :: maybe(header_value)
             ).
 
 :- type selected
@@ -126,7 +126,7 @@
     ;       start_recall
     ;       prompt_tag(string)
     ;       bulk_tag(keep_selection)
-    ;       prompt_save_part(part, maybe(string))
+    ;       prompt_save_part(part, maybe(header_value))
     ;       prompt_open_part(part)
     ;       prompt_open_url(string)
     ;       prompt_search(search_direction)
@@ -378,12 +378,13 @@ max_thread_lines = 8.
     list(thread_line)::out) is det.
 
 append_threaded_messages(Nowish, Messages, ThreadLines) :-
-    append_threaded_messages(Nowish, [], [], no, Messages, "",
+    PrevSubject = header_value(""),
+    append_threaded_messages(Nowish, [], [], no, Messages, PrevSubject,
         cord.init, ThreadCord),
     ThreadLines = list(ThreadCord).
 
 :- pred append_threaded_messages(tm::in, list(graphic)::in, list(graphic)::in,
-    maybe(message_id)::in, list(message)::in, string::in,
+    maybe(message_id)::in, list(message)::in, header_value::in,
     cord(thread_line)::in, cord(thread_line)::out) is det.
 
 append_threaded_messages(_Nowish, _Above, _Below, _MaybeParentId,
@@ -431,7 +432,7 @@ append_threaded_messages(Nowish, Above0, Below0, MaybeParentId,
         Subject, !Cord),
     !:Cord = !.Cord ++ MessagesCord.
 
-:- pred get_last_subject(message::in, string::out) is det.
+:- pred get_last_subject(message::in, header_value::out) is det.
 
 get_last_subject(Message, LastSubject) :-
     Replies = Message ^ m_replies,
@@ -454,7 +455,7 @@ append_flat_messages(Nowish, Messages, ThreadLines, SortedFlatMessages) :-
     flatten_messages(no, Messages, [], MessagesFlat0),
     list.sort(compare_by_timestamp, MessagesFlat0, MessagesFlat),
     list.foldl2(append_flat_message(Nowish), MessagesFlat,
-        "", _PrevSubject, [], RevThreadLines),
+        header_value(""), _PrevSubject, [], RevThreadLines),
     list.reverse(RevThreadLines, ThreadLines),
     SortedFlatMessages = list.map(mf_message, MessagesFlat).
 
@@ -476,8 +477,8 @@ compare_by_timestamp(A, B, Rel) :-
     TimestampB = B ^ mf_message ^ m_timestamp,
     compare(Rel, TimestampA, TimestampB).
 
-:- pred append_flat_message(tm::in, message_flat::in, string::in, string::out,
-    list(thread_line)::in, list(thread_line)::out) is det.
+:- pred append_flat_message(tm::in, message_flat::in, header_value::in,
+    header_value::out, list(thread_line)::in, list(thread_line)::out) is det.
 
 append_flat_message(Nowish, MessageFlat, PrevSubject, Subject, !RevAcc) :-
     MessageFlat = message_flat(Message, MaybeParentId),
@@ -488,13 +489,14 @@ append_flat_message(Nowish, MessageFlat, PrevSubject, Subject, !RevAcc) :-
 :- func mf_message(message_flat) = message. % accessor
 
 :- pred make_thread_line(tm::in, message::in, maybe(message_id)::in,
-    maybe(list(graphic))::in, string::in, thread_line::out) is det.
+    maybe(list(graphic))::in, header_value::in, thread_line::out) is det.
 
 make_thread_line(Nowish, Message, MaybeParentId, MaybeGraphics, PrevSubject,
         Line) :-
     Timestamp = Message ^ m_timestamp,
     Tags = Message ^ m_tags,
-    From = clean_email_address(Message ^ m_headers ^ h_from),
+    From = Message ^ m_headers ^ h_from,
+    CleanFrom = clean_email_address(header_value_string(From)),
     get_standard_tags(Tags, StdTags, NonstdTagsWidth),
     Subject = Message ^ m_headers ^ h_subject,
     timestamp_to_tm(Timestamp, TM),
@@ -505,12 +507,13 @@ make_thread_line(Nowish, Message, MaybeParentId, MaybeGraphics, PrevSubject,
     ;
         MaybeSubject = yes(Subject)
     ),
-    Line = thread_line(Message, MaybeParentId, From, Tags, Tags, StdTags,
+    Line = thread_line(Message, MaybeParentId, CleanFrom, Tags, Tags, StdTags,
         NonstdTagsWidth, not_selected, MaybeGraphics, RelDate, MaybeSubject).
 
 :- func clean_email_address(string) = string.
 
 clean_email_address(Orig) = Clean :-
+    % Maybe should do proper address parsing now.
     (
         strrchr(Orig, '<', Index),
         string.unsafe_prev_index(Orig, Index, SpaceIndex, ' ')
@@ -520,10 +523,11 @@ clean_email_address(Orig) = Clean :-
         Clean = Orig
     ).
 
-:- func canonicalise_subject(string) = list(string).
+:- func canonicalise_subject(header_value) = list(string).
 
-canonicalise_subject(S) = Words :-
-    list.negated_filter(is_reply_marker, string.words(S), Words).
+canonicalise_subject(Subject) = Words :-
+    String = header_value_string(Subject),
+    list.negated_filter(is_reply_marker, string.words(String), Words).
 
 :- pred is_reply_marker(string::in) is semidet.
 
@@ -1603,7 +1607,7 @@ save_part(Action, MessageUpdate, !Info) :-
         MessageUpdate = set_warning("No message or attachment selected.")
     ).
 
-:- pred prompt_save_part(screen::in, part::in, maybe(string)::in,
+:- pred prompt_save_part(screen::in, part::in, maybe(header_value)::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
@@ -1662,10 +1666,11 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
     ),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred make_filename_from_subject(string::in, string::out) is det.
+:- pred make_filename_from_subject(header_value::in, string::out) is det.
 
 make_filename_from_subject(Subject, Filename) :-
-    string.to_char_list(Subject, CharList0),
+    SubjectString = header_value_string(Subject),
+    string.to_char_list(SubjectString, CharList0),
     list.filter_map(replace_subject_char, CharList0, CharList),
     string.from_char_list(CharList, Filename).
 
@@ -2050,7 +2055,7 @@ addressbook_add(Screen, Info, !IO) :-
     Scrollable = Info ^ tp_scrollable,
     ( get_cursor_line(Scrollable, _Cursor, Line) ->
         From = Line ^ tp_message ^ m_headers ^ h_from,
-        Address0 = From
+        Address0 = header_value_string(From)
     ;
         Address0 = ""
     ),
@@ -2157,7 +2162,7 @@ draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         my_addstr(Panel, ". ", !IO),
         panel.getyx(Panel, Row, SubjectX0, !IO),
         cond_attr_set(Panel, fg_bg(green, default), IsCursor, !IO),
-        my_addstr(Panel, Subject, !IO),
+        draw_header_value(Panel, Subject, !IO),
         panel.getyx(Panel, _, SubjectX, !IO),
         panel.getmaxyx(Panel, _, MaxX, !IO)
     ;

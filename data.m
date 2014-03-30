@@ -42,17 +42,22 @@
 :- type headers
     --->    headers(
                 % Technically, header fields.
-                h_date          :: string,
-                h_from          :: string,
-                h_to            :: string,
-                h_cc            :: string,
-                h_bcc           :: string,
-                h_subject       :: string,
-                h_replyto       :: string,
-                h_references    :: string,
-                h_inreplyto     :: string,
-                h_rest          :: map(string, string)
+                h_date          :: header_value,
+                h_from          :: header_value,
+                h_to            :: header_value,
+                h_cc            :: header_value,
+                h_bcc           :: header_value,
+                h_subject       :: header_value,
+                h_replyto       :: header_value,
+                h_references    :: header_value,
+                h_inreplyto     :: header_value,
+                % XXX should use a distinct type for header field names
+                % for they are case-insensitive
+                h_rest          :: map(string, header_value)
             ).
+
+:- type header_value
+    --->    header_value(string).
 
 :- type tag
     --->    tag(string).
@@ -89,6 +94,10 @@
 
 :- func init_headers = headers.
 
+:- pred empty_header_value(header_value::in) is semidet.
+
+:- func header_value_string(header_value) = string.
+
 :- pred tag_to_string(tag::in, string::out) is det.
 
 :- pred snoc(T::in, cord(T)::in, cord(T)::out) is det.
@@ -107,7 +116,14 @@ thread_id_to_search_term(thread_id(Id)) = "thread:" ++ Id.
 
 message_id_to_search_term(message_id(Id)) = "id:" ++ Id.
 
-init_headers = headers("", "", "", "", "", "", "", "", "", map.init).
+init_headers = Headers :-
+    Empty = header_value(""),
+    Headers = headers(Empty, Empty, Empty, Empty, Empty, Empty, Empty, Empty,
+        Empty, map.init).
+
+empty_header_value(header_value("")).
+
+header_value_string(header_value(S)) = S.
 
 tag_to_string(tag(String), String).
 

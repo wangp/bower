@@ -10,6 +10,7 @@
 
 :- import_module curs.
 :- import_module curs.panel.
+:- import_module data.
 
 %-----------------------------------------------------------------------------%
 
@@ -77,6 +78,11 @@
 :- pred draw_bar(screen::in, io::di, io::uo) is det.
 
 :- pred draw_bar_with_text(screen::in, string::in, io::di, io::uo) is det.
+
+:- pred draw_header_value(panel::in, int::in, header_value::in, char::in,
+    io::di, io::uo) is det.
+
+:- pred draw_header_value(panel::in, header_value::in, io::di, io::uo) is det.
 
 :- type keycode
     --->    char(char)
@@ -370,6 +376,16 @@ draw_bar_with_text(Screen, Text, !IO) :-
     my_addstr(Panel, Text, !IO),
     my_addstr(Panel, " -", !IO),
     hline(Panel, char.to_int('-'), Cols, !IO).
+
+%-----------------------------------------------------------------------------%
+
+draw_header_value(Panel, NrCols, Value, PadChar, !IO) :-
+    Value = header_value(String),
+    my_addstr_fixed(Panel, NrCols, String, PadChar, !IO).
+
+draw_header_value(Panel, Value, !IO) :-
+    Value = header_value(String),
+    my_addstr(Panel, String, !IO).
 
 %-----------------------------------------------------------------------------%
 

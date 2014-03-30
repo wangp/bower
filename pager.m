@@ -80,7 +80,7 @@
     pager_info::in, pager_info::out) is det.
 
 :- type highlighted_thing
-    --->    highlighted_part(part, maybe(string))
+    --->    highlighted_part(part, maybe(header_value)) % maybe(subject)
     ;       highlighted_url(string)
     ;       highlighted_fold_marker.
 
@@ -139,8 +139,8 @@
     --->    node_id - pager_line.
 
 :- type pager_line
-    --->    start_message_header(message, string, string)
-    ;       header(string, string)
+    --->    start_message_header(message, string, header_value)
+    ;       header(string, header_value)
     ;       text(quote_level, string, quote_marker_end, text_type)
     ;       part_head(
                 part            :: part,
@@ -314,17 +314,17 @@ make_message_tree(Mode, Cols, Message, Tree, !Counter, !IO) :-
     SubTrees = [HeaderTree, BodyTree, Separators | ReplyTrees],
     Tree = node(NodeId, SubTrees, no).
 
-:- pred add_header(string::in, string::in,
+:- pred add_header(string::in, header_value::in,
     list(pager_line)::in, list(pager_line)::out) is det.
 
 add_header(Header, Value, RevLines0, RevLines) :-
     RevLines = [header(Header, Value) | RevLines0].
 
-:- pred maybe_add_header(string::in, string::in,
+:- pred maybe_add_header(string::in, header_value::in,
     list(pager_line)::in, list(pager_line)::out) is det.
 
 maybe_add_header(Header, Value, RevLines0, RevLines) :-
-    ( Value = "" ->
+    ( empty_header_value(Value) ->
         RevLines = RevLines0
     ;
         add_header(Header, Value, RevLines0, RevLines)
@@ -790,14 +790,15 @@ make_encapsulated_message_tree(Cols, EncapMessage, Tree, !Counter, !IO) :-
     PreBlank = no,
     Tree = node(NodeId, SubTrees, PreBlank).
 
-:- pred add_encapsulated_header(string::in, string::in,
+:- pred add_encapsulated_header(string::in, header_value::in,
     list(pager_line)::in, list(pager_line)::out) is det.
 
 add_encapsulated_header(Header, Value, RevLines0, RevLines) :-
-    ( Value = "" ->
+    Value = header_value(ValueString),
+    ( ValueString = "" ->
         RevLines = RevLines0
     ;
-        Line = text(0, Header ++ ": " ++ Value, 0, plain),
+        Line = text(0, Header ++ ": " ++ ValueString, 0, plain),
         RevLines = [Line | RevLines0]
     ).
 
@@ -1260,17 +1261,23 @@ id_pager_line_matches_search(Search, _Id - Line) :-
 line_matches_search(Search, Line) :-
     require_complete_switch [Line]
     (
-        ( Line = start_message_header(_, _, String)
-        ; Line = header(_, String)
-        ; Line = text(_, String, _, _)
-        ),
+        Line = start_message_header(Message, _, Value),
+        (
+            String = header_value_string(Value),
+            strcase_str(String, Search)
+        ;
+            % XXX this won't match current tags
+            Tags = Message ^ m_tags,
+            set.member(tag(TagName), Tags),
+            strcase_str(TagName, Search)
+        )
+    ;
+        Line = header(_, Value),
+        String = header_value_string(Value),
         strcase_str(String, Search)
     ;
-        Line = start_message_header(Message, _, _),
-        % XXX this won't match current tags
-        Tags = Message ^ m_tags,
-        set.member(tag(TagName), Tags),
-        strcase_str(TagName, Search)
+        Line = text(_, String, _, _),
+        strcase_str(String, Search)
     ;
         Line = part_head(Part, _),
         (
@@ -1515,7 +1522,7 @@ draw_pager_line(Panel, Line, IsCursor, !IO) :-
             )
         ),
         panel.attr_set(Panel, Attr, !IO),
-        my_addstr(Panel, Value, !IO)
+        draw_header_value(Panel, Value, !IO)
     ;
         Line = text(QuoteLevel, Text, QuoteMarkerEnd, TextType),
         Attr0 = quote_level_to_attr(QuoteLevel),

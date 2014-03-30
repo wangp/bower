@@ -43,9 +43,9 @@
 :- type recall_line
     --->    recall_line(
                 r_message       :: message,
-                r_date          :: string,
-                r_to            :: string,
-                r_subject       :: string
+                r_date          :: header_value,
+                r_to            :: header_value,
+                r_subject       :: header_value
             ).
 
 :- instance scrollable.line(recall_line) where [
@@ -96,7 +96,7 @@ make_recall_line(Nowish, MessageId, Line, !IO) :-
         timestamp_to_tm(Timestamp, TM),
         Shorter = no,
         make_reldate(Nowish, TM, Shorter, RelDate),
-        Line = recall_line(Message, RelDate, To, Subject)
+        Line = recall_line(Message, header_value(RelDate), To, Subject)
     ;
         Result = error(Error),
         unexpected($module, $pred, Error)
@@ -231,16 +231,16 @@ draw_recall_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         IsCursor = no,
         panel.attr_set(Panel, fg_bg(blue, default) + bold, !IO)
     ),
-    my_addstr_fixed(Panel, 13, RelDate, ' ', !IO),
+    draw_header_value(Panel, 13, RelDate, ' ', !IO),
     FieldAttr = fg_bg(red, default) + bold,
     cond_attr_set(Panel, FieldAttr, IsCursor, !IO),
     my_addstr(Panel, "To: ", !IO),
     cond_attr_set(Panel, normal, IsCursor, !IO),
-    my_addstr_fixed(Panel, 25, To, ' ', !IO),
+    draw_header_value(Panel, 25, To, ' ', !IO),
     cond_attr_set(Panel, FieldAttr, IsCursor, !IO),
     my_addstr(Panel, " Subject: ", !IO),
     cond_attr_set(Panel, normal, IsCursor, !IO),
-    my_addstr(Panel, Subject, !IO).
+    draw_header_value(Panel, Subject, !IO).
 
 :- pred cond_attr_set(panel::in, attr::in, bool::in, io::di, io::uo) is det.
 

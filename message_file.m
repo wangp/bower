@@ -61,7 +61,8 @@ read_headers(String, Pos0, Pos, !Headers) :-
     unfolded_line(String, Pos0, Pos1, Line),
     ( Line = "" ->
         Pos = Pos1
-    ; is_header_line(Line, Name, Value) ->
+    ; is_header_line(Line, Name, RawValue) ->
+        Value = header_value(RawValue),
         add_header(Name, Value, !Headers),
         read_headers(String, Pos1, Pos, !Headers)
     ;
@@ -141,8 +142,8 @@ is_header_line(Line, Name, Value) :-
         Value = string.strip(Value0)
     ).
 
-:- pred add_header(string::in, string::in,
-    headers::in, headers::out) is det.
+:- pred add_header(string::in, header_value::in, headers::in, headers::out)
+    is det.
 
 add_header(Name, Value, !Headers) :-
     ( add_standard_header(Name, Value, !Headers) ->
@@ -153,7 +154,7 @@ add_header(Name, Value, !Headers) :-
         !Headers ^ h_rest := Rest
     ).
 
-:- pred add_standard_header(string::in, string::in,
+:- pred add_standard_header(string::in, header_value::in,
     headers::in, headers::out) is semidet.
 
 add_standard_header(Name, Value, !Headers) :-

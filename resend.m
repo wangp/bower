@@ -46,7 +46,7 @@ handle_resend(Screen, MessageId, MessageUpdate, !ToHistory, !IO) :-
         To0 \= ""
     ->
         add_history_nodup(To0, !ToHistory),
-        parse_and_expand_addresses(To0, To, ToAddresses, !IO),
+        parse_and_expand_addresses_string(To0, To, ToAddresses, !IO),
         % XXX reject invalid syntax
         confirm_resend(Screen, To, Confirmation, !IO),
         (
@@ -122,11 +122,14 @@ generate_resent_headers(FileName, ToAddresses, Res, !IO) :-
     (
         ResOpen = ok(Stream),
         Opt = rfc2047_encoding,
-        write_address_list_header(Opt, Stream, "Resent-From", [FromAddress],
-            !IO),
-        write_unstructured_header(Stream, "Resent-Date", Date, !IO),
-        write_unstructured_header(Stream, "Resent-Message-ID", MessageId, !IO),
-        write_address_list_header(Opt, Stream, "Resent-To", ToAddresses, !IO),
+        write_address_list_header(Opt, Stream,
+            "Resent-From", [FromAddress], !IO),
+        write_unstructured_header(Stream,
+            "Resent-Date", Date, !IO),
+        write_unstructured_header(Stream,
+            "Resent-Message-ID", MessageId, !IO),
+        write_address_list_header(Opt, Stream,
+            "Resent-To", ToAddresses, !IO),
         io.close_output(Stream, !IO),
         Res = ok
     ;

@@ -149,7 +149,8 @@ parse_message_details(JSON, Replies, Message) :-
 
 :- pred parse_header(key::in, json::in, headers::in, headers::out) is semidet.
 
-parse_header(Key, unesc_string(Value), !Headers) :-
+parse_header(Key, unesc_string(RawValue), !Headers) :-
+    Value = header_value(RawValue),
     ( Key = "Date" ->
         !Headers ^ h_date := Value
     ; Key = "From" ->

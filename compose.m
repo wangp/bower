@@ -35,8 +35,8 @@
 
     % Exported for resend.
     %
-:- pred parse_and_expand_addresses(string::in, string::out, address_list::out,
-    io::di, io::uo) is det.
+:- pred parse_and_expand_addresses_string(string::in, string::out,
+    address_list::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -147,9 +147,9 @@ start_compose(Screen, Transition, !ToHistory, !SubjectHistory, !IO) :-
             expand_aliases(To, ExpandTo, !IO),
             some [!Headers] (
                 !:Headers = init_headers,
-                !Headers ^ h_from := From,
-                !Headers ^ h_to := ExpandTo,
-                !Headers ^ h_subject := Subject,
+                !Headers ^ h_from := header_value(From),
+                !Headers ^ h_to := header_value(ExpandTo),
+                !Headers ^ h_subject := header_value(Subject),
                 Headers = !.Headers
             ),
             Text = "",
@@ -169,7 +169,7 @@ start_compose(Screen, Transition, !ToHistory, !SubjectHistory, !IO) :-
 :- pred expand_aliases(string::in, string::out, io::di, io::uo) is det.
 
 expand_aliases(Input, Output, !IO) :-
-    parse_and_expand_addresses(Input, Output, _Addresses, !IO).
+    parse_and_expand_addresses_string(Input, Output, _Addresses, !IO).
 
 %-----------------------------------------------------------------------------%
 
@@ -207,27 +207,28 @@ start_reply(Screen, Message, ReplyKind, Transition, !IO) :-
         Transition = screen_transition(not_sent, set_warning(Warning))
     ).
 
-:- pred set_headers_for_direct_reply(string::in, string::in,
+:- pred set_headers_for_direct_reply(header_value::in, header_value::in,
     headers::in, headers::out) is det.
 
 set_headers_for_direct_reply(OrigFrom, OrigReplyTo, !Headers) :-
-    ( OrigReplyTo \= "" ->
+    ( not empty_header_value(OrigReplyTo) ->
         !Headers ^ h_to := OrigReplyTo
-    ; OrigFrom \= "" ->
+    ; not empty_header_value(OrigFrom) ->
         !Headers ^ h_to := OrigFrom
     ;
         true
     ),
-    !Headers ^ h_cc := "".
+    !Headers ^ h_cc := header_value("").
 
 :- pred set_headers_for_group_reply(headers::in, headers::out) is det.
 
 set_headers_for_group_reply(!Headers) :-
     % Move all but the first To address down to Cc.  This acts more like the
     % behaviour I am used to from Mutt.
+    % XXX do proper address list parsing
 
-    To0 = !.Headers ^ h_to,
-    Cc0 = !.Headers ^ h_cc,
+    To0 = header_value_string(!.Headers ^ h_to),
+    Cc0 = header_value_string(!.Headers ^ h_cc),
     parse_address_list(To0, ToList0),
     parse_address_list(Cc0, CcList0),
     (
@@ -238,13 +239,13 @@ set_headers_for_group_reply(!Headers) :-
         CcList = ToTail ++ CcList0,
         address_list_to_string(no_encoding, ToList, To, _ToValid),
         address_list_to_string(no_encoding, CcList, Cc, _CcValid),
-        !Headers ^ h_to := To,
-        !Headers ^ h_cc := Cc
+        !Headers ^ h_to := header_value(To),
+        !Headers ^ h_cc := header_value(Cc)
     ;
         true
     ).
 
-:- pred set_headers_for_list_reply(string::in, headers::in, headers::out)
+:- pred set_headers_for_list_reply(header_value::in, headers::in, headers::out)
     is det.
 
 set_headers_for_list_reply(OrigFrom, !Headers) :-
@@ -252,8 +253,8 @@ set_headers_for_list_reply(OrigFrom, !Headers) :-
     % address in To.  This acts a bit like the list reply function from Mutt
     % without knowing which addresses are list addresses.
 
-    To0 = !.Headers ^ h_to,
-    parse_address_list(OrigFrom, FromList),
+    To0 = header_value_string(!.Headers ^ h_to),
+    parse_address_list(header_value_string(OrigFrom), FromList),
     parse_address_list(To0, ToList0),
     (
         FromList = [mailbox(FromMailbox)],
@@ -262,7 +263,7 @@ set_headers_for_list_reply(OrigFrom, !Headers) :-
         ToList = [_ | _]
     ->
         address_list_to_string(no_encoding, ToList, To, _ToValid),
-        !Headers ^ h_to := To
+        !Headers ^ h_to := header_value(To)
     ;
         true
     ).
@@ -391,11 +392,11 @@ make_parsed_headers(Headers, Parsed) :-
         _References, _InReplyTo, _Rest),
 
     % [RFC 6854] allows group syntax in From - saves us work.
-    parse_address_list(From, ParsedFrom),
-    parse_address_list(To, ParsedTo),
-    parse_address_list(Cc, ParsedCc),
-    parse_address_list(Bcc, ParsedBcc),
-    parse_address_list(ReplyTo, ParsedReplyTo),
+    parse_address_list(header_value_string(From), ParsedFrom),
+    parse_address_list(header_value_string(To), ParsedTo),
+    parse_address_list(header_value_string(Cc), ParsedCc),
+    parse_address_list(header_value_string(Bcc), ParsedBcc),
+    parse_address_list(header_value_string(ReplyTo), ParsedReplyTo),
 
     Parsed = parsed_headers(ParsedFrom, ParsedTo, ParsedCc, ParsedBcc,
         ParsedReplyTo).
@@ -475,7 +476,14 @@ parse_and_expand_headers(Headers0, Headers, Parsed, !IO) :-
     Parsed = parsed_headers(ParsedFrom, ParsedTo, ParsedCc, ParsedBcc,
         ParsedReplyTo).
 
-parse_and_expand_addresses(Input, Output, Addresses, !IO) :-
+:- pred parse_and_expand_addresses(header_value::in, header_value::out,
+    address_list::out, io::di, io::uo) is det.
+
+parse_and_expand_addresses(Input, header_value(Output), Addresses, !IO) :-
+    parse_and_expand_addresses_string(header_value_string(Input),
+        Output, Addresses, !IO).
+
+parse_and_expand_addresses_string(Input, Output, Addresses, !IO) :-
     parse_address_list(Input, Addresses0),
     list.map_foldl(maybe_expand_address, Addresses0, Addresses, !IO),
     address_list_to_string(no_encoding, Addresses, Output, _Valid).
@@ -686,6 +694,7 @@ resize_staging_screen(Screen0, Screen, StagingInfo, PagerInfo0, PagerInfo,
 edit_header(Screen, HeaderType, !StagingInfo, !IO) :-
     Headers0 = !.StagingInfo ^ si_headers,
     get_header(HeaderType, Headers0, Prompt, Initial, CompleteAddressbook),
+    InitialString = header_value_string(Initial),
     (
         CompleteAddressbook = yes,
         Completion = complete_config_key(addressbook_section)
@@ -693,10 +702,11 @@ edit_header(Screen, HeaderType, !StagingInfo, !IO) :-
         CompleteAddressbook = no,
         Completion = complete_none
     ),
-    text_entry_initial(Screen, Prompt, init_history, Initial, Completion,
+    text_entry_initial(Screen, Prompt, init_history, InitialString, Completion,
         Return, !IO),
     (
-        Return = yes(Value),
+        Return = yes(ReturnString),
+        Value = header_value(ReturnString),
         ParsedHeaders0 = !.StagingInfo ^ si_parsed_hdrs,
         update_header(HeaderType, Value, Headers0, Headers,
             ParsedHeaders0, ParsedHeaders, !IO),
@@ -706,8 +716,8 @@ edit_header(Screen, HeaderType, !StagingInfo, !IO) :-
         Return = no
     ).
 
-:- pred get_header(header_type::in, headers::in, string::out, string::out,
-    bool::out) is det.
+:- pred get_header(header_type::in, headers::in, string::out,
+    header_value::out, bool::out) is det.
 
 get_header(from,    H, "From: ",     H ^ h_from,    yes).
 get_header(to,      H, "To: ",       H ^ h_to,      yes).
@@ -716,8 +726,9 @@ get_header(bcc,     H, "Bcc: ",      H ^ h_bcc,     yes).
 get_header(subject, H, "Subject: ",  H ^ h_subject, no).
 get_header(replyto, H, "Reply-To: ", H ^ h_replyto, yes).
 
-:- pred update_header(header_type::in, string::in, headers::in, headers::out,
-    parsed_headers::in, parsed_headers::out, io::di, io::uo) is det.
+:- pred update_header(header_type::in, header_value::in,
+    headers::in, headers::out, parsed_headers::in, parsed_headers::out,
+    io::di, io::uo) is det.
 
 update_header(HeaderType, Input, !Headers, !Parsed, !IO) :-
     (
@@ -1166,11 +1177,11 @@ draw_addr_spec(Panel, AddrSpec, !IO) :-
     ),
     my_addstr(Panel, String, !IO).
 
-:- pred draw_unstruct(panel::in, string::in, io::di, io::uo) is det.
+:- pred draw_unstruct(panel::in, header_value::in, io::di, io::uo) is det.
 
-draw_unstruct(Panel, String, !IO) :-
+draw_unstruct(Panel, Value, !IO) :-
     panel.attr_set(Panel, normal, !IO),
-    my_addstr(Panel, String, !IO).
+    draw_header_value(Panel, Value, !IO).
 
 :- pred draw_attachment_line(panel::in, attachment::in, int::in, bool::in,
     io::di, io::uo) is det.
@@ -1390,8 +1401,9 @@ call_post_sendmail_command(Filename, Res, !IO) :-
     is det.
 
 tag_replied_message(Headers, Res, !IO) :-
-    InReplyTo0 = Headers ^ h_inreplyto,
+    InReplyTo0 = header_value_string(Headers ^ h_inreplyto),
     (
+        % XXX could improve this
         string.index(InReplyTo0, 0, '<'),
         Length = string.count_codepoints(InReplyTo0),
         string.codepoint_offset(InReplyTo0, Length - 1, LastPos),
@@ -1481,10 +1493,12 @@ write_temp_message_file(Stream, Headers, ParsedHeaders, Text, Attachments,
         ( Prepare = prepare_send
         ; Prepare = prepare_postpone
         ),
-        WriteUnstruc = skip_if_empty_string(write_unstructured_header(Stream)),
-        WriteAddrs = skip_if_empty_list(write_address_list_header(
-                        rfc2047_encoding, Stream)),
-        WriteRefs = skip_if_empty_string(write_references_header(Stream))
+        WriteUnstruc = skip_if_empty_header_value(
+            write_unstructured_header(Stream)),
+        WriteAddrs = skip_if_empty_list(
+            write_address_list_header(rfc2047_encoding, Stream)),
+        WriteRefs = skip_if_empty_header_value(
+            write_references_header(Stream))
     ;
         Prepare = prepare_edit,
         WriteUnstruc = write_unstructured_header(Stream),
@@ -1542,12 +1556,12 @@ write_temp_message_file(Stream, Headers, ParsedHeaders, Text, Attachments,
         write_mime_final_boundary(Stream, BoundaryC, !IO)
     ).
 
-:- pred skip_if_empty_string(
-    pred(string, string, io, io)::in(pred(in, in, di, uo) is det),
-    string::in, string::in, io::di, io::uo) is det.
+:- pred skip_if_empty_header_value(
+    pred(string, header_value, io, io)::in(pred(in, in, di, uo) is det),
+    string::in, header_value::in, io::di, io::uo) is det.
 
-skip_if_empty_string(Pred, Field, Value, !IO) :-
-    ( Value = "" ->
+skip_if_empty_header_value(Pred, Field, Value, !IO) :-
+    ( empty_header_value(Value) ->
         true
     ;
         Pred(Field, Value, !IO)

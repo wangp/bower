@@ -884,7 +884,7 @@ addressbook_add(Screen, Info, !IO) :-
             (
                 MessageRes = ok(Message),
                 From = Message ^ m_headers ^ h_from,
-                Address0 = From
+                Address0 = header_value_string(From)
             ;
                 MessageRes = error(_),
                 Address0 = ""
