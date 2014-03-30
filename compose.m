@@ -149,7 +149,7 @@ start_compose(Screen, Transition, !ToHistory, !SubjectHistory, !IO) :-
                 !:Headers = init_headers,
                 !Headers ^ h_from := header_value(From),
                 !Headers ^ h_to := header_value(ExpandTo),
-                !Headers ^ h_subject := header_value(Subject),
+                !Headers ^ h_subject := decoded_unstructured(Subject),
                 Headers = !.Headers
             ),
             Text = "",
@@ -706,7 +706,13 @@ edit_header(Screen, HeaderType, !StagingInfo, !IO) :-
         Return, !IO),
     (
         Return = yes(ReturnString),
-        Value = header_value(ReturnString),
+        (
+            Initial = header_value(_),
+            Value = header_value(ReturnString)
+        ;
+            Initial = decoded_unstructured(_),
+            Value = decoded_unstructured(ReturnString)
+        ),
         ParsedHeaders0 = !.StagingInfo ^ si_parsed_hdrs,
         update_header(HeaderType, Value, Headers0, Headers,
             ParsedHeaders0, ParsedHeaders, !IO),
@@ -1480,12 +1486,13 @@ write_temp_message_file(Stream, Headers, ParsedHeaders, Text, Attachments,
     (
         Prepare = prepare_send,
         generate_date_msg_id(Date, MessageId, !IO),
-        write_unstructured_header(Stream, "Date", Date, !IO),
-        write_unstructured_header(Stream, "Message-ID", MessageId, !IO)
+        write_unstructured_header(no_encoding, Stream, "Date", Date, !IO),
+        write_unstructured_header(no_encoding, Stream, "Message-ID", MessageId,
+            !IO)
     ;
         Prepare = prepare_postpone,
         generate_date_msg_id(Date, _MessageId, !IO),
-        write_unstructured_header(Stream, "Date", Date, !IO)
+        write_unstructured_header(no_encoding, Stream, "Date", Date, !IO)
     ;
         Prepare = prepare_edit
     ),
@@ -1494,14 +1501,14 @@ write_temp_message_file(Stream, Headers, ParsedHeaders, Text, Attachments,
         ; Prepare = prepare_postpone
         ),
         WriteUnstruc = skip_if_empty_header_value(
-            write_unstructured_header(Stream)),
+            write_unstructured_header(rfc2047_encoding, Stream)),
         WriteAddrs = skip_if_empty_list(
             write_address_list_header(rfc2047_encoding, Stream)),
         WriteRefs = skip_if_empty_header_value(
             write_references_header(Stream))
     ;
         Prepare = prepare_edit,
-        WriteUnstruc = write_unstructured_header(Stream),
+        WriteUnstruc = write_unstructured_header(no_encoding, Stream),
         WriteAddrs = write_address_list_header(no_encoding, Stream),
         WriteRefs = write_references_header(Stream)
     ),

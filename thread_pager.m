@@ -378,7 +378,7 @@ max_thread_lines = 8.
     list(thread_line)::out) is det.
 
 append_threaded_messages(Nowish, Messages, ThreadLines) :-
-    PrevSubject = header_value(""),
+    PrevSubject = decoded_unstructured(""),
     append_threaded_messages(Nowish, [], [], no, Messages, PrevSubject,
         cord.init, ThreadCord),
     ThreadLines = list(ThreadCord).
@@ -455,7 +455,7 @@ append_flat_messages(Nowish, Messages, ThreadLines, SortedFlatMessages) :-
     flatten_messages(no, Messages, [], MessagesFlat0),
     list.sort(compare_by_timestamp, MessagesFlat0, MessagesFlat),
     list.foldl2(append_flat_message(Nowish), MessagesFlat,
-        header_value(""), _PrevSubject, [], RevThreadLines),
+        decoded_unstructured(""), _PrevSubject, [], RevThreadLines),
     list.reverse(RevThreadLines, ThreadLines),
     SortedFlatMessages = list.map(mf_message, MessagesFlat).
 

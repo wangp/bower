@@ -149,29 +149,30 @@ parse_message_details(JSON, Replies, Message) :-
 
 :- pred parse_header(key::in, json::in, headers::in, headers::out) is semidet.
 
-parse_header(Key, unesc_string(RawValue), !Headers) :-
-    Value = header_value(RawValue),
+parse_header(Key, unesc_string(Value), !Headers) :-
     ( Key = "Date" ->
-        !Headers ^ h_date := Value
+        !Headers ^ h_date := header_value(Value)
     ; Key = "From" ->
-        !Headers ^ h_from := Value
+        !Headers ^ h_from := header_value(Value)
     ; Key = "To" ->
-        !Headers ^ h_to := Value
+        !Headers ^ h_to := header_value(Value)
     ; Key = "Cc" ->
-        !Headers ^ h_cc := Value
+        !Headers ^ h_cc := header_value(Value)
     ; Key = "Bcc" ->
-        !Headers ^ h_bcc := Value
+        !Headers ^ h_bcc := header_value(Value)
     ; Key = "Subject" ->
-        !Headers ^ h_subject := Value
+        % notmuch should provide the decoded value.
+        !Headers ^ h_subject := decoded_unstructured(Value)
     ; Key = "Reply-To" ->
-        !Headers ^ h_replyto := Value
+        !Headers ^ h_replyto := header_value(Value)
     ; Key = "References" ->
-        !Headers ^ h_references := Value
+        !Headers ^ h_references := header_value(Value)
     ; Key = "In-Reply-To" ->
-        !Headers ^ h_inreplyto := Value
+        !Headers ^ h_inreplyto := header_value(Value)
     ;
+        % Some other headers should be decoded_unstructured as well.
         Rest0 = !.Headers ^ h_rest,
-        map.insert(Key, Value, Rest0, Rest),
+        map.insert(Key, header_value(Value), Rest0, Rest),
         !Headers ^ h_rest := Rest
     ).
 

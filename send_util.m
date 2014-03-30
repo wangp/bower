@@ -14,15 +14,15 @@
 :- pred generate_date_msg_id(header_value::out, header_value::out,
     io::di, io::uo) is det.
 
-:- type write_address_list_options
+:- type write_header_options
     --->    no_encoding
     ;       rfc2047_encoding.
 
-:- pred write_address_list_header(write_address_list_options::in,
+:- pred write_address_list_header(write_header_options::in,
     io.output_stream::in, string::in, address_list::in, io::di, io::uo) is det.
 
-:- pred write_unstructured_header(io.output_stream::in,
-    string::in, header_value::in, io::di, io::uo) is det.
+:- pred write_unstructured_header(write_header_options::in,
+    io.output_stream::in, string::in, header_value::in, io::di, io::uo) is det.
 
 :- pred write_references_header(io.output_stream::in,
     string::in, header_value::in, io::di, io::uo) is det.
@@ -45,6 +45,8 @@
 
 :- import_module callout.
 :- import_module fold_lines.
+:- import_module rfc2047.
+:- import_module rfc2047.encoder.
 :- import_module rfc5322.parser.
 :- import_module rfc5322.writer.
 :- import_module sys_util.
@@ -217,14 +219,26 @@ mailbox_to_span(Opt, Mailbox, LastElement, !Spans, !AllValid) :-
     ),
     cons(Span, !Spans).
 
-write_unstructured_header(Stream, Field, Value, !IO) :-
-    get_spans_by_whitespace(header_value_string(Value), ValueSpans),
+write_unstructured_header(Opt, Stream, Field, Value, !IO) :-
+    (
+        Value = header_value(ValueString)
+    ;
+        Value = decoded_unstructured(Decoded),
+        (
+            Opt = no_encoding,
+            ValueString = Decoded
+        ;
+            Opt = rfc2047_encoding,
+            encode_unstructured(Decoded, ValueString)
+        )
+    ),
+    get_spans_by_whitespace(ValueString, ValueSpans),
     add_field_span(Field, ValueSpans, Spans),
     fill_lines(soft_line_length, Spans, Lines),
     do_write_header(Stream, Lines, !IO).
 
 write_references_header(Stream, Field, Value, !IO) :-
-    write_unstructured_header(Stream, Field, Value, !IO).
+    write_unstructured_header(no_encoding, Stream, Field, Value, !IO).
 
 :- pred add_field_span(string::in, list(span)::in, list(span)::out) is det.
 

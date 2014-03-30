@@ -57,7 +57,11 @@
             ).
 
 :- type header_value
-    --->    header_value(string).
+    --->    header_value(string)
+            % Most header values.
+    ;       decoded_unstructured(string).
+            % An unstructured field that may contain RFC 2047 encoded-words,
+            % which we keep in decoded form.
 
 :- type tag
     --->    tag(string).
@@ -122,8 +126,10 @@ init_headers = Headers :-
         Empty, map.init).
 
 empty_header_value(header_value("")).
+empty_header_value(decoded_unstructured("")).
 
 header_value_string(header_value(S)) = S.
+header_value_string(decoded_unstructured(S)) = S.
 
 tag_to_string(tag(String), String).
 

@@ -380,12 +380,10 @@ draw_bar_with_text(Screen, Text, !IO) :-
 %-----------------------------------------------------------------------------%
 
 draw_header_value(Panel, NrCols, Value, PadChar, !IO) :-
-    Value = header_value(String),
-    my_addstr_fixed(Panel, NrCols, String, PadChar, !IO).
+    my_addstr_fixed(Panel, NrCols, header_value_string(Value), PadChar, !IO).
 
 draw_header_value(Panel, Value, !IO) :-
-    Value = header_value(String),
-    my_addstr(Panel, String, !IO).
+    my_addstr(Panel, header_value_string(Value), !IO).
 
 %-----------------------------------------------------------------------------%
 

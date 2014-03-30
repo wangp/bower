@@ -27,6 +27,8 @@
 :- import_module map.
 :- import_module string.
 
+:- import_module rfc2047.
+:- import_module rfc2047.decoder.
 :- import_module string_util.
 
 %-----------------------------------------------------------------------------%
@@ -62,7 +64,13 @@ read_headers(String, Pos0, Pos, !Headers) :-
     ( Line = "" ->
         Pos = Pos1
     ; is_header_line(Line, Name, RawValue) ->
-        Value = header_value(RawValue),
+        % Other headers should be decoded as well.
+        ( strcase_equal(Name, "Subject") ->
+            decode_unstructured(RawValue, Decoded),
+            Value = decoded_unstructured(Decoded)
+        ;
+            Value = header_value(RawValue)
+        ),
         add_header(Name, Value, !Headers),
         read_headers(String, Pos1, Pos, !Headers)
     ;

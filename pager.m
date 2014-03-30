@@ -794,7 +794,11 @@ make_encapsulated_message_tree(Cols, EncapMessage, Tree, !Counter, !IO) :-
     list(pager_line)::in, list(pager_line)::out) is det.
 
 add_encapsulated_header(Header, Value, RevLines0, RevLines) :-
-    Value = header_value(ValueString),
+    (
+        Value = header_value(ValueString)
+    ;
+        Value = decoded_unstructured(ValueString)
+    ),
     ( ValueString = "" ->
         RevLines = RevLines0
     ;
