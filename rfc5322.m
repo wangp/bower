@@ -66,6 +66,8 @@
 
     % Exports for rfc2047.
 
+:- pred ascii(char::in) is semidet.
+
 :- pred nonascii(char::in) is semidet.
 
 :- pred 'WSP'(char::in) is semidet.
@@ -86,6 +88,12 @@
 :- implementation.
 
 :- import_module int.
+
+%-----------------------------------------------------------------------------%
+
+ascii(C) :-
+    char.to_int(C, I),
+    I =< 0x7f.
 
 nonascii(C) :-
     char.to_int(C, I),

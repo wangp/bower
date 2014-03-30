@@ -14,6 +14,7 @@
 
 :- import_module list.
 :- import_module pretty_printer.
+:- import_module string.
 
 :- import_module rfc2047.
 :- import_module rfc2047.decoder.
@@ -23,11 +24,17 @@
 %-----------------------------------------------------------------------------%
 
 main(!IO) :-
-    foldl(test_encode, encode_cases, !IO).
+    io.write_string("Phrases\n", !IO),
+    io.write_string("=======\n", !IO),
+    list.foldl(test_encode_phrase, encode_cases, !IO),
+    io.write_string("\n", !IO),
+    io.write_string("Unstructured\n", !IO),
+    io.write_string("============\n", !IO),
+    list.foldl(test_encode_unstructured, encode_cases, !IO).
 
-:- pred test_encode(phrase::in, io::di, io::uo) is det.
+:- pred test_encode_phrase(phrase::in, io::di, io::uo) is det.
 
-test_encode(Phrase0, !IO) :-
+test_encode_phrase(Phrase0, !IO) :-
     encode_phrase(Phrase0, Phrase1),
     decode_phrase(Phrase1, Phrase),
 
@@ -37,6 +44,22 @@ test_encode(Phrase0, !IO) :-
     io.nl(!IO),
     pretty_printer.write_doc(format(Phrase), !IO),
     io.write_string("\n--------\n", !IO).
+
+:- pred test_encode_unstructured(phrase::in, io::di, io::uo) is det.
+
+test_encode_unstructured(Phrase, !IO) :-
+    Input = string.join_list(" ", list.map(word_to_string, Phrase)),
+    encode_unstructured(Input, Encoded),
+    decode_unstructured(Encoded, Decoded),
+
+    io.write_string("", !IO),
+    io.write_string(Input, !IO),
+    io.write_string("\n", !IO),
+    io.write_string(Encoded, !IO),
+    io.write_string("\n", !IO),
+    io.write_string(Decoded, !IO),
+    io.write_string("\n", !IO),
+    io.write_string("--------\n", !IO).
 
 :- func encode_cases = list(phrase).
 
@@ -56,8 +79,20 @@ encode_cases = [
     [a("Svifnökkvinn"), a("álum")],
     % choose B-encoding
     [qs("Τὸ πλοῖόν μου τὸ μετεωριζόμενον ἐστι πλῆρες ἐγχελέων")],
+    % intervening ASCII
+    [qs("Τὸ πλοῖόν μου -- μετεωριζόμενον ---- πλῆρες ἐγχελέων")],
     % overlong word
-    [a("123456789-123456789-123456789-123456789-123456789-123456789-123x")]
+    [a("123456789-123456789-123456789-123456789-123456789-123456789-123x")],
+    % check characters allowed in Q encoded-words
+    [a("ábcdefghijklmnopqrstuvwxyz!\"#$%")],
+    [a("ábcdefghijklmnopqrstuvwxyz&'()")],
+    [a("ábcdefghijklmnopqrstuvwxyz*+,-./")],
+    [a("ábcdefghijklmnopqrstuvwxyz:;")],
+    [a("ábcdefghijklmnopqrstuvwxyz<=>")],
+    [a("ábcdefghijklmnopqrstuvwxyz?@")],
+    [a("ábcdefghijklmnopqrstuvwxyz[\\]")],
+    [a("ábcdefghijklmnopqrstuvwxyz^_`")],
+    [a("ábcdefghijklmnopqrstuvwxyz{|}~")]
 ].
 
 :- func a(string) = word.

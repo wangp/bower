@@ -14,6 +14,7 @@
 
 :- import_module list.
 :- import_module pretty_printer.
+:- import_module string.
 
 :- import_module rfc2047.
 :- import_module rfc2047.decoder.
@@ -24,11 +25,18 @@
 %-----------------------------------------------------------------------------%
 
 main(!IO) :-
-    list.foldl(test_decode, decode_cases, !IO).
+    io.write_string("Phrases\n", !IO),
+    io.write_string("=======\n", !IO),
+    list.foldl(test_decode_phrase, decode_cases, !IO),
+    io.write_string("\n", !IO),
+    io.write_string("Unstructured\n", !IO),
+    io.write_string("============\n", !IO),
+    list.foldl(test_decode_unstructured, decode_cases, !IO),
+    list.foldl(test_decode_unstructured, unstructured_extra_cases, !IO).
 
-:- pred test_decode(case::in, io::di, io::uo) is det.
+:- pred test_decode_phrase(case::in, io::di, io::uo) is det.
 
-test_decode(Input, !IO) :-
+test_decode_phrase(Input, !IO) :-
     Phrase0 = list.map(ascii_atom, Input),
     decode_phrase(Phrase0, Phrase),
 
@@ -37,6 +45,18 @@ test_decode(Input, !IO) :-
     io.nl(!IO),
     pretty_printer.write_doc(format(Phrase), !IO),
     io.nl(!IO),
+    io.write_string("--------\n", !IO).
+
+:- pred test_decode_unstructured(case::in, io::di, io::uo) is det.
+
+test_decode_unstructured(Case, !IO) :-
+    Input = string.join_list(" ", Case),
+    decode_unstructured(Input, Unstructured),
+    io.write_string("«", !IO),
+    io.write_string(Input, !IO),
+    io.write_string("»\n«", !IO),
+    io.write_string(Unstructured, !IO),
+    io.write_string("»\n", !IO),
     io.write_string("--------\n", !IO).
 
 :- func ascii_atom(string) = word.
@@ -93,6 +113,13 @@ decode_cases = [
 
     ["=?UTF-8?B?Y2Fmw6k=?=", "=?UTF-8?Q?h=C3=BA?="], % ok
     ["=?UTF-8?B?Y2Fmw6k=?=", "=?UTF-8?Q?_h=C3=BA?="] % ok
+].
+
+:- func unstructured_extra_cases = list(case).
+
+unstructured_extra_cases = [
+    [" ", "=?UTF-8?Q?h=C3=BA?=", "=?UTF-8?Q?h=C3=BA?=", "hu",
+        "=?UTF-8?Q?h=C3=BA?="] % ok
 ].
 
 %-----------------------------------------------------------------------------%

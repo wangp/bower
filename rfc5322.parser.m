@@ -146,12 +146,6 @@ separated_list_skip_nulls_2(Sep, P, Src, !RevXs, !PS) :-
 'DQUOTE'(Src, !PS) :-
     next_char(Src, '"', !PS).
 
-:- pred ascii(char::in) is semidet.
-
-ascii(C) :-
-    char.to_int(C, I),
-    I =< 0x7f.
-
 %-----------------------------------------------------------------------------%
 
 % 3.2.1. Quoted characters

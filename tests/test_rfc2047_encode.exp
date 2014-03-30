@@ -1,3 +1,5 @@
+Phrases
+=======
 [word_atom(atom(unicode("abc")))]
 [word_atom(atom(ascii("=?UTF-8?Q?abc?=")))]
 [word_atom(atom(ascii("abc")))]
@@ -61,6 +63,22 @@
    quoted_string(
      unicode("Τὸ πλοῖόν μου τὸ μετεωριζόμενον ἐστι πλῆρες ἐγχελέων")))]
 --------
+[word_quoted_string(
+   quoted_string(
+     unicode("Τὸ πλοῖόν μου -- μετεωριζόμενον ---- πλῆρες ἐγχελέων")))]
+[word_atom(
+   atom(
+     ascii(
+       "=?UTF-8?B?zqThvbggz4DOu86/4b+Wz4zOvSDOvM6/z4UgLS0gzrzOtc+EzrXPic+Bzrk=?="))), 
+ word_atom(
+   atom(
+     ascii(
+       "=?UTF-8?B?zrbPjM68zrXOvc6/zr0gLS0tLSDPgM674b+Gz4HOtc+CIOG8kM6zz4fOtc67?="))), 
+ word_atom(atom(ascii("=?UTF-8?B?zq3Pic69?=")))]
+[word_quoted_string(
+   quoted_string(
+     unicode("Τὸ πλοῖόν μου -- μετεωριζόμενον ---- πλῆρες ἐγχελέων")))]
+--------
 [word_atom(
    atom(
      unicode(
@@ -74,4 +92,144 @@
    atom(
      ascii(
        "123456789-123456789-123456789-123456789-123456789-123456789-123x")))]
+--------
+[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz!"#$%")))]
+[word_atom(
+   atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz!=22=23=24=25?=")))]
+[word_quoted_string(
+   quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz!"#$%")))]
+--------
+[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz&'()")))]
+[word_atom(
+   atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=26=27=28=29?=")))]
+[word_quoted_string(quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz&'()")))]
+--------
+[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz*+,-./")))]
+[word_atom(
+   atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz*+=2C-=2E/?=")))]
+[word_quoted_string(
+   quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz*+,-./")))]
+--------
+[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz:;")))]
+[word_atom(atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=3A=3B?=")))]
+[word_quoted_string(quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz:;")))]
+--------
+[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz<=>")))]
+[word_atom(
+   atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=3C=3D=3E?=")))]
+[word_quoted_string(quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz<=>")))]
+--------
+[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz?@")))]
+[word_atom(atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=3F=40?=")))]
+[word_quoted_string(quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz?@")))]
+--------
+[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz[\]")))]
+[word_atom(
+   atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=5B=5C=5D?=")))]
+[word_quoted_string(quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz[\]")))]
+--------
+[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz^_`")))]
+[word_atom(
+   atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=5E=5F=60?=")))]
+[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz^_`")))]
+--------
+[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz{|}~")))]
+[word_atom(
+   atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=7B=7C=7D=7E?=")))]
+[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz{|}~")))]
+--------
+
+Unstructured
+============
+abc
+abc
+abc
+--------
+噸
+=?UTF-8?B?5Zm4?=
+噸
+--------
+now only €15
+now only =?UTF-8?B?4oKsMTU=?=
+now only €15
+--------
+=??=
+=?UTF-8?B?PT8/PQ==?=
+=??=
+--------
+=??=
+=?UTF-8?B?PT8/PQ==?=
+=??=
+--------
+=?abc?=
+=?UTF-8?B?PT9hYmM/PQ==?=
+=?abc?=
+--------
+=?abc?=
+=?UTF-8?B?PT9hYmM/PQ==?=
+=?abc?=
+--------
+=?UTF-8?Q??=
+=?UTF-8?B?PT9VVEYtOD9RPz89?=
+=?UTF-8?Q??=
+--------
+=?UTF-8?Q??=
+=?UTF-8?B?PT9VVEYtOD9RPz89?=
+=?UTF-8?Q??=
+--------
+Svifnökkvinn minn er fullur af álum
+=?UTF-8?Q?Svifn=C3=B6kkvinn?= minn er fullur af =?UTF-8?B?w6FsdW0=?=
+Svifnökkvinn minn er fullur af álum
+--------
+Svifnökkvinn álum
+=?UTF-8?Q?Svifn=C3=B6kkvinn_=C3=A1lum?=
+Svifnökkvinn álum
+--------
+Τὸ πλοῖόν μου τὸ μετεωριζόμενον ἐστι πλῆρες ἐγχελέων
+=?UTF-8?B?zqThvbggz4DOu86/4b+Wz4zOvSDOvM6/z4Ugz4ThvbggzrzOtc+EzrXPic+B?= =?UTF-8?B?zrnOts+MzrzOtc69zr/OvSDhvJDPg8+Ezrkgz4DOu+G/hs+BzrXPgiDhvJA=?= =?UTF-8?B?zrPPh861zrvOrc+Jzr0=?=
+Τὸ πλοῖόν μου τὸ μετεωριζόμενον ἐστι πλῆρες ἐγχελέων
+--------
+Τὸ πλοῖόν μου -- μετεωριζόμενον ---- πλῆρες ἐγχελέων
+=?UTF-8?B?zqThvbggz4DOu86/4b+Wz4zOvSDOvM6/z4U=?= -- =?UTF-8?B?zrzOtc+EzrXPic+BzrnOts+MzrzOtc69zr/OvQ==?= ---- =?UTF-8?B?z4DOu+G/hs+BzrXPgiDhvJDOs8+HzrXOu86tz4nOvQ==?=
+Τὸ πλοῖόν μου -- μετεωριζόμενον ---- πλῆρες ἐγχελέων
+--------
+123456789-123456789-123456789-123456789-123456789-123456789-123x
+123456789-123456789-123456789-123456789-123456789-123456789-123x
+123456789-123456789-123456789-123456789-123456789-123456789-123x
+--------
+ábcdefghijklmnopqrstuvwxyz!"#$%
+=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz!"#$%?=
+ábcdefghijklmnopqrstuvwxyz!"#$%
+--------
+ábcdefghijklmnopqrstuvwxyz&'()
+=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz&'()?=
+ábcdefghijklmnopqrstuvwxyz&'()
+--------
+ábcdefghijklmnopqrstuvwxyz*+,-./
+=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz*+,-./?=
+ábcdefghijklmnopqrstuvwxyz*+,-./
+--------
+ábcdefghijklmnopqrstuvwxyz:;
+=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz:;?=
+ábcdefghijklmnopqrstuvwxyz:;
+--------
+ábcdefghijklmnopqrstuvwxyz<=>
+=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz<=3D>?=
+ábcdefghijklmnopqrstuvwxyz<=>
+--------
+ábcdefghijklmnopqrstuvwxyz?@
+=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=3F@?=
+ábcdefghijklmnopqrstuvwxyz?@
+--------
+ábcdefghijklmnopqrstuvwxyz[\]
+=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz[\]?=
+ábcdefghijklmnopqrstuvwxyz[\]
+--------
+ábcdefghijklmnopqrstuvwxyz^_`
+=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz^=5F`?=
+ábcdefghijklmnopqrstuvwxyz^_`
+--------
+ábcdefghijklmnopqrstuvwxyz{|}~
+=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz{|}~?=
+ábcdefghijklmnopqrstuvwxyz{|}~
 --------

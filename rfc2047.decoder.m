@@ -8,6 +8,8 @@
 
 :- pred decode_phrase(phrase::in, phrase::out) is det.
 
+:- pred decode_unstructured(string::in, string::out) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -32,6 +34,13 @@
     --->    orig(word)
     ;       decoded(string).
 
+:- type unstructured_span
+    --->    plain(string)
+    ;       was_encoded_word(
+                decoded_text :: string,
+                trailing_ws :: string
+            ).
+
 %-----------------------------------------------------------------------------%
 
 decode_phrase(Words0, Words) :-
@@ -42,43 +51,45 @@ decode_phrase(Words0, Words) :-
 
 decode_word(Word, MaybeDecoded) :-
     (
-        Word = word_atom(atom(ascii(PotentialEncodedWord))),
-        decode_encoded_word(PotentialEncodedWord, DecodedText)
+        Word = word_atom(atom(ascii(Atom))),
+        decode_encoded_word(Atom, 0, length(Atom), DecodedText)
     ->
         MaybeDecoded = decoded(DecodedText)
     ;
         MaybeDecoded = orig(Word)
     ).
 
-:- pred decode_encoded_word(string::in, string::out) is semidet.
+:- pred decode_encoded_word(string::in, int::in, int::in, string::out)
+    is semidet.
 
-decode_encoded_word(PotentialEncodedWord, DecodedText) :-
-    is_encoded_word_utf8(PotentialEncodedWord, Encoding, EncodedTextStart,
+decode_encoded_word(Input, Start, End, DecodedText) :-
+    is_encoded_word_utf8(Input, Start, End, Encoding, EncodedTextStart,
         EncodedTextEnd),
     (
         Encoding = b_encoding,
-        decode_b_encoded_text_utf8(PotentialEncodedWord, EncodedTextStart,
-            EncodedTextEnd, DecodedText)
+        decode_b_encoded_text_utf8(Input, EncodedTextStart, EncodedTextEnd,
+            DecodedText)
     ;
         Encoding = q_encoding,
-        decode_q_encoded_text_utf8(PotentialEncodedWord, EncodedTextStart,
-            EncodedTextEnd, DecodedText)
+        decode_q_encoded_text_utf8(Input, EncodedTextStart, EncodedTextEnd,
+            DecodedText)
     ).
 
-:- pred is_encoded_word_utf8(string::in, encoding::out, int::out, int::out)
-    is semidet.
+:- pred is_encoded_word_utf8(string::in, int::in, int::in, encoding::out,
+    int::out, int::out) is semidet.
 
-is_encoded_word_utf8(Input, Encoding, EncodedTextStart, EncodedTextEnd) :-
+is_encoded_word_utf8(Input, Start, End, Encoding, EncodedTextStart,
+        EncodedTextEnd) :-
     % Encoded-words should to be limited to 75 characters but probably not in
     % practice.
-    string.length(Input, InputLength),
-    ( InputLength >= min_encoded_word_length ->
-        L0 = 0,
+    Length = End - Start,
+    ( Length >= min_encoded_word_length ->
+        L0 = Start,
         unsafe_index_next(Input, L0, L1, '='),
         unsafe_index_next(Input, L1, L, '?'),
         CharSetStart = L,
 
-        R0 = InputLength,
+        R0 = End,
         unsafe_prev_index(Input, R0, R1, '='),
         unsafe_prev_index(Input, R1, R, '?'),
         EncodedTextEnd = R,
@@ -117,6 +128,61 @@ char_to_encoding('b', b_encoding).
 char_to_encoding('B', b_encoding).
 char_to_encoding('q', q_encoding).
 char_to_encoding('Q', q_encoding).
+
+%-----------------------------------------------------------------------------%
+
+decode_unstructured(Input, Decoded) :-
+    % Skip leading whitespace.
+    Pos0 = 0,
+    advance_while('WSP', Input, Pos0, Pos1),
+    string.unsafe_between(Input, Pos0, Pos1, InitialWs),
+
+    decode_unstructured(Input, Pos1, Spans),
+    unstructured_span_strings(Spans, Strings),
+
+    string.append_list([InitialWs | Strings], Decoded).
+
+:- pred decode_unstructured(string::in, int::in, list(unstructured_span)::out)
+    is det.
+
+decode_unstructured(Input, Pos0, Spans) :-
+    % Invariant: Input[Pos0] is non-whitespace, or Pos0 is at end of Input.
+    advance_while(not_WSP, Input, Pos0, Pos1),
+    ( Pos0 = Pos1 ->
+        Spans = []
+    ;
+        advance_while('WSP', Input, Pos1, Pos2),
+        ( decode_encoded_word(Input, Pos0, Pos1, DecodedText) ->
+            string.unsafe_between(Input, Pos1, Pos2, TrailingWs),
+            Span = was_encoded_word(DecodedText, TrailingWs)
+        ;
+            string.unsafe_between(Input, Pos0, Pos2, Plain),
+            Span = plain(Plain)
+        ),
+        decode_unstructured(Input, Pos2, SpansTail),
+        Spans = [Span | SpansTail] % lcmc
+    ).
+
+:- pred unstructured_span_strings(list(unstructured_span)::in,
+    list(string)::out) is det.
+
+unstructured_span_strings([], []).
+unstructured_span_strings([H | T], Strings) :-
+    (
+        H = plain(Plain),
+        unstructured_span_strings(T, StringsTail),
+        Strings = [Plain | StringsTail] % lcmc
+    ;
+        H = was_encoded_word(DecodedText, TrailingWs),
+        ( T = [was_encoded_word(_, _) | _] ->
+            % Drop intervening whitespace between two encoded-words.
+            unstructured_span_strings(T, StringsTail),
+            Strings = [DecodedText | StringsTail] % lcmc
+        ;
+            unstructured_span_strings(T, StringsTail),
+            Strings = [DecodedText, TrailingWs | StringsTail] % lcmc
+        )
+    ).
 
 %-----------------------------------------------------------------------------%
 
