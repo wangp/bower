@@ -46,16 +46,21 @@ handle_resend(Screen, MessageId, MessageUpdate, !ToHistory, !IO) :-
         To0 \= ""
     ->
         add_history_nodup(To0, !ToHistory),
-        parse_and_expand_addresses_string(To0, To, ToAddresses, !IO),
-        % XXX reject invalid syntax
-        confirm_resend(Screen, To, Confirmation, !IO),
+        parse_and_expand_addresses_string(To0, To, ToAddresses, ToValid, !IO),
         (
-            Confirmation = yes,
-            create_temp_message_file_and_resend(Screen, MessageId,
-                ToAddresses, MessageUpdate, !IO)
+            ToValid = yes,
+            confirm_resend(Screen, To, Confirmation, !IO),
+            (
+                Confirmation = yes,
+                create_temp_message_file_and_resend(Screen, MessageId,
+                    ToAddresses, MessageUpdate, !IO)
+            ;
+                Confirmation = no,
+                MessageUpdate = set_info("Message not resent.")
+            )
         ;
-            Confirmation = no,
-            MessageUpdate = set_info("Message not resent.")
+            ToValid = no,
+            MessageUpdate = set_warning("Invalid address. Message not resent.")
         )
     ;
         MessageUpdate = set_info("Message not resent.")
@@ -79,22 +84,21 @@ confirm_resend(Screen, To, Confirmation, !IO) :-
 :- pred create_temp_message_file_and_resend(screen::in, message_id::in,
     address_list::in, message_update::out, io::di, io::uo) is det.
 
-create_temp_message_file_and_resend(Screen, MessageId, ToAddr, MessageUpdate,
-        !IO) :-
-    io.make_temp(Filename, !IO),
-    generate_resent_headers(Filename, ToAddr, ResHeaders, !IO),
+create_temp_message_file_and_resend(Screen, MessageId, ToAddresses,
+        MessageUpdate, !IO) :-
+    write_resent_headers(ToAddresses, ResWrite, !IO),
     (
-        ResHeaders = ok,
+        ResWrite = ok(FileName),
         args_to_quoted_command([
             "show", "--format=raw", "--",
             message_id_to_search_term(MessageId)
-        ], no, redirect_append(Filename), Command),
+        ], no, redirect_append(FileName), Command),
         get_notmuch_prefix(Notmuch, !IO),
         io.call_system(Notmuch ++ Command, CallRes, !IO),
         (
             CallRes = ok(ExitStatus),
             ( ExitStatus = 0 ->
-                resend_with_progress(Screen, Filename, MessageUpdate, !IO)
+                resend_with_progress(Screen, FileName, MessageUpdate, !IO)
             ;
                 string.format("notmuch returned exit status %d",
                     [i(ExitStatus)], Msg),
@@ -105,37 +109,58 @@ create_temp_message_file_and_resend(Screen, MessageId, ToAddr, MessageUpdate,
             string.append_list(["Error running notmuch: ",
             io.error_message(Error)], Warning),
             MessageUpdate = set_warning(Warning)
-        )
+        ),
+        io.remove_file(FileName, _, !IO)
     ;
-        ResHeaders = error(Error),
+        ResWrite = error(Error),
         MessageUpdate = set_warning(Error)
-    ),
-    io.remove_file(Filename, _, !IO).
+    ).
 
-:- pred generate_resent_headers(string::in, address_list::in, maybe_error::out,
+:- pred write_resent_headers(address_list::in, maybe_error(string)::out,
     io::di, io::uo) is det.
 
-generate_resent_headers(FileName, ToAddresses, Res, !IO) :-
-    get_from_address(FromAddress, !IO),
-    generate_date_msg_id(Date, MessageId, !IO),
+write_resent_headers(ToAddresses, Res, !IO) :-
+    io.make_temp(FileName, !IO),
     io.open_output(FileName, ResOpen, !IO),
     (
         ResOpen = ok(Stream),
-        write_address_list_header(rfc2047_encoding, Stream,
-            "Resent-From", [FromAddress], !IO),
-        write_unstructured_header(no_encoding, Stream,
-            "Resent-Date", Date, !IO),
-        write_unstructured_header(no_encoding, Stream,
-            "Resent-Message-ID", MessageId, !IO),
-        write_address_list_header(rfc2047_encoding, Stream,
-            "Resent-To", ToAddresses, !IO),
-        io.close_output(Stream, !IO),
-        Res = ok
+        promise_equivalent_solutions [Res, !:IO]
+        (
+          try [io(!IO)] (
+            generate_resent_headers(Stream, ToAddresses, !IO),
+            io.close_output(Stream, !IO)
+          )
+          then
+            Res = ok(FileName)
+          catch_any Excp ->
+            io.remove_file(FileName, _, !IO),
+            Res = error("exception occurred: " ++ string(Excp))
+        )
     ;
         ResOpen = error(Error),
         Res = error("error opening " ++ FileName ++ ": " ++
             io.error_message(Error))
     ).
+
+:- pred generate_resent_headers(io.output_stream::in, address_list::in,
+    io::di, io::uo) is det.
+
+generate_resent_headers(Stream, ToAddresses, !IO) :-
+    get_from_address(FromAddress, !IO),
+    generate_date_msg_id(Date, ResentMessageId, !IO),
+
+    % We assume the From address is ok.
+    write_address_list_header(rfc2047_encoding, Stream,
+        "Resent-From", [FromAddress], ok, _FromError, !IO),
+    write_as_unstructured_header(no_encoding, Stream,
+        "Resent-Date", Date, !IO),
+    write_as_unstructured_header(no_encoding, Stream,
+        "Resent-Message-ID", ResentMessageId, !IO),
+    % The To addresses were checked before confirmation.
+    write_address_list_header(rfc2047_encoding, Stream,
+        "Resent-To", ToAddresses, ok, _ToError, !IO).
+
+%-----------------------------------------------------------------------------%
 
 :- pred resend_with_progress(screen::in, string::in, message_update::out,
     io::di, io::uo) is det.

@@ -5,6 +5,8 @@
 :- interface.
 
 :- import_module io.
+:- import_module maybe.
+:- import_module stream.
 
 :- import_module data.
 :- import_module rfc5322.
@@ -18,14 +20,17 @@
     --->    no_encoding
     ;       rfc2047_encoding.
 
-:- pred write_address_list_header(write_header_options::in,
-    io.output_stream::in, string::in, address_list::in, io::di, io::uo) is det.
+:- pred write_address_list_header(write_header_options::in, Stream::in,
+    string::in, address_list::in, maybe_error::in, maybe_error::out,
+    State::di, State::uo) is det <= stream.writer(Stream, string, State).
 
-:- pred write_unstructured_header(write_header_options::in,
-    io.output_stream::in, string::in, header_value::in, io::di, io::uo) is det.
+:- pred write_as_unstructured_header(write_header_options::in, Stream::in,
+    string::in, header_value::in, State::di, State::uo) is det
+    <= stream.writer(Stream, string, State).
 
-:- pred write_references_header(io.output_stream::in,
-    string::in, header_value::in, io::di, io::uo) is det.
+:- pred write_references_header(Stream::in,
+    string::in, header_value::in, State::di, State::uo) is det
+    <= stream.writer(Stream, string, State).
 
 :- pred generate_boundary(string::out, io::di, io::uo) is det.
 
@@ -124,7 +129,7 @@ generate_date_msg_id(header_value(Date), header_value(MessageId), !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-write_address_list_header(Opt0, Stream, Field, Addresses, !IO) :-
+write_address_list_header(Opt0, Stream, Field, Addresses, !Error, !State) :-
     (
         Opt0 = no_encoding,
         Opt = no_encoding
@@ -132,11 +137,11 @@ write_address_list_header(Opt0, Stream, Field, Addresses, !IO) :-
         Opt0 = rfc2047_encoding,
         Opt = rfc2047_encoding
     ),
-    % XXX reject invalid syntax
-    address_list_to_spans(Opt, Addresses, [], Spans0, yes, _AllValid),
+    address_list_to_spans(Opt, Addresses, [], Spans0, yes, Ok),
+    maybe_record_error(Field, Ok, !Error),
     add_field_span(Field, Spans0, Spans),
     fill_lines(soft_line_length, Spans, Lines),
-    do_write_header(Stream, Lines, !IO).
+    do_write_header(Stream, Lines, !State).
 
 :- pred address_list_to_spans(options::in, address_list::in,
     list(span)::in, list(span)::out, bool::in, bool::out) is det.
@@ -219,7 +224,20 @@ mailbox_to_span(Opt, Mailbox, LastElement, !Spans, !AllValid) :-
     ),
     cons(Span, !Spans).
 
-write_unstructured_header(Opt, Stream, Field, Value, !IO) :-
+:- pred maybe_record_error(string::in, bool::in,
+    maybe_error::in, maybe_error::out) is det.
+
+maybe_record_error(Field, Ok, Error0, Error) :-
+    (
+        Ok = no,
+        Error0 = ok
+    ->
+        Error = error("Invalid address list in " ++ Field ++ " header.")
+    ;
+        Error = Error0
+    ).
+
+write_as_unstructured_header(Opt, Stream, Field, Value, !State) :-
     (
         Value = header_value(ValueString)
     ;
@@ -235,10 +253,10 @@ write_unstructured_header(Opt, Stream, Field, Value, !IO) :-
     get_spans_by_whitespace(ValueString, ValueSpans),
     add_field_span(Field, ValueSpans, Spans),
     fill_lines(soft_line_length, Spans, Lines),
-    do_write_header(Stream, Lines, !IO).
+    do_write_header(Stream, Lines, !State).
 
-write_references_header(Stream, Field, Value, !IO) :-
-    write_unstructured_header(no_encoding, Stream, Field, Value, !IO).
+write_references_header(Stream, Field, Value, !State) :-
+    write_as_unstructured_header(no_encoding, Stream, Field, Value, !State).
 
 :- pred add_field_span(string::in, list(span)::in, list(span)::out) is det.
 
@@ -254,12 +272,20 @@ add_field_span(Field, Spans0, Spans) :-
         Spans = [Head | Tail]
     ).
 
-:- pred do_write_header(io.output_stream::in, list(string)::in,
-    io::di, io::uo) is det.
+:- pred do_write_header(Stream::in, list(string)::in, State::di, State::uo)
+    is det <= stream.writer(Stream, string, State).
 
-do_write_header(Stream, Lines, !IO) :-
-    io.write_list(Stream, Lines, "\n ", io.write_string, !IO),
-    io.nl(Stream, !IO).
+do_write_header(_Stream, [], !State).
+do_write_header(Stream, [Line | Lines], !State) :-
+    put(Stream, Line, !State),
+    (
+        Lines = [],
+        put(Stream, "\n", !State)
+    ;
+        Lines = [_ | _],
+        put(Stream, "\n ", !State),
+        do_write_header(Stream, Lines, !State)
+    ).
 
 :- func soft_line_length = int.
 
