@@ -438,24 +438,5 @@ printable_ascii(C) :-
     char.to_int(C, I),
     33 =< I, I =< 126.
 
-:- pred foldr_code_units(pred(int, T, T), string, T, T).
-:- mode foldr_code_units(in(pred(in, in, out) is det), in, in, out) is det.
-
-foldr_code_units(P, String, !Acc) :-
-    string.length(String, Length),
-    foldr_code_units(P, String, Length - 1, !Acc).
-
-:- pred foldr_code_units(pred(int, T, T), string, int, T, T).
-:- mode foldr_code_units(in(pred(in, in, out) is det), in, in, in, out) is det.
-
-foldr_code_units(P, String, Index, !Acc) :-
-    ( Index < 0 ->
-        true
-    ;
-        string.unsafe_index_code_unit(String, Index, CodeUnit),
-        P(CodeUnit, !Acc),
-        foldr_code_units(P, String, Index - 1, !Acc)
-    ).
-
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

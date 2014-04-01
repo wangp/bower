@@ -32,6 +32,9 @@
 
 :- pred until_whitespace(string::in, int::in, int::out) is det.
 
+:- pred foldr_code_units(pred(int, T, T), string, T, T).
+:- mode foldr_code_units(in(pred(in, in, out) is det), in, in, out) is det.
+
 :- pred get_extension(string::in, string::out) is semidet.
 
 :- type pieces
@@ -155,6 +158,24 @@ skip_whitespace(String, I0, I) :-
 
 until_whitespace(String, I0, I) :-
     advance_while(isnt(char.is_whitespace), String, I0, I).
+
+%-----------------------------------------------------------------------------%
+
+foldr_code_units(P, String, !Acc) :-
+    string.length(String, Length),
+    foldr_code_units(P, String, Length - 1, !Acc).
+
+:- pred foldr_code_units(pred(int, T, T), string, int, T, T).
+:- mode foldr_code_units(in(pred(in, in, out) is det), in, in, in, out) is det.
+
+foldr_code_units(P, String, Index, !Acc) :-
+    ( Index < 0 ->
+        true
+    ;
+        string.unsafe_index_code_unit(String, Index, CodeUnit),
+        P(CodeUnit, !Acc),
+        foldr_code_units(P, String, Index - 1, !Acc)
+    ).
 
 %-----------------------------------------------------------------------------%
 

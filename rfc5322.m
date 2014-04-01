@@ -64,11 +64,15 @@
 
 %-----------------------------------------------------------------------------%
 
-    % Exports for rfc2047.
+    % Exports for rfc2047, rfc2231.
 
 :- pred ascii(char::in) is semidet.
 
 :- pred nonascii(char::in) is semidet.
+
+:- pred 'ALPHA'(char::in) is semidet.
+
+:- pred 'DIGIT'(char::in) is semidet.
 
 :- pred 'WSP'(char::in) is semidet.
 
@@ -103,12 +107,8 @@ nonascii(C) :-
 
 % 3.1. Syntax
 
-:- pred 'ALPHA'(char::in) is semidet.
-
 'ALPHA'(C) :-
     char.is_alpha(C).
-
-:- pred 'DIGIT'(char::in) is semidet.
 
 'DIGIT'(C) :-
     char.is_digit(C).

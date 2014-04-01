@@ -25,6 +25,13 @@
 :- pred addr_spec_to_string(addr_spec::in, string::out, bool::out) is det.
 
 %-----------------------------------------------------------------------------%
+
+    % Exported for rfc2045.
+    %
+:- pred quoted_string_ascii_only(quoted_string::in,
+    list(string)::in, list(string)::out, bool::in, bool::out) is det.
+
+%-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
@@ -154,6 +161,9 @@ quoted_string_loop(String, !Pos, !RevChars) :-
         % End of string.
         true
     ).
+
+quoted_string_ascii_only(QuotedString, !Acc, !Ok) :-
+    quoted_string(ascii_only, QuotedString, !Acc, !Ok).
 
 :- pred word(allow_unicode::in, word::in, acc::in, acc::out,
     bool::in, bool::out) is det.
