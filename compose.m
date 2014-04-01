@@ -69,12 +69,14 @@
 :- import_module path_expand.
 :- import_module prog_config.
 :- import_module quote_arg.
+:- import_module rfc2045.
 :- import_module rfc5322.parser.
 :- import_module rfc5322.writer.
 :- import_module scrollable.
 :- import_module send_util.
 :- import_module string_util.
 :- import_module tags.
+:- use_module rfc2231.
 
 :- type header_type
     --->    from
@@ -1689,10 +1691,18 @@ write_content_disposition_attachment(Stream, MaybeFileName, !IO) :-
     io.write_string(Stream, "Content-Disposition: attachment", !IO),
     (
         MaybeFileName = yes(FileName),
-        % XXX quote if non-ASCII
-        io.write_string(Stream, "; filename=""", !IO),
-        io.write_string(Stream, FileName, !IO),
-        io.write_string(Stream, """", !IO)
+        Attr = attribute("filename"),
+        Value = quoted_string(make_quoted_string(FileName)),
+        rfc2231.encode_parameter(Attr - Value, Param),
+        parameter_to_string(Param, ParamString, Valid),
+        (
+            Valid = yes,
+            io.write_string(Stream, "; ", !IO),
+            io.write_string(Stream, ParamString, !IO)
+        ;
+            Valid = no
+            % Shouldn't happen.
+        )
     ;
         MaybeFileName = no
     ),

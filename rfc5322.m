@@ -84,6 +84,8 @@
 
 :- pred atext_or_nonascii(char::in, bool::in, bool::out) is semidet.
 
+:- func make_quoted_string(string) = quoted_string.
+
 :- func word_to_string(word) = string.
 
 %-----------------------------------------------------------------------------%
@@ -92,6 +94,7 @@
 :- implementation.
 
 :- import_module int.
+:- import_module string.
 
 %-----------------------------------------------------------------------------%
 
@@ -155,6 +158,13 @@ atext_or_nonascii(C, !AllAscii) :-
     ;
         nonascii(C),
         !:AllAscii = no
+    ).
+
+make_quoted_string(String) = quoted_string(Wrap) :-
+    ( string.all_match(ascii, String) ->
+        Wrap = ascii(String)
+    ;
+        Wrap = unicode(String)
     ).
 
 word_to_string(Word) = String :-

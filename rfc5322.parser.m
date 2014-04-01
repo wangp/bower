@@ -431,7 +431,9 @@ display_name_2(Src, DisplayName, !PS) :-
         list.member(Word, Words),
         obsolete_word(Word)
     ->
-        DisplayName = [word_quoted_string(quoted_string_from_words(Words))]
+        String = string.join_list(" ", list.map(word_to_string, Words)),
+        QuotedString = make_quoted_string(String),
+        DisplayName = [word_quoted_string(QuotedString)]
     ;
         DisplayName = Words
     ).
@@ -570,16 +572,6 @@ obsolete_word(word_atom(atom(Atom))) :-
     ; Atom = unicode(String)
     ),
     string.sub_string_search(String, ".", _).
-
-:- func quoted_string_from_words(list(word)) = quoted_string.
-
-quoted_string_from_words(Words) = quoted_string(Wrap) :-
-    String = string.join_list(" ", list.map(word_to_string, Words)),
-    ( string.all_match(ascii, String) ->
-        Wrap = ascii(String)
-    ;
-        Wrap = unicode(String)
-    ).
 
 %-----------------------------------------------------------------------------%
 
