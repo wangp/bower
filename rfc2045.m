@@ -5,6 +5,7 @@
 :- interface.
 
 :- import_module bool.
+:- import_module char.
 :- import_module pair.
 
 :- use_module rfc5322.
@@ -21,6 +22,8 @@
     --->    token(token)
     ;       quoted_string(rfc5322.quoted_string).
 
+:- pred token_char(char::in) is semidet.
+
 :- pred parameter_to_string(parameter::in, string::out, bool::out) is det.
 
 %-----------------------------------------------------------------------------%
@@ -28,6 +31,7 @@
 
 :- implementation.
 
+:- import_module int.
 :- import_module list.
 :- import_module string.
 
@@ -35,6 +39,20 @@
 :- import_module rfc5322.writer.
 
 :- type acc == list(string). % reverse
+
+%-----------------------------------------------------------------------------%
+
+token_char(Char) :-
+    char.to_int(Char, Int),
+    % Exclude SPACE, CTL (0-31 and DEL), and non-ASCII.
+    0x20 < Int, Int < 0x7f,
+    not tspecial(Char).
+
+:- pred tspecial(char::in) is semidet.
+
+tspecial('('). tspecial(')'). tspecial('<'). tspecial('>'). tspecial('@').
+tspecial(','). tspecial(';'). tspecial(':'). tspecial('\\'). tspecial('"').
+tspecial('/'). tspecial('['). tspecial(']'). tspecial('?'). tspecial('=').
 
 %-----------------------------------------------------------------------------%
 

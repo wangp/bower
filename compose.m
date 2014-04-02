@@ -1015,38 +1015,6 @@ accept_media_type(String) :-
     SubType \= "",
     string.all_match(token_char, SubType).
 
-% RFC 2616, Section 2.2 Basic Rules.
-% XXX wrong RFC
-
-:- pred token_char(char::in) is semidet.
-
-token_char(C) :-
-    char.to_int(C, Int),
-    31 < Int, Int < 127,    % not CTL
-    not separator_char(C).
-
-:- pred separator_char(char::in) is semidet.
-
-separator_char('(').
-separator_char(')').
-separator_char('<').
-separator_char('>').
-separator_char('@').
-separator_char(',').
-separator_char(';').
-separator_char(':').
-separator_char('\\').
-separator_char('"').
-separator_char('/').
-separator_char('[').
-separator_char(']').
-separator_char('?').
-separator_char('=').
-separator_char('{').
-separator_char('}').
-separator_char(' ').
-separator_char('\t').
-
 %-----------------------------------------------------------------------------%
 
 :- pred split_panels(screen::in, list(panel)::out, list(panel)::out,
