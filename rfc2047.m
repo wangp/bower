@@ -17,23 +17,23 @@
 
 :- use_module base64.
 
-% Build up a list of code units for base64 encoding/decoding.
+% Build up a list of octets for base64 encoding/decoding.
 % We could use destructively-updated buffers for efficiency.
 
-:- type code_units_builder
-    --->    code_units_builder.
+:- type octets_builder
+    --->    octets_builder.
 
-:- type code_units
-    --->    code_units(list(int)). % reverse
+:- type octets
+    --->    octets(list(int)). % reverse
 
-:- instance stream.stream(code_units_builder, code_units) where [
-    name(_, "code_units_builder", !State)
+:- instance stream.stream(octets_builder, octets) where [
+    name(_, "octets_builder", !State)
 ].
-:- instance stream.output(code_units_builder, code_units) where [
+:- instance stream.output(octets_builder, octets) where [
     flush(_, !State)
 ].
-:- instance stream.writer(code_units_builder, base64.byte, code_units) where [
-    put(code_units_builder, Byte, code_units(Acc0), code_units(Acc)) :- (
+:- instance stream.writer(octets_builder, base64.byte, octets) where [
+    put(octets_builder, Byte, octets(Acc0), octets(Acc)) :- (
         copy(Byte, UniqueByte),
         Acc = [UniqueByte | Acc0]
     )

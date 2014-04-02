@@ -26,6 +26,10 @@
 :- import_module string_util.
 :- use_module base64.
 
+:- type charset
+    --->    utf8
+    ;       iso_8859_1.
+
 :- type encoding
     --->    b_encoding
     ;       q_encoding.
@@ -63,22 +67,23 @@ decode_word(Word, MaybeDecoded) :-
     is semidet.
 
 decode_encoded_word(Input, Start, End, DecodedText) :-
-    is_encoded_word_utf8(Input, Start, End, Encoding, EncodedTextStart,
+    is_encoded_word(Input, Start, End, CharSet, Encoding, EncodedTextStart,
         EncodedTextEnd),
     (
         Encoding = b_encoding,
-        decode_b_encoded_text_utf8(Input, EncodedTextStart, EncodedTextEnd,
-            DecodedText)
+        decode_b_encoded_text(Input, EncodedTextStart, EncodedTextEnd,
+            RevOctets)
     ;
         Encoding = q_encoding,
-        decode_q_encoded_text_utf8(Input, EncodedTextStart, EncodedTextEnd,
-            DecodedText)
-    ).
+        decode_q_encoded_text(Input, EncodedTextStart, EncodedTextEnd,
+            RevOctets)
+    ),
+    from_rev_octet_list(CharSet, RevOctets, DecodedText).
 
-:- pred is_encoded_word_utf8(string::in, int::in, int::in, encoding::out,
-    int::out, int::out) is semidet.
+:- pred is_encoded_word(string::in, int::in, int::in, charset::out,
+    encoding::out, int::out, int::out) is semidet.
 
-is_encoded_word_utf8(Input, Start, End, Encoding, EncodedTextStart,
+is_encoded_word(Input, Start, End, CharSet, Encoding, EncodedTextStart,
         EncodedTextEnd) :-
     % Encoded-words should to be limited to 75 characters but probably not in
     % practice.
@@ -95,8 +100,8 @@ is_encoded_word_utf8(Input, Start, End, Encoding, EncodedTextStart,
         EncodedTextEnd = R,
 
         unsafe_strstr(Input, "?", CharSetStart, CharSetEnd),
-        unsafe_between(Input, CharSetStart, CharSetEnd, CharSet),
-        charset_is_utf8(CharSet),
+        unsafe_between(Input, CharSetStart, CharSetEnd, CharSetString),
+        known_charset(CharSetString, CharSet),
 
         EncodingStart = CharSetEnd + 1,
         unsafe_index_next(Input, EncodingStart, EncodingEnd, EncodingChar),
@@ -110,17 +115,28 @@ is_encoded_word_utf8(Input, Start, End, Encoding, EncodedTextStart,
 
 min_encoded_word_length = string.length("=?UTF-8?Q??=").
 
-:- pred charset_is_utf8(string::in) is semidet.
+:- pred known_charset(string::in, charset::out) is semidet.
 
-charset_is_utf8(CharSet0) :-
-    % Ignore RFC 2231 language tag if present.
-    ( string.sub_string_search(CharSet0, "*", StarPos) ->
-        string.unsafe_between(CharSet0, 0, StarPos, CharSet)
+known_charset(String0, CharSet) :-
+    remove_language_tag(String0, String),
+    ( strcase_equal(String, "UTF-8") ->
+        CharSet = utf8
+    ; strcase_equal(String, "ISO-8859-1") ->
+        CharSet = iso_8859_1
     ;
-        CharSet = CharSet0
-    ),
-    % XXX handle some other charsets
-    strcase_equal(CharSet, "UTF-8").
+        fail
+    ).
+
+    % Ignore RFC 2231 language tag if present.
+    %
+:- pred remove_language_tag(string::in, string::out) is det.
+
+remove_language_tag(String0, String) :-
+    ( string.sub_string_search(String0, "*", StarPos) ->
+        string.unsafe_between(String0, 0, StarPos, String)
+    ;
+        String = String0
+    ).
 
 :- pred char_to_encoding(char::in, encoding::out) is semidet.
 
@@ -186,16 +202,14 @@ unstructured_span_strings([H | T], Strings) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred decode_b_encoded_text_utf8(string::in, int::in, int::in, string::out)
+:- pred decode_b_encoded_text(string::in, int::in, int::in, list(int)::out)
     is semidet.
 
-decode_b_encoded_text_utf8(EncodedWord, EncodedTextStart, EncodedTextEnd,
-        DecodedText) :-
+decode_b_encoded_text(EncodedWord, EncodedTextStart, EncodedTextEnd,
+        RevOctets) :-
     base64.decode(EncodedWord, EncodedTextStart, FinalPos, EncodedTextEnd,
-        code_units_builder, code_units([]), code_units(RevCodeUnits)),
-    check_b_encoded_word_final_pos(EncodedWord, FinalPos, EncodedTextEnd),
-    list.reverse(RevCodeUnits, CodeUnits),
-    string.from_code_unit_list(CodeUnits, DecodedText).
+        octets_builder, octets([]), octets(RevOctets)),
+    check_b_encoded_word_final_pos(EncodedWord, FinalPos, EncodedTextEnd).
 
 :- pred check_b_encoded_word_final_pos(string::in, int::in, int::in)
     is semidet.
@@ -209,36 +223,33 @@ check_b_encoded_word_final_pos(EncodedWord, FinalPos, EncodedTextEnd) :-
 
 %-----------------------------------------------------------------------------%
 
-    % This assumes UTF-8 string type.
-:- pred decode_q_encoded_text_utf8(string::in, int::in, int::in, string::out)
+:- pred decode_q_encoded_text(string::in, int::in, int::in, list(int)::out)
     is semidet.
 
-decode_q_encoded_text_utf8(EncodedWord, EncodedTextStart, EncodedTextEnd,
-        DecodedText) :-
-    decode_q(EncodedWord, EncodedTextStart, EncodedTextEnd, [], RevCodeUnits),
-    list.reverse(RevCodeUnits, CodeUnits),
-    string.from_code_unit_list(CodeUnits, DecodedText).
+decode_q_encoded_text(EncodedWord, EncodedTextStart, EncodedTextEnd,
+        RevOctets) :-
+    decode_q(EncodedWord, EncodedTextStart, EncodedTextEnd, [], RevOctets).
 
 :- pred decode_q(string::in, int::in, int::in, list(int)::in, list(int)::out)
     is semidet.
 
-decode_q(Input, Pos, EndPos, !RevCodeUnits) :-
+decode_q(Input, Pos, EndPos, !RevOctets) :-
     ( Pos < EndPos ->
-        string.unsafe_index_code_unit(Input, Pos, Octet),
-        ( Octet = equals ->
-            decode_q_equals_sequence(Input, Pos, NextPos, EndPos, CodeUnit)
-        ; Octet = underscore ->
-            CodeUnit = 0x20,
+        string.unsafe_index_code_unit(Input, Pos, Octet0),
+        ( Octet0 = equals ->
+            decode_q_equals_sequence(Input, Pos, NextPos, EndPos, Octet)
+        ; Octet0 = underscore ->
+            Octet = space,
             NextPos = Pos + 1
         ;
-            Octet =< 0x7f,
+            Octet0 =< 0x7f,
             % Note that per Section 5, rule (3), encoded-words in phrases have
             % a more restricted set of characters than in other contexts.
-            CodeUnit = Octet,
+            Octet = Octet0,
             NextPos = Pos + 1
         ),
-        cons(CodeUnit, !RevCodeUnits),
-        decode_q(Input, NextPos, EndPos, !RevCodeUnits)
+        cons(Octet, !RevOctets),
+        decode_q(Input, NextPos, EndPos, !RevOctets)
     ;
         % End of encoded text.
         true
@@ -247,7 +258,7 @@ decode_q(Input, Pos, EndPos, !RevCodeUnits) :-
 :- pred decode_q_equals_sequence(string::in, int::in, int::out, int::in,
     int::out) is semidet.
 
-decode_q_equals_sequence(Input, EqualsPos, NextPos, EndPos, CodeUnit) :-
+decode_q_equals_sequence(Input, EqualsPos, NextPos, EndPos, Octet) :-
     PosA = EqualsPos + 1,
     PosB = EqualsPos + 2,
     NextPos = EqualsPos + 3,
@@ -256,7 +267,7 @@ decode_q_equals_sequence(Input, EqualsPos, NextPos, EndPos, CodeUnit) :-
         string.unsafe_index_code_unit(Input, PosB, HexB),
         hex_digit(HexA, IntA),
         hex_digit(HexB, IntB),
-        CodeUnit = (IntA << 4) \/ IntB
+        Octet = (IntA << 4) \/ IntB
     ;
         fail
     ).
@@ -266,6 +277,29 @@ decode_q_equals_sequence(Input, EqualsPos, NextPos, EndPos, CodeUnit) :-
 hex_digit(Octet, Int) :-
     char.from_int(Octet, Char),
     char.is_hex_digit(Char, Int).
+
+%-----------------------------------------------------------------------------%
+
+:- pred from_rev_octet_list(charset::in, list(int)::in, string::out)
+    is semidet.
+
+from_rev_octet_list(CharSet, RevOctets, String) :-
+    % We assume the string type uses UTF-8 encoding.
+    (
+        CharSet = utf8,
+        list.reverse(RevOctets, CodeUnits)
+    ;
+        CharSet = iso_8859_1,
+        list.foldl(cons_iso_8859_1, RevOctets, [], CodeUnits)
+    ),
+    string.from_code_unit_list(CodeUnits, String).
+
+:- pred cons_iso_8859_1(int::in, list(int)::in, list(int)::out) is semidet.
+
+cons_iso_8859_1(Int, CodeUnits0, CodeUnits) :-
+    char.from_int(Int, Char),
+    char.to_utf8(Char, CharCodeUnits),
+    CodeUnits = CharCodeUnits ++ CodeUnits0.
 
 %-----------------------------------------------------------------------------%
 
@@ -339,6 +373,10 @@ classify(C, !AllAscii, !IsAtom) :-
     ;
         true
     ).
+
+:- func space = int.
+
+space = char.to_int(' ').
 
 :- func equals = int.
 

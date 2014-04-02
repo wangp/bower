@@ -138,6 +138,15 @@ input: ["=?UTF-8?B?Y2Fmw6k=?=", "=?UTF-8?Q?h=C3=BA?="]
 input: ["=?UTF-8?B?Y2Fmw6k=?=", "=?UTF-8?Q?_h=C3=BA?="]
 [word_quoted_string(quoted_string(unicode("café hú")))]
 --------
+input: ["=?ISO-8859-1?Q?caf=E9?="]
+[word_atom(atom(unicode("café")))]
+--------
+input: ["=?ISO-8859-1?Q?=A4=A6=A8=B4=B8=BC=BD=BE?="]
+[word_atom(atom(unicode("¤¦¨´¸¼½¾")))]
+--------
+input: ["=?ISO-8859-1?B?pKaotLi8vb4=?="]
+[word_atom(atom(unicode("¤¦¨´¸¼½¾")))]
+--------
 
 Unstructured
 ============
@@ -275,6 +284,15 @@ Unstructured
 --------
 «=?UTF-8?B?Y2Fmw6k=?= =?UTF-8?Q?_h=C3=BA?=»
 «café hú»
+--------
+«=?ISO-8859-1?Q?caf=E9?=»
+«café»
+--------
+«=?ISO-8859-1?Q?=A4=A6=A8=B4=B8=BC=BD=BE?=»
+«¤¦¨´¸¼½¾»
+--------
+«=?ISO-8859-1?B?pKaotLi8vb4=?=»
+«¤¦¨´¸¼½¾»
 --------
 «  =?UTF-8?Q?h=C3=BA?= =?UTF-8?Q?h=C3=BA?= hu =?UTF-8?Q?h=C3=BA?=»
 «  húhú hu hú»

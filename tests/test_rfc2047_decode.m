@@ -112,7 +112,11 @@ decode_cases = [
     ["=?UTF-8?B?5Zm4?="], % ok
 
     ["=?UTF-8?B?Y2Fmw6k=?=", "=?UTF-8?Q?h=C3=BA?="], % ok
-    ["=?UTF-8?B?Y2Fmw6k=?=", "=?UTF-8?Q?_h=C3=BA?="] % ok
+    ["=?UTF-8?B?Y2Fmw6k=?=", "=?UTF-8?Q?_h=C3=BA?="], % ok
+
+    ["=?ISO-8859-1?Q?caf=E9?="], % ok
+    ["=?ISO-8859-1?Q?=A4=A6=A8=B4=B8=BC=BD=BE?="], % ok - not iso-8859-15
+    ["=?ISO-8859-1?B?pKaotLi8vb4=?="] % ok - not iso-8859-15
 ].
 
 :- func unstructured_extra_cases = list(case).

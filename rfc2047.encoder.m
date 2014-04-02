@@ -344,7 +344,7 @@ b_encoded_text_length(NumCodeUnits) = (NumCodeUnits + 2) / 3 * 4.
 
 make_b_encoded_word(String, EncodedWord) :-
     base64.encode(String, 0, length(String),
-        code_units_builder, code_units([]), code_units(RevCodeUnits)),
+        octets_builder, octets([]), octets(RevCodeUnits)),
     list.reverse(RevCodeUnits, CodeUnits),
     ( string.from_code_unit_list(CodeUnits, Base64) ->
         EncodedWord = "=?UTF-8?B?" ++ Base64 ++ "?="
