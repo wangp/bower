@@ -42,10 +42,17 @@ addressbook_section = "bower:addressbook".
 
 :- pred is_alias_char(char::in) is semidet.
 
-is_alias_char(C) :- char.is_alnum_or_underscore(C).
-is_alias_char('-').
-is_alias_char('+').
-is_alias_char('.').
+is_alias_char(C) :-
+    ( char.is_alnum_or_underscore(C)
+    ; C = ('-')
+    ; C = ('+')
+    ; C = ('.')
+    ;
+        % Allow all non-ASCII.  I suppose we should check for Unicode
+        % whitespace but it should not matter.
+        char.to_int(C, Int),
+        Int > 0x7f
+    ).
 
 %-----------------------------------------------------------------------------%
 
