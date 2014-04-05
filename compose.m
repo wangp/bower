@@ -179,8 +179,10 @@ expand_aliases(Input, Output, !IO) :-
 
 start_reply(Screen, Message, ReplyKind, Transition, !IO) :-
     Message ^ m_id = MessageId,
-    Args = ["reply", message_id_to_search_term(MessageId)],
-    args_to_quoted_command(Args, Command),
+    args_to_quoted_command([
+        "reply", reply_to_arg(ReplyKind), "--",
+        message_id_to_search_term(MessageId)
+    ], Command),
     get_notmuch_prefix(Notmuch, !IO),
     call_system_capture_stdout(Notmuch ++ Command, no, CommandResult, !IO),
     (
@@ -188,10 +190,7 @@ start_reply(Screen, Message, ReplyKind, Transition, !IO) :-
         parse_message(String, Headers0, Text),
         (
             ReplyKind = direct_reply,
-            OrigFrom = Message ^ m_headers ^ h_from,
-            OrigReplyTo = Message ^ m_headers ^ h_replyto,
-            set_headers_for_direct_reply(OrigFrom, OrigReplyTo,
-                Headers0, Headers)
+            Headers = Headers0
         ;
             ReplyKind = group_reply,
             set_headers_for_group_reply(Headers0, Headers)
@@ -211,18 +210,11 @@ start_reply(Screen, Message, ReplyKind, Transition, !IO) :-
         Transition = screen_transition(not_sent, set_warning(Warning))
     ).
 
-:- pred set_headers_for_direct_reply(header_value::in, header_value::in,
-    headers::in, headers::out) is det.
+:- func reply_to_arg(reply_kind) = string.
 
-set_headers_for_direct_reply(OrigFrom, OrigReplyTo, !Headers) :-
-    ( not empty_header_value(OrigReplyTo) ->
-        !Headers ^ h_to := OrigReplyTo
-    ; not empty_header_value(OrigFrom) ->
-        !Headers ^ h_to := OrigFrom
-    ;
-        true
-    ),
-    !Headers ^ h_cc := header_value("").
+reply_to_arg(direct_reply) = "--reply-to=sender".
+reply_to_arg(group_reply) = "--reply-to=all".
+reply_to_arg(list_reply) = "--reply-to=all".
 
 :- pred set_headers_for_group_reply(headers::in, headers::out) is det.
 
