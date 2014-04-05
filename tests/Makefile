@@ -8,7 +8,8 @@ TESTS = test_base64 \
 	test_rfc5322 \
 	test_rfc2047_decode \
 	test_rfc2047_encode \
-	test_rfc2231
+	test_rfc2231 \
+	test_json
 
 .PHONY: default
 default: $(addsuffix .runtest,$(TESTS))

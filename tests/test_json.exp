@@ -1,0 +1,455 @@
+«»
+ ^
+1:1: parse error
+--------
+«null»
+null
+
+--------
+«nullx»
+     ^
+1:5: parse error
+--------
+«Null»
+ ^
+1:1: parse error
+--------
+«true»
+bool(yes)
+
+--------
+«truex»
+     ^
+1:5: parse error
+--------
+«True»
+ ^
+1:1: parse error
+--------
+«false»
+bool(no)
+
+--------
+«falsex»
+      ^
+1:6: parse error
+--------
+«False»
+ ^
+1:1: parse error
+--------
+« null »
+null
+
+--------
+« null , true »
+      ^
+1:6: parse error
+--------
+«﻿null»
+ ^
+1:1: parse error
+--------
+«null﻿»
+     ^
+1:5: parse error
+--------
+«0»
+int(0)
+
+--------
+«-0»
+int(0)
+
+--------
+«-1»
+int(-1)
+
+--------
+«+1»
+ ^
+1:1: parse error
+--------
+«01»
+  ^
+1:2: parse error
+--------
+«001»
+  ^
+1:2: parse error
+--------
+«0x1»
+  ^
+1:2: parse error
+--------
+«0b1»
+  ^
+1:2: parse error
+--------
+«2147483647»
+int(2147483647)
+
+--------
+«-2147483648»
+int(-2147483648)
+
+--------
+«2.71828»
+float(2.71828)
+
+--------
+«+2.71828»
+ ^
+1:1: parse error
+--------
+«-2.71828»
+float(-2.71828)
+
+--------
+«2.»
+  ^
+1:2: parse error
+--------
+«-2.»
+   ^
+1:3: parse error
+--------
+«271828e-5»
+       ^
+1:7: parse error
+--------
+«271828.e-5»
+       ^
+1:7: parse error
+--------
+«271828.0e-5»
+float(2.71828)
+
+--------
+«271828.00000E-5»
+float(2.71828)
+
+--------
+«0.00271828000000E3»
+float(2.71828)
+
+--------
+«0.00271828e+3»
+float(2.71828)
+
+--------
+«0.00271828e+33»
+float(2.71828e+30)
+
+--------
+«0.00271828e-33»
+float(2.71828e-36)
+
+--------
+«0.00271828e+333»
+            ^
+1:12: parse error
+--------
+«0.00271828e-333»
+float(0.0)
+
+--------
+«"»
+ ^
+1:1: parse error
+--------
+«"abc"»
+string(esc_string("abc"))
+
+«abc»
+--------
+«" café"»
+string(esc_string(" café"))
+
+« café»
+--------
+«"☿"»
+string(esc_string("☿"))
+
+«☿»
+--------
+«""»
+  ^
+1:2: invalid character
+--------
+«""»
+  ^
+1:2: invalid character
+--------
+«""»
+  ^
+1:2: invalid character
+--------
+«"
+"»
+  ^
+1:2: invalid character
+--------
+«""»
+  ^
+1:2: invalid character
+--------
+«"	"»
+  ^
+1:2: invalid character
+--------
+«""»
+  ^
+1:2: invalid character
+--------
+«""»
+  ^
+1:2: invalid character
+--------
+«""»
+  ^
+1:2: invalid character
+--------
+«"\""»
+string(esc_string("\""))
+
+«"»
+--------
+«"\\"»
+string(esc_string("\\"))
+
+«\»
+--------
+«"\/"»
+string(esc_string("\/"))
+
+«/»
+--------
+«"\a"»
+  ^
+1:2: invalid escape sequence
+--------
+«"\b"»
+string(esc_string("\b"))
+
+«»
+--------
+«"\f"»
+string(esc_string("\f"))
+
+«»
+--------
+«"\n"»
+string(esc_string("\n"))
+
+«
+»
+--------
+«"\r"»
+string(esc_string("\r"))
+
+«»
+--------
+«"\t"»
+string(esc_string("\t"))
+
+«	»
+--------
+«"\v"»
+  ^
+1:2: invalid escape sequence
+--------
+«"\u"»
+    ^
+1:4: parse error
+--------
+«"\u0"»
+     ^
+1:5: parse error
+--------
+«"\u00"»
+      ^
+1:6: parse error
+--------
+«"\u000"»
+       ^
+1:7: parse error
+--------
+«"\u0000"»
+  ^
+1:2: null character not allowed
+--------
+«"\u0001"»
+string(esc_string("\u0001"))
+
+«»
+--------
+«"\u005C"»
+string(esc_string("\u005C"))
+
+«\»
+--------
+«"\u00e9"»
+string(esc_string("\u00e9"))
+
+«é»
+--------
+«"\u263f"»
+string(esc_string("\u263f"))
+
+«☿»
+--------
+«"a b"»
+string(esc_string("a b"))
+
+«a b»
+--------
+«"a b"»
+string(esc_string("a b"))
+
+«a b»
+--------
+«"𝄞"»
+string(esc_string("𝄞"))
+
+«𝄞»
+--------
+«"\uD834\uDD1E"»
+string(esc_string("\uD834\uDD1E"))
+
+«𝄞»
+--------
+«"\ud834\uDd1E"»
+string(esc_string("\ud834\uDd1E"))
+
+«𝄞»
+--------
+«"\ud800\udc00"»
+string(esc_string("\ud800\udc00"))
+
+«𐀀»
+--------
+«"\udbff\udfff"»
+string(esc_string("\udbff\udfff"))
+
+«􏿿»
+--------
+«"\ud800"»
+        ^
+1:8: expected trail surrogate code point
+--------
+«"\udc00"»
+  ^
+1:2: unexpected trail surrogate code point
+--------
+«"\ud800\udbff"»
+        ^
+1:8: expected trail surrogate code point
+--------
+«"﷐﷯"»
+string(esc_string("﷐﷯"))
+
+«﷐﷯»
+--------
+«"\ufdd0\ufdef"»
+string(esc_string("\ufdd0\ufdef"))
+
+«﷐﷯»
+--------
+«"￾￿"»
+string(esc_string("￾￿"))
+
+«￾￿»
+--------
+«"\ufffe\uffff"»
+string(esc_string("\ufffe\uffff"))
+
+«￾￿»
+--------
+«[]»
+array([])
+
+--------
+«[»
+  ^
+1:2: parse error
+--------
+«]»
+ ^
+1:1: parse error
+--------
+«[[]»
+    ^
+1:4: parse error
+--------
+«[,]»
+  ^
+1:2: parse error
+--------
+«[null]»
+array([null])
+
+--------
+«[null,]»
+      ^
+1:6: parse error
+--------
+«[null ,true, false]»
+array([null, bool(yes), bool(no)])
+
+--------
+«{}»
+map(map([]))
+
+--------
+«{»
+  ^
+1:2: parse error
+--------
+«}»
+ ^
+1:1: parse error
+--------
+«{,}»
+  ^
+1:2: parse error
+--------
+«{true:false}»
+  ^
+1:2: parse error
+--------
+«{a:false}»
+  ^
+1:2: parse error
+--------
+«{"a"}»
+     ^
+1:5: parse error
+--------
+«{"a":}»
+     ^
+1:5: parse error
+--------
+«{"a":null}»
+map(map([("a" -> null)]))
+
+--------
+«{"a":null, }»
+            ^
+1:12: parse error
+--------
+«{"a":true, "a": false}»
+            ^
+1:12: duplicate field name
+--------
+«{"a":false ,"b" : true, "cd": null}»
+map(map([("a" -> bool(no)), ("b" -> bool(yes)), ("cd" -> null)]))
+
+--------
+«{"ć":-1234 ,"b" : 5.678, "e": [], "A" : "nine", "d": {}}»
+map(
+  map([("A" -> string(esc_string("nine"))), ("b" -> float(5.678)), 
+    ("d" -> map(map([]))), ("e" -> array([])), ("ć" -> int(-1234))]))
+
+«nine»
+--------
