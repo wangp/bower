@@ -54,7 +54,7 @@ parse_message_file(Filename, Res, !IO) :-
 
 parse_message(String, Headers, Body) :-
     read_headers(String, 0, PosBody, init_headers, Headers),
-    string.between(String, PosBody, count_code_units(String), Body).
+    string.unsafe_between(String, PosBody, count_code_units(String), Body).
 
 :- pred read_headers(string::in, int::in, int::out, headers::in, headers::out)
     is det.
@@ -101,7 +101,7 @@ unfolded_line_2(String, Start, Pos0, LineEnd, !Acc) :-
             )
         ->
             % Drop the CRLF / LF.
-            string.between(String, Start, Pos0, Piece),
+            string.unsafe_between(String, Start, Pos0, Piece),
             cons(Piece, !Acc),
             % "Unfolding is accomplished by regarding CRLF immediately followed
             % by a LWSP-char as equivalent to the LWSP-char."
@@ -119,7 +119,7 @@ unfolded_line_2(String, Start, Pos0, LineEnd, !Acc) :-
     ;
         % End of string.
         LineEnd = Pos0,
-        string.between(String, Start, LineEnd, Piece),
+        string.unsafe_between(String, Start, LineEnd, Piece),
         cons(Piece, !Acc)
     ).
 
@@ -143,8 +143,8 @@ is_header_line(Line, Name, Value) :-
     string.sub_string_search(Line, ":", Colon),
     require_det (
         End = string.count_code_units(Line),
-        string.between(Line, 0, Colon, Name0),
-        string.between(Line, Colon + 1, End, Value0),
+        string.unsafe_between(Line, 0, Colon, Name0),
+        string.unsafe_between(Line, Colon + 1, End, Value0),
         Name = string.strip(Name0),
         Value = string.strip(Value0)
     ).
