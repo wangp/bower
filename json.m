@@ -18,13 +18,9 @@
     ;       float(float)
     ;       string(esc_string)
     ;       list(list(json))        % array
-    ;       map(json_map).          % object
+    ;       map(map(string, json)). % object
 
 :- type esc_string.
-
-:- type json_map == map(key, json).
-
-:- type key == string.
 
 :- pred parse_json(string::in, parse_result(json)::out) is cc_multi.
 

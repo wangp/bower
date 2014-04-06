@@ -156,7 +156,7 @@ parse_message_details(JSON, Replies, Message) :-
         notmuch_json_error
     ).
 
-:- pred parse_header(key::in, json::in, headers::in, headers::out) is semidet.
+:- pred parse_header(string::in, json::in, headers::in, headers::out) is semidet.
 
 parse_header(Key, unesc_string(Value), !Headers) :-
     ( Key = "Date" ->
