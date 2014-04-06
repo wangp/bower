@@ -11,6 +11,7 @@
 :- import_module set.
 
 :- import_module path_expand.
+:- import_module prog_config.
 :- import_module screen.
 
 :- type history.
@@ -19,18 +20,20 @@
     --->    complete_none
     ;       complete_path(home)
     ;       complete_limit(
+                prog_config,
                 % Name of search alias section.
                 string,
                 % Prefixes to trigger tag completion.
                 list(string)
             )
     ;       complete_tags_smart(
+                prog_config,
                 % All selected messages have these tags.
                 and_tags    :: set(string),
                 % At least one selected message has these tags.
                 or_tags     :: set(string)
             )
-    ;       complete_config_key(string). % config section name
+    ;       complete_config_key(prog_config, string). % config section name
 
 :- func init_history = history.
 
@@ -122,8 +125,8 @@ text_entry(Screen, Prompt, History0, CompleteType, Return, !IO) :-
     text_entry_full(Screen, Prompt, History, Initial, CompleteType, FirstTime,
         Return, !IO).
 
-text_entry_initial(Screen, Prompt, History, Initial, CompleteType, Return,
-        !IO) :-
+text_entry_initial(Screen, Prompt, History, Initial, CompleteType, Return, !IO)
+        :-
     FirstTime = yes,
     text_entry_full(Screen, Prompt, History, Initial, CompleteType, FirstTime,
         Return, !IO).
@@ -134,8 +137,8 @@ text_entry_full(Screen, Prompt, History, Initial, CompleteType, FirstTime,
     State = te_state(Before, [], History, []),
     States = stack.init,
     LeftOffset = 0,
-    Info0 = info(Prompt, State, States, FirstTime, LeftOffset,
-        CompleteType, [], 0),
+    Info0 = info(Prompt, State, States, FirstTime, LeftOffset, CompleteType,
+        [], 0),
     text_entry_loop(Screen, Return, Info0, _Info, !IO),
     update_message(Screen, clear_message, !IO).
 
@@ -545,9 +548,9 @@ forward_for_completion(Type, Before0, Before, After0, After) :-
         Before = reverse(After0) ++ Before0,
         After = []
     ;
-        ( Type = complete_limit(_, _)
-        ; Type = complete_tags_smart(_, _)
-        ; Type = complete_config_key(_)
+        ( Type = complete_limit(_, _, _)
+        ; Type = complete_tags_smart(_, _, _)
+        ; Type = complete_config_key(_, _)
         ),
         list.takewhile(non_whitespace, After0, Take, After),
         Before = list.reverse(Take) ++ Before0
@@ -561,7 +564,8 @@ do_completion(Orig, Replacement, After, Info0, MaybeInfo, !IO) :-
     (
         Choices0 = [],
         Type = Info0 ^ compl_type,
-        generate_choices(Type, Orig, After, Choices, CompletionPoint, !IO),
+        generate_choices(Type, Orig, After, Choices, CompletionPoint,
+            !IO),
         IsNew = yes
     ;
         Choices0 = [_ | _],
@@ -597,26 +601,28 @@ generate_choices(Type, Orig, After, Choices, CompletionPoint, !IO) :-
         generate_path_choices(Home, OrigString, Choices, !IO),
         CompletionPoint = 0
     ;
-        Type = complete_limit(SearchAliasSection, TagCompletionTriggers),
+        Type = complete_limit(Config, SearchAliasSection,
+            TagCompletionTriggers),
         list.takewhile(non_whitespace, Orig, Word, Untouched),
         list.length(Untouched, CompletionPoint),
         string.from_rev_char_list(Word, WordString),
-        generate_limit_choices(SearchAliasSection, TagCompletionTriggers,
-            WordString, Choices, !IO)
+        generate_limit_choices(Config, SearchAliasSection,
+            TagCompletionTriggers, WordString, Choices, !IO)
     ;
-        Type = complete_tags_smart(AndTags, OrTags),
+        Type = complete_tags_smart(Config, AndTags, OrTags),
         list.takewhile(non_whitespace, Orig, Word, Untouched),
         list.length(Untouched, CompletionPoint),
         get_entered_tags(Untouched, After, EnteredTags),
         string.from_rev_char_list(Word, WordString),
-        generate_smart_tag_choices(AndTags, OrTags, EnteredTags, WordString,
-            Choices, !IO)
+        generate_smart_tag_choices(Config, AndTags, OrTags, EnteredTags,
+            WordString, Choices, !IO)
     ;
-        Type = complete_config_key(SectionName),
+        Type = complete_config_key(Config, SectionName),
         list.takewhile(non_whitespace, Orig, Word, Untouched),
         list.length(Untouched, CompletionPoint),
         string.from_rev_char_list(Word, WordString),
-        generate_config_key_choices(SectionName, WordString, Choices, !IO)
+        generate_config_key_choices(Config, SectionName, WordString, Choices,
+            !IO)
     ).
 
 :- pred choose_expansion(bool::in, list(string)::in(non_empty_list),
@@ -737,39 +743,42 @@ is_directory(DirName, BaseName, FileType0, IsDir, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred generate_limit_choices(string::in, list(string)::in, string::in,
-    list(string)::out, io::di, io::uo) is det.
+:- pred generate_limit_choices(prog_config::in, string::in, list(string)::in,
+    string::in, list(string)::out, io::di, io::uo) is det.
 
-generate_limit_choices(SearchAliasSection, TagCompletionTriggers, OrigString,
-        Choices, !IO) :-
+generate_limit_choices(Config, SearchAliasSection, TagCompletionTriggers,
+        OrigString, Choices, !IO) :-
     ( string.remove_prefix("~", OrigString, KeyPrefix) ->
-        generate_search_alias_choices(SearchAliasSection, KeyPrefix, Choices,
-            !IO)
+        generate_search_alias_choices(Config, SearchAliasSection, KeyPrefix,
+            Choices, !IO)
     ;
-        generate_tag_choices(TagCompletionTriggers, OrigString, Choices, !IO)
+        generate_tag_choices(Config, TagCompletionTriggers, OrigString,
+            Choices, !IO)
     ).
 
-:- pred generate_search_alias_choices(string::in, string::in,
+:- pred generate_search_alias_choices(prog_config::in, string::in, string::in,
     list(string)::out, io::di, io::uo) is det.
 
-generate_search_alias_choices(SearchAliasSection, KeyPrefix, Choices, !IO) :-
-    generate_config_key_choices(SearchAliasSection, KeyPrefix, Choices0, !IO),
+generate_search_alias_choices(Config, SearchAliasSection, KeyPrefix, Choices,
+        !IO) :-
+    generate_config_key_choices(Config, SearchAliasSection, KeyPrefix,
+        Choices0, !IO),
     list.map(append("~"), Choices0) = Choices.
 
 %-----------------------------------------------------------------------------%
 
-:- pred generate_tag_choices(list(string)::in, string::in, list(string)::out,
-    io::di, io::uo) is det.
+:- pred generate_tag_choices(prog_config::in, list(string)::in, string::in,
+    list(string)::out, io::di, io::uo) is det.
 
-generate_tag_choices([], _OrigString, [], !IO).
-generate_tag_choices(CompletionTriggers, OrigString, Choices, !IO) :-
+generate_tag_choices(_Config, [], _OrigString, [], !IO).
+generate_tag_choices(Config, CompletionTriggers, OrigString, Choices, !IO) :-
     CompletionTriggers = [Trigger | Triggers],
     ( string.remove_prefix(Trigger, OrigString, TagPrefix) ->
-        get_notmuch_all_tags(TagsList, !IO),
+        get_notmuch_all_tags(Config, TagsList, !IO),
         list.filter_map(filter_tag_choice(Trigger, TagPrefix),
             TagsList, Choices)
     ;
-        generate_tag_choices(Triggers, OrigString, Choices, !IO)
+        generate_tag_choices(Config, Triggers, OrigString, Choices, !IO)
     ).
 
 :- pred get_entered_tags(list(char)::in, list(char)::in, set(string)::out)
@@ -793,11 +802,12 @@ is_entered_tag(Word, Tag) :-
         fail
     ).
 
-:- pred generate_smart_tag_choices(set(string)::in, set(string)::in,
-    set(string)::in, string::in, list(string)::out, io::di, io::uo) is det.
+:- pred generate_smart_tag_choices(prog_config::in,
+    set(string)::in, set(string)::in, set(string)::in, string::in,
+    list(string)::out, io::di, io::uo) is det.
 
-generate_smart_tag_choices(AndTagSet, OrTagSet, EnteredTagSet, OrigString,
-        Choices, !IO) :-
+generate_smart_tag_choices(Config, AndTagSet, OrTagSet, EnteredTagSet,
+        OrigString, Choices, !IO) :-
     (
         string.remove_prefix("-", OrigString, TagPrefix)
     ->
@@ -808,7 +818,7 @@ generate_smart_tag_choices(AndTagSet, OrTagSet, EnteredTagSet, OrigString,
     ;
         string.remove_prefix("+", OrigString, TagPrefix)
     ->
-        get_notmuch_all_tags(AllTagsList, !IO),
+        get_notmuch_all_tags(Config, AllTagsList, !IO),
         set.difference(from_list(AllTagsList), AndTagSet, CandidateSet0),
         set.difference(CandidateSet0, EnteredTagSet, CandidateSet),
         set.to_sorted_list(CandidateSet, CandidateList),
@@ -818,10 +828,11 @@ generate_smart_tag_choices(AndTagSet, OrTagSet, EnteredTagSet, OrigString,
         Choices = []
     ).
 
-:- pred get_notmuch_all_tags(list(string)::out, io::di, io::uo) is det.
+:- pred get_notmuch_all_tags(prog_config::in, list(string)::out,
+    io::di, io::uo) is det.
 
-get_notmuch_all_tags(TagsList, !IO) :-
-    get_notmuch_prefix(Notmuch, !IO),
+get_notmuch_all_tags(Config, TagsList, !IO) :-
+    get_notmuch_prefix(Config, Notmuch),
     args_to_quoted_command(["search", "--output=tags", "--", "*"], Command),
     call_system_capture_stdout(Notmuch ++ Command, no, CallRes, !IO),
     (
@@ -842,11 +853,11 @@ filter_tag_choice(Trigger, TagPrefix, Tag, Choice) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred generate_config_key_choices(string::in, string::in, list(string)::out,
-    io::di, io::uo) is det.
+:- pred generate_config_key_choices(prog_config::in, string::in, string::in,
+    list(string)::out, io::di, io::uo) is det.
 
-generate_config_key_choices(SectionName, OrigString, Choices, !IO) :-
-    get_notmuch_prefix(Notmuch, !IO),
+generate_config_key_choices(Config, SectionName, OrigString, Choices, !IO) :-
+    get_notmuch_prefix(Config, Notmuch),
     args_to_quoted_command(["config", "list"], Command),
     call_system_capture_stdout(Notmuch ++ Command, no, CallRes, !IO),
     (

@@ -9,8 +9,9 @@
 
 :- import_module data.
 :- import_module screen.
+:- import_module prog_config.
 
-:- pred select_recall(screen::in, maybe(thread_id)::in,
+:- pred select_recall(prog_config::in, screen::in, maybe(thread_id)::in,
     screen_transition(maybe(message))::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
@@ -37,6 +38,7 @@
 
 :- type recall_info
     --->    recall_info(
+                r_config        :: prog_config,
                 r_scrollable    :: scrollable(recall_line)
             ).
 
@@ -54,8 +56,8 @@
 
 %-----------------------------------------------------------------------------%
 
-select_recall(Screen, MaybeThreadId, Transition, !IO) :-
-    find_drafts(MaybeThreadId, Ids, !IO),
+select_recall(Config, Screen, MaybeThreadId, Transition, !IO) :-
+    find_drafts(Config, MaybeThreadId, Ids, !IO),
     (
         Ids = [],
         (
@@ -71,19 +73,19 @@ select_recall(Screen, MaybeThreadId, Transition, !IO) :-
         Ids = [_ | _],
         time(Time, !IO),
         Nowish = localtime(Time),
-        list.map_foldl(make_recall_line(Nowish), Ids, Lines, !IO),
+        list.map_foldl(make_recall_line(Config, Nowish), Ids, Lines, !IO),
         Scrollable = scrollable.init_with_cursor(Lines),
-        Info = recall_info(Scrollable),
         update_message(Screen, clear_message, !IO),
+        Info = recall_info(Config, Scrollable),
         recall_screen_loop(Screen, MaybeSelected, Info, _Info, !IO),
         Transition = screen_transition(MaybeSelected, no_change)
     ).
 
-:- pred make_recall_line(tm::in, message_id::in, recall_line::out,
-    io::di, io::uo) is det.
+:- pred make_recall_line(prog_config::in, tm::in, message_id::in,
+    recall_line::out, io::di, io::uo) is det.
 
-make_recall_line(Nowish, MessageId, Line, !IO) :-
-    run_notmuch([
+make_recall_line(Config, Nowish, MessageId, Line, !IO) :-
+    run_notmuch(Config, [
         "show", "--format=json", "--part=0", "--",
         message_id_to_search_term(MessageId)
     ], parse_top_message, Result, !IO),
@@ -190,13 +192,13 @@ enter(Info, MaybeSelected) :-
     io::di, io::uo) is det.
 
 delete_draft(Screen, !Info, !IO) :-
-    Scrollable0 = !.Info ^ r_scrollable,
+    !.Info = recall_info(Config, Scrollable0),
     (
         get_cursor_line(Scrollable0, _, CursorLine0),
         delete_cursor_line(Scrollable0, Scrollable)
     ->
         MessageId = CursorLine0 ^ r_message ^ m_id,
-        tag_messages([tag_delta("+deleted")], [MessageId], Res, !IO),
+        tag_messages(Config, [tag_delta("+deleted")], [MessageId], Res, !IO),
         (
             Res = ok,
             !Info ^ r_scrollable := Scrollable,
@@ -216,7 +218,7 @@ delete_draft(Screen, !Info, !IO) :-
 
 draw_recall(Screen, Info, !IO) :-
     get_main_panels(Screen, Panels),
-    Info = recall_info(Scrollable),
+    Info = recall_info(_Config, Scrollable),
     scrollable.draw(Panels, Scrollable, !IO).
 
 :- pred draw_recall_line(panel::in, recall_line::in, int::in, bool::in,

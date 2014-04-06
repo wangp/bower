@@ -11,6 +11,7 @@
 :- import_module set.
 
 :- import_module data.
+:- import_module prog_config.
 :- import_module screen.
 :- import_module tags.
 :- import_module view_common.
@@ -29,8 +30,8 @@
                 added_messages  :: int
             ).
 
-:- pred open_thread_pager(screen::in, thread_id::in, maybe(string)::in,
-    screen_transition(thread_pager_effects)::out,
+:- pred open_thread_pager(prog_config::in, screen::in, thread_id::in,
+    maybe(string)::in, screen_transition(thread_pager_effects)::out,
     common_history::in, common_history::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
@@ -70,6 +71,7 @@
 
 :- type thread_pager_info
     --->    thread_pager_info(
+                tp_config           :: prog_config,
                 tp_thread_id        :: thread_id,
                 tp_messages         :: list(message),
                 tp_ordering         :: ordering,
@@ -159,10 +161,10 @@
 
 %-----------------------------------------------------------------------------%
 
-open_thread_pager(Screen, ThreadId, MaybeSearch, Transition,
+open_thread_pager(Config, Screen, ThreadId, MaybeSearch, Transition,
         CommonHistory0, CommonHistory, !IO) :-
-    create_thread_pager(Screen, ThreadId, ordering_threaded, no, CommonHistory0,
-        Info0, ResCount, !IO),
+    create_thread_pager(Config, Screen, ThreadId, ordering_threaded, no,
+        CommonHistory0, Info0, ResCount, !IO),
     Info1 = Info0 ^ tp_search := MaybeSearch,
     (
         ResCount = ok(Count),
@@ -189,7 +191,7 @@ reopen_thread_pager(Screen, !Info, !IO) :-
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 reopen_thread_pager_with_ordering(Screen, Ordering, Info0, Info, !IO) :-
-    Info0 = thread_pager_info(ThreadId0, Cached0, _Ordering0,
+    Info0 = thread_pager_info(Config0, ThreadId0, Cached0, _Ordering0,
         Scrollable0, _NumThreadRows, Pager0, _NumPagerRows,
         Search, SearchDir, CommonHistory, AddedMessages),
 
@@ -200,7 +202,7 @@ reopen_thread_pager_with_ordering(Screen, Ordering, Info0, Info, !IO) :-
         Cached0 = [_ | _],
         MaybeCached = yes(Cached0)
     ),
-    create_thread_pager(Screen, ThreadId0, Ordering, MaybeCached,
+    create_thread_pager(Config0, Screen, ThreadId0, Ordering, MaybeCached,
         CommonHistory, Info1, ResCount, !IO),
     (
         ResCount = ok(Count),
@@ -211,7 +213,7 @@ reopen_thread_pager_with_ordering(Screen, Ordering, Info0, Info, !IO) :-
         MessageUpdate = set_warning(Error)
     ),
 
-    Info1 = thread_pager_info(ThreadId, Cached, _Ordering,
+    Info1 = thread_pager_info(Config, ThreadId, Cached, _Ordering,
         Scrollable1, NumThreadRows, Pager1, NumPagerRows,
         _Search1, _SearchDir1, _CommonHistory1, _AddedMessages1),
 
@@ -236,26 +238,25 @@ reopen_thread_pager_with_ordering(Screen, Ordering, Info0, Info, !IO) :-
         Pager = Pager1
     ),
 
-    Info2 = thread_pager_info(ThreadId, Cached, Ordering,
+    Info2 = thread_pager_info(Config, ThreadId, Cached, Ordering,
         Scrollable, NumThreadRows, Pager, NumPagerRows,
         Search, SearchDir, CommonHistory, AddedMessages),
     sync_thread_to_pager(Info2, Info),
 
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred create_thread_pager(screen::in, thread_id::in, ordering::in,
-    maybe(list(message))::in,
-    common_history::in, thread_pager_info::out, maybe_error(int)::out,
-    io::di, io::uo) is det.
+:- pred create_thread_pager(prog_config::in, screen::in, thread_id::in,
+    ordering::in, maybe(list(message))::in, common_history::in,
+    thread_pager_info::out, maybe_error(int)::out, io::di, io::uo) is det.
 
-create_thread_pager(Screen, ThreadId, Ordering, MaybeCached, CommonHistory,
-        Info, ResCount, !IO) :-
+create_thread_pager(Config, Screen, ThreadId, Ordering, MaybeCached,
+        CommonHistory, Info, ResCount, !IO) :-
     (
         MaybeCached = yes(MessagesCached),
         ParseResult = ok(MessagesCached)
     ;
         MaybeCached = no,
-        run_notmuch([
+        run_notmuch(Config, [
             "show", "--format=json", "--", thread_id_to_search_term(ThreadId)
         ], parse_messages_list, ParseResult, !IO)
     ),
@@ -269,7 +270,7 @@ create_thread_pager(Screen, ThreadId, Ordering, MaybeCached, CommonHistory,
     time(Time, !IO),
     Nowish = localtime(Time),
     get_rows_cols(Screen, Rows, Cols),
-    setup_thread_pager(ThreadId, Ordering, Nowish, Rows - 2, Cols,
+    setup_thread_pager(Config, ThreadId, Ordering, Nowish, Rows - 2, Cols,
         Messages, CommonHistory, Info, Count, !IO),
     (
         ParseResult = ok(_),
@@ -289,21 +290,22 @@ filter_unwanted_messages(!Message) :-
     list.filter_map(filter_unwanted_messages, Replies0, Replies),
     !Message ^ m_replies := Replies.
 
-:- pred setup_thread_pager(thread_id::in, ordering::in, tm::in, int::in,
-    int::in, list(message)::in, common_history::in, thread_pager_info::out,
-    int::out, io::di, io::uo) is det.
+:- pred setup_thread_pager(prog_config::in, thread_id::in, ordering::in,
+    tm::in, int::in, int::in, list(message)::in, common_history::in,
+    thread_pager_info::out, int::out, io::di, io::uo) is det.
 
-setup_thread_pager(ThreadId, Ordering, Nowish, Rows, Cols, Messages,
+setup_thread_pager(Config, ThreadId, Ordering, Nowish, Rows, Cols, Messages,
         CommonHistory, ThreadPagerInfo, NumThreadLines, !IO) :-
     (
         Ordering = ordering_threaded,
         append_threaded_messages(Nowish, Messages, ThreadLines),
-        setup_pager(include_replies, Cols, Messages, PagerInfo0, !IO)
+        setup_pager(Config, include_replies, Cols, Messages, PagerInfo0, !IO)
     ;
         Ordering = ordering_flat,
         append_flat_messages(Nowish, Messages, ThreadLines,
             SortedFlatMessages),
-        setup_pager(toplevel_only, Cols, SortedFlatMessages, PagerInfo0, !IO)
+        setup_pager(Config, toplevel_only, Cols, SortedFlatMessages,
+            PagerInfo0, !IO)
     ),
     Scrollable0 = scrollable.init_with_cursor(ThreadLines),
     NumThreadLines = get_num_lines(Scrollable0),
@@ -325,7 +327,7 @@ setup_thread_pager(ThreadId, Ordering, Nowish, Rows, Cols, Messages,
         pager.skip_to_message(MessageId, PagerInfo0, PagerInfo)
     ),
     AddedMessages = 0,
-    ThreadPagerInfo = thread_pager_info(ThreadId, Messages, Ordering,
+    ThreadPagerInfo = thread_pager_info(Config, ThreadId, Messages, Ordering,
         Scrollable, NumThreadRows, PagerInfo, NumPagerRows, no, dir_forward,
         CommonHistory, AddedMessages).
 
@@ -630,7 +632,8 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         thread_pager_loop(NewScreen, !Info, !IO)
     ;
         Action = start_reply(Message, ReplyKind),
-        start_reply(Screen, Message, ReplyKind, Transition, !IO),
+        Config = !.Info ^ tp_config,
+        start_reply(Config, Screen, Message, ReplyKind, Transition, !IO),
         handle_screen_transition(Screen, NewScreen, Transition, Sent,
             !Info, !IO),
         (
@@ -1265,7 +1268,8 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
         gather_initial_tags(CursorLine0, no, _AndTagSet, set.init, BothTagSet),
         set.map(tag_to_string, BothTagSet, BothStringSet),
-        Completion = complete_tags_smart(BothStringSet, BothStringSet),
+        Config = !.Info ^ tp_config,
+        Completion = complete_tags_smart(Config, BothStringSet, BothStringSet),
         prompt_arbitrary_tag_changes(Screen, Initial, Completion, TagChanges,
             !Info, !IO),
         (
@@ -1373,12 +1377,14 @@ bulk_tag(Screen, Done, !Info, !IO) :-
         update_message_immed(Screen, set_prompt(Prompt), !IO),
         get_keycode_blocking(KeyCode, !IO),
         ( KeyCode = char('-') ->
-            init_bulk_tag_completion(Lines0, Completion),
+            Config = !.Info ^ tp_config,
+            init_bulk_tag_completion(Config, Lines0, Completion),
             bulk_arbitrary_tag_changes(Screen, "-", Completion, MessageUpdate,
                 !Info, !IO),
             Done = yes
         ; KeyCode = char('+') ->
-            init_bulk_tag_completion(Lines0, Completion),
+            Config = !.Info ^ tp_config,
+            init_bulk_tag_completion(Config, Lines0, Completion),
             bulk_arbitrary_tag_changes(Screen, "+", Completion, MessageUpdate,
                 !Info, !IO),
             Done = yes
@@ -1415,10 +1421,10 @@ any_selected_line(Lines) :-
     list.member(Line, Lines),
     Line ^ tp_selected = selected.
 
-:- pred init_bulk_tag_completion(list(thread_line)::in, completion_type::out)
-    is det.
+:- pred init_bulk_tag_completion(prog_config::in, list(thread_line)::in,
+    completion_type::out) is det.
 
-init_bulk_tag_completion(Lines, Completion) :-
+init_bulk_tag_completion(Config, Lines, Completion) :-
     list.foldl2(gather_bulk_initial_tags, Lines,
         no, MaybeAndTagSet, set.init, OrTagSet),
     (
@@ -1429,7 +1435,7 @@ init_bulk_tag_completion(Lines, Completion) :-
         set.init(AndStringSet)
     ),
     set.map(tag_to_string, OrTagSet, OrStringSet),
-    Completion = complete_tags_smart(AndStringSet, OrStringSet).
+    Completion = complete_tags_smart(Config, AndStringSet, OrStringSet).
 
 :- pred gather_bulk_initial_tags(thread_line::in,
     maybe(set(tag))::in, maybe(set(tag))::out, set(tag)::in, set(tag)::out)
@@ -1648,7 +1654,8 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
         ;
             ResType = error(_),
             % This assumes the file doesn't exist.
-            do_save_part(MessageId, PartId, FileName, Res, !IO),
+            Config = !.Info ^ tp_config,
+            do_save_part(Config, MessageId, PartId, FileName, Res, !IO),
             (
                 Res = ok,
                 ( PartId = 0 ->
@@ -1707,16 +1714,16 @@ make_save_part_initial_prompt(History, PartFilename, Initial) :-
         Initial = PrevDirName / PartFilename
     ).
 
-:- pred do_save_part(message_id::in, int::in, string::in, maybe_error::out,
-    io::di, io::uo) is det.
+:- pred do_save_part(prog_config::in, message_id::in, int::in, string::in,
+    maybe_error::out, io::di, io::uo) is det.
 
-do_save_part(MessageId, Part, FileName, Res, !IO) :-
+do_save_part(Config, MessageId, Part, FileName, Res, !IO) :-
+    get_notmuch_prefix(Config, Notmuch),
     Args = [
         "show", "--format=raw", "--part=" ++ from_int(Part),
         message_id_to_search_term(MessageId)
     ],
     args_to_quoted_command(Args, no, redirect_output(FileName), Command),
-    get_notmuch_prefix(Notmuch, !IO),
     io.call_system(Notmuch ++ Command, CallRes, !IO),
     (
         CallRes = ok(ExitStatus),
@@ -1782,7 +1789,8 @@ prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
         ;
             io.make_temp(FileName, !IO)
         ),
-        do_save_part(MessageId, PartId, FileName, Res, !IO),
+        Config = !.Info ^ tp_config,
+        do_save_part(Config, MessageId, PartId, FileName, Res, !IO),
         (
             Res = ok,
             expand_tilde_home(Home, Command0, Command),
@@ -2021,10 +2029,11 @@ resend(Info, Action, MessageUpdate) :-
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 handle_resend(Screen, MessageId, !Info, !IO) :-
+    Config = !.Info ^ tp_config,
     History0 = !.Info ^ tp_common_history,
     ToHistory0 = History0 ^ ch_to_history,
-    handle_resend(Screen, MessageId, MessageUpdate, ToHistory0, ToHistory,
-        !IO),
+    handle_resend(Config, Screen, MessageId, MessageUpdate, ToHistory0,
+        ToHistory, !IO),
     update_message(Screen, MessageUpdate, !IO),
     History = History0 ^ ch_to_history := ToHistory,
     !Info ^ tp_common_history := History.
@@ -2035,11 +2044,12 @@ handle_resend(Screen, MessageId, !Info, !IO) :-
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 handle_recall(!Screen, ThreadId, Sent, !Info, !IO) :-
-    select_recall(!.Screen, yes(ThreadId), TransitionA, !IO),
+    Config = !.Info ^ tp_config,
+    select_recall(Config, !.Screen, yes(ThreadId), TransitionA, !IO),
     handle_screen_transition(!Screen, TransitionA, MaybeSelected, !Info, !IO),
     (
         MaybeSelected = yes(Message),
-        continue_postponed(!.Screen, Message, TransitionB, !IO),
+        continue_postponed(Config, !.Screen, Message, TransitionB, !IO),
         handle_screen_transition(!Screen, TransitionB, Sent, !Info, !IO)
     ;
         MaybeSelected = no,
@@ -2052,6 +2062,7 @@ handle_recall(!Screen, ThreadId, Sent, !Info, !IO) :-
     is det.
 
 addressbook_add(Screen, Info, !IO) :-
+    Config = Info ^ tp_config,
     Scrollable = Info ^ tp_scrollable,
     ( get_cursor_line(Scrollable, _Cursor, Line) ->
         From = Line ^ tp_message ^ m_headers ^ h_from,
@@ -2059,7 +2070,7 @@ addressbook_add(Screen, Info, !IO) :-
     ;
         Address0 = ""
     ),
-    prompt_addressbook_add(Screen, Address0, !IO).
+    prompt_addressbook_add(Config, Screen, Address0, !IO).
 
 %-----------------------------------------------------------------------------%
 

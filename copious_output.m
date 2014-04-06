@@ -8,9 +8,10 @@
 :- import_module maybe.
 
 :- import_module data.
+:- import_module prog_config.
 
-:- pred expand_part(message_id::in, int::in, maybe(string)::in,
-    maybe_error(string)::out, io::di, io::uo) is det.
+:- pred expand_part(prog_config::in, message_id::in, int::in,
+    maybe(string)::in, maybe_error(string)::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -26,8 +27,8 @@
 
 %-----------------------------------------------------------------------------%
 
-expand_part(MessageId, PartId, MaybeFilterCommand, Res, !IO) :-
-    get_notmuch_prefix(Notmuch, !IO),
+expand_part(ProgConfig, MessageId, PartId, MaybeFilterCommand, Res, !IO) :-
+    get_notmuch_prefix(ProgConfig, Notmuch),
     args_to_quoted_command([
         "show", "--format=raw", "--part=" ++ from_int(PartId),
         message_id_to_search_term(MessageId)

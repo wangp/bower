@@ -9,9 +9,10 @@
 :- import_module stream.
 
 :- import_module data.
+:- import_module prog_config.
 :- import_module rfc5322.
 
-:- pred get_from_address(address::out, io::di, io::uo) is det.
+:- pred get_from_address(prog_config::in, address::out, io::di, io::uo) is det.
 
 :- pred generate_date_msg_id(header_value::out, header_value::out,
     io::di, io::uo) is det.
@@ -61,11 +62,11 @@
 
 %-----------------------------------------------------------------------------%
 
-get_from_address(Address, !IO) :-
-    get_notmuch_config("user.name", ResName, !IO),
+get_from_address(Config, Address, !IO) :-
+    get_notmuch_config(Config, "user.name", ResName, !IO),
     (
         ResName = ok(Name),
-        get_notmuch_config("user.primary_email", ResEmail, !IO),
+        get_notmuch_config(Config, "user.primary_email", ResEmail, !IO),
         (
             ResEmail = ok(Email),
             % XXX Name and Email better be valid

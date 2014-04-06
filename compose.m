@@ -8,6 +8,7 @@
 :- import_module io.
 
 :- import_module data.
+:- import_module prog_config.
 :- import_module rfc5322.
 :- import_module screen.
 :- import_module text_entry.
@@ -21,23 +22,23 @@
     --->    sent
     ;       not_sent.
 
-:- pred start_compose(screen::in, screen_transition(sent)::out,
-    history::in, history::out, history::in, history::out, io::di, io::uo)
-    is det.
+:- pred start_compose(prog_config::in, screen::in,
+    screen_transition(sent)::out, history::in, history::out,
+    history::in, history::out, io::di, io::uo) is det.
 
-:- pred start_reply(screen::in, message::in, reply_kind::in,
+:- pred start_reply(prog_config::in, screen::in, message::in, reply_kind::in,
     screen_transition(sent)::out, io::di, io::uo) is det.
 
-:- pred start_reply_to_message_id(screen::in, message_id::in, reply_kind::in,
-    screen_transition(sent)::out, io::di, io::uo) is det.
+:- pred start_reply_to_message_id(prog_config::in, screen::in, message_id::in,
+    reply_kind::in, screen_transition(sent)::out, io::di, io::uo) is det.
 
-:- pred continue_postponed(screen::in, message::in,
+:- pred continue_postponed(prog_config::in, screen::in, message::in,
     screen_transition(sent)::out, io::di, io::uo) is det.
 
     % Exported for resend.
     %
-:- pred parse_and_expand_addresses_string(string::in, string::out,
-    address_list::out, bool::out, io::di, io::uo) is det.
+:- pred parse_and_expand_addresses_string(prog_config::in, string::in,
+    string::out, address_list::out, bool::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -88,6 +89,7 @@
 
 :- type staging_info
     --->    staging_info(
+                si_config       :: prog_config,
                 si_headers      :: headers,
                 si_parsed_hdrs  :: parsed_headers,
                 si_text         :: string,
@@ -135,10 +137,10 @@
 
 %-----------------------------------------------------------------------------%
 
-start_compose(Screen, Transition, !ToHistory, !SubjectHistory, !IO) :-
-    get_from_address(FromAddress, !IO),
+start_compose(Config, Screen, Transition, !ToHistory, !SubjectHistory, !IO) :-
+    get_from_address(Config, FromAddress, !IO),
     text_entry_initial(Screen, "To: ", !.ToHistory, "",
-        complete_config_key(addressbook_section), MaybeTo, !IO),
+        complete_config_key(Config, addressbook_section), MaybeTo, !IO),
     (
         MaybeTo = yes(To),
         add_history_nodup(To, !ToHistory),
@@ -148,7 +150,7 @@ start_compose(Screen, Transition, !ToHistory, !SubjectHistory, !IO) :-
             MaybeSubject = yes(Subject),
             add_history_nodup(Subject, !SubjectHistory),
             address_to_string(no_encoding, FromAddress, From, _FromValid),
-            expand_aliases(To, ExpandTo, !IO),
+            expand_aliases(Config, To, ExpandTo, !IO),
             some [!Headers] (
                 !:Headers = init_headers,
                 !Headers ^ h_from := header_value(From),
@@ -159,7 +161,7 @@ start_compose(Screen, Transition, !ToHistory, !SubjectHistory, !IO) :-
             Text = "",
             Attachments = [],
             MaybeOldDraft = no,
-            create_edit_stage(Screen, Headers, Text, Attachments,
+            create_edit_stage(Config, Screen, Headers, Text, Attachments,
                 MaybeOldDraft, Transition, !IO)
         ;
             MaybeSubject = no,
@@ -170,20 +172,22 @@ start_compose(Screen, Transition, !ToHistory, !SubjectHistory, !IO) :-
         Transition = screen_transition(not_sent, no_change)
     ).
 
-:- pred expand_aliases(string::in, string::out, io::di, io::uo) is det.
+:- pred expand_aliases(prog_config::in, string::in, string::out,
+    io::di, io::uo) is det.
 
-expand_aliases(Input, Output, !IO) :-
-    parse_and_expand_addresses_string(Input, Output, _Addresses, _Valid, !IO).
+expand_aliases(Config, Input, Output, !IO) :-
+    parse_and_expand_addresses_string(Config, Input, Output, _Addresses,
+        _Valid, !IO).
 
 %-----------------------------------------------------------------------------%
 
-start_reply(Screen, Message, ReplyKind, Transition, !IO) :-
+start_reply(Config, Screen, Message, ReplyKind, Transition, !IO) :-
     Message ^ m_id = MessageId,
     args_to_quoted_command([
         "reply", reply_to_arg(ReplyKind), "--",
         message_id_to_search_term(MessageId)
     ], Command),
-    get_notmuch_prefix(Notmuch, !IO),
+    get_notmuch_prefix(Config, Notmuch),
     call_system_capture_stdout(Notmuch ++ Command, no, CommandResult, !IO),
     (
         CommandResult = ok(String),
@@ -201,8 +205,8 @@ start_reply(Screen, Message, ReplyKind, Transition, !IO) :-
         ),
         Attachments = [],
         MaybeOldDraft = no,
-        create_edit_stage(Screen, Headers, Text, Attachments, MaybeOldDraft,
-            Transition, !IO)
+        create_edit_stage(Config, Screen, Headers, Text, Attachments,
+            MaybeOldDraft, Transition, !IO)
     ;
         CommandResult = error(Error),
         string.append_list(["Error running notmuch: ",
@@ -271,14 +275,14 @@ similar_mailbox(AddrSpec, OtherAddress) :-
 
 %-----------------------------------------------------------------------------%
 
-start_reply_to_message_id(Screen, MessageId, ReplyKind, Sent, !IO) :-
-    run_notmuch([
+start_reply_to_message_id(Config, Screen, MessageId, ReplyKind, Sent, !IO) :-
+    run_notmuch(Config, [
         "show", "--format=json", "--part=0", "--",
         message_id_to_search_term(MessageId)
     ], parse_top_message, Res, !IO),
     (
         Res = ok(Message),
-        start_reply(Screen, Message, ReplyKind, Sent, !IO)
+        start_reply(Config, Screen, Message, ReplyKind, Sent, !IO)
     ;
         Res = error(Error),
         unexpected($module, $pred, Error)
@@ -286,7 +290,7 @@ start_reply_to_message_id(Screen, MessageId, ReplyKind, Sent, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-continue_postponed(Screen, Message, Transition, !IO) :-
+continue_postponed(Config, Screen, Message, Transition, !IO) :-
     MessageId = Message ^ m_id,
     Headers0 = Message ^ m_headers,
     Body0 = Message ^ m_body,
@@ -298,7 +302,7 @@ continue_postponed(Screen, Message, Transition, !IO) :-
     args_to_quoted_command([
         "show", "--format=raw", "--", message_id_to_search_term(MessageId)
     ], Command),
-    get_notmuch_prefix(Notmuch, !IO),
+    get_notmuch_prefix(Config, Notmuch),
     call_system_capture_stdout(Notmuch ++ Command, no, CallRes, !IO),
     (
         CallRes = ok(String),
@@ -310,8 +314,8 @@ continue_postponed(Screen, Message, Transition, !IO) :-
             !Headers ^ h_inreplyto := (HeadersB ^ h_inreplyto),
             Headers = !.Headers
         ),
-        create_edit_stage(Screen, Headers, Text, Attachments, yes(MessageId),
-            Transition, !IO)
+        create_edit_stage(Config, Screen, Headers, Text, Attachments,
+            yes(MessageId), Transition, !IO)
     ;
         CallRes = error(Error),
         string.append_list(["Error running notmuch: ",
@@ -346,18 +350,18 @@ to_old_attachment(Part, old_attachment(Part)).
 
 %-----------------------------------------------------------------------------%
 
-:- pred create_edit_stage(screen::in, headers::in, string::in,
+:- pred create_edit_stage(prog_config::in, screen::in, headers::in, string::in,
     list(attachment)::in, maybe(message_id)::in, screen_transition(sent)::out,
     io::di, io::uo) is det.
 
-create_edit_stage(Screen, Headers0, Text0, Attachments, MaybeOldDraft,
+create_edit_stage(Config, Screen, Headers0, Text0, Attachments, MaybeOldDraft,
         Transition, !IO) :-
     make_parsed_headers(Headers0, ParsedHeaders0),
-    create_temp_message_file(prepare_edit, Headers0, ParsedHeaders0, Text0,
-        Attachments, ResFilename, !IO),
+    create_temp_message_file(Config, prepare_edit, Headers0, ParsedHeaders0,
+        Text0, Attachments, ResFilename, !IO),
     (
         ResFilename = ok(Filename),
-        call_editor(Filename, ResEdit, !IO),
+        call_editor(Config, Filename, ResEdit, !IO),
         (
             ResEdit = ok,
             parse_message_file(Filename, ResParse, !IO),
@@ -365,7 +369,7 @@ create_edit_stage(Screen, Headers0, Text0, Attachments, MaybeOldDraft,
                 ResParse = ok(Headers1 - Text),
                 io.remove_file(Filename, _, !IO),
                 update_references(Headers0, Headers1, Headers2),
-                enter_staging(Screen, Headers2, Text, Attachments,
+                enter_staging(Config, Screen, Headers2, Text, Attachments,
                     MaybeOldDraft, Transition, !IO)
             ;
                 ResParse = error(Error),
@@ -397,10 +401,11 @@ make_parsed_headers(Headers, Parsed) :-
     Parsed = parsed_headers(ParsedFrom, ParsedTo, ParsedCc, ParsedBcc,
         ParsedReplyTo).
 
-:- pred call_editor(string::in, call_res::out, io::di, io::uo) is det.
+:- pred call_editor(prog_config::in, string::in, call_res::out, io::di, io::uo)
+    is det.
 
-call_editor(Filename, Res, !IO) :-
-    get_editor_command(Editor, !IO),
+call_editor(Config, Filename, Res, !IO) :-
+    get_editor_command(Config, Editor),
     curs.def_prog_mode(!IO),
     curs.stop(!IO),
     io.call_system(Editor ++ " " ++ quote_arg(Filename), CallRes, !IO),
@@ -438,74 +443,79 @@ update_references(Headers0, !Headers) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred enter_staging(screen::in, headers::in, string::in,
+:- pred enter_staging(prog_config::in, screen::in, headers::in, string::in,
     list(attachment)::in, maybe(message_id)::in, screen_transition(sent)::out,
     io::di, io::uo) is det.
 
-enter_staging(Screen, Headers0, Text, Attachments, MaybeOldDraft,
+enter_staging(Config, Screen, Headers0, Text, Attachments, MaybeOldDraft,
         Transition, !IO) :-
-    parse_and_expand_headers(Headers0, Headers, Parsed, !IO),
-    StagingInfo = staging_info(Headers, Parsed, Text, MaybeOldDraft,
+    parse_and_expand_headers(Config, Headers0, Headers, Parsed, !IO),
+    StagingInfo = staging_info(Config, Headers, Parsed, Text, MaybeOldDraft,
         init_history),
     AttachInfo = scrollable.init_with_cursor(Attachments),
     get_cols(Screen, Cols),
-    setup_pager_for_staging(Cols, Text, new_pager, PagerInfo),
+    setup_pager_for_staging(Config, Cols, Text, new_pager, PagerInfo),
     staging_screen(Screen, StagingInfo, AttachInfo, PagerInfo, Transition,
         !IO).
 
-:- pred parse_and_expand_headers(headers::in, headers::out,
+:- pred parse_and_expand_headers(prog_config::in, headers::in, headers::out,
     parsed_headers::out, io::di, io::uo) is det.
 
-parse_and_expand_headers(Headers0, Headers, Parsed, !IO) :-
+parse_and_expand_headers(Config, Headers0, Headers, Parsed, !IO) :-
     Headers0 = headers(Date, From0, To0, Cc0, Bcc0, Subject, ReplyTo0,
         References, InReplyTo, Rest),
 
     % [RFC 6854] allows group syntax in From - saves us work.
-    parse_and_expand_addresses(From0, From, ParsedFrom, !IO),
-    parse_and_expand_addresses(To0, To, ParsedTo, !IO),
-    parse_and_expand_addresses(Cc0, Cc, ParsedCc, !IO),
-    parse_and_expand_addresses(Bcc0, Bcc, ParsedBcc, !IO),
-    parse_and_expand_addresses(ReplyTo0, ReplyTo, ParsedReplyTo, !IO),
+    parse_and_expand_addresses(Config, From0, From, ParsedFrom, !IO),
+    parse_and_expand_addresses(Config, To0, To, ParsedTo, !IO),
+    parse_and_expand_addresses(Config, Cc0, Cc, ParsedCc, !IO),
+    parse_and_expand_addresses(Config, Bcc0, Bcc, ParsedBcc, !IO),
+    parse_and_expand_addresses(Config, ReplyTo0, ReplyTo, ParsedReplyTo, !IO),
 
     Headers = headers(Date, From, To, Cc, Bcc, Subject, ReplyTo,
         References, InReplyTo, Rest),
     Parsed = parsed_headers(ParsedFrom, ParsedTo, ParsedCc, ParsedBcc,
         ParsedReplyTo).
 
-:- pred parse_and_expand_addresses(header_value::in, header_value::out,
-    address_list::out, io::di, io::uo) is det.
+:- pred parse_and_expand_addresses(prog_config::in, header_value::in,
+    header_value::out, address_list::out, io::di, io::uo) is det.
 
-parse_and_expand_addresses(Input, header_value(Output), Addresses, !IO) :-
-    parse_and_expand_addresses_string(header_value_string(Input),
+parse_and_expand_addresses(Config, Input, header_value(Output), Addresses, !IO)
+        :-
+    parse_and_expand_addresses_string(Config, header_value_string(Input),
         Output, Addresses, _Valid, !IO).
 
-parse_and_expand_addresses_string(Input, Output, Addresses, Valid, !IO) :-
+parse_and_expand_addresses_string(Config, Input, Output, Addresses, Valid, !IO)
+        :-
     parse_address_list(Input, Addresses0),
-    list.map_foldl(maybe_expand_address, Addresses0, Addresses, !IO),
+    list.map_foldl(maybe_expand_address(Config), Addresses0, Addresses, !IO),
     address_list_to_string(no_encoding, Addresses, Output, Valid).
 
-:- pred maybe_expand_address(address::in, address::out, io::di, io::uo) is det.
+:- pred maybe_expand_address(prog_config::in, address::in, address::out,
+    io::di, io::uo) is det.
 
-maybe_expand_address(Address0, Address, !IO) :-
+maybe_expand_address(Config, Address0, Address, !IO) :-
     (
         Address0 = mailbox(Mailbox0),
-        maybe_expand_mailbox(Mailbox0, Mailbox, !IO),
+        maybe_expand_mailbox(Config, Mailbox0, Mailbox, !IO),
         Address = mailbox(Mailbox)
     ;
         Address0 = group(DisplayName, Mailboxes0),
-        list.map_foldl(maybe_expand_mailbox, Mailboxes0, Mailboxes, !IO),
+        list.map_foldl(maybe_expand_mailbox(Config), Mailboxes0, Mailboxes,
+            !IO),
         Address = group(DisplayName, Mailboxes)
     ).
 
-:- pred maybe_expand_mailbox(mailbox::in, mailbox::out, io::di, io::uo) is det.
+:- pred maybe_expand_mailbox(prog_config::in, mailbox::in, mailbox::out,
+    io::di, io::uo) is det.
 
-maybe_expand_mailbox(Mailbox0, Mailbox, !IO) :-
+maybe_expand_mailbox(Config, Mailbox0, Mailbox, !IO) :-
     (
         Mailbox0 = mailbox(_, _),
         Mailbox = Mailbox0
     ;
         Mailbox0 = bad_mailbox(PotentialAlias),
-        search_addressbook(PotentialAlias, MaybeFound, !IO),
+        search_addressbook(Config, PotentialAlias, MaybeFound, !IO),
         (
             MaybeFound = yes(Expansion),
             parse_address(Expansion, mailbox(Mailbox1))
@@ -524,8 +534,8 @@ maybe_expand_mailbox(Mailbox0, Mailbox, !IO) :-
 
 staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         !IO) :-
-    !.StagingInfo = staging_info(Headers, ParsedHeaders, Text, MaybeOldDraft,
-        _AttachHistory),
+    !.StagingInfo = staging_info(Config, Headers, ParsedHeaders, Text,
+        MaybeOldDraft, _AttachHistory),
     split_panels(Screen, HeaderPanels, AttachmentPanels, MaybeSepPanel,
         PagerPanels),
     draw_header_lines(HeaderPanels, Headers, ParsedHeaders, !IO),
@@ -584,8 +594,8 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         Action = continue
     ; KeyCode = char('p') ->
         Attachments = get_lines_list(!.AttachInfo),
-        postpone(Screen, Headers, ParsedHeaders, Text, Attachments, Res,
-            PostponeMsg, !IO),
+        postpone(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
+            Res, PostponeMsg, !IO),
         (
             Res = yes,
             maybe_remove_draft(!.StagingInfo, !IO),
@@ -597,11 +607,11 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         )
     ; KeyCode = char('Y') ->
         Attachments = get_lines_list(!.AttachInfo),
-        send_mail(Screen, Headers, ParsedHeaders, Text, Attachments, Sent0,
-            MessageUpdate0, !IO),
+        send_mail(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
+            Sent0, MessageUpdate0, !IO),
         (
             Sent0 = sent,
-            tag_replied_message(Headers, TagRes, !IO),
+            tag_replied_message(Config, Headers, TagRes, !IO),
             maybe_remove_draft(!.StagingInfo, !IO),
             (
                 TagRes = ok,
@@ -661,7 +671,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         Action = edit,
         EditAttachments = get_lines_list(!.AttachInfo),
         % XXX make this tail-recursive in hlc
-        create_edit_stage(Screen, Headers, Text, EditAttachments,
+        create_edit_stage(Config, Screen, Headers, Text, EditAttachments,
             MaybeOldDraft, Transition, !IO)
     ;
         Action = leave(Sent, TransitionMessage),
@@ -678,8 +688,9 @@ resize_staging_screen(Screen0, Screen, StagingInfo, PagerInfo0, PagerInfo,
     split_panels(Screen, _HeaderPanels, _AttachmentPanels, _MaybeSepPanel,
         PagerPanels),
     NumPagerRows = list.length(PagerPanels),
+    Config = StagingInfo ^ si_config,
     Text = StagingInfo ^ si_text,
-    setup_pager_for_staging(Cols, Text,
+    setup_pager_for_staging(Config, Cols, Text,
         retain_pager_pos(PagerInfo0, NumPagerRows), PagerInfo).
 
 %-----------------------------------------------------------------------------%
@@ -688,12 +699,13 @@ resize_staging_screen(Screen0, Screen, StagingInfo, PagerInfo0, PagerInfo,
     staging_info::in, staging_info::out, io::di, io::uo) is det.
 
 edit_header(Screen, HeaderType, !StagingInfo, !IO) :-
+    Config = !.StagingInfo ^ si_config,
     Headers0 = !.StagingInfo ^ si_headers,
     get_header(HeaderType, Headers0, Prompt, Initial, CompleteAddressbook),
     InitialString = header_value_string(Initial),
     (
         CompleteAddressbook = yes,
-        Completion = complete_config_key(addressbook_section)
+        Completion = complete_config_key(Config, addressbook_section)
     ;
         CompleteAddressbook = no,
         Completion = complete_none
@@ -710,7 +722,7 @@ edit_header(Screen, HeaderType, !StagingInfo, !IO) :-
             Value = decoded_unstructured(ReturnString)
         ),
         ParsedHeaders0 = !.StagingInfo ^ si_parsed_hdrs,
-        update_header(HeaderType, Value, Headers0, Headers,
+        update_header(Config, HeaderType, Value, Headers0, Headers,
             ParsedHeaders0, ParsedHeaders, !IO),
         !StagingInfo ^ si_headers := Headers,
         !StagingInfo ^ si_parsed_hdrs := ParsedHeaders
@@ -728,34 +740,34 @@ get_header(bcc,     H, "Bcc: ",      H ^ h_bcc,     yes).
 get_header(subject, H, "Subject: ",  H ^ h_subject, no).
 get_header(replyto, H, "Reply-To: ", H ^ h_replyto, yes).
 
-:- pred update_header(header_type::in, header_value::in,
+:- pred update_header(prog_config::in, header_type::in, header_value::in,
     headers::in, headers::out, parsed_headers::in, parsed_headers::out,
     io::di, io::uo) is det.
 
-update_header(HeaderType, Input, !Headers, !Parsed, !IO) :-
+update_header(Config, HeaderType, Input, !Headers, !Parsed, !IO) :-
     (
         HeaderType = from,
-        parse_and_expand_addresses(Input, Output, Parsed, !IO),
+        parse_and_expand_addresses(Config, Input, Output, Parsed, !IO),
         !Headers ^ h_from := Output,
         !Parsed ^ ph_from := Parsed
     ;
         HeaderType = to,
-        parse_and_expand_addresses(Input, Output, Parsed, !IO),
+        parse_and_expand_addresses(Config, Input, Output, Parsed, !IO),
         !Headers ^ h_to := Output,
         !Parsed ^ ph_to := Parsed
     ;
         HeaderType = cc,
-        parse_and_expand_addresses(Input, Output, Parsed, !IO),
+        parse_and_expand_addresses(Config, Input, Output, Parsed, !IO),
         !Headers ^ h_cc := Output,
         !Parsed ^ ph_cc := Parsed
     ;
         HeaderType = bcc,
-        parse_and_expand_addresses(Input, Output, Parsed, !IO),
+        parse_and_expand_addresses(Config, Input, Output, Parsed, !IO),
         !Headers ^ h_bcc := Output,
         !Parsed ^ ph_bcc := Parsed
     ;
         HeaderType = replyto,
-        parse_and_expand_addresses(Input, Output, Parsed, !IO),
+        parse_and_expand_addresses(Config, Input, Output, Parsed, !IO),
         !Headers ^ h_replyto := Output,
         !Parsed ^ ph_replyto := Parsed
     ;
@@ -1240,18 +1252,18 @@ draw_staging_bar(Screen, StagingInfo, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred postpone(screen::in, headers::in, parsed_headers::in, string::in,
-    list(attachment)::in, bool::out, message_update::out, io::di, io::uo)
-    is det.
+:- pred postpone(prog_config::in, screen::in, headers::in, parsed_headers::in,
+    string::in, list(attachment)::in, bool::out, message_update::out,
+    io::di, io::uo) is det.
 
-postpone(Screen, Headers, ParsedHeaders, Text, Attachments, Res, MessageUpdate,
-        !IO) :-
-    create_temp_message_file(prepare_postpone, Headers, ParsedHeaders, Text,
-        Attachments, ResFilename, !IO),
+postpone(Config, Screen, Headers, ParsedHeaders, Text, Attachments, Res,
+        MessageUpdate, !IO) :-
+    create_temp_message_file(Config, prepare_postpone, Headers, ParsedHeaders,
+        Text, Attachments, ResFilename, !IO),
     (
         ResFilename = ok(Filename),
         update_message_immed(Screen, set_info("Postponing message..."), !IO),
-        add_draft(Filename, DraftRes, !IO),
+        add_draft(Config, Filename, DraftRes, !IO),
         io.remove_file(Filename, _, !IO),
         (
             DraftRes = ok,
@@ -1271,28 +1283,29 @@ postpone(Screen, Headers, ParsedHeaders, Text, Attachments, Res, MessageUpdate,
 :- pred maybe_remove_draft(staging_info::in, io::di, io::uo) is det.
 
 maybe_remove_draft(StagingInfo, !IO) :-
+    Config = StagingInfo ^ si_config,
     MaybeOldDraft = StagingInfo ^ si_old_msgid,
     (
         MaybeOldDraft = yes(MessageId),
-        tag_messages([tag_delta("+deleted")], [MessageId], _Res, !IO)
+        tag_messages(Config, [tag_delta("+deleted")], [MessageId], _Res, !IO)
     ;
         MaybeOldDraft = no
     ).
 
 %-----------------------------------------------------------------------------%
 
-:- pred send_mail(screen::in, headers::in, parsed_headers::in, string::in,
-    list(attachment)::in, sent::out, message_update::out, io::di, io::uo)
-    is det.
+:- pred send_mail(prog_config::in, screen::in, headers::in, parsed_headers::in,
+    string::in, list(attachment)::in, sent::out, message_update::out,
+    io::di, io::uo) is det.
 
-send_mail(Screen, Headers, ParsedHeaders, Text, Attachments, Res,
+send_mail(Config, Screen, Headers, ParsedHeaders, Text, Attachments, Res,
         MessageUpdate, !IO) :-
-    create_temp_message_file(prepare_send, Headers, ParsedHeaders, Text,
-        Attachments, ResFilename, !IO),
+    create_temp_message_file(Config, prepare_send, Headers, ParsedHeaders,
+        Text, Attachments, ResFilename, !IO),
     (
         ResFilename = ok(Filename),
         update_message_immed(Screen, set_info("Sending message..."), !IO),
-        call_send_mail(Filename, SendRes, !IO),
+        call_send_mail(Config, Filename, SendRes, !IO),
         io.remove_file(Filename, _, !IO),
         (
             SendRes = ok,
@@ -1309,15 +1322,16 @@ send_mail(Screen, Headers, ParsedHeaders, Text, Attachments, Res,
         Res = not_sent
     ).
 
-:- pred call_send_mail(string::in, call_res::out, io::di, io::uo) is det.
+:- pred call_send_mail(prog_config::in, string::in, call_res::out,
+    io::di, io::uo) is det.
 
-call_send_mail(Filename, Res, !IO) :-
-    get_sendmail_command(sendmail_read_recipients, Command, !IO),
+call_send_mail(Config, Filename, Res, !IO) :-
+    get_sendmail_command(Config, sendmail_read_recipients, Command),
     io.call_system(Command ++ " < " ++ quote_arg(Filename), ResSend, !IO),
     (
         ResSend = ok(ExitStatus),
         ( ExitStatus = 0 ->
-            call_post_sendmail_command(Filename, ResAfter, !IO),
+            call_post_sendmail_command(Config, Filename, ResAfter, !IO),
             (
                 ResAfter = ok,
                 Res = ok
@@ -1336,11 +1350,11 @@ call_send_mail(Filename, Res, !IO) :-
         Res = error(Msg)
     ).
 
-:- pred call_post_sendmail_command(string::in, maybe_error::out,
-    io::di, io::uo) is det.
+:- pred call_post_sendmail_command(prog_config::in, string::in,
+    maybe_error::out, io::di, io::uo) is det.
 
-call_post_sendmail_command(Filename, Res, !IO) :-
-    get_maybe_post_sendmail_command(MaybeCommand, !IO),
+call_post_sendmail_command(Config, Filename, Res, !IO) :-
+    get_maybe_post_sendmail_command(Config, MaybeCommand),
     (
         MaybeCommand = yes(Command),
         ( Command = "" ->
@@ -1365,13 +1379,13 @@ call_post_sendmail_command(Filename, Res, !IO) :-
     ;
         MaybeCommand = no,
         % Default behaviour.
-        add_sent(Filename, Res, !IO)
+        add_sent(Config, Filename, Res, !IO)
     ).
 
-:- pred tag_replied_message(headers::in, maybe_error::out, io::di, io::uo)
-    is det.
+:- pred tag_replied_message(prog_config::in, headers::in, maybe_error::out,
+    io::di, io::uo) is det.
 
-tag_replied_message(Headers, Res, !IO) :-
+tag_replied_message(Config, Headers, Res, !IO) :-
     InReplyTo0 = header_value_string(Headers ^ h_inreplyto),
     (
         % XXX could improve this
@@ -1382,7 +1396,7 @@ tag_replied_message(Headers, Res, !IO) :-
     ->
         string.between(InReplyTo0, 1, LastPos, Id),
         MessageId = message_id(Id),
-        tag_messages([tag_delta("+replied"), tag_delta("-unread")],
+        tag_messages(Config, [tag_delta("+replied"), tag_delta("-unread")],
             [MessageId], Res, !IO)
     ;
         Res = ok
@@ -1395,12 +1409,12 @@ tag_replied_message(Headers, Res, !IO) :-
     ;       prepare_edit
     ;       prepare_postpone.
 
-:- pred create_temp_message_file(prepare_temp::in, headers::in,
-    parsed_headers::in, string::in, list(attachment)::in,
+:- pred create_temp_message_file(prog_config::in, prepare_temp::in,
+    headers::in, parsed_headers::in, string::in, list(attachment)::in,
     maybe_error(string)::out, io::di, io::uo) is det.
 
-create_temp_message_file(Prepare, Headers, ParsedHeaders, Text, Attachments,
-        Res, !IO) :-
+create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
+        Attachments, Res, !IO) :-
     some [!State] (
         !:State = init,
         generate_date_msg_id(Date, MessageId, !IO),
@@ -1414,7 +1428,7 @@ create_temp_message_file(Prepare, Headers, ParsedHeaders, Text, Attachments,
         ;
             HeaderString = to_string(!.State),
             maybe_mime(Prepare, Attachments, MaybeMIME, !IO),
-            write_temp_message_file(HeaderString, MaybeMIME, Text,
+            write_temp_message_file(Config, HeaderString, MaybeMIME, Text,
                 Attachments, Res, !IO)
         )
     ).
@@ -1425,19 +1439,20 @@ stop_at_header_error(prepare_send) = yes.
 stop_at_header_error(prepare_edit) = no.
 stop_at_header_error(prepare_postpone) = no.
 
-:- pred write_temp_message_file(string::in, maybe(mime)::in, string::in,
-    list(attachment)::in, maybe_error(string)::out, io::di, io::uo) is det.
+:- pred write_temp_message_file(prog_config::in, string::in, maybe(mime)::in,
+    string::in, list(attachment)::in, maybe_error(string)::out, io::di, io::uo)
+    is det.
 
-write_temp_message_file(HeaderString, MaybeMIME, Text, Attachments, Res, !IO)
-        :-
+write_temp_message_file(Config, HeaderString, MaybeMIME, Text, Attachments,
+        Res, !IO) :-
     io.make_temp(Filename, !IO),
     io.open_output(Filename, ResOpen, !IO),
     (
         ResOpen = ok(Stream),
         promise_equivalent_solutions [Res, !:IO] (
           try [io(!IO)] (
-            write_temp_message_file_2(Stream, HeaderString, MaybeMIME, Text,
-                Attachments, !IO),
+            write_temp_message_file_2(Stream, Config, HeaderString, MaybeMIME,
+                Text, Attachments, !IO),
             io.close_output(Stream, !IO)
           )
           then
@@ -1452,11 +1467,12 @@ write_temp_message_file(HeaderString, MaybeMIME, Text, Attachments, Res, !IO)
         Res = error(Message)
     ).
 
-:- pred write_temp_message_file_2(io.output_stream::in, string::in,
-    maybe(mime)::in, string::in, list(attachment)::in, io::di, io::uo) is det.
+:- pred write_temp_message_file_2(io.output_stream::in, prog_config::in,
+    string::in, maybe(mime)::in, string::in, list(attachment)::in, io::di,
+    io::uo) is det.
 
-write_temp_message_file_2(Stream, HeaderString, MaybeMIME, Text, Attachments,
-        !IO) :-
+write_temp_message_file_2(Stream, Config, HeaderString, MaybeMIME, Text,
+        Attachments, !IO) :-
     % XXX detect charset
     Charset = "utf-8",
     io.write_string(Stream, HeaderString, !IO),
@@ -1476,7 +1492,7 @@ write_temp_message_file_2(Stream, HeaderString, MaybeMIME, Text, Attachments,
         MaybeMIME = yes(mime_multipart(Boundary)),
         write_mime_part_boundary(Stream, Boundary, !IO),
         write_mime_part_text(Stream, Charset, Text, !IO),
-        list.foldl(write_mime_part_attachment(Stream, Boundary),
+        list.foldl(write_mime_part_attachment(Stream, Config, Boundary),
             Attachments, !IO),
         write_mime_final_boundary(Stream, Boundary, !IO)
     ).
@@ -1702,10 +1718,10 @@ write_mime_part_text(Stream, Charset, Text, !IO) :-
     io.nl(Stream, !IO),
     io.write_string(Stream, Text, !IO).
 
-:- pred write_mime_part_attachment(io.output_stream::in, string::in,
-    attachment::in, io::di, io::uo) is det.
+:- pred write_mime_part_attachment(io.output_stream::in, prog_config::in,
+    string::in, attachment::in, io::di, io::uo) is det.
 
-write_mime_part_attachment(Stream, Boundary, Attachment, !IO) :-
+write_mime_part_attachment(Stream, Config, Boundary, Attachment, !IO) :-
     (
         Attachment = old_attachment(Part),
         Type = Part ^ pt_type,
@@ -1721,7 +1737,7 @@ write_mime_part_attachment(Stream, Boundary, Attachment, !IO) :-
             % parse_part.  We don't actually support Content-Disposition:
             % inline attachments yet.
             CTE = "base64",
-            get_non_text_part_base64(Part, ContentString, !IO)
+            get_non_text_part_base64(Config, Part, ContentString, !IO)
         ;
             Content = subparts(_),
             unexpected($module, $pred, "nested part")
@@ -1755,15 +1771,16 @@ write_mime_part_attachment(Stream, Boundary, Attachment, !IO) :-
     io.nl(Stream, !IO),
     io.write_string(Stream, ContentString, !IO).
 
-:- pred get_non_text_part_base64(part::in, string::out, io::di, io::uo) is det.
+:- pred get_non_text_part_base64(prog_config::in, part::in, string::out,
+    io::di, io::uo) is det.
 
-get_non_text_part_base64(Part, Content, !IO) :-
+get_non_text_part_base64(Config, Part, Content, !IO) :-
     Part = part(MessageId, PartId, _, _, _, _, _),
     args_to_quoted_command([
         "show", "--format=raw", "--part=" ++ from_int(PartId),
         message_id_to_search_term(MessageId)
     ], Command),
-    get_notmuch_prefix(Notmuch, !IO),
+    get_notmuch_prefix(Config, Notmuch),
     call_system_capture_stdout(Notmuch ++ Command ++ " |base64", no, CallRes,
         !IO),
     (

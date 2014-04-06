@@ -10,17 +10,19 @@
 
 :- import_module data.
 :- import_module json.
+:- import_module prog_config.
 
 %-----------------------------------------------------------------------------%
 
-:- pred get_notmuch_config(string::in, io.res(string)::out, io::di, io::uo)
-    is det.
-
-:- pred get_notmuch_config(string::in, string::in, io.res(string)::out,
+:- pred get_notmuch_config(prog_config::in, string::in, io.res(string)::out,
     io::di, io::uo) is det.
 
-:- pred run_notmuch(list(string)::in, pred(json, T)::in(pred(in, out) is det),
-    maybe_error(T)::out, io::di, io::uo) is det.
+:- pred get_notmuch_config(prog_config::in, string::in, string::in,
+    io.res(string)::out, io::di, io::uo) is det.
+
+:- pred run_notmuch(prog_config::in, list(string)::in,
+    pred(json, T)::in(pred(in, out) is det), maybe_error(T)::out,
+    io::di, io::uo) is det.
 
 :- pred parse_messages_list(json::in, list(message)::out) is det.
 
@@ -48,8 +50,8 @@
 
 %-----------------------------------------------------------------------------%
 
-get_notmuch_config(Key, Res, !IO) :-
-    get_notmuch_prefix(Notmuch, !IO),
+get_notmuch_config(Config, Key, Res, !IO) :-
+    get_notmuch_prefix(Config, Notmuch),
     % Key is assumed to be quoted already.
     Command = Notmuch ++ "config get " ++ Key ++ " 2>/dev/null",
     call_system_capture_stdout(Command, no, Res0, !IO),
@@ -62,24 +64,24 @@ get_notmuch_config(Key, Res, !IO) :-
         Res = Res0
     ).
 
-get_notmuch_config(Section, Key, Res, !IO) :-
-    get_notmuch_config(quote_arg(Section ++ "." ++ Key), Res, !IO).
+get_notmuch_config(Config, Section, Key, Res, !IO) :-
+    get_notmuch_config(Config, quote_arg(Section ++ "." ++ Key), Res, !IO).
 
 %-----------------------------------------------------------------------------%
 
-run_notmuch(Args, P, Result, !IO) :-
+run_notmuch(Config, Args, P, Result, !IO) :-
+    get_notmuch_prefix(Config, Notmuch),
+    args_to_quoted_command(Args, Command),
+    FullCommand = Notmuch ++ Command,
     promise_equivalent_solutions [Result, !:IO] (
-        run_notmuch_cc(Args, P, Result, !IO)
+        call_command_parse_json(FullCommand, P, Result, !IO)
     ).
 
-:- pred run_notmuch_cc(list(string)::in,
-    pred(json, T)::in(pred(in, out) is det), maybe_error(T)::out,
-    io::di, io::uo) is cc_multi.
+:- pred call_command_parse_json(string::in, pred(json, T)::in(pred(in, out) is det),
+    maybe_error(T)::out, io::di, io::uo) is cc_multi.
 
-run_notmuch_cc(Args, P, Result, !IO) :-
-    args_to_quoted_command(Args, Command),
-    get_notmuch_prefix(Notmuch, !IO),
-    call_system_capture_stdout(Notmuch ++ Command, no, CommandResult, !IO),
+call_command_parse_json(Command, P, Result, !IO) :-
+    call_system_capture_stdout(Command, no, CommandResult, !IO),
     (
         CommandResult = ok(String),
         parse_json(String, ParseResult),

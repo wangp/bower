@@ -8,15 +8,20 @@
 :- import_module io.
 :- import_module list.
 
+:- import_module prog_config.
+
+%-----------------------------------------------------------------------------%
+
 :- type token.
 
-:- pred predigest_search_string(string::in, list(token)::out, io::di, io::uo)
-    is det.
+:- pred predigest_search_string(prog_config::in, string::in, list(token)::out,
+    io::di, io::uo) is det.
 
 :- pred tokens_to_search_terms(list(token)::in, string::out, bool::out,
     io::di, io::uo) is det.
 
-:- pred get_default_search_terms(string::out, io::di, io::uo) is det.
+:- pred get_default_search_terms(prog_config::in, string::out, io::di, io::uo)
+    is det.
 
 :- func search_alias_section = string.
 
@@ -46,10 +51,10 @@
 
 %-----------------------------------------------------------------------------%
 
-predigest_search_string(String, Tokens, !IO) :-
+predigest_search_string(Config, String, Tokens, !IO) :-
     det_parse(String, tokens, Tokens0),
     Seen = set.init,
-    expand_config_aliases(Seen, Tokens0, Tokens1, !IO),
+    expand_config_aliases(Config, Seen, Tokens0, Tokens1, !IO),
     ( list.all_true(should_apply_default_filter, Tokens1) ->
         add_default_filters(Tokens1, Tokens)
     ;
@@ -192,20 +197,20 @@ simple_alias("~A", do_not_apply_limit).
 
 %-----------------------------------------------------------------------------%
 
-:- pred expand_config_aliases(set(string)::in, list(token)::in,
-    list(token)::out, io::di, io::uo) is det.
+:- pred expand_config_aliases(prog_config::in, set(string)::in,
+    list(token)::in, list(token)::out, io::di, io::uo) is det.
 
-expand_config_aliases(Seen, Tokens0, Tokens, !IO) :-
-    list.map_foldl(expand_config_alias(Seen), Tokens0, Tokens1, !IO),
+expand_config_aliases(Config, Seen, Tokens0, Tokens, !IO) :-
+    list.map_foldl(expand_config_alias(Config, Seen), Tokens0, Tokens1, !IO),
     list.condense(Tokens1, Tokens).
 
-:- pred expand_config_alias(set(string)::in, token::in, list(token)::out,
-    io::di, io::uo) is det.
+:- pred expand_config_alias(prog_config::in, set(string)::in,
+    token::in, list(token)::out, io::di, io::uo) is det.
 
-expand_config_alias(Seen, Token0, Tokens, !IO) :-
+expand_config_alias(Config, Seen, Token0, Tokens, !IO) :-
     (
         Token0 = macro(Word0),
-        expand_config_alias_macro(Seen, Token0, Tokens1, !IO),
+        expand_config_alias_macro(Config, Seen, Token0, Tokens1, !IO),
         (
             Tokens1 = [_ | _],
             Tokens = Tokens1
@@ -221,20 +226,20 @@ expand_config_alias(Seen, Token0, Tokens, !IO) :-
         Tokens = [Token0]
     ).
 
-:- pred expand_config_alias_macro(set(string)::in, token::in(macro),
-    list(token)::out, io::di, io::uo) is det.
+:- pred expand_config_alias_macro(prog_config::in, set(string)::in,
+    token::in(macro), list(token)::out, io::di, io::uo) is det.
 
-expand_config_alias_macro(Seen0, macro(MacroName), Tokens, !IO) :-
+expand_config_alias_macro(Config, Seen0, macro(MacroName), Tokens, !IO) :-
     (
         string.remove_prefix("~", MacroName, Key),
         not set.contains(Seen0, Key)
     ->
-        get_notmuch_config(search_alias_section, Key, Res, !IO),
+        get_notmuch_config(Config, search_alias_section, Key, Res, !IO),
         (
             Res = ok(Expansion),
             set.insert(Key, Seen0, Seen),
             det_parse(Expansion, tokens, Tokens0),
-            expand_config_aliases(Seen, Tokens0, Tokens1, !IO),
+            expand_config_aliases(Config, Seen, Tokens0, Tokens1, !IO),
             Tokens = [literal("(")] ++ Tokens1 ++ [literal(")")]
         ;
             Res = error(_),
@@ -290,8 +295,8 @@ token_to_search_term(Token, Term, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-get_default_search_terms(Terms, !IO) :-
-    get_notmuch_config(search_alias_section, "default", Res, !IO),
+get_default_search_terms(Config, Terms, !IO) :-
+    get_notmuch_config(Config, search_alias_section, "default", Res, !IO),
     (
         Res = ok(Value),
         Value \= ""

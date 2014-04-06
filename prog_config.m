@@ -9,27 +9,27 @@
 
 :- type prog_config.
 
-:- pred load_prog_config(maybe_error::out, io::di, io::uo) is det.
+:- pred load_prog_config(maybe_error(prog_config)::out, io::di, io::uo) is det.
 
-:- pred check_sendmail_command(maybe_error::out, io::di, io::uo) is det.
+:- pred check_sendmail_command(prog_config::in, maybe_error::out) is det.
 
-:- pred get_notmuch_prefix(string::out, io::di, io::uo) is det.
+:- pred get_notmuch_prefix(prog_config::in, string::out) is det.
 
-:- pred get_notmuch_deliver_prefix(string::out, io::di, io::uo) is det.
+:- pred get_notmuch_deliver_prefix(prog_config::in, string::out) is det.
 
-:- pred get_editor_command(string::out, io::di, io::uo) is det.
+:- pred get_editor_command(prog_config::in, string::out) is det.
 
 :- type sendmail_option
     --->    sendmail_no_read_recipients
     ;       sendmail_read_recipients. % '-t' option
 
-:- pred get_sendmail_command(sendmail_option::in, string::out, io::di, io::uo)
+:- pred get_sendmail_command(prog_config::in, sendmail_option::in,
+    string::out) is det.
+
+:- pred get_maybe_post_sendmail_command(prog_config::in, maybe(string)::out)
     is det.
 
-:- pred get_maybe_post_sendmail_command(maybe(string)::out, io::di, io::uo)
-    is det.
-
-:- pred get_maybe_html_dump_command(maybe(string)::out, io::di, io::uo)
+:- pred get_maybe_html_dump_command(prog_config::in, maybe(string)::out)
     is det.
 
 %-----------------------------------------------------------------------------%
@@ -43,10 +43,6 @@
 :- import_module config.
 :- import_module xdg.
 
-    % Remove this later.
-:- mutable(prog_config, prog_config, init_prog_config, ground,
-    [untrailed, attach_to_io_state]).
-
 :- type prog_config
     --->    prog_config(
                 notmuch         :: string,
@@ -56,10 +52,6 @@
                 post_sendmail   :: maybe(string),
                 html_dump       :: maybe(string)
             ).
-
-:- func init_prog_config = prog_config.
-
-init_prog_config = prog_config("", "", "", "", no, no).
 
 %-----------------------------------------------------------------------------%
 
@@ -71,15 +63,15 @@ load_prog_config(Res, !IO) :-
         (
             LoadRes = ok(Config),
             make_prog_config(Config, ProgConfig, !IO),
-            set_prog_config(ProgConfig, !IO),
-            Res = ok
+            Res = ok(ProgConfig)
         ;
             LoadRes = error(Error),
             Res = error(io.error_message(Error))
         )
     ;
         MaybeConfigFile = no,
-        Res = ok
+        make_prog_config(init_config, ProgConfig, !IO),
+        Res = ok(ProgConfig)
     ).
 
 :- pred make_prog_config(config::in, prog_config::out, io::di, io::uo) is det.
@@ -140,8 +132,8 @@ make_prog_config(Config, ProgConfig, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-check_sendmail_command(Res, !IO) :-
-    get_sendmail_command(sendmail_no_read_recipients, Command, !IO),
+check_sendmail_command(Config, Res) :-
+    get_sendmail_command(Config, sendmail_no_read_recipients, Command),
     (
         ( string.suffix(Command, " -t")
         ; string.sub_string_search(Command, " -t ", _)
@@ -154,20 +146,16 @@ check_sendmail_command(Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-get_notmuch_prefix(Notmuch, !IO) :-
-    get_prog_config(Config, !IO),
+get_notmuch_prefix(Config, Notmuch) :-
     Notmuch = Config ^ notmuch ++ " ".
 
-get_notmuch_deliver_prefix(NotmuchDeliver, !IO) :-
-    get_prog_config(Config, !IO),
+get_notmuch_deliver_prefix(Config, NotmuchDeliver) :-
     NotmuchDeliver = Config ^ notmuch_deliver ++ " ".
 
-get_editor_command(Command, !IO) :-
-    get_prog_config(Config, !IO),
+get_editor_command(Config, Command) :-
     Command = Config ^ editor.
 
-get_sendmail_command(Option, Command, !IO) :-
-    get_prog_config(Config, !IO),
+get_sendmail_command(Config, Option, Command) :-
     Command0 = Config ^ sendmail,
     (
         Option = sendmail_no_read_recipients,
@@ -177,12 +165,10 @@ get_sendmail_command(Option, Command, !IO) :-
         Command = Command0 ++ " -t"
     ).
 
-get_maybe_post_sendmail_command(MaybeCommand, !IO) :-
-    get_prog_config(Config, !IO),
+get_maybe_post_sendmail_command(Config, MaybeCommand) :-
     MaybeCommand = Config ^ post_sendmail.
 
-get_maybe_html_dump_command(MaybeCommand, !IO) :-
-    get_prog_config(Config, !IO),
+get_maybe_html_dump_command(Config, MaybeCommand) :-
     MaybeCommand = Config ^ html_dump.
 
 %-----------------------------------------------------------------------------%

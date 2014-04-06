@@ -6,11 +6,13 @@
 
 :- import_module io.
 
+:- import_module prog_config.
 :- import_module screen.
 
 %-----------------------------------------------------------------------------%
 
-:- pred open_index(screen::in, string::in, io::di, io::uo) is det.
+:- pred open_index(prog_config::in, screen::in, string::in, io::di, io::uo)
+    is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -54,6 +56,7 @@
 
 :- type index_info
     --->    index_info(
+                i_config            :: prog_config,
                 i_scrollable        :: scrollable(index_line),
                 i_search_terms      :: string,
                 i_search_tokens     :: list(token),
@@ -159,15 +162,16 @@
 
 %-----------------------------------------------------------------------------%
 
-open_index(Screen, SearchString, !IO) :-
+open_index(Config, Screen, SearchString, !IO) :-
     time(Time, !IO),
     ( SearchString = "" ->
         SearchTokens = [],
         Threads = [],
         LimitHistory = init_history
     ;
-        predigest_search_string(SearchString, SearchTokens, !IO),
-        search_terms_with_progress(Screen, SearchTokens, MaybeThreads, !IO),
+        predigest_search_string(Config, SearchString, SearchTokens, !IO),
+        search_terms_with_progress(Config, Screen, SearchTokens, MaybeThreads,
+            !IO),
         (
             MaybeThreads = yes(Threads)
         ;
@@ -183,23 +187,24 @@ open_index(Screen, SearchString, !IO) :-
     MaybeSearch = no,
     CommonHistory = common_history(LimitHistory, init_history, init_history,
         init_history, init_history, init_history, init_history),
-    IndexInfo = index_info(Scrollable, SearchString, SearchTokens, SearchTime,
-        NextPollTime, PollCount, MaybeSearch, dir_forward, CommonHistory),
+    IndexInfo = index_info(Config, Scrollable, SearchString, SearchTokens,
+        SearchTime, NextPollTime, PollCount, MaybeSearch, dir_forward,
+        CommonHistory),
     index_loop(Screen, IndexInfo, !IO).
 
-:- pred search_terms_with_progress(screen::in, list(token)::in,
-    maybe(list(thread))::out, io::di, io::uo) is det.
+:- pred search_terms_with_progress(prog_config::in, screen::in,
+    list(token)::in, maybe(list(thread))::out, io::di, io::uo) is det.
 
-search_terms_with_progress(Screen, Tokens, MaybeThreads, !IO) :-
+search_terms_with_progress(Config, Screen, Tokens, MaybeThreads, !IO) :-
     flush_async_with_progress(Screen, !IO),
     update_message_immed(Screen, set_info("Searching..."), !IO),
-    search_terms_quiet(Tokens, MaybeThreads, MessageUpdate, !IO),
+    search_terms_quiet(Config, Tokens, MaybeThreads, MessageUpdate, !IO),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred search_terms_quiet(list(token)::in, maybe(list(thread))::out,
-    message_update::out, io::di, io::uo) is det.
+:- pred search_terms_quiet(prog_config::in, list(token)::in,
+    maybe(list(thread))::out, message_update::out, io::di, io::uo) is det.
 
-search_terms_quiet(Tokens, MaybeThreads, MessageUpdate, !IO) :-
+search_terms_quiet(Config, Tokens, MaybeThreads, MessageUpdate, !IO) :-
     tokens_to_search_terms(Tokens, Terms, ApplyCap, !IO),
     (
         ApplyCap = yes,
@@ -209,7 +214,8 @@ search_terms_quiet(Tokens, MaybeThreads, MessageUpdate, !IO) :-
         LimitOption = []
     ),
     ignore_sigint(yes, !IO),
-    run_notmuch(["search", "--format=json" | LimitOption] ++ ["--", Terms],
+    run_notmuch(Config,
+        ["search", "--format=json" | LimitOption] ++ ["--", Terms],
         parse_threads_list, ResThreads, !IO),
     ignore_sigint(no, !IO),
     (
@@ -305,9 +311,10 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
     ;
         Action = open_pager(ThreadId),
         flush_async_with_progress(Screen, !IO),
+        Config = !.IndexInfo ^ i_config,
         MaybeSearch = !.IndexInfo ^ i_internal_search,
         CommonHistory0 = !.IndexInfo ^ i_common_history,
-        open_thread_pager(Screen, ThreadId, MaybeSearch, Transition,
+        open_thread_pager(Config, Screen, ThreadId, MaybeSearch, Transition,
             CommonHistory0, CommonHistory, !IO),
         handle_screen_transition(Screen, NewScreen, Transition,
             TagUpdates, !IndexInfo, !IO),
@@ -316,8 +323,9 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         index_loop(NewScreen, !.IndexInfo, !IO)
     ;
         Action = enter_limit,
+        Config = !.IndexInfo ^ i_config,
         History0 = !.IndexInfo ^ i_common_history ^ ch_limit_history,
-        Completion = complete_limit(search_alias_section,
+        Completion = complete_limit(Config, search_alias_section,
             ["tag:", "+tag:", "-tag:", "is:", "+is:", "-is:"]),
         text_entry(Screen, "Limit to messages matching: ", History0,
             Completion, Return, !IO),
@@ -326,8 +334,9 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
             add_history_nodup(LimitString, History0, History),
             !IndexInfo ^ i_common_history ^ ch_limit_history := History,
             time(Time, !IO),
-            predigest_search_string(LimitString, Tokens, !IO),
-            search_terms_with_progress(Screen, Tokens, MaybeThreads, !IO),
+            predigest_search_string(Config, LimitString, Tokens, !IO),
+            search_terms_with_progress(Config, Screen, Tokens, MaybeThreads,
+                !IO),
             (
                 MaybeThreads = yes(Threads),
                 setup_index_scrollable(Time, Threads, Scrollable),
@@ -352,10 +361,11 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
     ;
         Action = start_compose,
         flush_async_with_progress(Screen, !IO),
+        Config = !.IndexInfo ^ i_config,
         CommonHistory0 = !.IndexInfo ^ i_common_history,
         ToHistory0 = CommonHistory0 ^ ch_to_history,
         SubjectHistory0 = CommonHistory0 ^ ch_subject_history,
-        start_compose(Screen, Transition, ToHistory0, ToHistory,
+        start_compose(Config, Screen, Transition, ToHistory0, ToHistory,
             SubjectHistory0, SubjectHistory, !IO),
         CommonHistory1 = CommonHistory0 ^ ch_to_history := ToHistory,
         CommonHistory = CommonHistory1 ^ ch_subject_history := SubjectHistory,
@@ -747,7 +757,8 @@ effect_thread_pager_changes(Effects, !Info, !IO) :-
         CursorLine = CursorLine1 ^ i_total := Total1 + AddedMessages,
         set_cursor_line(CursorLine, Scrollable0, Scrollable),
         !Info ^ i_scrollable := Scrollable,
-        map.foldl(async_tag_messages, TagGroups, !IO)
+        Config = !.Info ^ i_config,
+        map.foldl(async_tag_messages(Config), TagGroups, !IO)
     ;
         unexpected($module, $pred, "cursor not on expected line")
     ).
@@ -827,14 +838,14 @@ try_reply(!Screen, ThreadId, RequireUnread, ReplyKind, Res, !Info, !IO) :-
         "-tag:draft"
         | Args0
     ],
-    run_notmuch(Args, parse_message_id_list, ListRes, !IO),
+    Config = !.Info ^ i_config,
+    run_notmuch(Config, Args, parse_message_id_list, ListRes, !IO),
     (
         ListRes = ok(MessageIds),
         ( MessageIds = [MessageId] ->
-            start_reply_to_message_id(!.Screen, MessageId, ReplyKind,
+            start_reply_to_message_id(Config, !.Screen, MessageId, ReplyKind,
                 Transition, !IO),
-            handle_screen_transition(!Screen, Transition, Sent,
-                !Info, !IO),
+            handle_screen_transition(!Screen, Transition, Sent, !Info, !IO),
             Res = ok(Sent)
         ;
             Res = unable_to_choose
@@ -851,12 +862,13 @@ try_reply(!Screen, ThreadId, RequireUnread, ReplyKind, Res, !Info, !IO) :-
     index_info::in, index_info::out, io::di, io::uo) is det.
 
 handle_recall(!Screen, Sent, !IndexInfo, !IO) :-
-    select_recall(!.Screen, no, TransitionA, !IO),
+    Config = !.IndexInfo ^ i_config,
+    select_recall(Config, !.Screen, no, TransitionA, !IO),
     handle_screen_transition(!Screen, TransitionA, MaybeSelected,
         !IndexInfo, !IO),
     (
         MaybeSelected = yes(Message),
-        continue_postponed(!.Screen, Message, TransitionB, !IO),
+        continue_postponed(Config, !.Screen, Message, TransitionB, !IO),
         handle_screen_transition(!Screen, TransitionB, Sent, !IndexInfo, !IO)
     ;
         MaybeSelected = no,
@@ -868,6 +880,7 @@ handle_recall(!Screen, Sent, !IndexInfo, !IO) :-
 :- pred addressbook_add(screen::in, index_info::in, io::di, io::uo) is det.
 
 addressbook_add(Screen, Info, !IO) :-
+    Config = Info ^ i_config,
     Scrollable = Info ^ i_scrollable,
     ( get_cursor_line(Scrollable, _Cursor, Line) ->
         ThreadId = Line ^ i_id,
@@ -875,9 +888,9 @@ addressbook_add(Screen, Info, !IO) :-
             "search", "--format=json", "--output=messages", "--",
             thread_id_to_search_term(ThreadId)
         ],
-        run_notmuch(Args, parse_message_id_list, ListRes, !IO),
+        run_notmuch(Config, Args, parse_message_id_list, ListRes, !IO),
         ( ListRes = ok([MessageId | _]) ->
-            run_notmuch([
+            run_notmuch(Config, [
                 "show", "--format=json", "--part=0", "--",
                 message_id_to_search_term(MessageId)
             ], parse_top_message, MessageRes, !IO),
@@ -895,7 +908,7 @@ addressbook_add(Screen, Info, !IO) :-
     ;
         Address0 = ""
     ),
-    prompt_addressbook_add(Screen, Address0, !IO).
+    prompt_addressbook_add(Config, Screen, Address0, !IO).
 
 %-----------------------------------------------------------------------------%
 
@@ -1005,7 +1018,8 @@ modify_tag_cursor_line(ModifyPred, Screen, !Info, !IO) :-
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
         ThreadId = CursorLine0 ^ i_id,
         ( ModifyPred(CursorLine0, CursorLine, TagDelta) ->
-            async_tag_threads([TagDelta], [ThreadId], !IO),
+            Config = !.Info ^ i_config,
+            async_tag_threads(Config, [TagDelta], [ThreadId], !IO),
             set_cursor_line(CursorLine, Scrollable0, Scrollable),
             !Info ^ i_scrollable := Scrollable,
             move_cursor(Screen, 1, _MessageUpdate, !Info),
@@ -1070,11 +1084,12 @@ unset_deleted(Line0, Line, TagDelta) :-
     io::di, io::uo) is det.
 
 prompt_tag(Screen, Initial, !Info, !IO) :-
+    Config = !.Info ^ i_config,
     Scrollable0 = !.Info ^ i_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
         gather_initial_tags(CursorLine0, no, _AndTagSet, set.init, TagSet),
         set.map(tag_to_string, TagSet, BothStringSet),
-        Completion = complete_tags_smart(BothStringSet, BothStringSet),
+        Completion = complete_tags_smart(Config, BothStringSet, BothStringSet),
         prompt_arbitrary_tag_changes(Screen, Initial, Completion, TagChanges,
             !Info, !IO),
         (
@@ -1129,7 +1144,8 @@ apply_tag_changes(CursorLine0, TagDeltas, AddTags, RemoveTags, !Info, !IO) :-
     CursorLine0 = index_line(ThreadId, Selected, Date, Authors, Subject,
         TagSet0, StdTags0, _NonstdTagsWidth, Matched, Total),
     apply_standard_tag_state(StdTags0, TagSet0, TagSet1),
-    async_tag_threads(TagDeltas, [ThreadId], !IO),
+    Config = !.Info ^ i_config,
+    async_tag_threads(Config, TagDeltas, [ThreadId], !IO),
     % Notmuch performs tag removals before addition.
     set.difference(TagSet1, RemoveTags, TagSet2),
     set.union(TagSet2, AddTags, TagSet),
@@ -1192,12 +1208,14 @@ bulk_tag(Screen, Done, !Info, !IO) :-
         update_message_immed(Screen, set_prompt(Prompt), !IO),
         get_keycode_blocking(KeyCode, !IO),
         ( KeyCode = char('-') ->
-            init_bulk_tag_completion(Lines0, Completion),
+            Config = !.Info ^ i_config,
+            init_bulk_tag_completion(Config, Lines0, Completion),
             bulk_arbitrary_tag_changes(Screen, "-", Completion, MessageUpdate,
                 !Info, !IO),
             Done = yes
         ; KeyCode = char('+') ->
-            init_bulk_tag_completion(Lines0, Completion),
+            Config = !.Info ^ i_config,
+            init_bulk_tag_completion(Config, Lines0, Completion),
             bulk_arbitrary_tag_changes(Screen, "+", Completion, MessageUpdate,
                 !Info, !IO),
             Done = yes
@@ -1240,10 +1258,10 @@ any_selected_line(Lines) :-
     list.member(Line, Lines),
     Line ^ i_selected = selected.
 
-:- pred init_bulk_tag_completion(list(index_line)::in, completion_type::out)
-    is det.
+:- pred init_bulk_tag_completion(prog_config::in, list(index_line)::in,
+    completion_type::out) is det.
 
-init_bulk_tag_completion(Lines, Completion) :-
+init_bulk_tag_completion(Config, Lines, Completion) :-
     list.foldl2(gather_bulk_initial_tags, Lines,
         no, MaybeAndTagSet, set.init, OrTagSet),
     (
@@ -1254,7 +1272,7 @@ init_bulk_tag_completion(Lines, Completion) :-
         set.init(AndStringSet)
     ),
     set.map(tag_to_string, OrTagSet, OrStringSet),
-    Completion = complete_tags_smart(AndStringSet, OrStringSet).
+    Completion = complete_tags_smart(Config, AndStringSet, OrStringSet).
 
 :- pred gather_bulk_initial_tags(index_line::in,
     maybe(set(tag))::in, maybe(set(tag))::out, set(tag)::in, set(tag)::out)
@@ -1316,7 +1334,8 @@ bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate, !Info, !IO) :-
         Lines0, Lines, [], SelectedThreadIds),
     (
         SelectedThreadIds = [_ | _],
-        async_tag_threads(TagDeltas, SelectedThreadIds, !IO),
+        Config = !.Info ^ i_config,
+        async_tag_threads(Config, TagDeltas, SelectedThreadIds, !IO),
         set_lines_list(Lines, Scrollable0, Scrollable),
         !Info ^ i_scrollable := Scrollable,
         list.length(SelectedThreadIds, NumThreads),
@@ -1401,11 +1420,11 @@ common_unread_state([H | T], State0, State) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred async_tag_threads(list(tag_delta)::in, list(thread_id)::in,
-    io::di, io::uo) is det.
+:- pred async_tag_threads(prog_config::in, list(tag_delta)::in,
+    list(thread_id)::in, io::di, io::uo) is det.
 
-async_tag_threads(TagDeltas, ThreadIds, !IO) :-
-    get_notmuch_prefix(Notmuch, !IO),
+async_tag_threads(Config, TagDeltas, ThreadIds, !IO) :-
+    get_notmuch_prefix(Config, Notmuch),
     TagDeltaStrings = list.map(tag_delta_to_string, TagDeltas),
     SearchTerms = list.map(thread_id_to_search_term, ThreadIds),
     Args = list.condense([
@@ -1414,12 +1433,12 @@ async_tag_threads(TagDeltas, ThreadIds, !IO) :-
     Op = async_shell_command(Notmuch, Args, async_tag_attempts),
     push_async(Op, !IO).
 
-:- pred async_tag_messages(set(tag_delta)::in, list(message_id)::in,
-    io::di, io::uo) is det.
+:- pred async_tag_messages(prog_config::in, set(tag_delta)::in,
+    list(message_id)::in, io::di, io::uo) is det.
 
-async_tag_messages(TagDeltaSet, MessageIds, !IO) :-
+async_tag_messages(Config, TagDeltaSet, MessageIds, !IO) :-
+    get_notmuch_prefix(Config, Notmuch),
     set.to_sorted_list(TagDeltaSet, TagDeltas),
-    get_notmuch_prefix(Notmuch, !IO),
     TagDeltaStrings = list.map(tag_delta_to_string, TagDeltas),
     SearchTerms = list.map(message_id_to_search_term, MessageIds),
     Args = list.condense([
@@ -1442,14 +1461,15 @@ refresh_all(Screen, Verbose, !Info, !IO) :-
     time(Time, !IO),
     % The user might have changed search aliases and is trying to force a
     % refresh, so expand the search terms from the beginning.
+    Config = !.Info ^ i_config,
     Terms = !.Info ^ i_search_terms,
-    predigest_search_string(Terms, Tokens, !IO),
+    predigest_search_string(Config, Terms, Tokens, !IO),
     (
         Verbose = verbose,
-        search_terms_with_progress(Screen, Tokens, MaybeThreads, !IO)
+        search_terms_with_progress(Config, Screen, Tokens, MaybeThreads, !IO)
     ;
         Verbose = quiet,
-        search_terms_quiet(Tokens, MaybeThreads, _MessageUpdate, !IO)
+        search_terms_quiet(Config, Tokens, MaybeThreads, _MessageUpdate, !IO)
     ),
     (
         MaybeThreads = yes(Threads),
@@ -1503,8 +1523,9 @@ line_matches_thread_id(ThreadId, Line) :-
     index_info::in, index_info::out, io::di, io::uo) is det.
 
 refresh_index_line(Screen, ThreadId, !IndexInfo, !IO) :-
+    Config = !.IndexInfo ^ i_config,
     Term = thread_id_to_search_term(ThreadId),
-    run_notmuch([
+    run_notmuch(Config, [
         "search", "--format=json", "--", Term
     ], parse_threads_list, Result, !IO),
     (
@@ -1571,11 +1592,12 @@ maybe_sched_poll(!Info, !IO) :-
     ( TimeInt < NextPollTime ->
         true
     ;
+        Config = !.Info ^ i_config,
+        get_notmuch_prefix(Config, Notmuch),
         Tokens = !.Info ^ i_search_tokens,
         SearchTime = !.Info ^ i_search_time,
         time_to_int(SearchTime, SearchTimeInt),
         tokens_to_search_terms(Tokens, Terms1, _ApplyCap, !IO),
-        get_notmuch_prefix(Notmuch, !IO),
         Args = [
             "count", "--",
             "(", Terms1, ")", from_int(SearchTimeInt) ++ "..",

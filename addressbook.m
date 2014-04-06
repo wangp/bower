@@ -7,17 +7,18 @@
 :- import_module io.
 :- import_module maybe.
 
+:- import_module prog_config.
 :- import_module screen.
 
 %-----------------------------------------------------------------------------%
 
 :- func addressbook_section = string.
 
-:- pred search_addressbook(string::in, maybe(string)::out, io::di, io::uo)
-    is det.
+:- pred search_addressbook(prog_config::in, string::in, maybe(string)::out,
+    io::di, io::uo) is det.
 
-:- pred prompt_addressbook_add(screen::in, string::in, io::di, io::uo)
-    is det.
+:- pred prompt_addressbook_add(prog_config::in, screen::in, string::in,
+    io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -56,10 +57,10 @@ is_alias_char(C) :-
 
 %-----------------------------------------------------------------------------%
 
-search_addressbook(Alias, MaybeFound, !IO) :-
+search_addressbook(Config, Alias, MaybeFound, !IO) :-
     ( string.all_match(is_alias_char, Alias) ->
         Key = addressbook_section ++ "." ++ Alias,
-        get_notmuch_config(Key, Res, !IO),
+        get_notmuch_config(Config, Key, Res, !IO),
         (
             Res = ok(Expansion),
             MaybeFound = yes(Expansion)
@@ -73,34 +74,34 @@ search_addressbook(Alias, MaybeFound, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-prompt_addressbook_add(Screen, Address0, !IO) :-
+prompt_addressbook_add(Config, Screen, Address0, !IO) :-
     History0 = init_history,
-    text_entry_initial(Screen, "Address: ", History0, Address0,
-        complete_none, ReturnAddress, !IO),
+    text_entry_initial(Screen, "Address: ", History0, Address0, complete_none,
+        ReturnAddress, !IO),
     (
         ReturnAddress = yes(Address),
         ( Address = "" ->
             true
         ;
-            prompt_addressbook_add_2(Screen, Address, !IO)
+            prompt_addressbook_add_2(Config, Screen, Address, !IO)
         )
     ;
         ReturnAddress = no
     ).
 
-:- pred prompt_addressbook_add_2(screen::in, string::in,
+:- pred prompt_addressbook_add_2(prog_config::in, screen::in, string::in,
     io::di, io::uo) is det.
 
-prompt_addressbook_add_2(Screen, Address, !IO) :-
+prompt_addressbook_add_2(Config, Screen, Address, !IO) :-
     History0 = init_history,
     text_entry_initial(Screen, "Alias as: ", History0, suggest_alias(Address),
-        complete_config_key(addressbook_section), ReturnAlias, !IO),
+        complete_config_key(Config, addressbook_section), ReturnAlias, !IO),
     (
         ReturnAlias = yes(Alias),
         ( Alias = "" ->
             true
         ; string.all_match(is_alias_char, Alias) ->
-            do_addressbook_add(Alias, Address, Res, !IO),
+            do_addressbook_add(Config, Alias, Address, Res, !IO),
             (
                 Res = ok,
                 update_message_immed(Screen, set_info("Alias added."), !IO)
@@ -127,11 +128,11 @@ suggest_alias(Address) = Alias :-
     list.takewhile(is_alias_char, Chars0, Chars, _),
     string.from_char_list(Chars, Alias).
 
-:- pred do_addressbook_add(string::in, string::in, maybe_error::out,
-    io::di, io::uo) is det.
+:- pred do_addressbook_add(prog_config::in, string::in, string::in,
+    maybe_error::out, io::di, io::uo) is det.
 
-do_addressbook_add(Alias, Address, Res, !IO) :-
-    get_notmuch_prefix(Notmuch, !IO),
+do_addressbook_add(Config, Alias, Address, Res, !IO) :-
+    get_notmuch_prefix(Config, Notmuch),
     Key = addressbook_section ++ "." ++ Alias,
     args_to_quoted_command(["config", "set", Key, Address], Command),
     io.call_system(Notmuch ++ Command, CallRes, !IO),

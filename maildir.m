@@ -9,21 +9,24 @@
 :- import_module maybe.
 
 :- import_module data.
+:- import_module prog_config.
 :- import_module tags.
 
 %-----------------------------------------------------------------------------%
 
-:- pred add_sent(string::in, maybe_error::out, io::di, io::uo) is det.
-
-:- pred add_draft(string::in, maybe_error::out, io::di, io::uo) is det.
-
-:- pred find_drafts(maybe(thread_id)::in, list(message_id)::out,
+:- pred add_sent(prog_config::in, string::in, maybe_error::out,
     io::di, io::uo) is det.
 
-:- pred tag_messages(list(tag_delta)::in, list(message_id)::in,
-    maybe_error::out, io::di, io::uo) is det.
+:- pred add_draft(prog_config::in, string::in, maybe_error::out,
+    io::di, io::uo) is det.
 
-:- pred tag_threads(list(tag_delta)::in, list(thread_id)::in,
+:- pred find_drafts(prog_config::in, maybe(thread_id)::in,
+    list(message_id)::out, io::di, io::uo) is det.
+
+:- pred tag_messages(prog_config::in, list(tag_delta)::in,
+    list(message_id)::in, maybe_error::out, io::di, io::uo) is det.
+
+:- pred tag_threads(prog_config::in, list(tag_delta)::in, list(thread_id)::in,
     maybe_error::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
@@ -40,38 +43,38 @@
 
 %-----------------------------------------------------------------------------%
 
-add_sent(FileName, Res, !IO) :-
-    get_notmuch_config("bower:maildir.sent_folder", ConfigRes, !IO),
+add_sent(Config, FileName, Res, !IO) :-
+    get_notmuch_config(Config, "bower:maildir.sent_folder", ConfigRes, !IO),
     (
         ConfigRes = ok(SentFolder)
     ;
         ConfigRes = error(_),
         SentFolder = default_sent_folder
     ),
-    call_notmuch_deliver(FileName, SentFolder,
+    call_notmuch_deliver(Config, FileName, SentFolder,
         ["--tag=sent", "--remove-tag=unread"],
         Res, !IO).
 
-add_draft(FileName, Res, !IO) :-
-    get_notmuch_config("bower:maildir.drafts_folder", ConfigRes, !IO),
+add_draft(Config, FileName, Res, !IO) :-
+    get_notmuch_config(Config, "bower:maildir.drafts_folder", ConfigRes, !IO),
     (
         ConfigRes = ok(DraftsFolder)
     ;
         ConfigRes = error(_),
         DraftsFolder = default_drafts_folder
     ),
-    call_notmuch_deliver(FileName, DraftsFolder,
+    call_notmuch_deliver(Config, FileName, DraftsFolder,
         ["--tag=draft", "--remove-tag=inbox", "--remove-tag=unread"],
         Res, !IO).
 
-:- pred call_notmuch_deliver(string::in, string::in, list(string)::in,
-    maybe_error::out, io::di, io::uo) is det.
+:- pred call_notmuch_deliver(prog_config::in, string::in, string::in,
+    list(string)::in, maybe_error::out, io::di, io::uo) is det.
 
-call_notmuch_deliver(FileName, Folder, TagOps, Res, !IO) :-
+call_notmuch_deliver(Config, FileName, Folder, TagOps, Res, !IO) :-
     % XXX do we need -f?
     Args = [Folder | TagOps],
     args_to_quoted_command(Args, redirect_input(FileName), no, Command),
-    get_notmuch_deliver_prefix(NotmuchDeliver, !IO),
+    get_notmuch_deliver_prefix(Config, NotmuchDeliver),
     io.call_system(NotmuchDeliver ++ Command, CallRes, !IO),
     (
         CallRes = ok(ExitStatus),
@@ -97,7 +100,7 @@ default_drafts_folder = "Drafts".
 
 %-----------------------------------------------------------------------------%
 
-find_drafts(MaybeThreadId, MessageIds, !IO) :-
+find_drafts(Config, MaybeThreadId, MessageIds, !IO) :-
     (
         MaybeThreadId = yes(ThreadId),
         ThreadSearchTerm = [thread_id_to_search_term(ThreadId)]
@@ -105,7 +108,7 @@ find_drafts(MaybeThreadId, MessageIds, !IO) :-
         MaybeThreadId = no,
         ThreadSearchTerm = []
     ),
-    run_notmuch([
+    run_notmuch(Config, [
         "search", "--format=json", "--output=messages", "--",
         "tag:draft", "-tag:deleted" | ThreadSearchTerm
     ], parse_message_id_list, Result, !IO),
@@ -118,25 +121,25 @@ find_drafts(MaybeThreadId, MessageIds, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-tag_messages(TagDeltas, MessageIds, Res, !IO) :-
+tag_messages(Config, TagDeltas, MessageIds, Res, !IO) :-
     (
         MessageIds = [],
         Res = ok
     ;
         MessageIds = [_ | _],
         IdStrings = list.map(message_id_to_search_term, MessageIds),
-        do_tag(TagDeltas, IdStrings, Res, !IO)
+        do_tag(Config, TagDeltas, IdStrings, Res, !IO)
     ).
 
-tag_threads(TagDeltas, ThreadIds, Res, !IO) :-
+tag_threads(Config, TagDeltas, ThreadIds, Res, !IO) :-
     SearchTerms = list.map(thread_id_to_search_term, ThreadIds),
-    do_tag(TagDeltas, SearchTerms, Res, !IO).
+    do_tag(Config, TagDeltas, SearchTerms, Res, !IO).
 
-:- pred do_tag(list(tag_delta)::in, list(string)::in, maybe_error::out,
-    io::di, io::uo) is det.
+:- pred do_tag(prog_config::in, list(tag_delta)::in, list(string)::in,
+    maybe_error::out, io::di, io::uo) is det.
 
-do_tag(TagDeltas, SearchTerms, Res, !IO) :-
-    get_notmuch_prefix(Notmuch, !IO),
+do_tag(Config, TagDeltas, SearchTerms, Res, !IO) :-
+    get_notmuch_prefix(Config, Notmuch),
     TagDeltaStrings = list.map(tag_delta_to_string, TagDeltas),
     Args = list.condense([["tag"], TagDeltaStrings, ["--"], SearchTerms]),
     args_to_quoted_command(Args, Command),

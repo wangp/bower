@@ -39,11 +39,11 @@ main(!IO) :-
     setlocale(!IO),
     load_prog_config(ResConfig, !IO),
     (
-        ResConfig = ok,
-        check_sendmail_command(ResSendmail, !IO),
+        ResConfig = ok(Config),
+        check_sendmail_command(Config, ResSendmail),
         (
             ResSendmail = ok,
-            main_2(!IO)
+            main_2(Config, !IO)
         ;
             ResSendmail = error(Error2),
             io.stderr_stream(Stream, !IO),
@@ -56,16 +56,16 @@ main(!IO) :-
         print_error("Error loading config file: " ++ Error, !IO)
     ).
 
-:- pred main_2(io::di, io::uo) is cc_multi.
+:- pred main_2(prog_config::in, io::di, io::uo) is cc_multi.
 
-main_2(!IO) :-
+main_2(Config, !IO) :-
     % Install our SIGINT, SIGCHLD handlers.
     signal.ignore_sigint(no, !IO),
     async.install_sigchld_handler(!IO),
     io.command_line_arguments(Args, !IO),
     (
         Args = [],
-        get_default_search_terms(Terms, !IO)
+        get_default_search_terms(Config, Terms, !IO)
     ;
         Args = [_ | _],
         Terms = string.join_list(" ", Args)
@@ -75,7 +75,7 @@ main_2(!IO) :-
         create_screen(Screen, !IO),
         draw_bar(Screen, !IO),
         curs.refresh(!IO),
-        open_index(Screen, Terms, !IO)
+        open_index(Config, Screen, Terms, !IO)
     ) then
         curs.stop(!IO)
       catch sigint_received ->

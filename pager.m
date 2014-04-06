@@ -11,6 +11,7 @@
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module data.
+:- import_module prog_config.
 :- import_module screen.
 :- import_module scrollable.
 
@@ -26,11 +27,11 @@
     --->    new_pager
     ;       retain_pager_pos(pager_info, int).
 
-:- pred setup_pager(setup_mode::in, int::in, list(message)::in,
-    pager_info::out, io::di, io::uo) is det.
+:- pred setup_pager(prog_config::in, setup_mode::in, int::in,
+    list(message)::in, pager_info::out, io::di, io::uo) is det.
 
-:- pred setup_pager_for_staging(int::in, string::in, retain_pager_pos::in,
-    pager_info::out) is det.
+:- pred setup_pager_for_staging(prog_config::in, int::in, string::in,
+    retain_pager_pos::in, pager_info::out) is det.
 
 :- type pager_action
     --->    continue
@@ -119,6 +120,7 @@
 
 :- type pager_info
     --->    pager_info(
+                p_config        :: prog_config,
                 p_tree          :: tree,
                 p_id_counter    :: counter,
                 p_scrollable    :: scrollable(id_pager_line)
@@ -261,19 +263,19 @@ replace_node(FindId, NewTree, Tree0, Tree) :-
 
 %-----------------------------------------------------------------------------%
 
-setup_pager(Mode, Cols, Messages, Info, !IO) :-
+setup_pager(Config, Mode, Cols, Messages, Info, !IO) :-
     counter.init(0, Counter0),
     allocate_node_id(NodeId, Counter0, Counter1),
-    list.map_foldl2(make_message_tree(Mode, Cols), Messages, Trees,
+    list.map_foldl2(make_message_tree(Config, Mode, Cols), Messages, Trees,
         Counter1, Counter, !IO),
     Tree = node(NodeId, Trees, no),
     Scrollable = scrollable.init(flatten(Tree)),
-    Info = pager_info(Tree, Counter, Scrollable).
+    Info = pager_info(Config, Tree, Counter, Scrollable).
 
-:- pred make_message_tree(setup_mode::in, int::in, message::in, tree::out,
-    counter::in, counter::out, io::di, io::uo) is det.
+:- pred make_message_tree(prog_config::in, setup_mode::in, int::in,
+    message::in, tree::out, counter::in, counter::out, io::di, io::uo) is det.
 
-make_message_tree(Mode, Cols, Message, Tree, !Counter, !IO) :-
+make_message_tree(Config, Mode, Cols, Message, Tree, !Counter, !IO) :-
     Headers = Message ^ m_headers,
     counter.allocate(NodeIdInt, !Counter),
     NodeId = node_id(NodeIdInt),
@@ -291,7 +293,7 @@ make_message_tree(Mode, Cols, Message, Tree, !Counter, !IO) :-
     ),
 
     Body = Message ^ m_body,
-    list.map_foldl3(make_part_tree(Cols), Body, BodyTrees,
+    list.map_foldl3(make_part_tree(Config, Cols), Body, BodyTrees,
         yes, _ElideInitialHeadLine, !Counter, !IO),
     BodyTree = node(NodeId, BodyTrees, no),
 
@@ -304,8 +306,8 @@ make_message_tree(Mode, Cols, Message, Tree, !Counter, !IO) :-
     (
         Mode = include_replies,
         Replies = Message ^ m_replies,
-        list.map_foldl2(make_message_tree(Mode, Cols), Replies, ReplyTrees,
-            !Counter, !IO)
+        list.map_foldl2(make_message_tree(Config, Mode, Cols),
+            Replies, ReplyTrees, !Counter, !IO)
     ;
         Mode = toplevel_only,
         ReplyTrees = []
@@ -330,17 +332,19 @@ maybe_add_header(Header, Value, RevLines0, RevLines) :-
         add_header(Header, Value, RevLines0, RevLines)
     ).
 
-:- pred make_part_tree(int::in, part::in, tree::out, bool::in, bool::out,
-    counter::in, counter::out, io::di, io::uo) is det.
-
-make_part_tree(Cols, Part, Tree, !ElideInitialHeadLine, !Counter, !IO) :-
-    make_part_tree_with_alts(Cols, [], Part, Tree, !ElideInitialHeadLine,
-        !Counter, !IO).
-
-:- pred make_part_tree_with_alts(int::in, list(part)::in, part::in, tree::out,
+:- pred make_part_tree(prog_config::in, int::in, part::in, tree::out,
     bool::in, bool::out, counter::in, counter::out, io::di, io::uo) is det.
 
-make_part_tree_with_alts(Cols, AltParts, Part, Tree,
+make_part_tree(Config, Cols, Part, Tree, !ElideInitialHeadLine, !Counter, !IO)
+        :-
+    make_part_tree_with_alts(Config, Cols, [], Part, Tree,
+        !ElideInitialHeadLine, !Counter, !IO).
+
+:- pred make_part_tree_with_alts(prog_config::in, int::in, list(part)::in,
+    part::in, tree::out, bool::in, bool::out, counter::in, counter::out,
+    io::di, io::uo) is det.
+
+make_part_tree_with_alts(Config, Cols, AltParts, Part, Tree,
         !ElideInitialHeadLine, !Counter, !IO) :-
     Part = part(_MessageId, _PartId, Type, Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength),
@@ -366,18 +370,18 @@ make_part_tree_with_alts(Cols, AltParts, Part, Tree,
             strcase_equal(Type, "multipart/alternative"),
             select_alternative(SubParts, [FirstSubPart | RestSubParts])
         ->
-            make_part_tree_with_alts(Cols, RestSubParts, FirstSubPart, Tree,
-                no, _ElideInitialHeadLine, !Counter, !IO)
+            make_part_tree_with_alts(Config, Cols, RestSubParts, FirstSubPart,
+                Tree, no, _ElideInitialHeadLine, !Counter, !IO)
         ;
             AltParts = [],
             hide_multipart_head_line(Type)
         ->
-            list.map_foldl3(make_part_tree(Cols), SubParts, SubPartsTrees,
-                !ElideInitialHeadLine, !Counter, !IO),
+            list.map_foldl3(make_part_tree(Config, Cols), SubParts,
+                SubPartsTrees, !ElideInitialHeadLine, !Counter, !IO),
             Tree = node(PartNodeId, SubPartsTrees, no)
         ;
-            list.map_foldl3(make_part_tree(Cols), SubParts, SubPartsTrees,
-                yes, _ElideInitialHeadLine, !Counter, !IO),
+            list.map_foldl3(make_part_tree(Config, Cols), SubParts,
+                SubPartsTrees, yes, _ElideInitialHeadLine, !Counter, !IO),
             HeadLine = part_head(Part, AltParts),
             SubTrees = [leaf([HeadLine]) | SubPartsTrees],
             Tree = node(PartNodeId, SubTrees, yes),
@@ -385,7 +389,7 @@ make_part_tree_with_alts(Cols, AltParts, Part, Tree,
         )
     ;
         Content = encapsulated_messages(EncapMessages),
-        list.map_foldl2(make_encapsulated_message_tree(Cols),
+        list.map_foldl2(make_encapsulated_message_tree(Config, Cols),
             EncapMessages, SubTrees0, !Counter, !IO),
         HeadLine = part_head(Part, AltParts),
         SubTrees = [leaf([HeadLine]) | SubTrees0],
@@ -395,8 +399,8 @@ make_part_tree_with_alts(Cols, AltParts, Part, Tree,
         ( Content = unsupported
         ; Content = unsupported_inline
         ),
-        make_unsupported_part_tree(Cols, PartNodeId, Part, AltParts, Tree,
-            !IO),
+        make_unsupported_part_tree(Config, Cols, PartNodeId, Part, AltParts,
+            Tree, !IO),
         !:ElideInitialHeadLine = no
     ).
 
@@ -767,10 +771,12 @@ quoted_lines_threshold = 3.
 
 %-----------------------------------------------------------------------------%
 
-:- pred make_encapsulated_message_tree(int::in, encapsulated_message::in,
-    tree::out, counter::in, counter::out, io::di, io::uo) is det.
+:- pred make_encapsulated_message_tree(prog_config::in, int::in,
+    encapsulated_message::in, tree::out, counter::in, counter::out,
+    io::di, io::uo) is det.
 
-make_encapsulated_message_tree(Cols, EncapMessage, Tree, !Counter, !IO) :-
+make_encapsulated_message_tree(Config, Cols, EncapMessage, Tree, !Counter, !IO)
+        :-
     EncapMessage = encapsulated_message(Headers, Body),
     allocate_node_id(NodeId, !Counter),
     some [!RevLines] (
@@ -784,7 +790,7 @@ make_encapsulated_message_tree(Cols, EncapMessage, Tree, !Counter, !IO) :-
         cons(blank_line, !RevLines),
         list.reverse(!.RevLines, HeaderLines)
     ),
-    list.map_foldl3(make_part_tree(Cols), Body, PartTrees,
+    list.map_foldl3(make_part_tree(Config, Cols), Body, PartTrees,
         yes, _ElideInitialHeadLine, !Counter, !IO),
     SubTrees = [leaf(HeaderLines) | PartTrees],
     PreBlank = no,
@@ -808,20 +814,22 @@ add_encapsulated_header(Header, Value, RevLines0, RevLines) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred make_unsupported_part_tree(int::in, node_id::in, part::in,
-    list(part)::in, tree::out, io::di, io::uo) is det.
+:- pred make_unsupported_part_tree(prog_config::in, int::in, node_id::in,
+    part::in, list(part)::in, tree::out, io::di, io::uo) is det.
 
-make_unsupported_part_tree(Cols, PartNodeId, Part, AltParts, Tree, !IO) :-
+make_unsupported_part_tree(Config, Cols, PartNodeId, Part, AltParts, Tree,
+        !IO) :-
     Part = part(MessageId, PartId, Type, Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength),
     % XXX we should use mailcap, though we don't want to show everything
     ( Content = unsupported_inline ->
         ( strcase_equal(Type, "text/html") ->
-            get_maybe_html_dump_command(MaybeFilterCommand, !IO)
+            get_maybe_html_dump_command(Config, MaybeFilterCommand)
         ;
             MaybeFilterCommand = no
         ),
-        expand_part(MessageId, PartId, MaybeFilterCommand, MaybeText, !IO)
+        expand_part(Config, MessageId, PartId, MaybeFilterCommand, MaybeText,
+            !IO)
     ;
         MaybeText = ok("")
     ),
@@ -844,7 +852,7 @@ blank_line = text(0, "", 0, plain).
 
 %-----------------------------------------------------------------------------%
 
-setup_pager_for_staging(Cols, Text, RetainPagerPos, Info) :-
+setup_pager_for_staging(Config, Cols, Text, RetainPagerPos, Info) :-
     make_text_lines(Cols, Text, Lines0),
     Lines = Lines0 ++ [
         message_separator,
@@ -855,7 +863,7 @@ setup_pager_for_staging(Cols, Text, RetainPagerPos, Info) :-
     allocate_node_id(NodeId, Counter0, Counter),
     Tree = node(NodeId, [leaf(Lines)], no),
     Scrollable0 = scrollable.init(flatten(Tree)),
-    Info0 = pager_info(Tree, Counter, Scrollable0),
+    Info0 = pager_info(Config, Tree, Counter, Scrollable0),
     (
         RetainPagerPos = new_pager,
         Info = Info0
@@ -1426,13 +1434,13 @@ toggle_line(Cols, NodeId - Line, MessageUpdate, Info0, Info, !IO) :-
 
 toggle_part(Cols, NodeId, Line, MessageUpdate, Info0, Info, !IO) :-
     Line = part_head(Part0, HiddenParts0),
-    Info0 = pager_info(Tree0, Counter0, Scrollable0),
+    Info0 = pager_info(Config, Tree0, Counter0, Scrollable0),
     ( cycle(Part0, HiddenParts0, Part, HiddenParts, MessageUpdatePrime) ->
-        make_part_tree_with_alts(Cols, HiddenParts, Part, NewNode, no,
+        make_part_tree_with_alts(Config, Cols, HiddenParts, Part, NewNode, no,
             _ElideInitialHeadLine, Counter0, Counter, !IO),
         replace_node(NodeId, NewNode, Tree0, Tree),
         scrollable.reinit(flatten(Tree), Scrollable0, Scrollable),
-        Info = pager_info(Tree, Counter, Scrollable),
+        Info = pager_info(Config, Tree, Counter, Scrollable),
         MessageUpdate = MessageUpdatePrime
     ;
         Info = Info0,
@@ -1481,10 +1489,10 @@ toggle_folding(NodeId, Line, Info0, Info) :-
     ),
     NewNode = node(NodeId, [SubTree], no),
 
-    Info0 = pager_info(Tree0, Counter, Scrollable0),
+    Info0 = pager_info(Config, Tree0, Counter, Scrollable0),
     replace_node(NodeId, NewNode, Tree0, Tree),
     scrollable.reinit(flatten(Tree), Scrollable0, Scrollable),
-    Info = pager_info(Tree, Counter, Scrollable).
+    Info = pager_info(Config, Tree, Counter, Scrollable).
 
 %-----------------------------------------------------------------------------%
 
