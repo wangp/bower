@@ -17,8 +17,8 @@
     ;       int(int)
     ;       float(float)
     ;       string(esc_string)
-    ;       array(list(json))
-    ;       map(json_map).
+    ;       list(list(json))        % array
+    ;       map(json_map).          % object
 
 :- type esc_string.
 
@@ -99,7 +99,7 @@ value(Src, Value, !PS) :-
     ;
         C = ('['),
         array(Src, List, !PS),
-        Value = array(List)
+        Value = list(List)
     ;
         C = ('{'),
         object(Src, Map, !PS),

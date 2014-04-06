@@ -106,9 +106,9 @@ run_notmuch_cc(Args, P, Result, !IO) :-
 %-----------------------------------------------------------------------------%
 
 parse_messages_list(JSON, Messages) :-
-    ( JSON = array([List]) ->
+    ( JSON = list([List]) ->
         parse_inner_message_list(List, Messages)
-    ; JSON = array([]) ->
+    ; JSON = list([]) ->
         Messages = []
     ;
         notmuch_json_error
@@ -120,7 +120,7 @@ parse_top_message(JSON, Message) :-
 :- pred parse_inner_message_list(json::in, list(message)::out) is det.
 
 parse_inner_message_list(JSON, Messages) :-
-    ( JSON = array(Array) ->
+    ( JSON = list(Array) ->
         list.map(parse_message, Array, Messages)
     ;
         notmuch_json_error
@@ -129,7 +129,7 @@ parse_inner_message_list(JSON, Messages) :-
 :- pred parse_message(json::in, message::out) is det.
 
 parse_message(JSON, Message) :-
-    ( JSON = array([JSON1, JSON2]) ->
+    ( JSON = list([JSON1, JSON2]) ->
         parse_inner_message_list(JSON2, Replies),
         parse_message_details(JSON1, Replies, Message)
     ;
@@ -145,9 +145,9 @@ parse_message_details(JSON, Replies, Message) :-
         JSON/"timestamp" = int(Timestamp),
         JSON/"headers" = map(HeaderMap),
         map.foldl(parse_header, HeaderMap, init_headers, Headers),
-        JSON/"tags" = array(TagsList),
+        JSON/"tags" = list(TagsList),
         list.map(parse_tag, TagsList, Tags),
-        JSON/"body" = array(BodyList),
+        JSON/"body" = list(BodyList),
         list.map(parse_part(MessageId), BodyList, Body)
     ->
         TagSet = set.from_list(Tags),
@@ -194,7 +194,7 @@ parse_part(MessageId, JSON, Part) :-
     ->
         % NOTE: ContentType must be compared case-insensitively.
         ( strcase_prefix(ContentType, "multipart/") ->
-            ( JSON/"content" = array(SubParts0) ->
+            ( JSON/"content" = list(SubParts0) ->
                 list.map(parse_part(MessageId), SubParts0, SubParts),
                 Content = subparts(SubParts),
                 MaybeFilename = no,
@@ -204,7 +204,7 @@ parse_part(MessageId, JSON, Part) :-
                 notmuch_json_error
             )
         ; strcase_equal(ContentType, "message/rfc822") ->
-            ( JSON/"content" = array(List) ->
+            ( JSON/"content" = list(List) ->
                 list.map(parse_encapsulated_message(MessageId), List,
                     EncapMessages),
                 Content = encapsulated_messages(EncapMessages),
@@ -255,7 +255,7 @@ parse_encapsulated_message(MessageId, JSON, EncapMessage) :-
     (
         JSON/"headers" = map(HeaderMap),
         map.foldl(parse_header, HeaderMap, init_headers, Headers),
-        JSON/"body" = array(BodyList),
+        JSON/"body" = list(BodyList),
         list.map(parse_part(MessageId), BodyList, Body)
     ->
         EncapMessage = encapsulated_message(Headers, Body)
@@ -266,7 +266,7 @@ parse_encapsulated_message(MessageId, JSON, EncapMessage) :-
 %-----------------------------------------------------------------------------%
 
 parse_threads_list(Json, Threads) :-
-    ( Json = array(List) ->
+    ( Json = list(List) ->
         list.map(parse_thread, List, Threads)
     ;
         notmuch_json_error
@@ -280,7 +280,7 @@ parse_thread(Json, Thread) :-
         Json/"timestamp" = int(Timestamp),
         Json/"authors" = unesc_string(Authors),
         Json/"subject" = unesc_string(Subject),
-        Json/"tags" = array(TagsList),
+        Json/"tags" = list(TagsList),
         Json/"matched" = int(Matched),
         Json/"total" = int(Total),
         list.map(parse_tag, TagsList, Tags)
@@ -301,7 +301,7 @@ parse_tag(Json, tag(Tag)) :-
 
 parse_message_id_list(JSON, MessageId) :-
     (
-        JSON = array(List),
+        JSON = list(List),
         list.map(parse_message_id, List, MessageId0)
     ->
         MessageId = MessageId0

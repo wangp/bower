@@ -71,7 +71,7 @@ test_unescaped_strings(Value, !IO) :-
         io.write_string(String, !IO),
         io.write_string("»\n", !IO)
     ;
-        Value = array(List),
+        Value = list(List),
         list.foldl(test_unescaped_strings, List, !IO)
     ;
         Value = map(Map),
