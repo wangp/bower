@@ -30,7 +30,7 @@ main(!IO) :-
 :- pred test(string::in, io::di, io::uo) is cc_multi.
 
 test(Input, !IO) :-
-    parse_json_proper(Input, ParseResult),
+    parse_json(Input, ParseResult),
     io.write_string("«", !IO),
     io.write_string(Input, !IO),
     io.write_string("»\n", !IO),

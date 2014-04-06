@@ -68,6 +68,15 @@ get_notmuch_config(Section, Key, Res, !IO) :-
 %-----------------------------------------------------------------------------%
 
 run_notmuch(Args, P, Result, !IO) :-
+    promise_equivalent_solutions [Result, !:IO] (
+        run_notmuch_cc(Args, P, Result, !IO)
+    ).
+
+:- pred run_notmuch_cc(list(string)::in,
+    pred(json, T)::in(pred(in, out) is det), maybe_error(T)::out,
+    io::di, io::uo) is cc_multi.
+
+run_notmuch_cc(Args, P, Result, !IO) :-
     args_to_quoted_command(Args, Command),
     get_notmuch_prefix(Notmuch, !IO),
     call_system_capture_stdout(Notmuch ++ Command, no, CommandResult, !IO),

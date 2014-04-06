@@ -26,10 +26,7 @@
 
 :- type key == string.
 
-:- pragma obsolete(parse_json/2).
-:- pred parse_json(string::in, parse_result(json)::out) is det.
-
-:- pred parse_json_proper(string::in, parse_result(json)::out) is cc_multi.
+:- pred parse_json(string::in, parse_result(json)::out) is cc_multi.
 
 :- func unescape(esc_string) = string.
 
@@ -55,11 +52,6 @@
 %-----------------------------------------------------------------------------%
 
 parse_json(Input, ParseResult) :-
-    promise_equivalent_solutions [ParseResult] (
-        parsing_utils.parse(Input, skip_ws, parse_json_eof, ParseResult)
-    ).
-
-parse_json_proper(Input, ParseResult) :-
     parsing_utils.parse(Input, skip_ws, parse_json_eof, ParseResult).
 
 :- pred parse_json_eof(src::in, json::out, ps::in, ps::out) is semidet.
