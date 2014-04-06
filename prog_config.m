@@ -7,6 +7,8 @@
 :- import_module io.
 :- import_module maybe.
 
+:- type prog_config.
+
 :- pred load_prog_config(maybe_error::out, io::di, io::uo) is det.
 
 :- pred check_sendmail_command(maybe_error::out, io::di, io::uo) is det.
@@ -41,10 +43,23 @@
 :- import_module config.
 :- import_module xdg.
 
-%-----------------------------------------------------------------------------%
-
-:- mutable(prog_config, config, init_config, ground,
+    % Remove this later.
+:- mutable(prog_config, prog_config, init_prog_config, ground,
     [untrailed, attach_to_io_state]).
+
+:- type prog_config
+    --->    prog_config(
+                notmuch         :: string,
+                notmuch_deliver :: string,
+                editor          :: string,
+                sendmail        :: string,
+                post_sendmail   :: maybe(string),
+                html_dump       :: maybe(string)
+            ).
+
+:- func init_prog_config = prog_config.
+
+init_prog_config = prog_config("", "", "", "", no, no).
 
 %-----------------------------------------------------------------------------%
 
@@ -55,7 +70,8 @@ load_prog_config(Res, !IO) :-
         load_config_file(ConfigFile, LoadRes, !IO),
         (
             LoadRes = ok(Config),
-            set_prog_config(Config, !IO),
+            make_prog_config(Config, ProgConfig, !IO),
+            set_prog_config(ProgConfig, !IO),
             Res = ok
         ;
             LoadRes = error(Error),
@@ -65,6 +81,62 @@ load_prog_config(Res, !IO) :-
         MaybeConfigFile = no,
         Res = ok
     ).
+
+:- pred make_prog_config(config::in, prog_config::out, io::di, io::uo) is det.
+
+make_prog_config(Config, ProgConfig, !IO) :-
+    ( search_config(Config, "command", "notmuch", Notmuch0) ->
+        Notmuch = Notmuch0
+    ;
+        Notmuch = default_notmuch_command
+    ),
+
+    ( search_config(Config, "command", "notmuch_deliver", NotmuchDeliver0) ->
+        NotmuchDeliver = NotmuchDeliver0
+    ;
+        NotmuchDeliver = default_notmuch_deliver_command
+    ),
+
+    ( search_config(Config, "command", "editor", Editor0) ->
+        Editor = Editor0
+    ;
+        io.get_environment_var("EDITOR", MaybeEditor, !IO),
+        (
+            MaybeEditor = yes(Editor)
+        ;
+            MaybeEditor = no,
+            Editor = default_editor_command
+        )
+    ),
+
+    ( search_config(Config, "command", "sendmail", Sendmail0) ->
+        Sendmail = Sendmail0
+    ;
+        Sendmail = default_sendmail_command
+    ),
+
+    ( search_config(Config, "command", "post_sendmail", PostSendmail) ->
+        MaybePostSendmail = yes(PostSendmail)
+    ;
+        MaybePostSendmail = no
+    ),
+
+    ( search_config(Config, "command", "html_dump", HtmlDump) ->
+        ( HtmlDump = "" ->
+            MaybeHtmlDump = no
+        ;
+            MaybeHtmlDump = yes(HtmlDump)
+        )
+    ;
+        MaybeHtmlDump = yes(default_html_dump_command)
+    ),
+
+    ProgConfig ^ notmuch = Notmuch,
+    ProgConfig ^ notmuch_deliver = NotmuchDeliver,
+    ProgConfig ^ editor = Editor,
+    ProgConfig ^ sendmail = Sendmail,
+    ProgConfig ^ post_sendmail = MaybePostSendmail,
+    ProgConfig ^ html_dump = MaybeHtmlDump.
 
 %-----------------------------------------------------------------------------%
 
@@ -84,41 +156,19 @@ check_sendmail_command(Res, !IO) :-
 
 get_notmuch_prefix(Notmuch, !IO) :-
     get_prog_config(Config, !IO),
-    ( search_config(Config, "command", "notmuch", Value) ->
-        Notmuch = Value ++ " "
-    ;
-        Notmuch = default_notmuch_prefix
-    ).
+    Notmuch = Config ^ notmuch ++ " ".
 
 get_notmuch_deliver_prefix(NotmuchDeliver, !IO) :-
     get_prog_config(Config, !IO),
-    ( search_config(Config, "command", "notmuch_deliver", Value) ->
-        NotmuchDeliver = Value ++ " "
-    ;
-        NotmuchDeliver = default_notmuch_deliver_prefix
-    ).
+    NotmuchDeliver = Config ^ notmuch_deliver ++ " ".
 
 get_editor_command(Command, !IO) :-
     get_prog_config(Config, !IO),
-    ( search_config(Config, "command", "editor", Value) ->
-        Command = Value
-    ;
-        io.get_environment_var("EDITOR", MaybeEditor, !IO),
-        (
-            MaybeEditor = yes(Command)
-        ;
-            MaybeEditor = no,
-            Command = default_editor_command
-        )
-    ).
+    Command = Config ^ editor.
 
 get_sendmail_command(Option, Command, !IO) :-
     get_prog_config(Config, !IO),
-    ( search_config(Config, "command", "sendmail", Value) ->
-        Command0 = Value
-    ;
-        Command0 = default_sendmail_command
-    ),
+    Command0 = Config ^ sendmail,
     (
         Option = sendmail_no_read_recipients,
         Command = Command0
@@ -129,23 +179,11 @@ get_sendmail_command(Option, Command, !IO) :-
 
 get_maybe_post_sendmail_command(MaybeCommand, !IO) :-
     get_prog_config(Config, !IO),
-    ( search_config(Config, "command", "post_sendmail", Value) ->
-        MaybeCommand = yes(Value)
-    ;
-        MaybeCommand = no
-    ).
+    MaybeCommand = Config ^ post_sendmail.
 
 get_maybe_html_dump_command(MaybeCommand, !IO) :-
     get_prog_config(Config, !IO),
-    ( search_config(Config, "command", "html_dump", Value) ->
-        ( Value = "" ->
-            MaybeCommand = no
-        ;
-            MaybeCommand = yes(Value)
-        )
-    ;
-        MaybeCommand = yes(default_html_dump_command)
-    ).
+    MaybeCommand = Config ^ html_dump.
 
 %-----------------------------------------------------------------------------%
 
@@ -153,13 +191,13 @@ get_maybe_html_dump_command(MaybeCommand, !IO) :-
 
 config_filename = "bower/bower.conf".
 
-:- func default_notmuch_prefix = string.
+:- func default_notmuch_command = string.
 
-default_notmuch_prefix = "notmuch ". % trailing space
+default_notmuch_command = "notmuch".
 
-:- func default_notmuch_deliver_prefix = string.
+:- func default_notmuch_deliver_command = string.
 
-default_notmuch_deliver_prefix = "notmuch-deliver ". % trailing space
+default_notmuch_deliver_command = "notmuch-deliver".
 
 :- func default_editor_command = string.
 
