@@ -72,8 +72,8 @@ main_2(Config, !IO) :-
     ),
     curs.start(!IO),
     ( try [io(!IO)] (
-        create_screen(Screen, !IO),
-        draw_bar(Screen, !IO),
+        create_screen(status_attrs(Config), Screen, !IO),
+        draw_status_bar(Screen, !IO),
         curs.refresh(!IO),
         open_index(Config, Screen, Terms, !IO)
     ) then

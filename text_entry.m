@@ -965,13 +965,12 @@ draw_text_entry(Screen, !Info, !IO) :-
 
     !Info ^ left_offset := LeftOffset,
 
+    % Bit ugly.
+    update_message(Screen, set_prompt(Prompt), !IO),
     get_msgentry_panel(Screen, Panel),
-    panel.erase(Panel, !IO),
-    panel.attr_set(Panel, normal, !IO),
-    my_addstr(Panel, Prompt, !IO),
-    my_addstr(Panel, string.from_rev_char_list(BeforeDraw), !IO),
+    draw(Panel, string.from_rev_char_list(BeforeDraw), !IO),
     panel.getyx(Panel, Y, X, !IO),
-    my_addstr(Panel, string.from_char_list(AfterDraw), !IO),
+    draw(Panel, string.from_char_list(AfterDraw), !IO),
     panel.move(Panel, Y, X, !IO),
     panel.update_panels(!IO).
 

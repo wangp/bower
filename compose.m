@@ -61,6 +61,7 @@
 :- import_module addressbook.
 :- import_module call_system.
 :- import_module callout.
+:- import_module color.
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module maildir.
@@ -130,10 +131,6 @@
 :- type call_res
     --->    ok
     ;       error(string).
-
-:- instance scrollable.line(attachment) where [
-    pred(draw_line/6) is draw_attachment_line
-].
 
 %-----------------------------------------------------------------------------%
 
@@ -536,15 +533,20 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         !IO) :-
     !.StagingInfo = staging_info(Config, Headers, ParsedHeaders, Text,
         MaybeOldDraft, _AttachHistory),
+    Attrs = compose_attrs(Config),
+    PagerAttrs = pager_attrs(Config),
+
     split_panels(Screen, HeaderPanels, AttachmentPanels, MaybeSepPanel,
         PagerPanels),
-    draw_header_lines(HeaderPanels, Headers, ParsedHeaders, !IO),
-    scrollable.draw(AttachmentPanels, !.AttachInfo, !IO),
-    draw_attachments_label(AttachmentPanels, !IO),
-    draw_sep_bar(Screen, MaybeSepPanel, !IO),
-    draw_pager_lines(PagerPanels, !.PagerInfo, !IO),
-    draw_staging_bar(Screen, !.StagingInfo, !IO),
+    draw_header_lines(HeaderPanels, Attrs, Headers, ParsedHeaders, !IO),
+    scrollable.draw(draw_attachment_line(Attrs), AttachmentPanels,
+        !.AttachInfo, !IO),
+    draw_attachments_label(Attrs, AttachmentPanels, !IO),
+    draw_sep_bar(Attrs, Screen, MaybeSepPanel, !IO),
+    draw_pager_lines(PagerAttrs, PagerPanels, !.PagerInfo, !IO),
+    draw_staging_bar(Attrs, Screen, !.StagingInfo, !IO),
     panel.update_panels(!IO),
+
     NumAttachmentRows = list.length(AttachmentPanels),
     NumPagerRows = list.length(PagerPanels),
     get_keycode_blocking(KeyCode, !IO),
@@ -1038,138 +1040,137 @@ split_panels(Screen, HeaderPanels, AttachmentPanels, MaybeSepPanel,
         PagerPanels = []
     ).
 
-:- pred draw_header_lines(list(panel)::in, headers::in, parsed_headers::in,
-    io::di, io::uo) is det.
+:- pred draw_header_lines(list(panel)::in, compose_attrs::in, headers::in,
+    parsed_headers::in, io::di, io::uo) is det.
 
-draw_header_lines(!.Panels, Headers, Parsed, !IO) :-
-    draw_header(!Panels, "    From", draw_addresses, Parsed ^ ph_from, !IO),
-    draw_header(!Panels, "      To", draw_addresses, Parsed ^ ph_to, !IO),
-    draw_header(!Panels, "      Cc", draw_addresses, Parsed ^ ph_cc, !IO),
-    draw_header(!Panels, "     Bcc", draw_addresses, Parsed ^ ph_bcc, !IO),
-    draw_header(!Panels, " Subject", draw_unstruct, Headers ^ h_subject, !IO),
-    draw_header(!Panels, "Reply-To", draw_addresses, Parsed ^ ph_replyto, !IO),
+draw_header_lines(!.Panels, Attrs, Headers, Parsed, !IO) :-
+    hdr(!Panels, Attrs, "    From", draw_addresses, Parsed ^ ph_from, !IO),
+    hdr(!Panels, Attrs, "      To", draw_addresses, Parsed ^ ph_to, !IO),
+    hdr(!Panels, Attrs, "      Cc", draw_addresses, Parsed ^ ph_cc, !IO),
+    hdr(!Panels, Attrs, "     Bcc", draw_addresses, Parsed ^ ph_bcc, !IO),
+    hdr(!Panels, Attrs, " Subject", draw_unstruct, Headers ^ h_subject, !IO),
+    hdr(!Panels, Attrs, "Reply-To", draw_addresses, Parsed ^ ph_replyto, !IO),
     !.Panels = _.
 
-:- pred draw_header(list(panel), list(panel), string,
-    pred(panel, T, io, io), T, io, io).
-:- mode draw_header(in, out, in,
-    in(pred(in, in, di, uo) is det), in, di, uo) is det.
+:- pred hdr(list(panel), list(panel), compose_attrs, string,
+    pred(compose_attrs, panel, T, io, io), T, io, io).
+:- mode hdr(in, out, in, in,
+    in(pred(in, in, in, di, uo) is det), in, di, uo) is det.
 
-draw_header(Panels0, Panels, FieldName, DrawValue, Value, !IO) :-
+hdr(Panels0, Panels, Attrs, FieldName, DrawValue, Value, !IO) :-
     (
         Panels0 = [],
         Panels = []
     ;
         Panels0 = [Panel | Panels],
-        draw_header_field(Panel, FieldName, !IO),
-        panel.attr_set(Panel, normal, !IO),
-        DrawValue(Panel, Value, !IO)
+        draw_header_field(Attrs, Panel, FieldName, !IO),
+        DrawValue(Attrs, Panel, Value, !IO)
     ).
 
-:- pred draw_header_field(panel::in, string::in, io::di, io::uo) is det.
+:- pred draw_header_field(compose_attrs::in, panel::in, string::in,
+    io::di, io::uo) is det.
 
-draw_header_field(Panel, FieldName, !IO) :-
+draw_header_field(Attrs, Panel, FieldName, !IO) :-
     panel.erase(Panel, !IO),
-    panel.attr_set(Panel, fg_bg(red, default) + bold, !IO),
-    my_addstr(Panel, FieldName, !IO),
-    my_addstr(Panel, ": ", !IO).
+    draw(Panel, Attrs ^ c_generic ^ field_name, FieldName, !IO),
+    draw(Panel, ": ", !IO).
 
-:- pred draw_list(pred(panel, T, io, io), panel, list(T), io, io).
-:- mode draw_list(in(pred(in, in, di, uo) is det), in, in, di, uo) is det.
+:- pred draw_list(pred(compose_attrs, panel, T, io, io), compose_attrs, panel,
+    list(T), io, io).
+:- mode draw_list(in(pred(in, in, in, di, uo) is det), in, in,
+    in, di, uo) is det.
 
-draw_list(_Pred, _Panel, [], !IO).
-draw_list(Pred, Panel, [H | T], !IO) :-
-    Pred(Panel, H, !IO),
+draw_list(_Pred, _Attrs, _Panel, [], !IO).
+draw_list(Pred, Attrs, Panel, [H | T], !IO) :-
+    Pred(Attrs, Panel, H, !IO),
     (
         T = []
     ;
         T = [_ | _],
-        panel.attr_set(Panel, normal, !IO),
-        my_addstr(Panel, ", ", !IO),
-        draw_list(Pred, Panel, T, !IO)
+        draw(Panel, Attrs ^ c_generic ^ field_body, ", ", !IO),
+        draw_list(Pred, Attrs, Panel, T, !IO)
     ).
 
-:- func attr_for_invalid = attr.
+:- pred draw_addresses(compose_attrs::in, panel::in, list(address)::in,
+    io::di, io::uo) is det.
 
-attr_for_invalid = fg_bg(red, default).
+draw_addresses(Attrs, Panel, Addresses, !IO) :-
+    draw_list(draw_address, Attrs, Panel, Addresses, !IO).
 
-:- pred draw_addresses(panel::in, list(address)::in, io::di, io::uo) is det.
+:- pred draw_address(compose_attrs::in, panel::in, address::in, io::di, io::uo)
+    is det.
 
-draw_addresses(Panel, Addresses, !IO) :-
-    draw_list(draw_address, Panel, Addresses, !IO).
-
-:- pred draw_address(panel::in, address::in, io::di, io::uo) is det.
-
-draw_address(Panel, Address, !IO) :-
+draw_address(Attrs, Panel, Address, !IO) :-
     (
         Address = mailbox(Mailbox),
-        draw_mailbox(Panel, Mailbox, !IO)
+        draw_mailbox(Attrs, Panel, Mailbox, !IO)
     ;
         Address = group(DisplayName, Mailboxes),
-        draw_display_name(Panel, DisplayName, !IO),
-        attr_set(Panel, normal, !IO),
-        my_addstr(Panel, ": ", !IO),
-        draw_list(draw_mailbox, Panel, Mailboxes, !IO),
-        attr_set(Panel, normal, !IO),
-        my_addstr(Panel, ";", !IO)
+        draw_display_name(Attrs, Panel, DisplayName, !IO),
+        Attr = Attrs ^ c_generic ^ field_body,
+        draw(Panel, Attr, ": ", !IO),
+        draw_list(draw_mailbox, Attrs, Panel, Mailboxes, !IO),
+        draw(Panel, Attr, ";", !IO)
     ).
 
-:- pred draw_display_name(panel::in, display_name::in, io::di, io::uo) is det.
+:- pred draw_display_name(compose_attrs::in, panel::in, display_name::in,
+    io::di, io::uo) is det.
 
-draw_display_name(Panel, DisplayName, !IO) :-
+draw_display_name(Attrs, Panel, DisplayName, !IO) :-
     display_name_to_string(no_encoding, DisplayName, String, Valid),
     (
         Valid = yes,
-        attr_set(Panel, normal, !IO)
+        Attr = Attrs ^ c_generic ^ field_body
     ;
         Valid = no,
-        attr_set(Panel, attr_for_invalid, !IO)
+        Attr = Attrs ^ c_invalid
     ),
-    my_addstr(Panel, String, !IO).
+    draw(Panel, Attr, String, !IO).
 
-:- pred draw_mailbox(panel::in, mailbox::in, io::di, io::uo) is det.
+:- pred draw_mailbox(compose_attrs::in, panel::in, mailbox::in, io::di, io::uo)
+    is det.
 
-draw_mailbox(Panel, Mailbox, !IO) :-
+draw_mailbox(Attrs, Panel, Mailbox, !IO) :-
     (
         Mailbox = mailbox(yes(DisplayName), AddrSpec),
-        draw_display_name(Panel, DisplayName, !IO),
-        attr_set(Panel, normal, !IO),
-        my_addstr(Panel, " <", !IO),
-        draw_addr_spec(Panel, AddrSpec, !IO),
-        attr_set(Panel, normal, !IO),
-        my_addstr(Panel, ">", !IO)
+        draw_display_name(Attrs, Panel, DisplayName, !IO),
+        Attr = Attrs ^ c_generic ^ field_body,
+        draw(Panel, Attr, " <", !IO),
+        draw_addr_spec(Attrs, Panel, AddrSpec, !IO),
+        draw(Panel, Attr, ">", !IO)
     ;
         Mailbox = mailbox(no, AddrSpec),
-        draw_addr_spec(Panel, AddrSpec, !IO)
+        draw_addr_spec(Attrs, Panel, AddrSpec, !IO)
     ;
         Mailbox = bad_mailbox(String),
-        attr_set(Panel, attr_for_invalid, !IO),
-        my_addstr(Panel, String, !IO)
+        draw(Panel, Attrs ^ c_invalid, String, !IO)
     ).
 
-:- pred draw_addr_spec(panel::in, addr_spec::in, io::di, io::uo) is det.
+:- pred draw_addr_spec(compose_attrs::in, panel::in, addr_spec::in,
+    io::di, io::uo) is det.
 
-draw_addr_spec(Panel, AddrSpec, !IO) :-
+draw_addr_spec(Attrs, Panel, AddrSpec, !IO) :-
     addr_spec_to_string(AddrSpec, String, Valid),
     (
         Valid = yes,
-        attr_set(Panel, fg_bg(blue, default) + bold, !IO)
+        Attr = Attrs ^ c_address
     ;
         Valid = no,
-        attr_set(Panel, attr_for_invalid, !IO)
+        Attr = Attrs ^ c_invalid
     ),
-    my_addstr(Panel, String, !IO).
+    draw(Panel, Attr, String, !IO).
 
-:- pred draw_unstruct(panel::in, header_value::in, io::di, io::uo) is det.
-
-draw_unstruct(Panel, Value, !IO) :-
-    panel.attr_set(Panel, normal, !IO),
-    draw_header_value(Panel, Value, !IO).
-
-:- pred draw_attachment_line(panel::in, attachment::in, int::in, bool::in,
+:- pred draw_unstruct(compose_attrs::in, panel::in, header_value::in,
     io::di, io::uo) is det.
 
-draw_attachment_line(Panel, Attachment, LineNr, IsCursor, !IO) :-
+draw_unstruct(Attrs, Panel, Value, !IO) :-
+    String = header_value_string(Value),
+    draw(Panel, Attrs ^ c_generic ^ field_body, String, !IO).
+
+:- pred draw_attachment_line(compose_attrs::in, panel::in, attachment::in,
+    int::in, bool::in, io::di, io::uo) is det.
+
+draw_attachment_line(Attrs, Panel, Attachment, LineNr, IsCursor, !IO) :-
     (
         Attachment = old_attachment(Part),
         Type = Part ^ pt_type,
@@ -1186,60 +1187,58 @@ draw_attachment_line(Panel, Attachment, LineNr, IsCursor, !IO) :-
     ),
     panel.erase(Panel, !IO),
     panel.move(Panel, 0, 10, !IO),
-    panel.attr_set(Panel, normal, !IO),
-    my_addstr(Panel, format("%d. ", [i(LineNr + 1)]), !IO),
+    Attr = Attrs ^ c_generic ^ field_body,
+    draw(Panel, Attr, format("%d. ", [i(LineNr + 1)]), !IO),
     (
         IsCursor = yes,
-        panel.attr_set(Panel, reverse, !IO)
+        FilenameAttr = Attr + reverse
     ;
         IsCursor = no,
-        panel.attr_set(Panel, normal, !IO)
+        FilenameAttr = Attr
     ),
-    my_addstr(Panel, Filename, !IO),
-    panel.attr_set(Panel, normal, !IO),
-    my_addstr(Panel, " (", !IO),
-    my_addstr(Panel, Type, !IO),
-    my_addstr(Panel, ")", !IO),
+    draw(Panel, FilenameAttr, Filename, !IO),
+    draw(Panel, Attr, " (" ++ Type ++ ")", !IO),
     ( Size >= 1024 * 1024 ->
         SizeM = float(Size) / (1024.0 * 1024.0),
-        my_addstr(Panel, format(" %.1f MiB", [f(SizeM)]), !IO)
+        draw(Panel, format(" %.1f MiB", [f(SizeM)]), !IO)
     ; Size >= 1024 ->
         SizeK = float(Size) / 1024.0,
-        my_addstr(Panel, format(" %.1f KiB", [f(SizeK)]), !IO)
+        draw(Panel, format(" %.1f KiB", [f(SizeK)]), !IO)
     ; Size >= 0 ->
-        my_addstr(Panel, format(" %d bytes", [i(Size)]), !IO)
+        draw(Panel, format(" %d bytes", [i(Size)]), !IO)
     ;
         true
     ).
 
-:- pred draw_attachments_label(list(panel)::in, io::di, io::uo) is det.
+:- pred draw_attachments_label(compose_attrs::in, list(panel)::in,
+    io::di, io::uo) is det.
 
-draw_attachments_label([], !IO).
-draw_attachments_label([Panel | _], !IO) :-
+draw_attachments_label(_Attrs, [], !IO).
+draw_attachments_label(Attrs, [Panel | _], !IO) :-
     panel.move(Panel, 0, 0, !IO),
-    panel.attr_set(Panel, fg_bg(red, default) + bold, !IO),
-    my_addstr(Panel, "  Attach: ", !IO).
+    draw(Panel, Attrs ^ c_generic ^ field_name, "  Attach: ", !IO).
 
-:- pred draw_sep_bar(screen::in, maybe(panel)::in, io::di, io::uo) is det.
+:- pred draw_sep_bar(compose_attrs::in, screen::in, maybe(panel)::in,
+    io::di, io::uo) is det.
 
-draw_sep_bar(_, no, !IO).
-draw_sep_bar(Screen, yes(Panel), !IO) :-
+draw_sep_bar(_, _, no, !IO).
+draw_sep_bar(Attrs, Screen, yes(Panel), !IO) :-
+    Attr = Attrs ^ c_status ^ bar,
     get_cols(Screen, Cols),
     panel.erase(Panel, !IO),
-    panel.attr_set(Panel, fg_bg(white, blue), !IO),
-    my_addstr(Panel, "-- (ftcbsr) edit fields; (a) attach, (d) detach, "
+    draw(Panel, Attr, "-- (ftcbsr) edit fields; (a) attach, (d) detach, "
         ++ "(T) edit attachment type ", !IO),
     hline(Panel, char.to_int('-'), Cols, !IO).
 
-:- pred draw_staging_bar(screen::in, staging_info::in, io::di, io::uo) is det.
+:- pred draw_staging_bar(compose_attrs::in, screen::in, staging_info::in,
+    io::di, io::uo) is det.
 
-draw_staging_bar(Screen, StagingInfo, !IO) :-
+draw_staging_bar(Attrs, Screen, StagingInfo, !IO) :-
     MaybeOldDraft = StagingInfo ^ si_old_msgid,
     get_cols(Screen, Cols),
     get_bar_panel(Screen, Panel),
     panel.erase(Panel, !IO),
-    panel.attr_set(Panel, fg_bg(white, blue), !IO),
-    my_addstr(Panel, "-- ", !IO),
+    draw(Panel, Attrs ^ c_status ^ bar, "-- ", !IO),
     (
         MaybeOldDraft = yes(_),
         Msg = "Compose: (e) edit, (p) postpone, (Y) send, " ++
@@ -1248,7 +1247,7 @@ draw_staging_bar(Screen, StagingInfo, !IO) :-
         MaybeOldDraft = no,
         Msg = "Compose: (e) edit, (p) postpone, (Y) send, (Q) abandon."
     ),
-    my_addstr_fixed(Panel, Cols - 3, Msg, '-', !IO).
+    draw_fixed(Panel, Cols - 3, Msg, '-', !IO).
 
 %-----------------------------------------------------------------------------%
 

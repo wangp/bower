@@ -7,10 +7,11 @@
 :- import_module char.
 :- import_module io.
 :- import_module list.
+:- import_module maybe.
 
+:- import_module color.
 :- import_module curs.
 :- import_module curs.panel.
-:- import_module data.
 
 %-----------------------------------------------------------------------------%
 
@@ -35,7 +36,7 @@
 :- type sigint_received
     --->    sigint_received.
 
-:- pred create_screen(screen::uo, io::di, io::uo) is det.
+:- pred create_screen(status_attrs::in, screen::uo, io::di, io::uo) is det.
 
 :- pred replace_screen_for_resize(screen::in, screen::out, io::di, io::uo)
     is det.
@@ -55,34 +56,51 @@
 
 :- pred get_msgentry_panel(screen::in, panel::out) is det.
 
-    % Like addstr but doesn't add the string if the cursor is already at the
-    % end of the panel.
-    %
-:- pred my_addstr(panel::in, string::in, io::di, io::uo) is det.
-:- pred my_addstr(panel::in, string::in, string::in, io::di, io::uo) is det.
+%-----------------------------------------------------------------------------%
 
-    % my_addstr_fixed(Panel, NrCols, String, PadChar, !IO)
+    % The draw routines are like curs.addstr but doesn't add the string if the
+    % cursor is already at the end of the panel.
     %
-    % Like my_addstr, but truncate the string if it would exceed the given
-    % number of columns.  Afterwards the cursor is placed NrCols after the
-    % original position (or otherwise the right margin of the panel).
-    %
-:- pred my_addstr_fixed(panel::in, int::in, string::in, char::in,
+    % The draw_fixed routines additionally truncate the string if it would
+    % exceed the given number of columns.  Afterwards the cursor is placed
+    % NrCols after the original position (or otherwise the right margin of the
+    % panel).
+
+:- pred attr(panel::in, attr::in, io::di, io::uo) is det.
+
+:- pred mattr(panel::in, maybe(attr)::in, io::di, io::uo) is det.
+
+:- pred draw(panel::in, string::in, io::di, io::uo) is det.
+
+:- pred draw2(panel::in, string::in, string::in, io::di, io::uo) is det.
+
+:- pred draw(panel::in, attr::in, string::in, io::di, io::uo) is det.
+
+:- pred draw(panel::in, attr::in, string::in, int::in, int::in,
     io::di, io::uo) is det.
+
+:- pred draw_fixed(panel::in, int::in, string::in, char::in,
+    io::di, io::uo) is det.
+
+:- pred draw_fixed(panel::in, attr::in, int::in, string::in, char::in,
+    io::di, io::uo) is det.
+
+:- pred mattr_draw(panel::in, maybe(attr)::in, string::in, io::di, io::uo)
+    is det.
+
+:- pred mattr_draw_fixed(panel::in, maybe(attr)::in, int::in, string::in,
+    char::in, io::di, io::uo) is det.
+
+%-----------------------------------------------------------------------------%
 
 :- pred update_message(screen::in, message_update::in, io::di, io::uo) is det.
 
 :- pred update_message_immed(screen::in, message_update::in, io::di, io::uo)
     is det.
 
-:- pred draw_bar(screen::in, io::di, io::uo) is det.
+:- pred draw_status_bar(screen::in, io::di, io::uo) is det.
 
-:- pred draw_bar_with_text(screen::in, string::in, io::di, io::uo) is det.
-
-:- pred draw_header_value(panel::in, int::in, header_value::in, char::in,
-    io::di, io::uo) is det.
-
-:- pred draw_header_value(panel::in, header_value::in, io::di, io::uo) is det.
+:- pred draw_status_bar(screen::in, string::in, io::di, io::uo) is det.
 
 :- type keycode
     --->    char(char)
@@ -122,7 +140,8 @@
                 cols            :: int,
                 main_panels     :: list(panel),
                 bar_panel       :: panel,
-                msgentry_panel  :: panel
+                msgentry_panel  :: panel,
+                status_attrs    :: status_attrs
             )
     ;       forward_screen(
                 % This version of the screen is obsolete,
@@ -133,11 +152,11 @@
             ).
 
 :- inst real_screen
-    --->    screen(ground, ground, ground, ground, ground).
+    --->    screen(ground, ground, ground, ground, ground, ground).
 
 %-----------------------------------------------------------------------------%
 
-create_screen(Screen, !IO) :-
+create_screen(Attrs, Screen, !IO) :-
     promise_pure (
         curs.rows_cols(Rows, Cols, !IO),
         MainRows = Rows - 2,
@@ -148,7 +167,8 @@ create_screen(Screen, !IO) :-
             !IO),
         create_row_panel(Cols, BarRow, BarPanel, !IO),
         create_row_panel(Cols, MsgEntryRow, MsgEntryPanel, !IO),
-        RealScreen0 = screen(Rows, Cols, MainPanels, BarPanel, MsgEntryPanel),
+        RealScreen0 = screen(Rows, Cols, MainPanels, BarPanel, MsgEntryPanel,
+            Attrs),
         % This is safe because RealScreen0 is definitely dynamically allocated.
         unsafe_promise_unique(RealScreen0, RealScreen),
         impure new_mutvar(RealScreen, Screen)
@@ -164,20 +184,20 @@ create_row_panel(Cols, Row, Panel, !IO) :-
 
 replace_screen_for_resize(Screen0, Screen, !IO) :-
     promise_pure (
-        impure destroy_screen(Screen0, OldRows, OldCols, !IO),
-        create_screen(Screen, !IO),
+        impure destroy_screen(Screen0, OldRows, OldCols, Attrs, !IO),
+        create_screen(Attrs, Screen, !IO),
         % Replace Screen0 by a forwarding pointer.
         impure set_mutvar(Screen0, forward_screen(OldRows, OldCols, Screen))
     ).
 
-:- impure pred destroy_screen(screen::in, int::out, int::out, io::di, io::uo)
-    is det.
+:- impure pred destroy_screen(screen::in, int::out, int::out,
+    status_attrs::out, io::di, io::uo) is det.
 
-destroy_screen(Screen, OldRows, OldCols, !IO) :-
+destroy_screen(Screen, OldRows, OldCols, Attrs, !IO) :-
     impure get_mutvar(Screen, ScreenVersion),
     (
         ScreenVersion = screen(OldRows, OldCols, MainPanels, BarPanel,
-            MsgEntryPanel),
+            MsgEntryPanel, Attrs),
         % impure set_mutvar(Screen, destroyed_screen),
         list.foldl(panel.delete, [BarPanel, MsgEntryPanel | MainPanels], !IO)
     ;
@@ -191,7 +211,7 @@ fast_forward_screen(Screen0, Screen, Resized, !IO) :-
     promise_pure (
         impure get_mutvar(Screen0, ScreenVersion),
         (
-            ScreenVersion = screen(_, _, _, _, _),
+            ScreenVersion = screen(_, _, _, _, _, _),
             Screen = Screen0,
             Resized = no
         ;
@@ -207,7 +227,7 @@ fast_forward_screen(Screen0, Screen, Resized, !IO) :-
 fast_forward_screen_2(Screen0, Screen, Rows, Cols) :-
     impure get_mutvar(Screen0, ScreenVersion),
     (
-        ScreenVersion = screen(Rows, Cols, _, _, _),
+        ScreenVersion = screen(Rows, Cols, _, _, _, _),
         Screen = Screen0
     ;
         ScreenVersion = forward_screen(_, _, Screen1),
@@ -241,13 +261,19 @@ get_msgentry_panel(Screen, MsgEntryPanel) :-
     get_real_screen(Screen, RealScreen),
     MsgEntryPanel = RealScreen ^ msgentry_panel.
 
+:- pred get_status_attrs(screen::in, status_attrs::out) is det.
+
+get_status_attrs(Screen, Attrs) :-
+    get_real_screen(Screen, RealScreen),
+    Attrs = RealScreen ^ status_attrs.
+
 :- pred get_real_screen(screen::in, screen_version::out(real_screen)) is det.
 
 get_real_screen(Screen, RealScreen) :-
     promise_pure (
         impure get_mutvar(Screen, RealScreen),
         (
-            RealScreen = screen(_, _, _, _, _)
+            RealScreen = screen(_, _, _, _, _, _)
         ;
             RealScreen = forward_screen(_, _, _),
             unexpected($module, $pred, "screen already destroyed")
@@ -255,6 +281,46 @@ get_real_screen(Screen, RealScreen) :-
     ).
 
 %-----------------------------------------------------------------------------%
+
+attr(Panel, Attr, !IO) :-
+    panel.attr_set(Panel, Attr, !IO).
+
+mattr(_Panel, no, !IO).
+mattr(Panel, yes(Attr), !IO) :-
+    attr(Panel, Attr, !IO).
+
+draw(Panel, String, !IO) :-
+    my_addstr(Panel, String, !IO).
+
+draw2(Panel, StringA, StringB, !IO) :-
+    my_addstr(Panel, StringA, StringB, !IO).
+
+draw(Panel, Attr, String, !IO) :-
+    panel.attr_set(Panel, Attr, !IO),
+    draw(Panel, String, !IO).
+
+draw(Panel, Attr, String, Start, End, !IO) :-
+    panel.attr_set(Panel, Attr, !IO),
+    draw(Panel, string.between(String, Start, End), !IO).
+
+draw_fixed(Panel, NrCols, String, PadChar, !IO) :-
+    my_addstr_fixed(Panel, NrCols, String, PadChar, !IO).
+
+draw_fixed(Panel, Attr, NrCols, String, PadChar, !IO) :-
+    panel.attr_set(Panel, Attr, !IO),
+    my_addstr_fixed(Panel, NrCols, String, PadChar, !IO).
+
+mattr_draw(Panel, MaybeAttr, String, !IO) :-
+    mattr(Panel, MaybeAttr, !IO),
+    draw(Panel, String, !IO).
+
+mattr_draw_fixed(Panel, MaybeAttr, NrCols, String, PadChar, !IO) :-
+    mattr(Panel, MaybeAttr, !IO),
+    draw_fixed(Panel, NrCols, String, PadChar, !IO).
+
+%-----------------------------------------------------------------------------%
+
+:- pred my_addstr(panel::in, string::in, io::di, io::uo) is det.
 
 my_addstr(Panel, String, !IO) :-
     getyx(Panel, _, X, !IO),
@@ -269,6 +335,8 @@ my_addstr(Panel, String, !IO) :-
         addstr(Panel, String, !IO)
     ).
 
+:- pred my_addstr(panel::in, string::in, string::in, io::di, io::uo) is det.
+
 my_addstr(Panel, StringA, StringB, !IO) :-
     getyx(Panel, _, X, !IO),
     getmaxyx(Panel, _, MaxX, !IO),
@@ -280,7 +348,8 @@ my_addstr(Panel, StringA, StringB, !IO) :-
         addstr(Panel, StringB, !IO)
     ).
 
-%-----------------------------------------------------------------------------%
+:- pred my_addstr_fixed(panel::in, int::in, string::in, char::in,
+    io::di, io::uo) is det.
 
 my_addstr_fixed(Panel, NrCols, String, PadChar, !IO) :-
     getyx(Panel, _, X0, !IO),
@@ -332,58 +401,51 @@ count_loop(String, RemCols, !Index) :-
 
 update_message(Screen, MessageUpdate, !IO) :-
     get_msgentry_panel(Screen, Panel),
+    get_status_attrs(Screen, Attrs),
     (
         MessageUpdate = no_change
     ;
         MessageUpdate = clear_message,
         panel.erase(Panel, !IO)
     ;
-        MessageUpdate = set_info(String),
+        (
+            MessageUpdate = set_info(String),
+            Attr = Attrs ^ info
+        ;
+            MessageUpdate = set_warning(String),
+            Attr = Attrs ^ warning
+        ;
+            MessageUpdate = set_prompt(String),
+            Attr = Attrs ^ prompt
+        ),
         panel.erase(Panel, !IO),
-        panel.attr_set(Panel, fg_bg(cyan, default) + bold, !IO),
-        my_addstr(Panel, String, !IO)
-    ;
-        MessageUpdate = set_warning(String),
-        panel.erase(Panel, !IO),
-        panel.attr_set(Panel, fg_bg(red, default) + bold, !IO),
-        my_addstr(Panel, String, !IO)
-    ;
-        MessageUpdate = set_prompt(String),
-        panel.erase(Panel, !IO),
-        panel.attr_set(Panel, normal, !IO),
-        my_addstr(Panel, String, !IO)
+        draw(Panel, Attr, String, !IO)
     ).
 
-update_message_immed(String, MessageUpdate, !IO) :-
-    update_message(String, MessageUpdate, !IO),
+update_message_immed(Screen, MessageUpdate, !IO) :-
+    update_message(Screen, MessageUpdate, !IO),
     panel.update_panels(!IO).
 
 %-----------------------------------------------------------------------------%
 
-draw_bar(Screen, !IO) :-
+draw_status_bar(Screen, !IO) :-
+    get_status_attrs(Screen, Attrs),
     get_cols(Screen, Cols),
     get_bar_panel(Screen, Panel),
     panel.erase(Panel, !IO),
-    panel.attr_set(Panel, fg_bg(white, blue), !IO),
+    attr(Panel, Attrs ^ bar, !IO),
     hline(Panel, char.to_int('-'), Cols, !IO).
 
-draw_bar_with_text(Screen, Text, !IO) :-
+draw_status_bar(Screen, Text, !IO) :-
+    get_status_attrs(Screen, Attrs),
     get_cols(Screen, Cols),
     get_bar_panel(Screen, Panel),
     panel.erase(Panel, !IO),
-    panel.attr_set(Panel, fg_bg(white, blue), !IO),
-    my_addstr(Panel, "--- ", !IO),
-    my_addstr(Panel, Text, !IO),
-    my_addstr(Panel, " -", !IO),
+    attr(Panel, Attrs ^ bar, !IO),
+    draw(Panel, "--- ", !IO),
+    draw(Panel, Text, !IO),
+    draw(Panel, " -", !IO),
     hline(Panel, char.to_int('-'), Cols, !IO).
-
-%-----------------------------------------------------------------------------%
-
-draw_header_value(Panel, NrCols, Value, PadChar, !IO) :-
-    my_addstr_fixed(Panel, NrCols, header_value_string(Value), PadChar, !IO).
-
-draw_header_value(Panel, Value, !IO) :-
-    my_addstr(Panel, header_value_string(Value), !IO).
 
 %-----------------------------------------------------------------------------%
 

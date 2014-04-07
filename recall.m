@@ -26,6 +26,7 @@
 :- import_module time.
 
 :- import_module callout.
+:- import_module color.
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module data.
@@ -45,14 +46,10 @@
 :- type recall_line
     --->    recall_line(
                 r_message       :: message,
-                r_date          :: header_value,
+                r_reldate       :: string,
                 r_to            :: header_value,
                 r_subject       :: header_value
             ).
-
-:- instance scrollable.line(recall_line) where [
-    pred(draw_line/6) is draw_recall_line
-].
 
 %-----------------------------------------------------------------------------%
 
@@ -98,7 +95,7 @@ make_recall_line(Config, Nowish, MessageId, Line, !IO) :-
         timestamp_to_tm(Timestamp, TM),
         Shorter = no,
         make_reldate(Nowish, TM, Shorter, RelDate),
-        Line = recall_line(Message, header_value(RelDate), To, Subject)
+        Line = recall_line(Message, RelDate, To, Subject)
     ;
         Result = error(Error),
         unexpected($module, $pred, Error)
@@ -111,7 +108,7 @@ make_recall_line(Config, Nowish, MessageId, Line, !IO) :-
 
 recall_screen_loop(Screen, MaybeSelected, !Info, !IO) :-
     draw_recall(Screen, !.Info, !IO),
-    draw_bar(Screen, !IO),
+    draw_status_bar(Screen, !IO),
     panel.update_panels(!IO),
     get_keycode_blocking(KeyCode, !IO),
     (
@@ -218,41 +215,37 @@ delete_draft(Screen, !Info, !IO) :-
 
 draw_recall(Screen, Info, !IO) :-
     get_main_panels(Screen, Panels),
-    Info = recall_info(_Config, Scrollable),
-    scrollable.draw(Panels, Scrollable, !IO).
+    Info = recall_info(Config, Scrollable),
+    Attrs = generic_attrs(Config),
+    scrollable.draw(draw_recall_line(Attrs), Panels, Scrollable, !IO).
 
-:- pred draw_recall_line(panel::in, recall_line::in, int::in, bool::in,
-    io::di, io::uo) is det.
+:- pred draw_recall_line(generic_attrs::in, panel::in, recall_line::in,
+    int::in, bool::in, io::di, io::uo) is det.
 
-draw_recall_line(Panel, Line, _LineNr, IsCursor, !IO) :-
+draw_recall_line(Attrs, Panel, Line, _LineNr, IsCursor, !IO) :-
     Line = recall_line(_FileName, RelDate, To, Subject),
     (
         IsCursor = yes,
-        panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
+        RelDateAttr = Attrs ^ current
     ;
         IsCursor = no,
-        panel.attr_set(Panel, fg_bg(blue, default) + bold, !IO)
+        RelDateAttr = Attrs ^ relative_date
     ),
-    draw_header_value(Panel, 13, RelDate, ' ', !IO),
-    FieldAttr = fg_bg(red, default) + bold,
-    cond_attr_set(Panel, FieldAttr, IsCursor, !IO),
-    my_addstr(Panel, "To: ", !IO),
-    cond_attr_set(Panel, normal, IsCursor, !IO),
-    draw_header_value(Panel, 25, To, ' ', !IO),
-    cond_attr_set(Panel, FieldAttr, IsCursor, !IO),
-    my_addstr(Panel, " Subject: ", !IO),
-    cond_attr_set(Panel, normal, IsCursor, !IO),
-    draw_header_value(Panel, Subject, !IO).
+    draw_fixed(Panel, RelDateAttr, 13, RelDate, ' ', !IO),
 
-:- pred cond_attr_set(panel::in, attr::in, bool::in, io::di, io::uo) is det.
+    NameAttr = Attrs ^ field_name,
+    BodyAttr = Attrs ^ field_body,
+    mattr_draw(Panel, unless(IsCursor, NameAttr), "To: ", !IO),
+    mattr_draw_fixed(Panel, unless(IsCursor, BodyAttr),
+        25, header_value_string(To), ' ', !IO),
+    mattr_draw(Panel, unless(IsCursor, NameAttr), " Subject: ", !IO),
+    mattr_draw(Panel, unless(IsCursor, BodyAttr), header_value_string(Subject),
+        !IO).
 
-cond_attr_set(Panel, Attr, IsCursor, !IO) :-
-    (
-        IsCursor = no,
-        panel.attr_set(Panel, Attr, !IO)
-    ;
-        IsCursor = yes
-    ).
+:- func unless(bool, attr) = maybe(attr).
+
+unless(no, X) = yes(X).
+unless(yes, _) = no.
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

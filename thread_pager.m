@@ -52,6 +52,7 @@
 
 :- import_module addressbook.
 :- import_module callout.
+:- import_module color.
 :- import_module compose.
 :- import_module curs.
 :- import_module curs.panel.
@@ -154,10 +155,6 @@
                 mf_message      :: message,
                 mf_maybe_parent :: maybe(message_id)
             ).
-
-:- instance scrollable.line(thread_line) where [
-    pred(draw_line/6) is draw_thread_line
-].
 
 %-----------------------------------------------------------------------------%
 
@@ -611,7 +608,7 @@ handle_screen_transition(Screen0, Screen, Transition, T, !Info, !IO) :-
 
 thread_pager_loop(Screen, !Info, !IO) :-
     draw_thread_pager(Screen, !.Info, !IO),
-    draw_bar(Screen, !IO),
+    draw_status_bar(Screen, !IO),
     panel.update_panels(!IO),
     get_keycode_blocking(Key, !IO),
     thread_pager_loop_2(Screen, Key, !Info, !IO).
@@ -2080,100 +2077,110 @@ addressbook_add(Screen, Info, !IO) :-
 draw_thread_pager(Screen, Info, !IO) :-
     Scrollable = Info ^ tp_scrollable,
     PagerInfo = Info ^ tp_pager,
+    Config = Info ^ tp_config,
+    Attrs = thread_attrs(Config),
+    PagerAttrs = pager_attrs(Config),
+
     split_panels(Screen, Info, ThreadPanels, SepPanel, PagerPanels),
-    scrollable.draw(ThreadPanels, Scrollable, !IO),
+    scrollable.draw(draw_thread_line(Attrs), ThreadPanels, Scrollable, !IO),
     get_cols(Screen, Cols),
-    draw_sep(Cols, SepPanel, !IO),
-    draw_pager_lines(PagerPanels, PagerInfo, !IO).
+    draw_sep(Attrs, Cols, SepPanel, !IO),
+    draw_pager_lines(PagerAttrs, PagerPanels, PagerInfo, !IO).
 
-:- pred draw_sep(int::in, maybe(panel)::in, io::di, io::uo) is det.
+:- pred draw_sep(thread_attrs::in, int::in, maybe(panel)::in, io::di, io::uo)
+    is det.
 
-draw_sep(Cols, MaybeSepPanel, !IO) :-
+draw_sep(Attrs, Cols, MaybeSepPanel, !IO) :-
     (
         MaybeSepPanel = yes(Panel),
         panel.erase(Panel, !IO),
-        panel.attr_set(Panel, fg_bg(white, blue), !IO),
+        attr(Panel, Attrs ^ t_status ^ bar, !IO),
         hline(Panel, char.to_int('-'), Cols, !IO)
     ;
         MaybeSepPanel = no
     ).
 
-:- pred draw_thread_line(panel::in, thread_line::in, int::in, bool::in,
-    io::di, io::uo) is det.
+:- pred draw_thread_line(thread_attrs::in, panel::in, thread_line::in, int::in,
+    bool::in, io::di, io::uo) is det.
 
-draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
+draw_thread_line(TAttrs, Panel, Line, _LineNr, IsCursor, !IO) :-
     Line = thread_line(_Message, _ParentId, From, _PrevTags, CurrTags,
         StdTags, NonstdTagsWidth, Selected, MaybeGraphics, RelDate,
         MaybeSubject),
+    Attrs = TAttrs ^ t_generic,
     (
         IsCursor = yes,
-        panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
+        RelDateAttr = Attrs ^ current
     ;
         IsCursor = no,
-        panel.attr_set(Panel, fg_bg(blue, default) + bold, !IO)
+        RelDateAttr = Attrs ^ relative_date
     ),
-    my_addstr_fixed(Panel, 13, RelDate, ' ', !IO),
+    draw_fixed(Panel, RelDateAttr, 13, RelDate, ' ', !IO),
+
     (
         Selected = selected,
-        cond_attr_set(Panel, fg_bg(magenta, default) + bold, IsCursor, !IO),
-        my_addstr(Panel, "*", !IO)
+        mattr_draw(Panel, unless(IsCursor, Attrs ^ selected), "*", !IO)
     ;
         Selected = not_selected,
-        my_addstr(Panel, " ", !IO)
+        draw(Panel, " ", !IO)
     ),
-    cond_attr_set(Panel, normal, IsCursor, !IO),
+    mattr(Panel, unless(IsCursor, Attrs ^ standard_tag), !IO),
+
     StdTags = standard_tags(Unread, Replied, Deleted, Flagged),
     (
         Unread = unread,
-        my_addstr(Panel, "n", !IO)
+        draw(Panel, "n", !IO)
     ;
         Unread = read,
-        my_addstr(Panel, " ", !IO)
+        draw(Panel, " ", !IO)
     ),
     (
         Replied = replied,
-        my_addstr(Panel, "r", !IO)
+        draw(Panel, "r", !IO)
     ;
         Replied = not_replied,
-        my_addstr(Panel, " ", !IO)
+        draw(Panel, " ", !IO)
     ),
     (
         Deleted = deleted,
-        my_addstr(Panel, "d", !IO)
+        draw(Panel, "d", !IO)
     ;
         Deleted = not_deleted,
-        my_addstr(Panel, " ", !IO)
+        draw(Panel, " ", !IO)
     ),
     (
         Flagged = flagged,
-        cond_attr_set(Panel, fg_bg(red, default) + bold, IsCursor, !IO),
-        my_addstr(Panel, "! ", !IO)
+        mattr_draw(Panel, unless(IsCursor, Attrs ^ flagged), "! ", !IO)
     ;
         Flagged = unflagged,
-        my_addstr(Panel, "  ", !IO)
+        draw(Panel, "  ", !IO)
     ),
-    cond_attr_set(Panel, fg_bg(magenta, default), IsCursor, !IO),
+
+    mattr(Panel, unless(IsCursor, TAttrs ^ t_tree), !IO),
     (
         MaybeGraphics = yes(Graphics),
         list.foldl(draw_graphic(Panel), Graphics, !IO)
     ;
         MaybeGraphics = no
     ),
-    my_addstr(Panel, "• ", !IO),
+    draw(Panel, "• ", !IO),
+
     (
         Unread = unread,
-        cond_attr_set(Panel, bold, IsCursor, !IO)
+        Highlight = bold
     ;
         Unread = read,
-        cond_attr_set(Panel, normal, IsCursor, !IO)
+        Highlight = normal
     ),
-    my_addstr(Panel, From, !IO),
+    mattr_draw(Panel, unless(IsCursor, Attrs ^ author + Highlight), From,
+        !IO),
+
     (
         MaybeSubject = yes(Subject),
-        my_addstr(Panel, ". ", !IO),
+        draw(Panel, ". ", !IO),
         panel.getyx(Panel, Row, SubjectX0, !IO),
-        cond_attr_set(Panel, fg_bg(green, default), IsCursor, !IO),
-        draw_header_value(Panel, Subject, !IO),
+        mattr_draw(Panel, unless(IsCursor, Attrs ^ subject),
+            header_value_string(Subject), !IO),
         panel.getyx(Panel, _, SubjectX, !IO),
         panel.getmaxyx(Panel, _, MaxX, !IO)
     ;
@@ -2182,6 +2189,7 @@ draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         SubjectX0 = MaxX,
         SubjectX = MaxX
     ),
+
     % Draw non-standard tags, overlapping up to half of the subject.
     ( NonstdTagsWidth > 0 ->
         (
@@ -2194,7 +2202,7 @@ draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         ;
             true
         ),
-        attr_set(Panel, fg_bg(red, default) + bold, !IO),
+        attr_set(Panel, Attrs ^ other_tag, !IO),
         set.fold(draw_display_tag(Panel), CurrTags, !IO)
     ;
         true
@@ -2205,7 +2213,7 @@ draw_thread_line(Panel, Line, _LineNr, IsCursor, !IO) :-
 draw_display_tag(Panel, Tag, !IO) :-
     ( display_tag(Tag) ->
         Tag = tag(TagName),
-        my_addstr(Panel, " ", TagName, !IO)
+        draw2(Panel, " ", TagName, !IO)
     ;
         true
     ).
@@ -2213,7 +2221,7 @@ draw_display_tag(Panel, Tag, !IO) :-
 :- pred draw_graphic(panel::in, graphic::in, io::di, io::uo) is det.
 
 draw_graphic(Panel, Graphic, !IO) :-
-    my_addstr(Panel, graphic_to_char(Graphic), !IO).
+    draw(Panel, graphic_to_char(Graphic), !IO).
 
 :- func graphic_to_char(graphic) = string.
 
@@ -2222,15 +2230,10 @@ graphic_to_char(vert) = "│".
 graphic_to_char(tee) = "├".
 graphic_to_char(ell) = "└".
 
-:- pred cond_attr_set(panel::in, attr::in, bool::in, io::di, io::uo) is det.
+:- func unless(bool, attr) = maybe(attr).
 
-cond_attr_set(Panel, Attr, IsCursor, !IO) :-
-    (
-        IsCursor = no,
-        panel.attr_set(Panel, Attr, !IO)
-    ;
-        IsCursor = yes
-    ).
+unless(no, X) = yes(X).
+unless(yes, _) = no.
 
 :- pred split_panels(screen::in, thread_pager_info::in,
     list(panel)::out, maybe(panel)::out, list(panel)::out) is det.

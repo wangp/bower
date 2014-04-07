@@ -35,6 +35,7 @@
 :- import_module addressbook.
 :- import_module async.
 :- import_module callout.
+:- import_module color.
 :- import_module compose.
 :- import_module curs.
 :- import_module curs.panel.
@@ -155,10 +156,6 @@
 :- type verbosity
     --->    verbose
     ;       quiet.
-
-:- instance scrollable.line(index_line) where [
-    pred(draw_line/6) is draw_index_line
-].
 
 %-----------------------------------------------------------------------------%
 
@@ -295,6 +292,7 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
     index_get_keycode(!.IndexInfo, KeyCode, !IO),
     index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo),
     update_message(Screen, MessageUpdate, !IO),
+
     (
         Action = continue,
         maybe_sched_poll(!IndexInfo, !IO),
@@ -1754,77 +1752,82 @@ handle_async_failure(_Screen, Op, _Failure, !IO) :-
 :- pred draw_index_view(screen::in, index_info::in, io::di, io::uo) is det.
 
 draw_index_view(Screen, Info, !IO) :-
-    get_main_panels(Screen, MainPanels),
+    Config = Info ^ i_config,
+    Attrs = index_attrs(Config),
     Scrollable = Info ^ i_scrollable,
-    scrollable.draw(MainPanels, Scrollable, !IO).
+    get_main_panels(Screen, MainPanels),
+    scrollable.draw(draw_index_line(Attrs), MainPanels, Scrollable, !IO).
 
-:- pred draw_index_line(panel::in, index_line::in, int::in, bool::in,
-    io::di, io::uo) is det.
+:- pred draw_index_line(index_attrs::in, panel::in, index_line::in, int::in,
+    bool::in, io::di, io::uo) is det.
 
-draw_index_line(Panel, Line, _LineNr, IsCursor, !IO) :-
+draw_index_line(IAttrs, Panel, Line, _LineNr, IsCursor, !IO) :-
     Line = index_line(_Id, Selected, Date, Authors, Subject, Tags, StdTags,
         NonstdTagsWidth, Matched, Total),
+    Attrs = IAttrs ^ i_generic,
     (
         IsCursor = yes,
-        panel.attr_set(Panel, fg_bg(yellow, red) + bold, !IO)
+        DateAttr = Attrs ^ current
     ;
         IsCursor = no,
-        panel.attr_set(Panel, fg(blue) + bold, !IO)
+        DateAttr = Attrs ^ relative_date
     ),
-    my_addstr_fixed(Panel, 10, Date, ' ', !IO),
+    draw_fixed(Panel, DateAttr, 10, Date, ' ', !IO),
+
     (
         Selected = selected,
-        cond_attr_set(Panel, fg_bg(magenta, default) + bold, IsCursor, !IO),
-        my_addstr(Panel, "*", !IO)
+        mattr_draw(Panel, unless(IsCursor, Attrs ^ selected), "*", !IO)
     ;
         Selected = not_selected,
-        my_addstr(Panel, " ", !IO)
+        draw(Panel, " ", !IO)
     ),
-    cond_attr_set(Panel, normal, IsCursor, !IO),
+    mattr(Panel, unless(IsCursor, Attrs ^ standard_tag), !IO),
+
     StdTags = standard_tags(Unread, Replied, Deleted, Flagged),
     (
         Unread = unread,
         Base = bold,
-        my_addstr(Panel, "n", !IO)
+        draw(Panel, "n", !IO)
     ;
         Unread = read,
         Base = normal,
-        my_addstr(Panel, " ", !IO)
+        draw(Panel, " ", !IO)
     ),
     (
         Replied = replied,
-        my_addstr(Panel, "r", !IO)
+        draw(Panel, "r", !IO)
     ;
         Replied = not_replied,
-        my_addstr(Panel, " ", !IO)
+        draw(Panel, " ", !IO)
     ),
     (
         Deleted = deleted,
-        my_addstr(Panel, "d", !IO)
+        draw(Panel, "d", !IO)
     ;
         Deleted = not_deleted,
-        my_addstr(Panel, " ", !IO)
+        draw(Panel, " ", !IO)
     ),
     (
         Flagged = flagged,
-        cond_attr_set(Panel, fg(red) + bold, IsCursor, !IO),
-        my_addstr(Panel, "! ", !IO)
+        mattr_draw(Panel, unless(IsCursor, Attrs ^ flagged), "! ", !IO)
     ;
         Flagged = unflagged,
-        my_addstr(Panel, "  ", !IO)
+        draw(Panel, "  ", !IO)
     ),
-    cond_attr_set(Panel, Base, IsCursor, !IO),
-    my_addstr_fixed(Panel, 25, Authors, ' ', !IO),
-    cond_attr_set(Panel, fg(green) + Base, IsCursor, !IO),
+
+    mattr_draw_fixed(Panel, unless(IsCursor, Attrs ^ author + Base),
+        25, Authors, ' ', !IO),
+
     ( Matched = Total ->
         CountStr = format(" %3d     ", [i(Total)])
     ;
         CountStr = format(" %3d/%-3d ", [i(Matched), i(Total)])
     ),
-    my_addstr(Panel, CountStr, !IO),
-    cond_attr_set(Panel, normal, IsCursor, !IO),
+    mattr_draw(Panel, unless(IsCursor, IAttrs ^ i_count), CountStr, !IO),
+
     panel.getyx(Panel, Row, SubjectX0, !IO),
-    my_addstr(Panel, Subject, !IO),
+    mattr_draw(Panel, unless(IsCursor, Attrs ^ subject), Subject, !IO),
+
     % Draw non-standard tags, overlapping up to half of the subject.
     ( NonstdTagsWidth > 0 ->
         panel.getyx(Panel, _, SubjectX, !IO),
@@ -1836,7 +1839,7 @@ draw_index_line(Panel, Line, _LineNr, IsCursor, !IO) :-
         ;
             true
         ),
-        attr_set(Panel, fg_bg(red, default) + bold, !IO),
+        attr(Panel, Attrs ^ other_tag, !IO),
         set.fold(draw_display_tag(Panel), Tags, !IO)
     ;
         true
@@ -1847,7 +1850,7 @@ draw_index_line(Panel, Line, _LineNr, IsCursor, !IO) :-
 draw_display_tag(Panel, Tag, !IO) :-
     ( display_tag(Tag) ->
         Tag = tag(TagName),
-        my_addstr(Panel, " ", TagName, !IO)
+        draw2(Panel, " ", TagName, !IO)
     ;
         true
     ).
@@ -1857,25 +1860,16 @@ draw_display_tag(Panel, Tag, !IO) :-
 draw_index_bar(Screen, Info, !IO) :-
     Count = Info ^ i_poll_count,
     ( Count = 0 ->
-        draw_bar(Screen, !IO)
+        draw_status_bar(Screen, !IO)
     ;
         string.format("%+d messages since refresh", [i(Count)], Message),
-        draw_bar_with_text(Screen, Message, !IO)
+        draw_status_bar(Screen, Message, !IO)
     ).
 
-:- pred cond_attr_set(panel::in, attr::in, bool::in, io::di, io::uo) is det.
+:- func unless(bool, attr) = maybe(attr).
 
-cond_attr_set(Panel, Attr, IsCursor, !IO) :-
-    (
-        IsCursor = no,
-        panel.attr_set(Panel, Attr, !IO)
-    ;
-        IsCursor = yes
-    ).
-
-:- func fg(colour) = attr.
-
-fg(C) = curs.fg_bg(C, default).
+unless(no, X) = yes(X).
+unless(yes, _) = no.
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

@@ -16,13 +16,12 @@
 
 :- type scrollable(T).
 
-:- typeclass line(T) where [
-    pred draw_line(panel::in, T::in, int::in, bool::in, io::di, io::uo) is det
-].
-
 :- type search_direction
     --->    dir_forward
     ;       dir_reverse.
+
+:- type draw_line(T) == pred(panel, T, int, bool, io, io).
+:- inst draw_line    == (pred(in, in, in, in, di, uo) is det).
 
 :- func init(list(T)) = scrollable(T).
 
@@ -91,8 +90,8 @@
 
 :- pred delete_cursor_line(scrollable(T)::in, scrollable(T)::out) is semidet.
 
-:- pred draw(list(panel)::in, scrollable(T)::in, io::di, io::uo) is det
-    <= scrollable.line(T).
+:- pred draw(draw_line(T)::in(draw_line), list(panel)::in, scrollable(T)::in,
+    io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -349,7 +348,7 @@ delete_cursor_line(Scrollable0, Scrollable) :-
 
 %-----------------------------------------------------------------------------%
 
-draw(RowPanels, Scrollable, !IO) :-
+draw(Pred, RowPanels, Scrollable, !IO) :-
     Scrollable = scrollable(Lines, Top, MaybeCursor),
     (
         MaybeCursor = yes(Cursor)
@@ -357,24 +356,23 @@ draw(RowPanels, Scrollable, !IO) :-
         MaybeCursor = no,
         Cursor = -1
     ),
-    draw_lines(RowPanels, Lines, Top, Cursor, !IO).
+    draw_lines(Pred, RowPanels, Lines, Top, Cursor, !IO).
 
-:- pred draw_lines(list(panel)::in, version_array(T)::in, int::in, int::in,
-    io::di, io::uo) is det
-    <= scrollable.line(T).
+:- pred draw_lines(draw_line(T)::in(draw_line), list(panel)::in,
+    version_array(T)::in, int::in, int::in, io::di, io::uo) is det.
 
-draw_lines([], _, _, _, !IO).
-draw_lines([Panel | Panels], Lines, I, Cursor, !IO) :-
+draw_lines(_Pred, [], _, _, _, !IO).
+draw_lines(Pred, [Panel | Panels], Lines, I, Cursor, !IO) :-
     panel.erase(Panel, !IO),
     Size = version_array.size(Lines),
     ( I < Size ->
         Line = version_array.lookup(Lines, I),
         IsCursor = (I = Cursor -> yes ; no),
-        draw_line(Panel, Line, I, IsCursor, !IO)
+        Pred(Panel, Line, I, IsCursor, !IO)
     ;
         true
     ),
-    draw_lines(Panels, Lines, I + 1, Cursor, !IO).
+    draw_lines(Pred, Panels, Lines, I + 1, Cursor, !IO).
 
 :- func clamp(int, int, int) = int.
 

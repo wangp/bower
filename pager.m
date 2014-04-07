@@ -8,6 +8,7 @@
 :- import_module list.
 :- import_module maybe.
 
+:- import_module color.
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module data.
@@ -91,10 +92,11 @@
 :- pred toggle_content(int::in, message_update::out,
     pager_info::in, pager_info::out, io::di, io::uo) is det.
 
-:- pred draw_pager(screen::in, pager_info::in, io::di, io::uo) is det.
-
-:- pred draw_pager_lines(list(panel)::in, pager_info::in, io::di, io::uo)
+:- pred draw_pager(pager_attrs::in, screen::in, pager_info::in, io::di, io::uo)
     is det.
+
+:- pred draw_pager_lines(pager_attrs::in, list(panel)::in, pager_info::in,
+    io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -112,7 +114,6 @@
 :- import_module version_array.
 
 :- import_module copious_output.
-:- import_module prog_config.
 :- import_module string_util.
 :- import_module uri.
 
@@ -184,10 +185,6 @@
     ;       next_message
     ;       prev_message
     ;       skip_quoted_text.
-
-:- instance scrollable.line(id_pager_line) where [
-    pred(draw_line/6) is draw_id_pager_line
-].
 
 %-----------------------------------------------------------------------------%
 
@@ -1496,48 +1493,49 @@ toggle_folding(NodeId, Line, Info0, Info) :-
 
 %-----------------------------------------------------------------------------%
 
-draw_pager(Screen, Info, !IO) :-
+draw_pager(Attrs, Screen, Info, !IO) :-
     get_main_panels(Screen, MainPanels),
-    draw_pager_lines(MainPanels, Info, !IO).
+    draw_pager_lines(Attrs, MainPanels, Info, !IO).
 
-draw_pager_lines(Panels, Info, !IO) :-
+draw_pager_lines(Attrs, Panels, Info, !IO) :-
     Scrollable = Info ^ p_scrollable,
-    scrollable.draw(Panels, Scrollable, !IO).
+    scrollable.draw(draw_id_pager_line(Attrs), Panels, Scrollable, !IO).
 
-:- pred draw_id_pager_line(panel::in, id_pager_line::in, int::in, bool::in,
+:- pred draw_id_pager_line(pager_attrs::in, panel::in, id_pager_line::in,
+    int::in, bool::in, io::di, io::uo) is det.
+
+draw_id_pager_line(Attrs, Panel, _Id - Line, _LineNr, IsCursor, !IO) :-
+    draw_pager_line(Attrs, Panel, Line, IsCursor, !IO).
+
+:- pred draw_pager_line(pager_attrs::in, panel::in, pager_line::in, bool::in,
     io::di, io::uo) is det.
 
-draw_id_pager_line(Panel, _Id - Line, _LineNr, IsCursor, !IO) :-
-    draw_pager_line(Panel, Line, IsCursor, !IO).
-
-:- pred draw_pager_line(panel::in, pager_line::in, bool::in, io::di, io::uo)
-    is det.
-
-draw_pager_line(Panel, Line, IsCursor, !IO) :-
+draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
+    GAttrs = Attrs ^ p_generic,
     (
         ( Line = start_message_header(_Message, Header, Value)
         ; Line = header(Header, Value)
         ),
-        panel.attr_set(Panel, fg_bg(red, default) + bold, !IO),
-        my_addstr(Panel, "| ", !IO),
-        my_addstr(Panel, Header, !IO),
-        my_addstr(Panel, ": ", !IO),
+        attr(Panel, GAttrs ^ field_name, !IO),
+        draw(Panel, "| ", !IO),
+        draw(Panel, Header, !IO),
+        draw(Panel, ": ", !IO),
+        BodyAttr = GAttrs ^ field_body,
         (
             IsCursor = yes,
-            Attr = reverse
+            Highlight = reverse
         ;
             IsCursor = no,
             ( Header = "Subject" ->
-                Attr = bold
+                Highlight = bold
             ;
-                Attr = normal
+                Highlight = normal
             )
         ),
-        panel.attr_set(Panel, Attr, !IO),
-        draw_header_value(Panel, Value, !IO)
+        draw(Panel, BodyAttr + Highlight, header_value_string(Value), !IO)
     ;
         Line = text(QuoteLevel, Text, QuoteMarkerEnd, TextType),
-        Attr0 = quote_level_to_attr(QuoteLevel),
+        Attr0 = quote_level_to_attr(Attrs, QuoteLevel),
         (
             IsCursor = yes,
             Attr1 = reverse
@@ -1547,30 +1545,24 @@ draw_pager_line(Panel, Line, IsCursor, !IO) :-
         ),
         (
             TextType = plain,
-            panel.attr_set(Panel, Attr0 + Attr1, !IO),
-            my_addstr(Panel, Text, !IO)
+            draw(Panel, Attr0 + Attr1, Text, !IO)
         ;
             TextType = diff(DiffLine),
-            DiffAttr = diff_line_to_attr(DiffLine),
+            DiffAttr = diff_line_to_attr(Attrs, DiffLine),
             ( QuoteMarkerEnd = 0 ->
-                panel.attr_set(Panel, DiffAttr + Attr1, !IO),
-                my_addstr(Panel, Text, !IO)
+                draw(Panel, DiffAttr + Attr1, Text, !IO)
             ;
                 End = string.length(Text),
-                panel.attr_set(Panel, Attr0 + Attr1, !IO),
-                my_addstr(Panel, string.between(Text, 0, QuoteMarkerEnd), !IO),
-                panel.attr_set(Panel, DiffAttr + Attr1, !IO),
-                my_addstr(Panel, string.between(Text, QuoteMarkerEnd, End), !IO)
+                draw(Panel, Attr0 + Attr1, Text, 0, QuoteMarkerEnd, !IO),
+                draw(Panel, DiffAttr + Attr1, Text, QuoteMarkerEnd, End, !IO)
             )
         ;
             TextType = url(UrlStart, UrlEnd),
+            UrlAttr = Attrs ^ p_url,
             End = string.length(Text),
-            panel.attr_set(Panel, Attr0 + Attr1, !IO),
-            my_addstr(Panel, string.between(Text, 0, UrlStart), !IO),
-            panel.attr_set(Panel, fg_bg(magenta, default) + Attr1, !IO),
-            my_addstr(Panel, string.between(Text, UrlStart, UrlEnd), !IO),
-            panel.attr_set(Panel, Attr0 + Attr1, !IO),
-            my_addstr(Panel, string.between(Text, UrlEnd, End), !IO)
+            draw(Panel, Attr0 + Attr1, Text, 0, UrlStart, !IO),
+            draw(Panel, UrlAttr + Attr1, Text, UrlStart, UrlEnd, !IO),
+            draw(Panel, Attr0 + Attr1, Text, UrlEnd, End, !IO)
         )
     ;
         Line = part_head(Part, HiddenParts),
@@ -1578,32 +1570,31 @@ draw_pager_line(Panel, Line, IsCursor, !IO) :-
             MaybeEncoding, MaybeLength),
         (
             IsCursor = yes,
-            Attr = fg_bg(magenta, default) + reverse
+            Attr = Attrs ^ p_part_head + reverse
         ;
             IsCursor = no,
-            Attr = fg_bg(magenta, default) + bold
+            Attr = Attrs ^ p_part_head
         ),
-        panel.attr_set(Panel, Attr, !IO),
-        my_addstr(Panel, "[-- ", !IO),
-        my_addstr(Panel, ContentType, !IO),
+        draw(Panel, Attr, "[-- ", !IO),
+        draw(Panel, ContentType, !IO),
         (
             MaybeFilename = yes(Filename),
-            my_addstr(Panel, "; ", !IO),
-            my_addstr(Panel, Filename, !IO)
+            draw(Panel, "; ", !IO),
+            draw(Panel, Filename, !IO)
         ;
             MaybeFilename = no
         ),
         (
             MaybeLength = yes(Length),
             DecodedLength = decoded_length(MaybeEncoding, Length),
-            my_addstr(Panel, format_length(DecodedLength), !IO)
+            draw(Panel, format_length(DecodedLength), !IO)
         ;
             MaybeLength = no
         ),
-        my_addstr(Panel, " --]", !IO),
+        draw(Panel, " --]", !IO),
         ( toggle_part_message(Part, HiddenParts, AltMessage) ->
-            panel.attr_set(Panel, fg_bg(magenta, default), !IO),
-            my_addstr(Panel, AltMessage, !IO)
+            MsgAttr = Attrs ^ p_part_message,
+            draw(Panel, MsgAttr, AltMessage, !IO)
         ;
             true
         )
@@ -1611,37 +1602,36 @@ draw_pager_line(Panel, Line, IsCursor, !IO) :-
         Line = fold_marker(_, _),
         (
             IsCursor = yes,
-            Attr = fg_bg(magenta, default) + reverse
+            Attr = Attrs ^ p_fold + reverse
         ;
             IsCursor = no,
-            Attr = fg_bg(magenta, default)
+            Attr = Attrs ^ p_fold
         ),
-        panel.attr_set(Panel, Attr, !IO),
-        my_addstr(Panel, "...", !IO)
+        draw(Panel, Attr, "...", !IO)
     ;
         Line = message_separator,
-        panel.attr_set(Panel, fg_bg(blue, default) + bold, !IO),
-        my_addstr(Panel, "~", !IO)
+        Attr = Attrs ^ p_separator,
+        draw(Panel, Attr, "~", !IO)
     ).
 
-:- func quote_level_to_attr(quote_level) = attr.
+:- func quote_level_to_attr(pager_attrs, quote_level) = attr.
 
-quote_level_to_attr(QuoteLevel) = Attr :-
+quote_level_to_attr(Attrs, QuoteLevel) = Attr :-
     ( QuoteLevel = 0 ->
-        Attr = normal
+        Attr = Attrs ^ p_body
     ; int.odd(QuoteLevel) ->
-        Attr = fg_bg(blue, default) + bold
+        Attr = Attrs ^ p_quote_odd
     ;
-        Attr = fg_bg(green, default)
+        Attr = Attrs ^ p_quote_even
     ).
 
-:- func diff_line_to_attr(diff_line) = attr.
+:- func diff_line_to_attr(pager_attrs, diff_line) = attr.
 
-diff_line_to_attr(diff_common) = normal.
-diff_line_to_attr(diff_add) = fg_bg(cyan, default) + bold.
-diff_line_to_attr(diff_rem) = fg_bg(red, default) + bold.
-diff_line_to_attr(diff_hunk) = fg_bg(yellow, default) + bold.
-diff_line_to_attr(diff_index) = fg_bg(green, default) + bold.
+diff_line_to_attr(Attrs, diff_common) = Attrs ^ p_diff_common.
+diff_line_to_attr(Attrs, diff_add) = Attrs ^ p_diff_add.
+diff_line_to_attr(Attrs, diff_rem) = Attrs ^ p_diff_rem.
+diff_line_to_attr(Attrs, diff_hunk) = Attrs ^ p_diff_hunk.
+diff_line_to_attr(Attrs, diff_index) = Attrs ^ p_diff_index.
 
 :- func decoded_length(maybe(string), int) = int.
 

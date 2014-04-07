@@ -7,6 +7,10 @@
 :- import_module io.
 :- import_module maybe.
 
+:- import_module color.
+
+%-----------------------------------------------------------------------------%
+
 :- type prog_config.
 
 :- pred load_prog_config(maybe_error(prog_config)::out, io::di, io::uo) is det.
@@ -32,6 +36,13 @@
 :- pred get_maybe_html_dump_command(prog_config::in, maybe(string)::out)
     is det.
 
+:- func generic_attrs(prog_config) = generic_attrs.
+:- func status_attrs(prog_config) = status_attrs.
+:- func pager_attrs(prog_config) = pager_attrs.
+:- func index_attrs(prog_config) = index_attrs.
+:- func thread_attrs(prog_config) = thread_attrs.
+:- func compose_attrs(prog_config) = compose_attrs.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -50,7 +61,14 @@
                 editor          :: string,
                 sendmail        :: string,
                 post_sendmail   :: maybe(string),
-                html_dump       :: maybe(string)
+                html_dump       :: maybe(string),
+
+                generic_attrs_  :: generic_attrs,
+                status_attrs_   :: status_attrs,
+                pager_attrs_    :: pager_attrs,
+                index_attrs_    :: index_attrs,
+                thread_attrs_   :: thread_attrs,
+                compose_attrs_  :: compose_attrs
             ).
 
 %-----------------------------------------------------------------------------%
@@ -128,7 +146,14 @@ make_prog_config(Config, ProgConfig, !IO) :-
     ProgConfig ^ editor = Editor,
     ProgConfig ^ sendmail = Sendmail,
     ProgConfig ^ post_sendmail = MaybePostSendmail,
-    ProgConfig ^ html_dump = MaybeHtmlDump.
+    ProgConfig ^ html_dump = MaybeHtmlDump,
+
+    ProgConfig ^ generic_attrs_ = default_generic_attrs,
+    ProgConfig ^ status_attrs_ = default_status_attrs,
+    ProgConfig ^ pager_attrs_ = default_pager_attrs,
+    ProgConfig ^ index_attrs_ = default_index_attrs,
+    ProgConfig ^ thread_attrs_ = default_thread_attrs,
+    ProgConfig ^ compose_attrs_ = default_compose_attrs.
 
 %-----------------------------------------------------------------------------%
 
@@ -170,6 +195,15 @@ get_maybe_post_sendmail_command(Config, MaybeCommand) :-
 
 get_maybe_html_dump_command(Config, MaybeCommand) :-
     MaybeCommand = Config ^ html_dump.
+
+%-----------------------------------------------------------------------------%
+
+generic_attrs(Config) = Config ^ generic_attrs_.
+status_attrs(Config) = Config ^ status_attrs_.
+pager_attrs(Config) = Config ^ pager_attrs_.
+index_attrs(Config) = Config ^ index_attrs_.
+thread_attrs(Config) = Config ^ thread_attrs_.
+compose_attrs(Config) = Config ^ compose_attrs_.
 
 %-----------------------------------------------------------------------------%
 
