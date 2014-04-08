@@ -35,3 +35,63 @@
 # The command should output UTF-8.
 ; html_dump=lynx -dump -force-html -stdin -display-charset=utf-8
 
+#-----------------------------------------------------------------------------#
+
+# Colours are defined in the [color] and [color.CONTEXT] sections.
+# The more-specific sections override keys in the generic section.
+#
+# Each value has the form:
+#   [attribute] [foreground] [/ background]
+#
+# attribute may be:
+#   normal, bold
+#
+# foreground and background may be:
+#   default, black, red, green, yellow, blue, magenta, cyan, white
+
+; [color]
+;   current = bold yellow / red
+;   relative_date = bold blue
+;   selected = bold magenta
+;   standard_tag = normal
+;   flagged = bold red
+;   author = normal
+;   subject = normal
+;   other_tag = bold red
+;   field_name = bold red
+;   field_body = normal
+;
+; [color.status]
+;   bar = white / blue
+;   info = bold cyan
+;   warning = bold red
+;   prompt = normal
+;
+; [color.pager]
+;   body = normal
+;   quote_odd = bold blue
+;   quote_even = green
+;   diff_common = normal
+;   diff_add = bold cyan
+;   diff_rem = bold red
+;   diff_hunk = bold yellow
+;   diff_index = bold green
+;   url = magenta
+;   part_head = bold magenta
+;   part_message = magenta
+;   fold = magenta
+;   separator = bold blue
+;
+; [color.index]
+;   count = green
+;
+; [color.thread]
+;   tree = magenta
+;   author = normal
+;   subject = green
+;
+; [color.compose]
+;   address = bold blue
+;   invalid = red
+
+#-----------------------------------------------------------------------------#

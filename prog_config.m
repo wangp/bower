@@ -62,13 +62,7 @@
                 sendmail        :: string,
                 post_sendmail   :: maybe(string),
                 html_dump       :: maybe(string),
-
-                generic_attrs_  :: generic_attrs,
-                status_attrs_   :: status_attrs,
-                pager_attrs_    :: pager_attrs,
-                index_attrs_    :: index_attrs,
-                thread_attrs_   :: thread_attrs,
-                compose_attrs_  :: compose_attrs
+                colors          :: colors
             ).
 
 %-----------------------------------------------------------------------------%
@@ -141,19 +135,15 @@ make_prog_config(Config, ProgConfig, !IO) :-
         MaybeHtmlDump = yes(default_html_dump_command)
     ),
 
+    make_colors(Config, Colors),
+
     ProgConfig ^ notmuch = Notmuch,
     ProgConfig ^ notmuch_deliver = NotmuchDeliver,
     ProgConfig ^ editor = Editor,
     ProgConfig ^ sendmail = Sendmail,
     ProgConfig ^ post_sendmail = MaybePostSendmail,
     ProgConfig ^ html_dump = MaybeHtmlDump,
-
-    ProgConfig ^ generic_attrs_ = default_generic_attrs,
-    ProgConfig ^ status_attrs_ = default_status_attrs,
-    ProgConfig ^ pager_attrs_ = default_pager_attrs,
-    ProgConfig ^ index_attrs_ = default_index_attrs,
-    ProgConfig ^ thread_attrs_ = default_thread_attrs,
-    ProgConfig ^ compose_attrs_ = default_compose_attrs.
+    ProgConfig ^ colors = Colors.
 
 %-----------------------------------------------------------------------------%
 
@@ -198,12 +188,12 @@ get_maybe_html_dump_command(Config, MaybeCommand) :-
 
 %-----------------------------------------------------------------------------%
 
-generic_attrs(Config) = Config ^ generic_attrs_.
-status_attrs(Config) = Config ^ status_attrs_.
-pager_attrs(Config) = Config ^ pager_attrs_.
-index_attrs(Config) = Config ^ index_attrs_.
-thread_attrs(Config) = Config ^ thread_attrs_.
-compose_attrs(Config) = Config ^ compose_attrs_.
+generic_attrs(Config) = Config ^ colors ^ generic_attrs.
+status_attrs(Config) = Config ^ colors ^ status_attrs.
+pager_attrs(Config) = Config ^ colors ^ pager_attrs.
+index_attrs(Config) = Config ^ colors ^ index_attrs.
+thread_attrs(Config) = Config ^ colors ^ thread_attrs.
+compose_attrs(Config) = Config ^ colors ^ compose_attrs.
 
 %-----------------------------------------------------------------------------%
 
