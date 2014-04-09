@@ -1832,9 +1832,12 @@ draw_index_line(IAttrs, Panel, Line, _LineNr, IsCursor, !IO) :-
     ( NonstdTagsWidth > 0 ->
         panel.getyx(Panel, _, SubjectX, !IO),
         panel.getmaxyx(Panel, _, MaxX, !IO),
-        ( MaxX - SubjectX < NonstdTagsWidth ->
+        (
+            MaxX - SubjectX < NonstdTagsWidth,
             SubjectMidX = (MaxX + SubjectX0)/2,
             MoveX = max(SubjectMidX, MaxX - NonstdTagsWidth),
+            MoveX < SubjectX
+        ->
             panel.move(Panel, Row, MoveX, !IO)
         ;
             true

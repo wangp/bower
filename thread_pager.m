@@ -2194,10 +2194,11 @@ draw_thread_line(TAttrs, Panel, Line, _LineNr, IsCursor, !IO) :-
     ( NonstdTagsWidth > 0 ->
         (
             MaybeSubject = yes(_),
-            MaxX - SubjectX < NonstdTagsWidth
-        ->
+            MaxX - SubjectX < NonstdTagsWidth,
             SubjectMidX = (MaxX + SubjectX0)/2,
             MoveX = max(SubjectMidX, MaxX - NonstdTagsWidth),
+            MoveX < SubjectX
+        ->
             panel.move(Panel, Row, MoveX, !IO)
         ;
             true
