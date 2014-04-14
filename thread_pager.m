@@ -1766,15 +1766,17 @@ open_part(Action, MessageUpdate, !Info) :-
 
 prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
     History0 = !.Info ^ tp_common_history ^ ch_prog_history,
-    choose_text_initial(History0, "xdg-open", Initial),
+    Config = !.Info ^ tp_config,
+    get_open_part_command(Config, Command0),
+    choose_text_initial(History0, Command0, Initial),
     get_home_dir(Home, !IO),
     text_entry_initial(Screen, "Open with command: ", History0, Initial,
         complete_path(Home), Return, !IO),
     (
-        Return = yes(Command0),
-        Command0 \= ""
+        Return = yes(Command1),
+        Command1 \= ""
     ->
-        add_history_nodup(Command0, History0, History),
+        add_history_nodup(Command1, History0, History),
         !Info ^ tp_common_history ^ ch_prog_history := History,
         Part = part(MessageId, PartId, _Type, _Content, MaybePartFileName,
             _MaybeEncoding, _MaybeLength),
@@ -1786,11 +1788,10 @@ prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
         ;
             io.make_temp(FileName, !IO)
         ),
-        Config = !.Info ^ tp_config,
         do_save_part(Config, MessageId, PartId, FileName, Res, !IO),
         (
             Res = ok,
-            expand_tilde_home(Home, Command0, Command),
+            expand_tilde_home(Home, Command1, Command),
             args_to_quoted_command([Command, FileName], CommandString),
             CallMessage = set_info("Calling " ++ Command ++ "..."),
             update_message_immed(Screen, CallMessage, !IO),
@@ -1837,17 +1838,19 @@ prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
 
 prompt_open_url(Screen, Url, !Info, !IO) :-
     History0 = !.Info ^ tp_common_history ^ ch_prog_history,
-    choose_text_initial(History0, "xdg-open", Initial),
+    Config = !.Info ^ tp_config,
+    get_open_url_command(Config, Command0),
+    choose_text_initial(History0, Command0, Initial),
     get_home_dir(Home, !IO),
     text_entry_initial(Screen, "Open URL with command: ", History0,
         Initial, complete_path(Home), Return, !IO),
     (
-        Return = yes(Command0),
-        Command0 \= ""
+        Return = yes(Command1),
+        Command1 \= ""
     ->
-        add_history_nodup(Command0, History0, History),
+        add_history_nodup(Command1, History0, History),
         !Info ^ tp_common_history ^ ch_prog_history := History,
-        expand_tilde_home(Home, Command0, Command),
+        expand_tilde_home(Home, Command1, Command),
         args_to_quoted_command([Command, Url], CommandString),
         CallMessage = set_info("Calling " ++ Command ++ "..."),
         update_message_immed(Screen, CallMessage, !IO),

@@ -35,6 +35,12 @@
 # The command should output UTF-8.
 ; html_dump=lynx -dump -force-html -stdin -display-charset=utf-8
 
+# Default command to open a part.
+; open_part=xdg-open
+
+# Default command to open a URL.
+; open_url=xdg-open
+
 #-----------------------------------------------------------------------------#
 
 # Colours are defined in the [color] and [color.CONTEXT] sections.

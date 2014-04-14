@@ -36,6 +36,10 @@
 :- pred get_maybe_html_dump_command(prog_config::in, maybe(string)::out)
     is det.
 
+:- pred get_open_part_command(prog_config::in, string::out) is det.
+
+:- pred get_open_url_command(prog_config::in, string::out) is det.
+
 :- func generic_attrs(prog_config) = generic_attrs.
 :- func status_attrs(prog_config) = status_attrs.
 :- func pager_attrs(prog_config) = pager_attrs.
@@ -62,6 +66,8 @@
                 sendmail        :: string,
                 post_sendmail   :: maybe(string),
                 html_dump       :: maybe(string),
+                open_part       :: string,
+                open_url        :: string,
                 colors          :: colors
             ).
 
@@ -135,6 +141,18 @@ make_prog_config(Config, ProgConfig, !IO) :-
         MaybeHtmlDump = yes(default_html_dump_command)
     ),
 
+    ( search_config(Config, "command", "open_part", OpenPart0) ->
+        OpenPart = OpenPart0
+    ;
+        OpenPart = default_open_part_command
+    ),
+
+    ( search_config(Config, "command", "open_url", OpenUrl0) ->
+        OpenUrl = OpenUrl0
+    ;
+        OpenUrl = default_open_url_command
+    ),
+
     make_colors(Config, Colors),
 
     ProgConfig ^ notmuch = Notmuch,
@@ -143,6 +161,8 @@ make_prog_config(Config, ProgConfig, !IO) :-
     ProgConfig ^ sendmail = Sendmail,
     ProgConfig ^ post_sendmail = MaybePostSendmail,
     ProgConfig ^ html_dump = MaybeHtmlDump,
+    ProgConfig ^ open_part = OpenPart,
+    ProgConfig ^ open_url = OpenUrl,
     ProgConfig ^ colors = Colors.
 
 %-----------------------------------------------------------------------------%
@@ -186,6 +206,12 @@ get_maybe_post_sendmail_command(Config, MaybeCommand) :-
 get_maybe_html_dump_command(Config, MaybeCommand) :-
     MaybeCommand = Config ^ html_dump.
 
+get_open_part_command(Config, Command) :-
+    Command = Config ^ open_part.
+
+get_open_url_command(Config, Command) :-
+    Command = Config ^ open_url.
+
 %-----------------------------------------------------------------------------%
 
 generic_attrs(Config) = Config ^ colors ^ generic_attrs.
@@ -220,6 +246,14 @@ default_sendmail_command = "/usr/bin/sendmail -oi -oem".
 :- func default_html_dump_command = string.
 
 default_html_dump_command = "lynx -dump -force-html -stdin -display-charset=utf-8".
+
+:- func default_open_part_command = string.
+
+default_open_part_command = "xdg-open".
+
+:- func default_open_url_command = string.
+
+default_open_url_command = "xdg-open".
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
