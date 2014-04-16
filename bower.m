@@ -25,6 +25,7 @@
 :- import_module screen.
 :- import_module search_term.
 :- import_module signal.
+:- import_module view_common.
 
 %-----------------------------------------------------------------------------%
 
@@ -70,12 +71,13 @@ main_2(Config, !IO) :-
         Args = [_ | _],
         Terms = string.join_list(" ", Args)
     ),
+    init_common_history(Config, CommonHistory0),
     curs.start(!IO),
     ( try [io(!IO)] (
         create_screen(status_attrs(Config), Screen, !IO),
         draw_status_bar(Screen, !IO),
         curs.refresh(!IO),
-        open_index(Config, Screen, Terms, !IO)
+        open_index(Config, Screen, Terms, CommonHistory0, !IO)
     ) then
         curs.stop(!IO)
       catch sigint_received ->

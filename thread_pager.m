@@ -1765,19 +1765,17 @@ open_part(Action, MessageUpdate, !Info) :-
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
-    History0 = !.Info ^ tp_common_history ^ ch_prog_history,
+    History0 = !.Info ^ tp_common_history ^ ch_open_part_history,
     Config = !.Info ^ tp_config,
-    get_open_part_command(Config, Command0),
-    choose_text_initial(History0, Command0, Initial),
     get_home_dir(Home, !IO),
-    text_entry_initial(Screen, "Open with command: ", History0, Initial,
-        complete_path(Home), Return, !IO),
+    text_entry(Screen, "Open with command: ", History0, complete_path(Home),
+        Return, !IO),
     (
         Return = yes(Command1),
         Command1 \= ""
     ->
         add_history_nodup(Command1, History0, History),
-        !Info ^ tp_common_history ^ ch_prog_history := History,
+        !Info ^ tp_common_history ^ ch_open_part_history := History,
         Part = part(MessageId, PartId, _Type, _Content, MaybePartFileName,
             _MaybeEncoding, _MaybeLength),
         (
@@ -1837,19 +1835,16 @@ prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 prompt_open_url(Screen, Url, !Info, !IO) :-
-    History0 = !.Info ^ tp_common_history ^ ch_prog_history,
-    Config = !.Info ^ tp_config,
-    get_open_url_command(Config, Command0),
-    choose_text_initial(History0, Command0, Initial),
+    History0 = !.Info ^ tp_common_history ^ ch_open_url_history,
     get_home_dir(Home, !IO),
-    text_entry_initial(Screen, "Open URL with command: ", History0,
-        Initial, complete_path(Home), Return, !IO),
+    text_entry(Screen, "Open URL with command: ", History0,
+        complete_path(Home), Return, !IO),
     (
         Return = yes(Command1),
         Command1 \= ""
     ->
         add_history_nodup(Command1, History0, History),
-        !Info ^ tp_common_history ^ ch_prog_history := History,
+        !Info ^ tp_common_history ^ ch_open_url_history := History,
         expand_tilde_home(Home, Command1, Command),
         args_to_quoted_command([Command, Url], CommandString),
         CallMessage = set_info("Calling " ++ Command ++ "..."),

@@ -8,11 +8,12 @@
 
 :- import_module prog_config.
 :- import_module screen.
+:- import_module view_common.
 
 %-----------------------------------------------------------------------------%
 
-:- pred open_index(prog_config::in, screen::in, string::in, io::di, io::uo)
-    is det.
+:- pred open_index(prog_config::in, screen::in, string::in, common_history::in,
+    io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -51,7 +52,6 @@
 :- import_module text_entry.
 :- import_module thread_pager.
 :- import_module time_util.
-:- import_module view_common.
 
 %-----------------------------------------------------------------------------%
 
@@ -159,12 +159,11 @@
 
 %-----------------------------------------------------------------------------%
 
-open_index(Config, Screen, SearchString, !IO) :-
+open_index(Config, Screen, SearchString, !.CommonHistory, !IO) :-
     time(Time, !IO),
     ( SearchString = "" ->
         SearchTokens = [],
-        Threads = [],
-        LimitHistory = init_history
+        Threads = []
     ;
         predigest_search_string(Config, SearchString, SearchTokens, !IO),
         search_terms_with_progress(Config, Screen, SearchTokens, MaybeThreads,
@@ -175,18 +174,18 @@ open_index(Config, Screen, SearchString, !IO) :-
             MaybeThreads = no,
             Threads = []
         ),
-        add_history_nodup(SearchString, init_history, LimitHistory)
+        LimitHistory0 = !.CommonHistory ^ ch_limit_history,
+        add_history_nodup(SearchString, LimitHistory0, LimitHistory),
+        !CommonHistory ^ ch_limit_history := LimitHistory
     ),
     setup_index_scrollable(Time, Threads, Scrollable),
     SearchTime = Time,
     NextPollTime = next_poll_time(Time),
     PollCount = 0,
     MaybeSearch = no,
-    CommonHistory = common_history(LimitHistory, init_history, init_history,
-        init_history, init_history, init_history, init_history),
     IndexInfo = index_info(Config, Scrollable, SearchString, SearchTokens,
         SearchTime, NextPollTime, PollCount, MaybeSearch, dir_forward,
-        CommonHistory),
+        !.CommonHistory),
     index_loop(Screen, IndexInfo, !IO).
 
 :- pred search_terms_with_progress(prog_config::in, screen::in,
