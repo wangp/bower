@@ -56,42 +56,36 @@ args_to_quoted_command(Args, MaybeRedirectInput, MaybeRedirectOutput,
     ),
     Command = string.join_list(" ", QuotedArgs).
 
+%-----------------------------------------------------------------------------%
+
+% Same algorithm as Python shlex.quote module - should be well tested.
+
 quote_arg(String) = QuotedString :-
-    string.foldr(quote_char, String, [], RevChars),
-    string.from_char_list(RevChars, QuotedString).
-
-:- pred quote_char(char::in, list(char)::in, list(char)::out) is det.
-
-quote_char(Char, Acc0, Acc) :-
-    ( shell_special_char(Char) ->
-        Acc = ['\\', Char | Acc0]
+    ( String = "" ->
+        QuotedString = "''"
+    ; string.all_match(safe, String) ->
+        QuotedString = String
     ;
-        Acc = [Char | Acc0]
+        string.replace_all(String, "'", "'\"'\"'", QuotedString0),
+        QuotedString = "'" ++ QuotedString0 ++ "'"
     ).
 
-:- pred shell_special_char(char::in) is semidet.
+:- pred safe(char::in) is semidet.
 
-shell_special_char(' ').
-shell_special_char('!').
-shell_special_char('"').
-shell_special_char('#').
-shell_special_char('$').
-shell_special_char('%').
-shell_special_char('&').
-shell_special_char('''').
-shell_special_char('(').
-shell_special_char(')').
-shell_special_char('*').
-shell_special_char(';').
-shell_special_char('<').
-shell_special_char('=').
-shell_special_char('>').
-shell_special_char('?').
-shell_special_char('[').
-shell_special_char('\\').
-shell_special_char(']').
-shell_special_char('^').    % maybe
-shell_special_char('`').
+safe(C) :- char.is_alnum_or_underscore(C).
+safe('%').
+safe('+').
+safe(',').
+safe('-').
+safe('.').
+safe('/').
+safe(':').
+safe('=').
+safe('@').
+
+% unsafe:
+% I =< 0x20
+% ! " # $ & ' ( ) * ; < = > ? [ \ ] ^ ` { | }
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
