@@ -249,11 +249,11 @@ default_html_dump_command = "lynx -dump -force-html -stdin -display-charset=utf-
 
 :- func default_open_part_command = string.
 
-default_open_part_command = "xdg-open".
+default_open_part_command = "xdg-open&".
 
 :- func default_open_url_command = string.
 
-default_open_url_command = "xdg-open".
+default_open_url_command = "xdg-open&".
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

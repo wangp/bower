@@ -36,10 +36,12 @@
 ; html_dump=lynx -dump -force-html -stdin -display-charset=utf-8
 
 # Default command to open a part.
-; open_part=xdg-open
+# An unquoted & suffix causes the command to run in the background.
+; open_part = xdg-open&
 
 # Default command to open a URL.
-; open_url=xdg-open
+# An unquoted & suffix causes the command to run in the background.
+; open_url = xdg-open&
 
 #-----------------------------------------------------------------------------#
 

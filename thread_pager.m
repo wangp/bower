@@ -158,6 +158,10 @@
                 mf_maybe_parent :: maybe(message_id)
             ).
 
+:- type run_in_background
+    --->    run_in_background
+    ;       run_in_foreground.
+
 %-----------------------------------------------------------------------------%
 
 open_thread_pager(Config, Screen, ThreadId, MaybeSearch, Transition,
@@ -1863,7 +1867,6 @@ call_open_command(Screen, CommandWords, FileName, MaybeError, !IO) :-
     make_open_command(CommandWords, FileName, CommandName, CommandString),
     CallMessage = set_info("Calling " ++ CommandName ++ "..."),
     update_message_immed(Screen, CallMessage, !IO),
-    % Maybe leave curses.
     io.call_system(CommandString, CallRes, !IO),
     (
         CallRes = ok(ExitStatus),
@@ -1882,12 +1885,53 @@ call_open_command(Screen, CommandWords, FileName, MaybeError, !IO) :-
 :- pred make_open_command(list(word)::in(non_empty_list), string::in,
     string::out, string::out) is det.
 
-make_open_command(CommandWords, Arg, CommandName, CommandString) :-
+make_open_command(CommandWords0, Arg, CommandName, CommandString) :-
+    remove_bg_operator(CommandWords0, CommandWords, Bg),
     CommandWords = [FirstWord | _],
     CommandName = word_string(FirstWord),
     Args = list.map(word_string, CommandWords) ++ [Arg],
-    CommandString = string.join_list(" ",
-        ["exec" | list.map(quote_arg, Args)]).
+    CommandString0 = string.join_list(" ",
+        ["exec" | list.map(quote_arg, Args)]),
+    (
+        Bg = run_in_background,
+        CommandString = CommandString0 ++ " &"
+    ;
+        Bg = run_in_foreground,
+        CommandString = CommandString0
+    ).
+
+:- pred remove_bg_operator(list(word)::in(non_empty_list),
+    list(word)::out(non_empty_list), run_in_background::out) is det.
+
+remove_bg_operator(Words0, Words, Bg) :-
+    (
+        list.split_last(Words0, ButLast, Last0),
+        remove_bg_operator_2(Last0, Last)
+    ->
+        (
+            Last = word([]),
+            Words = ButLast
+        ;
+            Last = word([_ | _]),
+            Words = ButLast ++ [Last]
+        ),
+        Bg = run_in_background
+    ;
+        Words = Words0,
+        Bg = run_in_foreground
+    ).
+
+:- pred remove_bg_operator_2(word::in, word::out) is semidet.
+
+remove_bg_operator_2(word(Segments0), word(Segments)) :-
+    list.split_last(Segments0, ButLast, Last0),
+    Last0 = unquoted(LastString0),
+    string.remove_suffix(LastString0, "&", LastString),
+    ( LastString = "" ->
+        Segments = ButLast
+    ;
+        Segments = ButLast ++ [unquoted(LastString)]
+    ).
 
 %-----------------------------------------------------------------------------%
 
@@ -1927,7 +1971,7 @@ do_open_url(Screen, Command, Url, MessageUpdate, !IO) :-
             call_open_command(Screen, CommandWords, Url, MaybeError, !IO),
             (
                 MaybeError = ok,
-                MessageUpdate = clear_message
+                MessageUpdate = no_change
             ;
                 MaybeError = error(Msg),
                 MessageUpdate = set_warning(Msg)

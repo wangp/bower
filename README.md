@@ -206,6 +206,10 @@ This view pages through an entire thread.  The keys are:
 
 Tag updates are only applied when returning to the index.
 
+The 'o' command, which opens parts and URLs, takes a command using Unix shell
+quoting syntax.  If the command ends with an unquoted '&' character then the
+command will be run in the background.
+
 
 Search term aliases
 -------------------
