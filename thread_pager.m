@@ -1864,10 +1864,20 @@ do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, MaybeNextKey,
     string::in, maybe_error::out, io::di, io::uo) is det.
 
 call_open_command(Screen, CommandWords, FileName, MaybeError, !IO) :-
-    make_open_command(CommandWords, FileName, CommandName, CommandString),
+    make_open_command(CommandWords, FileName, CommandName, CommandString, Bg),
     CallMessage = set_info("Calling " ++ CommandName ++ "..."),
     update_message_immed(Screen, CallMessage, !IO),
-    io.call_system(CommandString, CallRes, !IO),
+    (
+        Bg = run_in_background,
+        io.call_system(CommandString, CallRes, !IO)
+    ;
+        Bg = run_in_foreground,
+        curs.def_prog_mode(!IO),
+        curs.stop(!IO),
+        io.call_system(CommandString, CallRes, !IO),
+        curs.reset_prog_mode(!IO),
+        curs.refresh(!IO)
+    ),
     (
         CallRes = ok(ExitStatus),
         ( ExitStatus = 0 ->
@@ -1883,9 +1893,9 @@ call_open_command(Screen, CommandWords, FileName, MaybeError, !IO) :-
     ).
 
 :- pred make_open_command(list(word)::in(non_empty_list), string::in,
-    string::out, string::out) is det.
+    string::out, string::out, run_in_background::out) is det.
 
-make_open_command(CommandWords0, Arg, CommandName, CommandString) :-
+make_open_command(CommandWords0, Arg, CommandName, CommandString, Bg) :-
     remove_bg_operator(CommandWords0, CommandWords, Bg),
     CommandWords = [FirstWord | _],
     CommandName = word_string(FirstWord),
