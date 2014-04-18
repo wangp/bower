@@ -45,6 +45,7 @@
 :- import_module dir.
 :- import_module int.
 :- import_module map.
+:- import_module parsing_utils.
 :- import_module require.
 :- import_module string.
 :- import_module time.
@@ -63,6 +64,7 @@
 :- import_module recall.
 :- import_module resend.
 :- import_module scrollable.
+:- import_module shell_word.
 :- import_module string_util.
 :- import_module sys_util.
 :- import_module text_entry.
@@ -1766,9 +1768,7 @@ open_part(Action, MessageUpdate, !Info) :-
 
 prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
     History0 = !.Info ^ tp_common_history ^ ch_open_part_history,
-    Config = !.Info ^ tp_config,
-    get_home_dir(Home, !IO),
-    text_entry(Screen, "Open with command: ", History0, complete_path(Home),
+    text_entry(Screen, "Open with command: ", History0, complete_none,
         Return, !IO),
     (
         Return = yes(Command1),
@@ -1776,58 +1776,118 @@ prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
     ->
         add_history_nodup(Command1, History0, History),
         !Info ^ tp_common_history ^ ch_open_part_history := History,
-        Part = part(MessageId, PartId, _Type, _Content, MaybePartFileName,
-            _MaybeEncoding, _MaybeLength),
-        (
-            MaybePartFileName = yes(PartFilename),
-            get_extension(PartFilename, Ext)
-        ->
-            make_temp_suffix(Ext, FileName, !IO)
-        ;
-            io.make_temp(FileName, !IO)
-        ),
-        do_save_part(Config, MessageId, PartId, FileName, Res, !IO),
-        (
-            Res = ok,
-            expand_tilde_home(Home, Command1, Command),
-            args_to_quoted_command([Command, FileName], CommandString),
-            CallMessage = set_info("Calling " ++ Command ++ "..."),
-            update_message_immed(Screen, CallMessage, !IO),
-            io.call_system(CommandString, CallRes, !IO),
-            (
-                CallRes = ok(ExitStatus),
-                ( ExitStatus = 0 ->
-                    ContMessage = set_info(
-                        "Press any key to continue (deletes temporary file)"),
-                    update_message_immed(Screen, ContMessage, !IO),
-                    get_keycode_blocking(Key, !IO),
-                    MaybeNextKey = yes(Key),
-                    MessageUpdate = clear_message
-                ;
-                    string.format("%s returned with exit status %d",
-                        [s(Command), i(ExitStatus)], Msg),
-                    MessageUpdate = set_warning(Msg),
-                    MaybeNextKey = no
-                )
-            ;
-                CallRes = error(Error),
-                Msg = "Error: " ++ io.error_message(Error),
-                MessageUpdate = set_warning(Msg),
-                MaybeNextKey = no
-            )
-        ;
-            Res = error(Error),
-            string.format("Error saving to %s: %s",
-                [s(FileName), s(Error)], Msg),
-            MessageUpdate = set_warning(Msg),
-            MaybeNextKey = no
-        ),
-        io.remove_file(FileName, _, !IO)
+        Config = !.Info ^ tp_config,
+        do_open_part(Config, Screen, Part, Command1, MessageUpdate,
+            MaybeNextKey, !IO)
     ;
         MessageUpdate = clear_message,
         MaybeNextKey = no
     ),
     update_message(Screen, MessageUpdate, !IO).
+
+:- pred do_open_part(prog_config::in, screen::in, part::in, string::in,
+    message_update::out, maybe(keycode)::out, io::di, io::uo) is det.
+
+do_open_part(Config, Screen, Part, Command, MessageUpdate, MaybeNextKey,
+        !IO) :-
+    promise_equivalent_solutions [MessageUpdate, MaybeNextKey, !:IO] (
+        shell_word.split(Command, ParseResult),
+        (
+            ParseResult = ok([]),
+            % Should not happen.
+            MessageUpdate = clear_message,
+            MaybeNextKey = no
+        ;
+            ParseResult = ok(CommandWords),
+            CommandWords = [_ | _],
+            do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate,
+                MaybeNextKey, !IO)
+        ;
+            (
+                ParseResult = error(yes(Error), _Line, Column)
+            ;
+                ParseResult = error(no, _Line, Column),
+                Error = "parse error"
+            ),
+            Msg = string.format("%d: %s", [i(Column), s(Error)]),
+            MessageUpdate = set_warning(Msg),
+            MaybeNextKey = no
+        )
+    ).
+
+:- pred do_open_part_2(prog_config::in, screen::in, part::in,
+    list(word)::in(non_empty_list), message_update::out, maybe(keycode)::out,
+    io::di, io::uo) is det.
+
+do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, MaybeNextKey,
+        !IO) :-
+    Part = part(MessageId, PartId, _Type, _Content, MaybePartFileName,
+        _MaybeEncoding, _MaybeLength),
+    (
+        MaybePartFileName = yes(PartFilename),
+        get_extension(PartFilename, Ext)
+    ->
+        make_temp_suffix(Ext, FileName, !IO)
+    ;
+        io.make_temp(FileName, !IO)
+    ),
+    do_save_part(Config, MessageId, PartId, FileName, Res, !IO),
+    (
+        Res = ok,
+        call_open_command(Screen, CommandWords, FileName, MaybeError, !IO),
+        (
+            MaybeError = ok,
+            ContMessage = set_info(
+                "Press any key to continue (deletes temporary file)"),
+            update_message_immed(Screen, ContMessage, !IO),
+            get_keycode_blocking(Key, !IO),
+            MaybeNextKey = yes(Key),
+            MessageUpdate = clear_message
+        ;
+            MaybeError = error(Msg),
+            MessageUpdate = set_warning(Msg),
+            MaybeNextKey = no
+        )
+    ;
+        Res = error(Error),
+        string.format("Error saving to %s: %s", [s(FileName), s(Error)], Msg),
+        MessageUpdate = set_warning(Msg),
+        MaybeNextKey = no
+    ),
+    io.remove_file(FileName, _, !IO).
+
+:- pred call_open_command(screen::in, list(word)::in(non_empty_list),
+    string::in, maybe_error::out, io::di, io::uo) is det.
+
+call_open_command(Screen, CommandWords, FileName, MaybeError, !IO) :-
+    make_open_command(CommandWords, FileName, CommandName, CommandString),
+    CallMessage = set_info("Calling " ++ CommandName ++ "..."),
+    update_message_immed(Screen, CallMessage, !IO),
+    % Maybe leave curses.
+    io.call_system(CommandString, CallRes, !IO),
+    (
+        CallRes = ok(ExitStatus),
+        ( ExitStatus = 0 ->
+            MaybeError = ok
+        ;
+            string.format("%s returned with exit status %d",
+                [s(CommandName), i(ExitStatus)], Msg),
+            MaybeError = error(Msg)
+        )
+    ;
+        CallRes = error(Error),
+        MaybeError = error("Error: " ++ io.error_message(Error))
+    ).
+
+:- pred make_open_command(list(word)::in(non_empty_list), string::in,
+    string::out, string::out) is det.
+
+make_open_command(CommandWords, Arg, CommandName, CommandString) :-
+    CommandWords = [FirstWord | _],
+    CommandName = word_string(FirstWord),
+    Args = list.map(word_string, CommandWords) ++ [Arg],
+    CommandString = string.join_list(" ",
+        ["exec" | list.map(quote_arg, Args)]).
 
 %-----------------------------------------------------------------------------%
 
@@ -1836,38 +1896,53 @@ prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
 
 prompt_open_url(Screen, Url, !Info, !IO) :-
     History0 = !.Info ^ tp_common_history ^ ch_open_url_history,
-    get_home_dir(Home, !IO),
-    text_entry(Screen, "Open URL with command: ", History0,
-        complete_path(Home), Return, !IO),
+    % No completion for command inputs yet.
+    text_entry(Screen, "Open URL with command: ", History0, complete_none,
+        Return, !IO),
     (
         Return = yes(Command1),
         Command1 \= ""
     ->
         add_history_nodup(Command1, History0, History),
         !Info ^ tp_common_history ^ ch_open_url_history := History,
-        expand_tilde_home(Home, Command1, Command),
-        args_to_quoted_command([Command, Url], CommandString),
-        CallMessage = set_info("Calling " ++ Command ++ "..."),
-        update_message_immed(Screen, CallMessage, !IO),
-        io.call_system(CommandString, CallRes, !IO),
-        (
-            CallRes = ok(ExitStatus),
-            ( ExitStatus = 0 ->
-                MessageUpdate = clear_message
-            ;
-                string.format("%s returned with exit status %d",
-                    [s(Command), i(ExitStatus)], Msg),
-                MessageUpdate = set_warning(Msg)
-            )
-        ;
-            CallRes = error(Error),
-            Msg = "Error: " ++ io.error_message(Error),
-            MessageUpdate = set_warning(Msg)
-        )
+        do_open_url(Screen, Command1, Url, MessageUpdate, !IO)
     ;
         MessageUpdate = clear_message
     ),
     update_message(Screen, MessageUpdate, !IO).
+
+:- pred do_open_url(screen::in, string::in, string::in, message_update::out,
+    io::di, io::uo) is det.
+
+do_open_url(Screen, Command, Url, MessageUpdate, !IO) :-
+    promise_equivalent_solutions [MessageUpdate, !:IO] (
+        shell_word.split(Command, ParseResult),
+        (
+            ParseResult = ok([]),
+            % Should not happen.
+            MessageUpdate = clear_message
+        ;
+            ParseResult = ok(CommandWords),
+            CommandWords = [_ | _],
+            call_open_command(Screen, CommandWords, Url, MaybeError, !IO),
+            (
+                MaybeError = ok,
+                MessageUpdate = clear_message
+            ;
+                MaybeError = error(Msg),
+                MessageUpdate = set_warning(Msg)
+            )
+        ;
+            (
+                ParseResult = error(yes(Error), _Line, Column)
+            ;
+                ParseResult = error(no, _Line, Column),
+                Error = "parse error"
+            ),
+            Msg = string.format("%d: %s", [i(Column), s(Error)]),
+            MessageUpdate = set_warning(Msg)
+        )
+    ).
 
 %-----------------------------------------------------------------------------%
 

@@ -39,11 +39,18 @@ split(Input, ParseResult) :-
 no_skip_whitespace(_, unit, !PS) :-
     semidet_true.
 
+:- pred next_char_np(src::in, char::out, ps::in, ps::out) is semidet.
+
+next_char_np(Src, C, !PS) :-
+    % All calls to next_char_np can be changed to next_char_no_progress
+    % when compatibility with Mercury 11.07 is dropped.
+    parsing_utils.next_char(Src, C, !PS).
+
 :- pred skip_ws(src::in, unit::out, ps::in, ps::out) is semidet.
 
 skip_ws(Src, unit, !PS) :-
     (
-        next_char_no_progress(Src, C, !PS),
+        next_char_np(Src, C, !PS),
         ws(C)
     ->
         skip_ws(Src, _, !PS)
@@ -110,11 +117,11 @@ segment(Src, Segment, !PS) :-
     is semidet.
 
 dquote_tail(Src, !RevCs, !PS) :-
-    next_char_no_progress(Src, C0, !PS),
+    next_char_np(Src, C0, !PS),
     ( C0 = ('"') ->
         true
     ; C0 = ('\\') ->
-        next_char_no_progress(Src, C, !PS),
+        next_char_np(Src, C, !PS),
         cons(C, !RevCs),
         dquote_tail(Src, !RevCs, !PS)
     ;
@@ -127,7 +134,7 @@ dquote_tail(Src, !RevCs, !PS) :-
     is semidet.
 
 squote_tail(Src, !RevCs, !PS) :-
-    next_char_no_progress(Src, C, !PS),
+    next_char_np(Src, C, !PS),
     ( C = ('''') ->
         true
     ;
@@ -138,7 +145,7 @@ squote_tail(Src, !RevCs, !PS) :-
 :- pred escape(src::in, string::out, ps::in, ps::out) is semidet.
 
 escape(Src, String, !PS) :-
-    next_char_no_progress(Src, C, !PS),
+    next_char_np(Src, C, !PS),
     String = string.from_char(C).
 
 :- pred unquoted(src::in, char::in, string::out, ps::in, ps::out)
@@ -151,7 +158,7 @@ unquoted(Src, C, String, !PS) :-
 :- pred unquoted_char(src::in, char::out, ps::in, ps::out) is semidet.
 
 unquoted_char(Src, C, !PS) :-
-    next_char_no_progress(Src, C, !PS),
+    next_char_np(Src, C, !PS),
     not ws(C),
     C \= ('\\'),
     C \= ('"'),
