@@ -143,7 +143,7 @@ do_tag(Config, TagDeltas, SearchTerms, Res, !IO) :-
     TagDeltaStrings = list.map(tag_delta_to_string, TagDeltas),
     make_quoted_command(Notmuch,
         ["tag" | TagDeltaStrings] ++ ["--" | SearchTerms],
-        Command),
+        redirect_input("/dev/null"), no_redirect, Command),
     io.call_system(Command, CallRes, !IO),
     (
         CallRes = ok(ExitStatus),

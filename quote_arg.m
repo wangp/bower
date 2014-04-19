@@ -34,9 +34,6 @@
     --->    run_in_foreground
     ;       run_in_background.
 
-:- pred make_quoted_command(command_prefix::in, list(string)::in, string::out)
-    is det.
-
 :- pred make_quoted_command(command_prefix::in, list(string)::in,
     redirect_input::in, redirect_output::in, string::out) is det.
 
@@ -56,10 +53,6 @@
 :- import_module string.
 
 %-----------------------------------------------------------------------------%
-
-make_quoted_command(CommandPrefix, UnquotedArgs, Command) :-
-    make_quoted_command(CommandPrefix, UnquotedArgs, no_redirect, no_redirect,
-        no_redirect, run_in_foreground, Command).
 
 make_quoted_command(CommandPrefix, UnquotedArgs, RedirectInput, RedirectOutput,
         Command) :-

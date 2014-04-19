@@ -53,7 +53,7 @@
 get_notmuch_config(Config, Key, Res, !IO) :-
     get_notmuch_command(Config, Notmuch),
     make_quoted_command(Notmuch, ["config", "get", Key],
-        no_redirect, no_redirect, redirect_stderr("/dev/null"),
+        redirect_input("/dev/null"), no_redirect, redirect_stderr("/dev/null"),
         run_in_foreground, Command),
     call_system_capture_stdout(Command, no, Res0, !IO),
     (
@@ -72,7 +72,8 @@ get_notmuch_config(Config, Section, Key, Res, !IO) :-
 
 run_notmuch(Config, Args, P, Result, !IO) :-
     get_notmuch_command(Config, Notmuch),
-    make_quoted_command(Notmuch, Args, Command),
+    make_quoted_command(Notmuch, Args,
+        redirect_input("/dev/null"), no_redirect, Command),
     promise_equivalent_solutions [Result, !:IO] (
         call_command_parse_json(Command, P, Result, !IO)
     ).

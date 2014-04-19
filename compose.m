@@ -184,7 +184,7 @@ start_reply(Config, Screen, Message, ReplyKind, Transition, !IO) :-
     make_quoted_command(Notmuch, [
         "reply", reply_to_arg(ReplyKind), "--",
         message_id_to_search_term(MessageId)
-    ], Command),
+    ], redirect_input("/dev/null"), no_redirect, Command),
     call_system_capture_stdout(Command, no, CommandResult, !IO),
     (
         CommandResult = ok(String),
@@ -299,7 +299,7 @@ continue_postponed(Config, Screen, Message, Transition, !IO) :-
     get_notmuch_command(Config, Notmuch),
     make_quoted_command(Notmuch, [
         "show", "--format=raw", "--", message_id_to_search_term(MessageId)
-    ], Command),
+    ], redirect_input("/dev/null"), no_redirect, Command),
     call_system_capture_stdout(Command, no, CallRes, !IO),
     (
         CallRes = ok(String),
@@ -403,7 +403,7 @@ make_parsed_headers(Headers, Parsed) :-
 
 call_editor(Config, Filename, Res, !IO) :-
     get_editor_command(Config, Editor),
-    make_quoted_command(Editor, [Filename], Command),
+    make_quoted_command(Editor, [Filename], no_redirect, no_redirect, Command),
     curs.def_prog_mode(!IO),
     curs.stop(!IO),
     io.call_system(Command, CallRes, !IO),
@@ -932,7 +932,8 @@ do_attach_text_file(FileName, BaseName, Type, NumRows, MessageUpdate,
 
 do_attach_binary_file(FileName, BaseName, Type, NumRows, MessageUpdate,
         !AttachInfo, !IO) :-
-    make_quoted_command(base64_command, [FileName], Command),
+    make_quoted_command(base64_command, [FileName],
+        redirect_input("/dev/null"), no_redirect, Command),
     call_system_capture_stdout(Command, no, CallRes, !IO),
     (
         CallRes = ok(Content),
@@ -1786,7 +1787,7 @@ get_non_text_part_base64(Config, Part, Content, !IO) :-
     make_quoted_command(Notmuch, [
         "show", "--format=raw", "--part=" ++ from_int(PartId),
         message_id_to_search_term(MessageId)
-    ], Command),
+    ], redirect_input("/dev/null"), no_redirect, Command),
     call_system_capture_stdout(Command ++ " |base64", no, CallRes,
         !IO),
     (

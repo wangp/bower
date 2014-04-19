@@ -31,7 +31,7 @@
 
 lookup_mime_type(FileName, Res, !IO) :-
     make_quoted_command(file_command, ["--brief", "--mime", FileName],
-        Command),
+        redirect_input("/dev/null"), no_redirect, Command),
     call_system_capture_stdout(Command, no, CallRes, !IO),
     (
         CallRes = ok(String0),

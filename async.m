@@ -354,7 +354,8 @@ spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO) :-
     string::out, list(string)::out) is det.
 
 shell_and_args(CommandPrefix, UnquotedArgs, Shell, ShellArgs) :-
-    make_quoted_command(CommandPrefix, UnquotedArgs, ShellCommand),
+    make_quoted_command(CommandPrefix, UnquotedArgs,
+        redirect_input("/dev/null"), no_redirect, ShellCommand),
     Shell = "/bin/sh",
     ShellArgs = ["-c", ShellCommand].
 

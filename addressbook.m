@@ -134,7 +134,8 @@ suggest_alias(Address) = Alias :-
 do_addressbook_add(Config, Alias, Address, Res, !IO) :-
     get_notmuch_command(Config, Notmuch),
     Key = addressbook_section ++ "." ++ Alias,
-    make_quoted_command(Notmuch, ["config", "set", Key, Address], Command),
+    make_quoted_command(Notmuch, ["config", "set", Key, Address],
+        redirect_input("/dev/null"), redirect_output("/dev/null"), Command),
     io.call_system(Command, CallRes, !IO),
     (
         CallRes = ok(ExitStatus),

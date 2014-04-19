@@ -1906,7 +1906,8 @@ make_open_command(CommandWords0, Arg, CommandToShow, CommandToRun, Bg) :-
             CommandToRun)
     ;
         Bg = run_in_foreground,
-        make_quoted_command(CommandPrefix, [Arg], CommandToRun)
+        make_quoted_command(CommandPrefix, [Arg], no_redirect, no_redirect,
+            CommandToRun)
     ).
 
 :- pred remove_bg_operator(list(word)::in(non_empty_list),
