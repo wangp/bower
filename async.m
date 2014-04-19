@@ -8,11 +8,13 @@
 :- import_module io.
 :- import_module list.
 
+:- import_module quote_arg.
+
 %-----------------------------------------------------------------------------%
 
 :- type async_op
     --->    async_shell_command(
-                command_prefix      :: string,          % will not be quoted
+                command_prefix      :: shell_quoted,    % already quoted
                 command_args        :: list(string),    % will be quoted
                 remaining_attempts  :: int
             )
@@ -20,7 +22,7 @@
                 % Low priority operations return the output of a command.
                 % They are for polling status only, and won't be retried on
                 % failure.
-                lowprio_command_prefix  :: string,      % will not be quoted
+                lowprio_command_prefix  :: shell_quoted, % already quoted
                 lowprio_args            :: list(string) % will be quoted
             ).
 
@@ -349,12 +351,12 @@ spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO) :-
         Res = error(Error)
     ).
 
-:- pred shell_and_args(string::in, list(string)::in,
+:- pred shell_and_args(shell_quoted::in, list(string)::in,
     string::out, list(string)::out) is det.
 
-shell_and_args(CommandPrefix, UnquotedArgs, Shell, ShellArgs) :-
+shell_and_args(shell_quoted(Prefix), UnquotedArgs, Shell, ShellArgs) :-
     QuotedArgs = list.map(quote_arg, UnquotedArgs),
-    ShellCommand = string.join_list(" ", [CommandPrefix | QuotedArgs]),
+    ShellCommand = string.join_list(" ", [Prefix | QuotedArgs]),
     Shell = "/bin/sh",
     ShellArgs = ["-c", ShellCommand].
 

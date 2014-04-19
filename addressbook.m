@@ -132,10 +132,10 @@ suggest_alias(Address) = Alias :-
     maybe_error::out, io::di, io::uo) is det.
 
 do_addressbook_add(Config, Alias, Address, Res, !IO) :-
-    get_notmuch_prefix(Config, Notmuch),
+    get_notmuch_command(Config, Notmuch),
     Key = addressbook_section ++ "." ++ Alias,
-    args_to_quoted_command(["config", "set", Key, Address], Command),
-    io.call_system(Notmuch ++ Command, CallRes, !IO),
+    args_to_quoted_command(Notmuch, ["config", "set", Key, Address], Command),
+    io.call_system(Command, CallRes, !IO),
     (
         CallRes = ok(ExitStatus),
         ( ExitStatus = 0 ->
@@ -147,7 +147,8 @@ do_addressbook_add(Config, Alias, Address, Res, !IO) :-
         )
     ;
         CallRes = error(Error),
-        string.append_list(["Error running ", Notmuch, ": ",
+        Notmuch = shell_quoted(NotmuchString),
+        string.append_list(["Error running ", NotmuchString, ": ",
             io.error_message(Error)], Warning),
         Res = error(Warning)
     ).

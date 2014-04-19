@@ -5,35 +5,45 @@
 :- interface.
 
 :- import_module io.
+:- import_module list.
 :- import_module maybe.
 
 :- import_module color.
+:- import_module quote_arg.
 
 %-----------------------------------------------------------------------------%
 
 :- type prog_config.
 
-:- pred load_prog_config(maybe_error(prog_config)::out, io::di, io::uo) is det.
-
-:- pred check_sendmail_command(prog_config::in, maybe_error::out) is det.
-
-:- pred get_notmuch_prefix(prog_config::in, string::out) is det.
-
-:- pred get_notmuch_deliver_prefix(prog_config::in, string::out) is det.
-
-:- pred get_editor_command(prog_config::in, string::out) is det.
+:- type load_prog_config_result
+    --->    ok(prog_config)
+    ;       errors(list(string)).
 
 :- type sendmail_option
-    --->    sendmail_no_read_recipients
-    ;       sendmail_read_recipients. % '-t' option
+    --->    sendmail_read_recipients. % '-t' option
+
+:- type post_sendmail
+    --->    default
+    ;       nothing
+    ;       command(shell_quoted).
+
+%-----------------------------------------------------------------------------%
+
+:- pred load_prog_config(load_prog_config_result::out, io::di, io::uo)
+    is cc_multi.
+
+:- pred get_notmuch_command(prog_config::in, shell_quoted::out) is det.
+
+:- pred get_notmuch_deliver_command(prog_config::in, shell_quoted::out) is det.
+
+:- pred get_editor_command(prog_config::in, shell_quoted::out) is det.
 
 :- pred get_sendmail_command(prog_config::in, sendmail_option::in,
-    string::out) is det.
+    shell_quoted::out) is det.
 
-:- pred get_maybe_post_sendmail_command(prog_config::in, maybe(string)::out)
-    is det.
+:- pred get_post_sendmail_action(prog_config::in, post_sendmail::out) is det.
 
-:- pred get_maybe_html_dump_command(prog_config::in, maybe(string)::out)
+:- pred get_maybe_html_dump_command(prog_config::in, maybe(shell_quoted)::out)
     is det.
 
 :- pred get_open_part_command(prog_config::in, string::out) is det.
@@ -53,21 +63,24 @@
 :- implementation.
 
 :- import_module map.
+:- import_module parsing_utils.
 :- import_module string.
 
 :- import_module config.
+:- import_module quote_arg.
+:- import_module shell_word.
 :- import_module xdg.
 
 :- type prog_config
     --->    prog_config(
-                notmuch         :: string,
-                notmuch_deliver :: string,
-                editor          :: string,
-                sendmail        :: string,
-                post_sendmail   :: maybe(string),
-                html_dump       :: maybe(string),
-                open_part       :: string,
-                open_url        :: string,
+                notmuch         :: shell_quoted,
+                notmuch_deliver :: shell_quoted,
+                editor          :: shell_quoted,
+                sendmail        :: shell_quoted,
+                post_sendmail   :: post_sendmail,
+                html_dump       :: maybe(shell_quoted),
+                open_part       :: string, % not shell-quoted
+                open_url        :: string, % not shell-quoted
                 colors          :: colors
             ).
 
@@ -80,39 +93,52 @@ load_prog_config(Res, !IO) :-
         load_config_file(ConfigFile, LoadRes, !IO),
         (
             LoadRes = ok(Config),
-            make_prog_config(Config, ProgConfig, !IO),
-            Res = ok(ProgConfig)
+            load_prog_config_2(Config, Res, !IO)
         ;
             LoadRes = error(Error),
-            Res = error(io.error_message(Error))
+            Res = errors([io.error_message(Error)])
         )
     ;
         MaybeConfigFile = no,
-        make_prog_config(init_config, ProgConfig, !IO),
-        Res = ok(ProgConfig)
+        load_prog_config_2(init_config, Res, !IO)
     ).
 
-:- pred make_prog_config(config::in, prog_config::out, io::di, io::uo) is det.
+:- pred load_prog_config_2(config::in, load_prog_config_result::out,
+    io::di, io::uo) is cc_multi.
 
-make_prog_config(Config, ProgConfig, !IO) :-
+load_prog_config_2(Config, Res, !IO) :-
+    make_prog_config(Config, ProgConfig, [], RevErrors, !IO),
+    (
+        RevErrors = [],
+        Res = ok(ProgConfig)
+    ;
+        RevErrors = [_ | _],
+        Res = errors(reverse(RevErrors))
+    ).
+
+:- pred make_prog_config(config::in, prog_config::out,
+    list(string)::in, list(string)::out, io::di, io::uo) is cc_multi.
+
+make_prog_config(Config, ProgConfig, !Errors, !IO) :-
     ( search_config(Config, "command", "notmuch", Notmuch0) ->
-        Notmuch = Notmuch0
+        parse_command(Notmuch0, Notmuch, !Errors)
     ;
         Notmuch = default_notmuch_command
     ),
 
     ( search_config(Config, "command", "notmuch_deliver", NotmuchDeliver0) ->
-        NotmuchDeliver = NotmuchDeliver0
+        parse_command(NotmuchDeliver0, NotmuchDeliver, !Errors)
     ;
         NotmuchDeliver = default_notmuch_deliver_command
     ),
 
     ( search_config(Config, "command", "editor", Editor0) ->
-        Editor = Editor0
+        parse_command(Editor0, Editor, !Errors)
     ;
         io.get_environment_var("EDITOR", MaybeEditor, !IO),
         (
-            MaybeEditor = yes(Editor)
+            MaybeEditor = yes(Editor0),
+            parse_command(Editor0, Editor, !Errors)
         ;
             MaybeEditor = no,
             Editor = default_editor_command
@@ -120,22 +146,29 @@ make_prog_config(Config, ProgConfig, !IO) :-
     ),
 
     ( search_config(Config, "command", "sendmail", Sendmail0) ->
-        Sendmail = Sendmail0
+        parse_command(Sendmail0, Sendmail, !Errors),
+        check_sendmail_command(Sendmail, !Errors)
     ;
         Sendmail = default_sendmail_command
     ),
 
-    ( search_config(Config, "command", "post_sendmail", PostSendmail) ->
-        MaybePostSendmail = yes(PostSendmail)
+    ( search_config(Config, "command", "post_sendmail", PostSendmail0) ->
+        ( PostSendmail0 = "" ->
+            PostSendmail = nothing
+        ;
+            parse_command(PostSendmail0, PostSendmail1, !Errors),
+            PostSendmail = command(PostSendmail1)
+        )
     ;
-        MaybePostSendmail = no
+        PostSendmail = default
     ),
 
-    ( search_config(Config, "command", "html_dump", HtmlDump) ->
-        ( HtmlDump = "" ->
+    ( search_config(Config, "command", "html_dump", HtmlDump0) ->
+        ( HtmlDump0 = "" ->
             MaybeHtmlDump = no
         ;
-            MaybeHtmlDump = yes(HtmlDump)
+            parse_command(HtmlDump0, HtmlDump1, !Errors),
+            MaybeHtmlDump = yes(HtmlDump1)
         )
     ;
         MaybeHtmlDump = yes(default_html_dump_command)
@@ -159,49 +192,66 @@ make_prog_config(Config, ProgConfig, !IO) :-
     ProgConfig ^ notmuch_deliver = NotmuchDeliver,
     ProgConfig ^ editor = Editor,
     ProgConfig ^ sendmail = Sendmail,
-    ProgConfig ^ post_sendmail = MaybePostSendmail,
+    ProgConfig ^ post_sendmail = PostSendmail,
     ProgConfig ^ html_dump = MaybeHtmlDump,
     ProgConfig ^ open_part = OpenPart,
     ProgConfig ^ open_url = OpenUrl,
     ProgConfig ^ colors = Colors.
 
-%-----------------------------------------------------------------------------%
+:- pred parse_command(string::in, shell_quoted::out,
+    list(string)::in, list(string)::out) is cc_multi.
 
-check_sendmail_command(Config, Res) :-
-    get_sendmail_command(Config, sendmail_no_read_recipients, Command),
+parse_command(S0, shell_quoted(S), !Errors) :-
+    shell_word.split(S0, ParseResult),
+    (
+        ParseResult = ok(Words),
+        Args = list.map(word_string, Words),
+        S = string.join_list(" ", list.map(quote_arg, Args))
+    ;
+        (
+            ParseResult = error(yes(Message), _Line, _Column)
+        ;
+            ParseResult = error(no, _Line, _Column),
+            Message = "parse error"
+        ),
+        Error = string.format("%s in value: %s", [s(Message), s(S0)]),
+        cons(Error, !Errors),
+        S = "false" % dummy
+    ).
+
+:- pred check_sendmail_command(shell_quoted::in,
+    list(string)::in, list(string)::out) is det.
+
+check_sendmail_command(shell_quoted(Command), !Errors) :-
     (
         ( string.suffix(Command, " -t")
         ; string.sub_string_search(Command, " -t ", _)
         )
     ->
-        Res = error("Please remove -t option from command.sendmail:  " ++ Command)
+        Error = "sendmail command contains -t option: " ++ Command,
+        cons(Error, !Errors)
     ;
-        Res = ok
+        true
     ).
 
 %-----------------------------------------------------------------------------%
 
-get_notmuch_prefix(Config, Notmuch) :-
-    Notmuch = Config ^ notmuch ++ " ".
+get_notmuch_command(Config, Notmuch) :-
+    Notmuch = Config ^ notmuch.
 
-get_notmuch_deliver_prefix(Config, NotmuchDeliver) :-
-    NotmuchDeliver = Config ^ notmuch_deliver ++ " ".
+get_notmuch_deliver_command(Config, NotmuchDeliver) :-
+    NotmuchDeliver = Config ^ notmuch_deliver.
 
-get_editor_command(Config, Command) :-
-    Command = Config ^ editor.
+get_editor_command(Config, Editor) :-
+    Editor = Config ^ editor.
 
-get_sendmail_command(Config, Option, Command) :-
-    Command0 = Config ^ sendmail,
-    (
-        Option = sendmail_no_read_recipients,
-        Command = Command0
-    ;
-        Option = sendmail_read_recipients,
-        Command = Command0 ++ " -t"
-    ).
+get_sendmail_command(Config, sendmail_read_recipients, Sendmail) :-
+    Config ^ sendmail = shell_quoted(Command0),
+    Command = Command0 ++ " -t",
+    Sendmail = shell_quoted(Command).
 
-get_maybe_post_sendmail_command(Config, MaybeCommand) :-
-    MaybeCommand = Config ^ post_sendmail.
+get_post_sendmail_action(Config, Action) :-
+    Action = Config ^ post_sendmail.
 
 get_maybe_html_dump_command(Config, MaybeCommand) :-
     MaybeCommand = Config ^ html_dump.
@@ -227,25 +277,26 @@ compose_attrs(Config) = Config ^ colors ^ compose_attrs.
 
 config_filename = "bower/bower.conf".
 
-:- func default_notmuch_command = string.
+:- func default_notmuch_command = shell_quoted.
 
-default_notmuch_command = "notmuch".
+default_notmuch_command = shell_quoted("notmuch").
 
-:- func default_notmuch_deliver_command = string.
+:- func default_notmuch_deliver_command = shell_quoted.
 
-default_notmuch_deliver_command = "notmuch-deliver".
+default_notmuch_deliver_command = shell_quoted("notmuch-deliver").
 
-:- func default_editor_command = string.
+:- func default_editor_command = shell_quoted.
 
-default_editor_command = "vi".
+default_editor_command = shell_quoted("vi").
 
-:- func default_sendmail_command = string.
+:- func default_sendmail_command = shell_quoted.
 
-default_sendmail_command = "/usr/bin/sendmail -oi -oem".
+default_sendmail_command = shell_quoted("/usr/bin/sendmail -oi -oem").
 
-:- func default_html_dump_command = string.
+:- func default_html_dump_command = shell_quoted.
 
-default_html_dump_command = "lynx -dump -force-html -stdin -display-charset=utf-8".
+default_html_dump_command =
+    shell_quoted("lynx -dump -force-html -stdin -display-charset=utf-8").
 
 :- func default_open_part_command = string.
 

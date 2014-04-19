@@ -6,6 +6,9 @@
 
 :- import_module list.
 
+:- type shell_quoted
+    --->    shell_quoted(string). % shell metacharacters quoted/escaped
+
 :- type redirect_input
     --->    no
     ;       redirect_input(string).
@@ -15,9 +18,10 @@
     ;       redirect_output(string)
     ;       redirect_append(string).
 
-:- pred args_to_quoted_command(list(string)::in, string::out) is det.
+:- pred args_to_quoted_command(shell_quoted::in, list(string)::in, string::out)
+    is det.
 
-:- pred args_to_quoted_command(list(string)::in,
+:- pred args_to_quoted_command(shell_quoted::in, list(string)::in,
     redirect_input::in, redirect_output::in, string::out) is det.
 
 :- func quote_arg(string) = string.
@@ -30,12 +34,12 @@
 :- import_module char.
 :- import_module string.
 
-args_to_quoted_command(Args, Command) :-
-    args_to_quoted_command(Args, no, no, Command).
+args_to_quoted_command(Prefix, UnquotedArgs, Command) :-
+    args_to_quoted_command(Prefix, UnquotedArgs, no, no, Command).
 
-args_to_quoted_command(Args, MaybeRedirectInput, MaybeRedirectOutput,
-        Command) :-
-    QuotedArgs0 = list.map(quote_arg, Args),
+args_to_quoted_command(shell_quoted(Prefix), UnquotedArgs,
+        MaybeRedirectInput, MaybeRedirectOutput, Command) :-
+    QuotedArgs0 = ["exec", Prefix | list.map(quote_arg, UnquotedArgs)],
     (
         MaybeRedirectInput = redirect_input(RedirectInput),
         QuotedInput = quote_arg(RedirectInput),

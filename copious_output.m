@@ -9,9 +9,10 @@
 
 :- import_module data.
 :- import_module prog_config.
+:- import_module quote_arg.
 
 :- pred expand_part(prog_config::in, message_id::in, int::in,
-    maybe(string)::in, maybe_error(string)::out, io::di, io::uo) is det.
+    maybe(shell_quoted)::in, maybe_error(string)::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -28,17 +29,17 @@
 %-----------------------------------------------------------------------------%
 
 expand_part(ProgConfig, MessageId, PartId, MaybeFilterCommand, Res, !IO) :-
-    get_notmuch_prefix(ProgConfig, Notmuch),
-    args_to_quoted_command([
+    get_notmuch_command(ProgConfig, Notmuch),
+    args_to_quoted_command(Notmuch, [
         "show", "--format=raw", "--part=" ++ from_int(PartId),
         message_id_to_search_term(MessageId)
     ], ShowCommand),
     (
-        MaybeFilterCommand = yes(Filter),
-        Command = Notmuch ++ ShowCommand ++ " | " ++ Filter
+        MaybeFilterCommand = yes(shell_quoted(Filter)),
+        Command = ShowCommand ++ " | " ++ Filter
     ;
         MaybeFilterCommand = no,
-        Command = Notmuch ++ ShowCommand
+        Command = ShowCommand
     ),
     ErrorLimit = yes(100),
     call_system_capture_stdout(Command, ErrorLimit, CallRes, !IO),

@@ -836,9 +836,11 @@ generate_smart_tag_choices(Config, AndTagSet, OrTagSet, EnteredTagSet,
     io::di, io::uo) is det.
 
 get_notmuch_all_tags(Config, TagsList, !IO) :-
-    get_notmuch_prefix(Config, Notmuch),
-    args_to_quoted_command(["search", "--output=tags", "--", "*"], Command),
-    call_system_capture_stdout(Notmuch ++ Command, no, CallRes, !IO),
+    get_notmuch_command(Config, Notmuch),
+    args_to_quoted_command(Notmuch, [
+        "search", "--output=tags", "--", "*"
+    ], Command),
+    call_system_capture_stdout(Command, no, CallRes, !IO),
     (
         CallRes = ok(TagListString),
         % The empty string following the final newline is not a tag.
@@ -861,9 +863,9 @@ filter_tag_choice(Trigger, TagPrefix, Tag, Choice) :-
     list(string)::out, io::di, io::uo) is det.
 
 generate_config_key_choices(Config, SectionName, OrigString, Choices, !IO) :-
-    get_notmuch_prefix(Config, Notmuch),
-    args_to_quoted_command(["config", "list"], Command),
-    call_system_capture_stdout(Notmuch ++ Command, no, CallRes, !IO),
+    get_notmuch_command(Config, Notmuch),
+    args_to_quoted_command(Notmuch, ["config", "list"], Command),
+    call_system_capture_stdout(Command, no, CallRes, !IO),
     (
         CallRes = ok(ItemsString),
         % The empty string following the final newline is not an item.

@@ -1721,13 +1721,12 @@ make_save_part_initial_prompt(History, PartFilename, Initial) :-
     maybe_error::out, io::di, io::uo) is det.
 
 do_save_part(Config, MessageId, Part, FileName, Res, !IO) :-
-    get_notmuch_prefix(Config, Notmuch),
-    Args = [
+    get_notmuch_command(Config, Notmuch),
+    args_to_quoted_command(Notmuch, [
         "show", "--format=raw", "--part=" ++ from_int(Part),
         message_id_to_search_term(MessageId)
-    ],
-    args_to_quoted_command(Args, no, redirect_output(FileName), Command),
-    io.call_system(Notmuch ++ Command, CallRes, !IO),
+    ], no, redirect_output(FileName), Command),
+    io.call_system(Command, CallRes, !IO),
     (
         CallRes = ok(ExitStatus),
         ( ExitStatus = 0 ->
@@ -1900,8 +1899,8 @@ make_open_command(CommandWords0, Arg, CommandName, CommandString, Bg) :-
     CommandWords = [FirstWord | _],
     CommandName = word_string(FirstWord),
     Args = list.map(word_string, CommandWords) ++ [Arg],
-    CommandString0 = string.join_list(" ",
-        ["exec" | list.map(quote_arg, Args)]),
+    % A bit cheaty.
+    args_to_quoted_command(shell_quoted(""), Args, CommandString0),
     (
         Bg = run_in_background,
         CommandString = CommandString0 ++

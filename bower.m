@@ -15,7 +15,6 @@
 
 :- import_module bool.
 :- import_module list.
-:- import_module maybe.
 :- import_module string.
 
 :- import_module async.
@@ -41,20 +40,13 @@ main(!IO) :-
     load_prog_config(ResConfig, !IO),
     (
         ResConfig = ok(Config),
-        check_sendmail_command(Config, ResSendmail),
-        (
-            ResSendmail = ok,
-            main_2(Config, !IO)
-        ;
-            ResSendmail = error(Error2),
-            io.stderr_stream(Stream, !IO),
-            io.write_string(Stream, Error2, !IO),
-            io.nl(Stream, !IO),
-            io.set_exit_status(1, !IO)
-        )
+        main_2(Config, !IO)
     ;
-        ResConfig = error(Error),
-        print_error("Error loading config file: " ++ Error, !IO)
+        ResConfig = errors(Errors),
+        io.stderr_stream(Stream, !IO),
+        io.write_string(Stream, "Errors in configuration file:\n", !IO),
+        list.foldl(print_error(Stream), Errors, !IO),
+        io.set_exit_status(1, !IO)
     ).
 
 :- pred main_2(prog_config::in, io::di, io::uo) is cc_multi.
@@ -96,13 +88,11 @@ main_2(Config, !IO) :-
     IO = IO0;
 ").
 
-:- pred print_error(string::in, io::di, io::uo) is det.
+:- pred print_error(io.output_stream::in, string::in, io::di, io::uo) is det.
 
-print_error(Error, !IO) :-
-    io.stderr_stream(Stream, !IO),
+print_error(Stream, Error, !IO) :-
     io.write_string(Stream, Error, !IO),
-    io.nl(Stream, !IO),
-    io.set_exit_status(1, !IO).
+    io.nl(Stream, !IO).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

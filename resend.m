@@ -93,12 +93,12 @@ create_temp_message_file_and_resend(Config, Screen, MessageId, ToAddresses,
     write_resent_headers(FromAddress, ToAddresses, ResWrite, !IO),
     (
         ResWrite = ok(FileName),
-        args_to_quoted_command([
+        get_notmuch_command(Config, Notmuch),
+        args_to_quoted_command(Notmuch, [
             "show", "--format=raw", "--",
             message_id_to_search_term(MessageId)
         ], no, redirect_append(FileName), Command),
-        get_notmuch_prefix(Config, Notmuch),
-        io.call_system(Notmuch ++ Command, CallRes, !IO),
+        io.call_system(Command, CallRes, !IO),
         (
             CallRes = ok(ExitStatus),
             ( ExitStatus = 0 ->
@@ -186,7 +186,8 @@ resend_with_progress(Config, Screen, Filename, MessageUpdate, !IO) :-
 call_send_mail(Config, Filename, Res, !IO) :-
     % Sendmail-compatible programs should extract the recipient from Resent-To
     % header when passed the "-t" option.
-    get_sendmail_command(Config, sendmail_read_recipients, Sendmail),
+    get_sendmail_command(Config, sendmail_read_recipients,
+        shell_quoted(Sendmail)),
     Command = string.join_list(" ", [Sendmail, " < ", quote_arg(Filename)]),
     io.call_system(Command, ResSend, !IO),
     (

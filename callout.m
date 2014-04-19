@@ -51,9 +51,9 @@
 %-----------------------------------------------------------------------------%
 
 get_notmuch_config(Config, Key, Res, !IO) :-
-    get_notmuch_prefix(Config, Notmuch),
+    get_notmuch_command(Config, shell_quoted(Notmuch)),
     % Key is assumed to be quoted already.
-    Command = Notmuch ++ "config get " ++ Key ++ " 2>/dev/null",
+    Command = Notmuch ++ " config get " ++ Key ++ " 2>/dev/null",
     call_system_capture_stdout(Command, no, Res0, !IO),
     (
         Res0 = ok(Value0),
@@ -70,11 +70,10 @@ get_notmuch_config(Config, Section, Key, Res, !IO) :-
 %-----------------------------------------------------------------------------%
 
 run_notmuch(Config, Args, P, Result, !IO) :-
-    get_notmuch_prefix(Config, Notmuch),
-    args_to_quoted_command(Args, Command),
-    FullCommand = Notmuch ++ Command,
+    get_notmuch_command(Config, Notmuch),
+    args_to_quoted_command(Notmuch, Args, Command),
     promise_equivalent_solutions [Result, !:IO] (
-        call_command_parse_json(FullCommand, P, Result, !IO)
+        call_command_parse_json(Command, P, Result, !IO)
     ).
 
 :- pred call_command_parse_json(string::in, pred(json, T)::in(pred(in, out) is det),

@@ -71,11 +71,11 @@ add_draft(Config, FileName, Res, !IO) :-
     list(string)::in, maybe_error::out, io::di, io::uo) is det.
 
 call_notmuch_deliver(Config, FileName, Folder, TagOps, Res, !IO) :-
+    get_notmuch_deliver_command(Config, NotmuchDeliver),
     % XXX do we need -f?
-    Args = [Folder | TagOps],
-    args_to_quoted_command(Args, redirect_input(FileName), no, Command),
-    get_notmuch_deliver_prefix(Config, NotmuchDeliver),
-    io.call_system(NotmuchDeliver ++ Command, CallRes, !IO),
+    args_to_quoted_command(NotmuchDeliver, [Folder | TagOps],
+        redirect_input(FileName), no, Command),
+    io.call_system(Command, CallRes, !IO),
     (
         CallRes = ok(ExitStatus),
         ( ExitStatus = 0 ->
@@ -139,11 +139,12 @@ tag_threads(Config, TagDeltas, ThreadIds, Res, !IO) :-
     maybe_error::out, io::di, io::uo) is det.
 
 do_tag(Config, TagDeltas, SearchTerms, Res, !IO) :-
-    get_notmuch_prefix(Config, Notmuch),
+    get_notmuch_command(Config, Notmuch),
     TagDeltaStrings = list.map(tag_delta_to_string, TagDeltas),
-    Args = list.condense([["tag"], TagDeltaStrings, ["--"], SearchTerms]),
-    args_to_quoted_command(Args, Command),
-    io.call_system(Notmuch ++ Command, CallRes, !IO),
+    args_to_quoted_command(Notmuch,
+        ["tag" | TagDeltaStrings] ++ ["--" | SearchTerms],
+        Command),
+    io.call_system(Command, CallRes, !IO),
     (
         CallRes = ok(ExitStatus),
         ( ExitStatus = 0 ->

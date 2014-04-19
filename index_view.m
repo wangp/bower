@@ -42,6 +42,7 @@
 :- import_module curs.panel.
 :- import_module data.
 :- import_module prog_config.
+:- import_module quote_arg.
 :- import_module recall.
 :- import_module scrollable.
 :- import_module search_term.
@@ -1421,7 +1422,7 @@ common_unread_state([H | T], State0, State) :-
     list(thread_id)::in, io::di, io::uo) is det.
 
 async_tag_threads(Config, TagDeltas, ThreadIds, !IO) :-
-    get_notmuch_prefix(Config, Notmuch),
+    get_notmuch_command(Config, Notmuch),
     TagDeltaStrings = list.map(tag_delta_to_string, TagDeltas),
     SearchTerms = list.map(thread_id_to_search_term, ThreadIds),
     Args = list.condense([
@@ -1434,7 +1435,7 @@ async_tag_threads(Config, TagDeltas, ThreadIds, !IO) :-
     list(message_id)::in, io::di, io::uo) is det.
 
 async_tag_messages(Config, TagDeltaSet, MessageIds, !IO) :-
-    get_notmuch_prefix(Config, Notmuch),
+    get_notmuch_command(Config, Notmuch),
     set.to_sorted_list(TagDeltaSet, TagDeltas),
     TagDeltaStrings = list.map(tag_delta_to_string, TagDeltas),
     SearchTerms = list.map(message_id_to_search_term, MessageIds),
@@ -1590,7 +1591,7 @@ maybe_sched_poll(!Info, !IO) :-
         true
     ;
         Config = !.Info ^ i_config,
-        get_notmuch_prefix(Config, Notmuch),
+        get_notmuch_command(Config, Notmuch),
         Tokens = !.Info ^ i_search_tokens,
         SearchTime = !.Info ^ i_search_time,
         time_to_int(SearchTime, SearchTimeInt),
@@ -1706,8 +1707,9 @@ flush_async_with_progress_loop(Screen, Display, !IO) :-
     io::di, io::uo) is det.
 
 handle_async_failure(Screen, Op, Failure, !IO) :-
-    Op = async_shell_command(CommandPrefix, Args, RemainingAttempts0),
-    FullCommand = CommandPrefix ++ " " ++ string.join_list(" ", Args),
+    Op = async_shell_command(Prefix, Args, RemainingAttempts0),
+    Prefix = shell_quoted(PrefixString),
+    FullCommand = string.join_list(" ", [PrefixString | Args]),
     ( string.count_codepoints(FullCommand) > 40 ->
         ShortCommand = "..." ++ string.right(FullCommand, 37)
     ;
@@ -1723,8 +1725,7 @@ handle_async_failure(Screen, Op, Failure, !IO) :-
             string.format("'%s' returned exit status %d; retrying in %d secs.",
                 [s(ShortCommand), i(Status), i(Delay)], Message),
             RemainingAttempts = RemainingAttempts0 - 1,
-            RetryOp = async_shell_command(CommandPrefix, Args,
-                RemainingAttempts),
+            RetryOp = async_shell_command(Prefix, Args, RemainingAttempts),
             retry_async(Delay, RetryOp, !IO)
         )
     ;

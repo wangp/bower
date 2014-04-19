@@ -30,7 +30,8 @@
 %-----------------------------------------------------------------------------%
 
 lookup_mime_type(FileName, Res, !IO) :-
-    args_to_quoted_command(["file", "--brief", "--mime", FileName], Command),
+    args_to_quoted_command(shell_quoted("file"),
+        ["--brief", "--mime", FileName], Command),
     call_system_capture_stdout(Command, no, CallRes, !IO),
     (
         CallRes = ok(String0),

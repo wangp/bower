@@ -1,6 +1,14 @@
 # This configuration file belongs in ~/.config/bower/bower.conf
 # The lines beginning with '#' or ';' are treated as comment lines.
 
+# The commands in the [command] section use shell-style quoting rules.
+#
+# - within single quotes, all characters represent themselves
+# - within double quotes, all characters represent themselves except for
+#   backslash which escapes the next character
+# - outside of quotes, backslash escapes the next character
+# - no escape sequences are supported, i.e. "\n" is the same as "n".
+
 [command]
 
 # How to run notmuch and notmuch-deliver.
