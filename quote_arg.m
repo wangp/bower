@@ -6,23 +6,43 @@
 
 :- import_module list.
 
+:- type command_prefix
+    --->    command_prefix(shell_quoted, quote_times).
+
 :- type shell_quoted
     --->    shell_quoted(string). % shell metacharacters quoted/escaped
 
+    % Number of times to quote arguments.
+:- type quote_times
+    --->    quote_once
+    ;       quote_twice.
+
 :- type redirect_input
-    --->    no
+    --->    no_redirect
     ;       redirect_input(string).
 
 :- type redirect_output
-    --->    no
+    --->    no_redirect
     ;       redirect_output(string)
     ;       redirect_append(string).
 
-:- pred args_to_quoted_command(shell_quoted::in, list(string)::in, string::out)
+:- type redirect_stderr
+    --->    no_redirect
+    ;       redirect_stderr(string).
+
+:- type run_in_background
+    --->    run_in_foreground
+    ;       run_in_background.
+
+:- pred make_quoted_command(command_prefix::in, list(string)::in, string::out)
     is det.
 
-:- pred args_to_quoted_command(shell_quoted::in, list(string)::in,
+:- pred make_quoted_command(command_prefix::in, list(string)::in,
     redirect_input::in, redirect_output::in, string::out) is det.
+
+:- pred make_quoted_command(command_prefix::in, list(string)::in,
+    redirect_input::in, redirect_output::in, redirect_stderr::in,
+    run_in_background::in, string::out) is det.
 
 :- func quote_arg(string) = string.
 
@@ -32,33 +52,60 @@
 :- implementation.
 
 :- import_module char.
+:- import_module std_util.
 :- import_module string.
 
-args_to_quoted_command(Prefix, UnquotedArgs, Command) :-
-    args_to_quoted_command(Prefix, UnquotedArgs, no, no, Command).
+%-----------------------------------------------------------------------------%
 
-args_to_quoted_command(shell_quoted(Prefix), UnquotedArgs,
-        MaybeRedirectInput, MaybeRedirectOutput, Command) :-
-    QuotedArgs0 = ["exec", Prefix | list.map(quote_arg, UnquotedArgs)],
-    (
-        MaybeRedirectInput = redirect_input(RedirectInput),
-        QuotedInput = quote_arg(RedirectInput),
-        QuotedArgs1 = QuotedArgs0 ++ ["<", QuotedInput]
-    ;
-        MaybeRedirectInput = no,
-        QuotedArgs1 = QuotedArgs0
-    ),
-    (
-        MaybeRedirectOutput = redirect_output(TargetFile),
-        QuotedArgs = QuotedArgs1 ++ [">", quote_arg(TargetFile)]
-    ;
-        MaybeRedirectOutput = redirect_append(TargetFile),
-        QuotedArgs = QuotedArgs1 ++ [">>", quote_arg(TargetFile)]
-    ;
-        MaybeRedirectOutput = no,
-        QuotedArgs = QuotedArgs1
-    ),
-    Command = string.join_list(" ", QuotedArgs).
+make_quoted_command(CommandPrefix, UnquotedArgs, Command) :-
+    make_quoted_command(CommandPrefix, UnquotedArgs, no_redirect, no_redirect,
+        no_redirect, run_in_foreground, Command).
+
+make_quoted_command(CommandPrefix, UnquotedArgs, RedirectInput, RedirectOutput,
+        Command) :-
+    make_quoted_command(CommandPrefix, UnquotedArgs, RedirectInput,
+        RedirectOutput, no_redirect, run_in_foreground, Command).
+
+make_quoted_command(command_prefix(Prefix, QuoteTimes), UnquotedArgs,
+        RedirectInput, RedirectOutput, RedirectStderr, RunInBackground,
+        Command) :-
+    some [!Acc] (
+        Prefix = shell_quoted(PrefixString),
+        !:Acc = ["exec", PrefixString | do_quote(QuoteTimes, UnquotedArgs)],
+        (
+            RedirectInput = redirect_input(InputFile),
+            !:Acc = !.Acc ++ ["<", quote_arg(InputFile)]
+        ;
+            RedirectInput = no_redirect
+        ),
+        (
+            RedirectOutput = redirect_output(OutputFile),
+            !:Acc = !.Acc ++ [">", quote_arg(OutputFile)]
+        ;
+            RedirectOutput = redirect_append(OutputFile),
+            !:Acc = !.Acc ++ [">>", quote_arg(OutputFile)]
+        ;
+            RedirectOutput = no_redirect
+        ),
+        (
+            RedirectStderr = redirect_stderr(ErrorFile),
+            !:Acc = !.Acc ++ ["2>", quote_arg(ErrorFile)]
+        ;
+            RedirectStderr = no_redirect
+        ),
+        (
+            RunInBackground = run_in_background,
+            !:Acc = !.Acc ++ ["&"]
+        ;
+            RunInBackground = run_in_foreground
+        ),
+        Command = string.join_list(" ", !.Acc)
+    ).
+
+:- func do_quote(quote_times, list(string)) = list(string).
+
+do_quote(quote_once, Args) = list.map(quote_arg, Args).
+do_quote(quote_twice, Args) = list.map(compose(quote_arg, quote_arg), Args).
 
 %-----------------------------------------------------------------------------%
 

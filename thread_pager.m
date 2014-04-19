@@ -158,10 +158,6 @@
                 mf_maybe_parent :: maybe(message_id)
             ).
 
-:- type run_in_background
-    --->    run_in_background
-    ;       run_in_foreground.
-
 %-----------------------------------------------------------------------------%
 
 open_thread_pager(Config, Screen, ThreadId, MaybeSearch, Transition,
@@ -1722,10 +1718,10 @@ make_save_part_initial_prompt(History, PartFilename, Initial) :-
 
 do_save_part(Config, MessageId, Part, FileName, Res, !IO) :-
     get_notmuch_command(Config, Notmuch),
-    args_to_quoted_command(Notmuch, [
+    make_quoted_command(Notmuch, [
         "show", "--format=raw", "--part=" ++ from_int(Part),
         message_id_to_search_term(MessageId)
-    ], no, redirect_output(FileName), Command),
+    ], no_redirect, redirect_output(FileName), Command),
     io.call_system(Command, CallRes, !IO),
     (
         CallRes = ok(ExitStatus),
@@ -1862,18 +1858,18 @@ do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, MaybeNextKey,
 :- pred call_open_command(screen::in, list(word)::in(non_empty_list),
     string::in, maybe_error::out, io::di, io::uo) is det.
 
-call_open_command(Screen, CommandWords, FileName, MaybeError, !IO) :-
-    make_open_command(CommandWords, FileName, CommandName, CommandString, Bg),
-    CallMessage = set_info("Calling " ++ CommandName ++ "..."),
+call_open_command(Screen, CommandWords, Arg, MaybeError, !IO) :-
+    make_open_command(CommandWords, Arg, CommandToShow, CommandToRun, Bg),
+    CallMessage = set_info("Calling " ++ CommandToShow ++ "..."),
     update_message_immed(Screen, CallMessage, !IO),
     (
         Bg = run_in_background,
-        io.call_system(CommandString, CallRes, !IO)
+        io.call_system(CommandToRun, CallRes, !IO)
     ;
         Bg = run_in_foreground,
         curs.def_prog_mode(!IO),
         curs.stop(!IO),
-        io.call_system(CommandString, CallRes, !IO),
+        io.call_system(CommandToRun, CallRes, !IO),
         curs.reset_prog_mode(!IO),
         curs.refresh(!IO)
     ),
@@ -1883,7 +1879,7 @@ call_open_command(Screen, CommandWords, FileName, MaybeError, !IO) :-
             MaybeError = ok
         ;
             string.format("%s returned with exit status %d",
-                [s(CommandName), i(ExitStatus)], Msg),
+                [s(CommandToShow), i(ExitStatus)], Msg),
             MaybeError = error(Msg)
         )
     ;
@@ -1894,20 +1890,23 @@ call_open_command(Screen, CommandWords, FileName, MaybeError, !IO) :-
 :- pred make_open_command(list(word)::in(non_empty_list), string::in,
     string::out, string::out, run_in_background::out) is det.
 
-make_open_command(CommandWords0, Arg, CommandName, CommandString, Bg) :-
+make_open_command(CommandWords0, Arg, CommandToShow, CommandToRun, Bg) :-
     remove_bg_operator(CommandWords0, CommandWords, Bg),
-    CommandWords = [FirstWord | _],
-    CommandName = word_string(FirstWord),
-    Args = list.map(word_string, CommandWords) ++ [Arg],
-    % A bit cheaty.
-    args_to_quoted_command(shell_quoted(""), Args, CommandString0),
+    WordStrings = list.map(word_string, CommandWords),
+    CommandToShow = string.join_list(" ", WordStrings),
+    CommandPrefix = command_prefix(
+        shell_quoted(string.join_list(" ", list.map(quote_arg, WordStrings))),
+        ( detect_ssh(CommandWords) -> quote_twice ; quote_once )
+    ),
     (
         Bg = run_in_background,
-        CommandString = CommandString0 ++
-            " </dev/null >/dev/null 2>/dev/null &"
+        make_quoted_command(CommandPrefix, [Arg],
+            redirect_input("/dev/null"), redirect_output("/dev/null"),
+            redirect_stderr("/dev/null"), run_in_background,
+            CommandToRun)
     ;
         Bg = run_in_foreground,
-        CommandString = CommandString0
+        make_quoted_command(CommandPrefix, [Arg], CommandToRun)
     ).
 
 :- pred remove_bg_operator(list(word)::in(non_empty_list),

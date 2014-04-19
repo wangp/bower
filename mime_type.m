@@ -30,8 +30,8 @@
 %-----------------------------------------------------------------------------%
 
 lookup_mime_type(FileName, Res, !IO) :-
-    args_to_quoted_command(shell_quoted("file"),
-        ["--brief", "--mime", FileName], Command),
+    make_quoted_command(file_command, ["--brief", "--mime", FileName],
+        Command),
     call_system_capture_stdout(Command, no, CallRes, !IO),
     (
         CallRes = ok(String0),
@@ -46,6 +46,10 @@ lookup_mime_type(FileName, Res, !IO) :-
         CallRes = error(Error),
         Res = error(Error)
     ).
+
+:- func file_command = command_prefix.
+
+file_command = command_prefix(shell_quoted("file"), quote_once).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

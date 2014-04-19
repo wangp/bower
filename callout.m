@@ -51,9 +51,10 @@
 %-----------------------------------------------------------------------------%
 
 get_notmuch_config(Config, Key, Res, !IO) :-
-    get_notmuch_command(Config, shell_quoted(Notmuch)),
-    % Key is assumed to be quoted already.
-    Command = Notmuch ++ " config get " ++ Key ++ " 2>/dev/null",
+    get_notmuch_command(Config, Notmuch),
+    make_quoted_command(Notmuch, ["config", "get", Key],
+        no_redirect, no_redirect, redirect_stderr("/dev/null"),
+        run_in_foreground, Command),
     call_system_capture_stdout(Command, no, Res0, !IO),
     (
         Res0 = ok(Value0),
@@ -71,7 +72,7 @@ get_notmuch_config(Config, Section, Key, Res, !IO) :-
 
 run_notmuch(Config, Args, P, Result, !IO) :-
     get_notmuch_command(Config, Notmuch),
-    args_to_quoted_command(Notmuch, Args, Command),
+    make_quoted_command(Notmuch, Args, Command),
     promise_equivalent_solutions [Result, !:IO] (
         call_command_parse_json(Command, P, Result, !IO)
     ).

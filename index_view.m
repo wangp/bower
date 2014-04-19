@@ -1708,7 +1708,8 @@ flush_async_with_progress_loop(Screen, Display, !IO) :-
 
 handle_async_failure(Screen, Op, Failure, !IO) :-
     Op = async_shell_command(Prefix, Args, RemainingAttempts0),
-    Prefix = shell_quoted(PrefixString),
+    % XXX pw
+    Prefix = command_prefix(shell_quoted(PrefixString), _),
     FullCommand = string.join_list(" ", [PrefixString | Args]),
     ( string.count_codepoints(FullCommand) > 40 ->
         ShortCommand = "..." ++ string.right(FullCommand, 37)

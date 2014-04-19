@@ -181,7 +181,7 @@ expand_aliases(Config, Input, Output, !IO) :-
 start_reply(Config, Screen, Message, ReplyKind, Transition, !IO) :-
     get_notmuch_command(Config, Notmuch),
     Message ^ m_id = MessageId,
-    args_to_quoted_command(Notmuch, [
+    make_quoted_command(Notmuch, [
         "reply", reply_to_arg(ReplyKind), "--",
         message_id_to_search_term(MessageId)
     ], Command),
@@ -297,7 +297,7 @@ continue_postponed(Config, Screen, Message, Transition, !IO) :-
     % XXX notmuch show --format=json does not return References and In-Reply-To
     % so we parse them from the raw output.
     get_notmuch_command(Config, Notmuch),
-    args_to_quoted_command(Notmuch, [
+    make_quoted_command(Notmuch, [
         "show", "--format=raw", "--", message_id_to_search_term(MessageId)
     ], Command),
     call_system_capture_stdout(Command, no, CallRes, !IO),
@@ -403,7 +403,7 @@ make_parsed_headers(Headers, Parsed) :-
 
 call_editor(Config, Filename, Res, !IO) :-
     get_editor_command(Config, Editor),
-    args_to_quoted_command(Editor, [Filename], Command),
+    make_quoted_command(Editor, [Filename], Command),
     curs.def_prog_mode(!IO),
     curs.stop(!IO),
     io.call_system(Command, CallRes, !IO),
@@ -414,15 +414,13 @@ call_editor(Config, Filename, Res, !IO) :-
         ( ExitStatus = 0 ->
             Res = ok
         ;
-            Editor = shell_quoted(EditorString),
             string.format("%s returned exit status %d",
-                [s(EditorString), i(ExitStatus)], Warning),
+                [s(Command), i(ExitStatus)], Warning),
             Res = error(Warning)
         )
     ;
         CallRes = error(Error),
-        Editor = shell_quoted(EditorString),
-        string.append_list(["Error running ", EditorString, ": ",
+        string.append_list(["Error running ", Command, ": ",
             io.error_message(Error)], Warning),
         Res = error(Warning)
     ).
@@ -934,7 +932,7 @@ do_attach_text_file(FileName, BaseName, Type, NumRows, MessageUpdate,
 
 do_attach_binary_file(FileName, BaseName, Type, NumRows, MessageUpdate,
         !AttachInfo, !IO) :-
-    args_to_quoted_command(shell_quoted("base64"), [FileName], Command),
+    make_quoted_command(base64_command, [FileName], Command),
     call_system_capture_stdout(Command, no, CallRes, !IO),
     (
         CallRes = ok(Content),
@@ -948,6 +946,10 @@ do_attach_binary_file(FileName, BaseName, Type, NumRows, MessageUpdate,
         Msg = io.error_message(Error),
         MessageUpdate = set_warning(Msg)
     ).
+
+:- func base64_command = command_prefix.
+
+base64_command = command_prefix(shell_quoted("base64"), quote_once).
 
 :- pred append_attachment(attachment::in, int::in,
     attach_info::in, attach_info::out) is det.
@@ -1328,9 +1330,10 @@ send_mail(Config, Screen, Headers, ParsedHeaders, Text, Attachments, Res,
     io::di, io::uo) is det.
 
 call_send_mail(Config, Filename, Res, !IO) :-
-    get_sendmail_command(Config, sendmail_read_recipients,
-        shell_quoted(Sendmail)),
-    io.call_system(Sendmail ++ " < " ++ quote_arg(Filename), ResSend, !IO),
+    get_sendmail_command(Config, sendmail_read_recipients, Sendmail),
+    make_quoted_command(Sendmail, [], redirect_input(Filename), no_redirect,
+        Command),
+    io.call_system(Command, ResSend, !IO),
     (
         ResSend = ok(ExitStatus),
         ( ExitStatus = 0 ->
@@ -1344,12 +1347,12 @@ call_send_mail(Config, Filename, Res, !IO) :-
             )
         ;
             Msg = string.format("%s: returned with exit status %d",
-                [s(Sendmail), i(ExitStatus)]),
+                [s(Command), i(ExitStatus)]),
             Res = error(Msg)
         )
     ;
         ResSend = error(Error),
-        Msg = Sendmail ++ ": " ++ io.error_message(Error),
+        Msg = Command ++ ": " ++ io.error_message(Error),
         Res = error(Msg)
     ).
 
@@ -1366,8 +1369,10 @@ do_post_sendmail(Config, Filename, Res, !IO) :-
         Action = nothing,
         Res = ok
     ;
-        Action = command(shell_quoted(Command)),
-        io.call_system(Command ++ " < " ++ quote_arg(Filename), ResCall, !IO),
+        Action = command(CommandPrefix),
+        make_quoted_command(CommandPrefix, [], redirect_input(Filename),
+            no_redirect, Command),
+        io.call_system(Command, ResCall, !IO),
         (
             ResCall = ok(ExitStatus),
             ( ExitStatus = 0 ->
@@ -1778,7 +1783,7 @@ write_mime_part_attachment(Stream, Config, Boundary, Attachment, !IO) :-
 get_non_text_part_base64(Config, Part, Content, !IO) :-
     Part = part(MessageId, PartId, _, _, _, _, _),
     get_notmuch_command(Config, Notmuch),
-    args_to_quoted_command(Notmuch, [
+    make_quoted_command(Notmuch, [
         "show", "--format=raw", "--part=" ++ from_int(PartId),
         message_id_to_search_term(MessageId)
     ], Command),

@@ -134,7 +134,7 @@ suggest_alias(Address) = Alias :-
 do_addressbook_add(Config, Alias, Address, Res, !IO) :-
     get_notmuch_command(Config, Notmuch),
     Key = addressbook_section ++ "." ++ Alias,
-    args_to_quoted_command(Notmuch, ["config", "set", Key, Address], Command),
+    make_quoted_command(Notmuch, ["config", "set", Key, Address], Command),
     io.call_system(Command, CallRes, !IO),
     (
         CallRes = ok(ExitStatus),
@@ -147,7 +147,7 @@ do_addressbook_add(Config, Alias, Address, Res, !IO) :-
         )
     ;
         CallRes = error(Error),
-        Notmuch = shell_quoted(NotmuchString),
+        Notmuch = command_prefix(shell_quoted(NotmuchString), _),
         string.append_list(["Error running ", NotmuchString, ": ",
             io.error_message(Error)], Warning),
         Res = error(Warning)

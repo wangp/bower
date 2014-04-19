@@ -10,6 +10,7 @@
 
 :- import_module color.
 :- import_module quote_arg.
+:- import_module shell_word.
 
 %-----------------------------------------------------------------------------%
 
@@ -25,26 +26,27 @@
 :- type post_sendmail
     --->    default
     ;       nothing
-    ;       command(shell_quoted).
+    ;       command(command_prefix).
 
 %-----------------------------------------------------------------------------%
 
 :- pred load_prog_config(load_prog_config_result::out, io::di, io::uo)
     is cc_multi.
 
-:- pred get_notmuch_command(prog_config::in, shell_quoted::out) is det.
+:- pred get_notmuch_command(prog_config::in, command_prefix::out) is det.
 
-:- pred get_notmuch_deliver_command(prog_config::in, shell_quoted::out) is det.
+:- pred get_notmuch_deliver_command(prog_config::in, command_prefix::out)
+    is det.
 
-:- pred get_editor_command(prog_config::in, shell_quoted::out) is det.
+:- pred get_editor_command(prog_config::in, command_prefix::out) is det.
 
 :- pred get_sendmail_command(prog_config::in, sendmail_option::in,
-    shell_quoted::out) is det.
+    command_prefix::out) is det.
 
 :- pred get_post_sendmail_action(prog_config::in, post_sendmail::out) is det.
 
-:- pred get_maybe_html_dump_command(prog_config::in, maybe(shell_quoted)::out)
-    is det.
+:- pred get_maybe_html_dump_command(prog_config::in,
+    maybe(command_prefix)::out) is det.
 
 :- pred get_open_part_command(prog_config::in, string::out) is det.
 
@@ -58,6 +60,11 @@
 :- func compose_attrs(prog_config) = compose_attrs.
 
 %-----------------------------------------------------------------------------%
+
+    % Exported for open part / URL commands.
+:- pred detect_ssh(list(word)::in) is semidet.
+
+%-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
@@ -68,17 +75,16 @@
 
 :- import_module config.
 :- import_module quote_arg.
-:- import_module shell_word.
 :- import_module xdg.
 
 :- type prog_config
     --->    prog_config(
-                notmuch         :: shell_quoted,
-                notmuch_deliver :: shell_quoted,
-                editor          :: shell_quoted,
-                sendmail        :: shell_quoted,
+                notmuch         :: command_prefix,
+                notmuch_deliver :: command_prefix,
+                editor          :: command_prefix,
+                sendmail        :: command_prefix,
                 post_sendmail   :: post_sendmail,
-                html_dump       :: maybe(shell_quoted),
+                html_dump       :: maybe(command_prefix),
                 open_part       :: string, % not shell-quoted
                 open_url        :: string, % not shell-quoted
                 colors          :: colors
@@ -198,15 +204,16 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
     ProgConfig ^ open_url = OpenUrl,
     ProgConfig ^ colors = Colors.
 
-:- pred parse_command(string::in, shell_quoted::out,
+:- pred parse_command(string::in, command_prefix::out,
     list(string)::in, list(string)::out) is cc_multi.
 
-parse_command(S0, shell_quoted(S), !Errors) :-
+parse_command(S0, command_prefix(shell_quoted(S), QuoteTimes), !Errors) :-
     shell_word.split(S0, ParseResult),
     (
         ParseResult = ok(Words),
         Args = list.map(word_string, Words),
-        S = string.join_list(" ", list.map(quote_arg, Args))
+        S = string.join_list(" ", list.map(quote_arg, Args)),
+        QuoteTimes = ( detect_ssh(Words) -> quote_twice ; quote_once )
     ;
         (
             ParseResult = error(yes(Message), _Line, _Column)
@@ -216,13 +223,19 @@ parse_command(S0, shell_quoted(S), !Errors) :-
         ),
         Error = string.format("%s in value: %s", [s(Message), s(S0)]),
         cons(Error, !Errors),
-        S = "false" % dummy
+        S = "false", % dummy
+        QuoteTimes = quote_once
     ).
 
-:- pred check_sendmail_command(shell_quoted::in,
+detect_ssh([FirstWord | _]) :-
+    FirstWord = word(Segments),
+    list.member(unquoted(String), Segments),
+    string.sub_string_search(String, "ssh", _).
+
+:- pred check_sendmail_command(command_prefix::in,
     list(string)::in, list(string)::out) is det.
 
-check_sendmail_command(shell_quoted(Command), !Errors) :-
+check_sendmail_command(command_prefix(shell_quoted(Command), _), !Errors) :-
     (
         ( string.suffix(Command, " -t")
         ; string.sub_string_search(Command, " -t ", _)
@@ -245,10 +258,10 @@ get_notmuch_deliver_command(Config, NotmuchDeliver) :-
 get_editor_command(Config, Editor) :-
     Editor = Config ^ editor.
 
-get_sendmail_command(Config, sendmail_read_recipients, Sendmail) :-
-    Config ^ sendmail = shell_quoted(Command0),
-    Command = Command0 ++ " -t",
-    Sendmail = shell_quoted(Command).
+get_sendmail_command(Config, sendmail_read_recipients, Command) :-
+    Command0 = Config ^ sendmail,
+    Command0 = command_prefix(shell_quoted(Cmd), QuoteTimes),
+    Command = command_prefix(shell_quoted(Cmd ++ " -t"), QuoteTimes).
 
 get_post_sendmail_action(Config, Action) :-
     Action = Config ^ post_sendmail.
@@ -277,26 +290,30 @@ compose_attrs(Config) = Config ^ colors ^ compose_attrs.
 
 config_filename = "bower/bower.conf".
 
-:- func default_notmuch_command = shell_quoted.
+:- func default_notmuch_command = command_prefix.
 
-default_notmuch_command = shell_quoted("notmuch").
+default_notmuch_command =
+    command_prefix(shell_quoted("notmuch"), quote_once).
 
-:- func default_notmuch_deliver_command = shell_quoted.
+:- func default_notmuch_deliver_command = command_prefix.
 
-default_notmuch_deliver_command = shell_quoted("notmuch-deliver").
+default_notmuch_deliver_command =
+    command_prefix(shell_quoted("notmuch-deliver"), quote_once).
 
-:- func default_editor_command = shell_quoted.
+:- func default_editor_command = command_prefix.
 
-default_editor_command = shell_quoted("vi").
+default_editor_command =
+    command_prefix(shell_quoted("vi"), quote_once).
 
-:- func default_sendmail_command = shell_quoted.
+:- func default_sendmail_command = command_prefix.
 
-default_sendmail_command = shell_quoted("/usr/bin/sendmail -oi -oem").
+default_sendmail_command =
+    command_prefix(shell_quoted("/usr/bin/sendmail -oi -oem"), quote_once).
 
-:- func default_html_dump_command = shell_quoted.
+:- func default_html_dump_command = command_prefix.
 
-default_html_dump_command =
-    shell_quoted("lynx -dump -force-html -stdin -display-charset=utf-8").
+default_html_dump_command = command_prefix(shell_quoted(Lynx), quote_once) :-
+    Lynx = "lynx -dump -force-html -stdin -display-charset=utf-8".
 
 :- func default_open_part_command = string.
 

@@ -12,7 +12,8 @@
 :- import_module quote_arg.
 
 :- pred expand_part(prog_config::in, message_id::in, int::in,
-    maybe(shell_quoted)::in, maybe_error(string)::out, io::di, io::uo) is det.
+    maybe(command_prefix)::in, maybe_error(string)::out, io::di, io::uo)
+    is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -30,13 +31,14 @@
 
 expand_part(ProgConfig, MessageId, PartId, MaybeFilterCommand, Res, !IO) :-
     get_notmuch_command(ProgConfig, Notmuch),
-    args_to_quoted_command(Notmuch, [
+    make_quoted_command(Notmuch, [
         "show", "--format=raw", "--part=" ++ from_int(PartId),
         message_id_to_search_term(MessageId)
     ], ShowCommand),
     (
-        MaybeFilterCommand = yes(shell_quoted(Filter)),
-        Command = ShowCommand ++ " | " ++ Filter
+        MaybeFilterCommand = yes(Filter),
+        make_quoted_command(Filter, [], FilterCommand),
+        Command = ShowCommand ++ " | " ++ FilterCommand
     ;
         MaybeFilterCommand = no,
         Command = ShowCommand

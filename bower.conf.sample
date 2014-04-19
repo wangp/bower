@@ -8,20 +8,22 @@
 #   backslash which escapes the next character
 # - outside of quotes, backslash escapes the next character
 # - no escape sequences are supported, i.e. "\n" is the same as "n".
+#
+# If the first word of a command contains the unquoted and unescaped
+# string "ssh" then an additional level of shell quoting will be applied
+# to any arguments that bower adds to the command.
 
 [command]
 
 # How to run notmuch and notmuch-deliver.
 # Set these if notmuch or notmuch-deliver are not already on your PATH.
-# I run bower locally but keep my mail and notmuch on a remote machine,
-# accessed via ssh.  That requires an extra level of shell quoting, which
-# is achieved with a small zsh helper script.
 #
-# You may like to enable the OpenSSH ControlMaster option, and also set
-# ControlPersist to greater than 60 seconds (the polling period in the
-# index view).
-; notmuch=/local/ssh_escape user@host /remote/notmuch
-; notmuch_deliver=/local/ssh_escape user@host /remote/notmuch-deliver
+# I run bower locally but keep my mail and notmuch on a remote machine,
+# accessed via ssh.  For that, you may like to enable the OpenSSH
+# ControlMaster option, and also set ControlPersist to greater than 60
+# seconds (the polling period in the index view).
+; notmuch = ssh user@host /remote/notmuch
+; notmuch_deliver = ssh user@host /remote/notmuch-deliver
 
 # How to edit a message.
 # The default is to use $EDITOR, or else "vi".

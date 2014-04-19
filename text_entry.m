@@ -837,7 +837,7 @@ generate_smart_tag_choices(Config, AndTagSet, OrTagSet, EnteredTagSet,
 
 get_notmuch_all_tags(Config, TagsList, !IO) :-
     get_notmuch_command(Config, Notmuch),
-    args_to_quoted_command(Notmuch, [
+    make_quoted_command(Notmuch, [
         "search", "--output=tags", "--", "*"
     ], Command),
     call_system_capture_stdout(Command, no, CallRes, !IO),
@@ -864,7 +864,7 @@ filter_tag_choice(Trigger, TagPrefix, Tag, Choice) :-
 
 generate_config_key_choices(Config, SectionName, OrigString, Choices, !IO) :-
     get_notmuch_command(Config, Notmuch),
-    args_to_quoted_command(Notmuch, ["config", "list"], Command),
+    make_quoted_command(Notmuch, ["config", "list"], Command),
     call_system_capture_stdout(Command, no, CallRes, !IO),
     (
         CallRes = ok(ItemsString),

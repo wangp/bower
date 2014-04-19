@@ -73,8 +73,8 @@ add_draft(Config, FileName, Res, !IO) :-
 call_notmuch_deliver(Config, FileName, Folder, TagOps, Res, !IO) :-
     get_notmuch_deliver_command(Config, NotmuchDeliver),
     % XXX do we need -f?
-    args_to_quoted_command(NotmuchDeliver, [Folder | TagOps],
-        redirect_input(FileName), no, Command),
+    make_quoted_command(NotmuchDeliver, [Folder | TagOps],
+        redirect_input(FileName), no_redirect, Command),
     io.call_system(Command, CallRes, !IO),
     (
         CallRes = ok(ExitStatus),
@@ -141,7 +141,7 @@ tag_threads(Config, TagDeltas, ThreadIds, Res, !IO) :-
 do_tag(Config, TagDeltas, SearchTerms, Res, !IO) :-
     get_notmuch_command(Config, Notmuch),
     TagDeltaStrings = list.map(tag_delta_to_string, TagDeltas),
-    args_to_quoted_command(Notmuch,
+    make_quoted_command(Notmuch,
         ["tag" | TagDeltaStrings] ++ ["--" | SearchTerms],
         Command),
     io.call_system(Command, CallRes, !IO),
