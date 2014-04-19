@@ -1,3 +1,0 @@
-#!/bin/zsh -e
-# ssh with extra level of quoting.
-exec ssh "${(q)@}"
