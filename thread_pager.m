@@ -1904,7 +1904,8 @@ make_open_command(CommandWords0, Arg, CommandName, CommandString, Bg) :-
         ["exec" | list.map(quote_arg, Args)]),
     (
         Bg = run_in_background,
-        CommandString = CommandString0 ++ " &"
+        CommandString = CommandString0 ++
+            " </dev/null >/dev/null 2>/dev/null &"
     ;
         Bg = run_in_foreground,
         CommandString = CommandString0
