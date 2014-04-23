@@ -69,15 +69,15 @@
     Width = (C < 256) ? 1 : wcwidth(C);
 ").
 
-list_wcwidth([]) = 0.
-list_wcwidth([C | Cs]) = wcwidth(C) + list_wcwidth(Cs).
+list_wcwidth(Cs) = Width :-
+    list.foldl(add_wcwidth, Cs, 0, Width).
 
 string_wcwidth(S) = Width :-
-    string.foldl(string_wcwidth_2, S, 0, Width).
+    string.foldl(add_wcwidth, S, 0, Width).
 
-:- pred string_wcwidth_2(char::in, int::in, int::out) is det.
+:- pred add_wcwidth(char::in, int::in, int::out) is det.
 
-string_wcwidth_2(C, Width, Width + wcwidth(C)).
+add_wcwidth(C, Width, Width + wcwidth(C)).
 
 %-----------------------------------------------------------------------------%
 
