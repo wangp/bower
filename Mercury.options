@@ -11,6 +11,9 @@ MCFLAGS-bower += --mercury-linkage static
 MCFLAGS += --optimise-constructor-last-call
 
 # Module-specific options.
+MCFLAGS-json += --exec-trace-tail-rec
+MCFLAGS-make_utf8 += --exec-trace-tail-rec
+MCFLAGS-pager += --exec-trace-tail-rec
 MCFLAGS-popen += --no-ansi-c
 MCFLAGS-process += --no-ansi-c
 MCFLAGS-sleep += --no-ansi-c
