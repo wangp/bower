@@ -89,7 +89,11 @@
 :- pred get_highlighted_thing(pager_info::in, highlighted_thing::out)
     is semidet.
 
-:- pred toggle_content(int::in, message_update::out,
+:- type toggle_type
+    --->    cycle_alternatives
+    ;       toggle_expanded.
+
+:- pred toggle_content(toggle_type::in, int::in, message_update::out,
     pager_info::in, pager_info::out, io::di, io::uo) is det.
 
 :- pred draw_pager(pager_attrs::in, screen::in, pager_info::in, io::di, io::uo)
@@ -114,6 +118,7 @@
 :- import_module version_array.
 
 :- import_module copious_output.
+:- import_module quote_arg.
 :- import_module string_util.
 :- import_module uri.
 
@@ -147,8 +152,9 @@
     ;       text(quote_level, string, quote_marker_end, text_type)
     ;       part_head(
                 part            :: part,
-                alternatives    :: list(part)
+                alternatives    :: list(part),
                 % Hidden alternatives for multipart/alternative.
+                part_expanded   :: part_expanded
             )
     ;       fold_marker(
                 content         :: list(pager_line),
@@ -171,6 +177,10 @@
     ;       diff_rem
     ;       diff_hunk
     ;       diff_index.
+
+:- type part_expanded
+    --->    part_expanded
+    ;       part_not_expanded.
 
 :- type binding
     --->    leave_pager
@@ -334,14 +344,14 @@ maybe_add_header(Header, Value, RevLines0, RevLines) :-
 
 make_part_tree(Config, Cols, Part, Tree, !ElideInitialHeadLine, !Counter, !IO)
         :-
-    make_part_tree_with_alts(Config, Cols, [], Part, Tree,
+    make_part_tree_with_alts(Config, Cols, [], Part, default, Tree,
         !ElideInitialHeadLine, !Counter, !IO).
 
 :- pred make_part_tree_with_alts(prog_config::in, int::in, list(part)::in,
-    part::in, tree::out, bool::in, bool::out, counter::in, counter::out,
-    io::di, io::uo) is det.
+    part::in, expand_unsupported::in, tree::out, bool::in, bool::out,
+    counter::in, counter::out, io::di, io::uo) is det.
 
-make_part_tree_with_alts(Config, Cols, AltParts, Part, Tree,
+make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
         !ElideInitialHeadLine, !Counter, !IO) :-
     Part = part(_MessageId, _PartId, Type, Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength),
@@ -356,7 +366,7 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, Tree,
         ->
             SubTrees = TextTrees
         ;
-            HeadLine = part_head(Part, AltParts),
+            HeadLine = part_head(Part, AltParts, part_expanded),
             SubTrees = [leaf([HeadLine]) | TextTrees]
         ),
         Tree = node(PartNodeId, SubTrees, yes),
@@ -368,7 +378,7 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, Tree,
             select_alternative(SubParts, [FirstSubPart | RestSubParts])
         ->
             make_part_tree_with_alts(Config, Cols, RestSubParts, FirstSubPart,
-                Tree, no, _ElideInitialHeadLine, !Counter, !IO)
+                default, Tree, no, _ElideInitialHeadLine, !Counter, !IO)
         ;
             AltParts = [],
             hide_multipart_head_line(Type)
@@ -379,7 +389,7 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, Tree,
         ;
             list.map_foldl3(make_part_tree(Config, Cols), SubParts,
                 SubPartsTrees, yes, _ElideInitialHeadLine, !Counter, !IO),
-            HeadLine = part_head(Part, AltParts),
+            HeadLine = part_head(Part, AltParts, part_expanded),
             SubTrees = [leaf([HeadLine]) | SubPartsTrees],
             Tree = node(PartNodeId, SubTrees, yes),
             !:ElideInitialHeadLine = no
@@ -388,16 +398,14 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, Tree,
         Content = encapsulated_messages(EncapMessages),
         list.map_foldl2(make_encapsulated_message_tree(Config, Cols),
             EncapMessages, SubTrees0, !Counter, !IO),
-        HeadLine = part_head(Part, AltParts),
+        HeadLine = part_head(Part, AltParts, part_expanded),
         SubTrees = [leaf([HeadLine]) | SubTrees0],
         Tree = node(PartNodeId, SubTrees, yes),
         !:ElideInitialHeadLine = no
     ;
-        ( Content = unsupported
-        ; Content = unsupported_inline
-        ),
-        make_unsupported_part_tree(Config, Cols, PartNodeId, Part, AltParts,
-            Tree, !IO),
+        Content = unsupported,
+        make_unsupported_part_tree(Config, Cols, PartNodeId, Part,
+            ExpandUnsupported, AltParts, Tree, !IO),
         !:ElideInitialHeadLine = no
     ).
 
@@ -755,7 +763,7 @@ is_quoted_text(Line) :-
     ;
         ( Line = start_message_header(_, _, _)
         ; Line = header(_, _)
-        ; Line = part_head(_, _)
+        ; Line = part_head(_, _, _)
         ; Line = fold_marker(_, _)
         ; Line = message_separator
         ),
@@ -811,35 +819,67 @@ add_encapsulated_header(Header, Value, RevLines0, RevLines) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred make_unsupported_part_tree(prog_config::in, int::in, node_id::in,
-    part::in, list(part)::in, tree::out, io::di, io::uo) is det.
+:- type expand_unsupported
+    --->    default
+    ;       force(part_expanded).
 
-make_unsupported_part_tree(Config, Cols, PartNodeId, Part, AltParts, Tree,
-        !IO) :-
-    Part = part(MessageId, PartId, Type, Content, _MaybeFilename,
+:- pred make_unsupported_part_tree(prog_config::in, int::in, node_id::in,
+    part::in, expand_unsupported::in, list(part)::in, tree::out,
+    io::di, io::uo) is det.
+
+make_unsupported_part_tree(Config, Cols, PartNodeId, Part, ExpandUnsupported,
+        AltParts, Tree, !IO) :-
+    Part = part(MessageId, PartId, Type, _Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength),
     % XXX we should use mailcap, though we don't want to show everything
-    ( Content = unsupported_inline ->
-        ( strcase_equal(Type, "text/html") ->
-            get_maybe_html_dump_command(Config, MaybeFilterCommand)
-        ;
-            MaybeFilterCommand = no
-        ),
-        expand_part(Config, MessageId, PartId, MaybeFilterCommand, MaybeText,
-            !IO)
+    IsHtml = ( strcase_equal(Type, "text/html") -> yes ; no ),
+    (
+        ExpandUnsupported = default,
+        Expanded = expand_unsupported_default(IsHtml)
     ;
-        MaybeText = ok("")
+        ExpandUnsupported = force(Expanded)
     ),
     (
-        MaybeText = ok(Text),
-        make_text_lines(Cols, Text, TextLines)
+        Expanded = part_expanded,
+        MaybeFilterCommand = maybe_filter_command(Config, IsHtml),
+        expand_part(Config, MessageId, PartId, MaybeFilterCommand,
+            MaybeText, !IO),
+        (
+            MaybeText = ok(Text),
+            make_text_lines(Cols, Text, TextLines)
+        ;
+            MaybeText = error(Error),
+            make_text_lines(Cols, "(" ++ Error ++ ")", TextLines)
+        )
     ;
-        MaybeText = error(Error),
-        make_text_lines(Cols, "(" ++ Error ++ ")", TextLines)
+        Expanded = part_not_expanded,
+        TextLines = []
     ),
-    HeadLine = part_head(Part, AltParts),
+    HeadLine = part_head(Part, AltParts, Expanded),
     Lines = [HeadLine | TextLines],
     Tree = node(PartNodeId, [leaf(Lines)], yes).
+
+:- func expand_unsupported_default(bool) = part_expanded.
+
+expand_unsupported_default(IsHtml) = Expanded :-
+    (
+        IsHtml = yes,
+        Expanded = part_expanded
+    ;
+        IsHtml = no,
+        Expanded = part_not_expanded
+    ).
+
+:- func maybe_filter_command(prog_config, bool) = maybe(command_prefix).
+
+maybe_filter_command(Config, IsHtml) = MaybeFilterCommand :-
+    (
+        IsHtml = yes,
+        get_maybe_html_dump_command(Config, MaybeFilterCommand)
+    ;
+        IsHtml = no,
+        MaybeFilterCommand = no
+    ).
 
 %-----------------------------------------------------------------------------%
 
@@ -1128,7 +1168,7 @@ is_quoted_text_or_message_start_2(Line) :-
         Level > 0
     ;
         ( Line = header(_, _)
-        ; Line = part_head(_, _)
+        ; Line = part_head(_, _, _)
         ; Line = fold_marker(_, _)
         ; Line = message_separator
         ),
@@ -1288,7 +1328,7 @@ line_matches_search(Search, Line) :-
         Line = text(_, String, _, _),
         strcase_str(String, Search)
     ;
-        Line = part_head(Part, _),
+        Line = part_head(Part, _, _),
         (
             Part ^ pt_type = Type,
             strcase_str(Type, Search)
@@ -1348,7 +1388,7 @@ do_highlight(Highlightable, NumRows, !Info) :-
 :- pred is_highlightable_minor(id_pager_line::in) is semidet.
 
 is_highlightable_minor(_Id - Line) :-
-    ( Line = part_head(_, _)
+    ( Line = part_head(_, _, _)
     ; Line = text(_, _, _, url(_, _))
     ; Line = fold_marker(_, _)
     ).
@@ -1357,7 +1397,7 @@ is_highlightable_minor(_Id - Line) :-
 
 is_highlightable_major(_Id - Line) :-
     ( Line = start_message_header(_, _, _)
-    ; Line = part_head(_, _)
+    ; Line = part_head(_, _, _)
     ).
 
 get_highlighted_thing(Info, Thing) :-
@@ -1372,7 +1412,7 @@ get_highlighted_thing(Info, Thing) :-
         MaybeSubject = yes(Subject),
         Thing = highlighted_part(Part, MaybeSubject)
     ;
-        Line = part_head(Part, _),
+        Line = part_head(Part, _, _),
         MaybeSubject = no,
         Thing = highlighted_part(Part, MaybeSubject)
     ;
@@ -1392,25 +1432,26 @@ get_highlighted_thing(Info, Thing) :-
 
 %-----------------------------------------------------------------------------%
 
-toggle_content(Cols, MessageUpdate, Info0, Info, !IO) :-
+toggle_content(ToggleType, Cols, MessageUpdate, Info0, Info, !IO) :-
     Scrollable0 = Info0 ^ p_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor, IdLine) ->
-        toggle_line(Cols, IdLine, MessageUpdate, Info0, Info, !IO)
+        toggle_line(ToggleType, Cols, IdLine, MessageUpdate, Info0, Info, !IO)
     ;
         Info = Info0,
         MessageUpdate = clear_message
     ).
 
-:- pred toggle_line(int::in, id_pager_line::in, message_update::out,
-    pager_info::in, pager_info::out, io::di, io::uo) is det.
+:- pred toggle_line(toggle_type::in, int::in, id_pager_line::in,
+    message_update::out, pager_info::in, pager_info::out, io::di, io::uo)
+    is det.
 
-toggle_line(Cols, NodeId - Line, MessageUpdate, Info0, Info, !IO) :-
+toggle_line(ToggleType, Cols, NodeId - Line, MessageUpdate, !Info, !IO) :-
     (
-        Line = part_head(_, _),
-        toggle_part(Cols, NodeId, Line, MessageUpdate, Info0, Info, !IO)
+        Line = part_head(_, _, _),
+        toggle_part(ToggleType, Cols, NodeId, Line, MessageUpdate, !Info, !IO)
     ;
         Line = fold_marker(_, _),
-        toggle_folding(NodeId, Line, Info0, Info),
+        toggle_folding(NodeId, Line, !Info),
         MessageUpdate = clear_message
     ;
         ( Line = start_message_header(_, _, _)
@@ -1418,54 +1459,71 @@ toggle_line(Cols, NodeId - Line, MessageUpdate, Info0, Info, !IO) :-
         ; Line = text(_, _, _, _)
         ; Line = message_separator
         ),
-        Info = Info0,
         MessageUpdate = clear_message
     ).
 
 :- inst part_head
-    --->    part_head(ground, ground).
+    --->    part_head(ground, ground, ground).
 
-:- pred toggle_part(int::in, node_id::in, pager_line::in(part_head),
-    message_update::out, pager_info::in, pager_info::out, io::di, io::uo)
-    is det.
+:- pred toggle_part(toggle_type::in, int::in, node_id::in,
+    pager_line::in(part_head), message_update::out,
+    pager_info::in, pager_info::out, io::di, io::uo) is det.
 
-toggle_part(Cols, NodeId, Line, MessageUpdate, Info0, Info, !IO) :-
-    Line = part_head(Part0, HiddenParts0),
-    Info0 = pager_info(Config, Tree0, Counter0, Scrollable0),
-    ( cycle(Part0, HiddenParts0, Part, HiddenParts, MessageUpdatePrime) ->
-        make_part_tree_with_alts(Config, Cols, HiddenParts, Part, NewNode, no,
-            _ElideInitialHeadLine, Counter0, Counter, !IO),
+toggle_part(ToggleType, Cols, NodeId, Line, MessageUpdate, Info0, Info, !IO) :-
+    Line = part_head(Part0, HiddenParts0, Expanded0),
+    (
+        ToggleType = cycle_alternatives,
+        Expanded0 = part_expanded,
+        HiddenParts0 = [Part | HiddenParts1]
+    ->
+        HiddenParts = HiddenParts1 ++ [Part0],
+        Info0 = pager_info(Config, Tree0, Counter0, Scrollable0),
+        make_part_tree_with_alts(Config, Cols, HiddenParts, Part,
+            force(Expanded0), NewNode, no, _ElideInitialHeadLine,
+            Counter0, Counter, !IO),
         replace_node(NodeId, NewNode, Tree0, Tree),
         scrollable.reinit(flatten(Tree), Scrollable0, Scrollable),
         Info = pager_info(Config, Tree, Counter, Scrollable),
-        MessageUpdate = MessageUpdatePrime
+        Type = Part ^ pt_type,
+        MessageUpdate = set_info("Showing " ++ Type ++ " alternative.")
     ;
-        Info = Info0,
-        MessageUpdate = set_warning("Part has no alternatives.")
+        % Fallback.
+        toggle_part_expanded(Cols, NodeId, Line, MessageUpdate, Info0, Info,
+            !IO)
     ).
 
-:- pred cycle(part::in, list(part)::in, part::out, list(part)::out,
-    message_update::out) is semidet.
+:- pred toggle_part_expanded(int::in, node_id::in, pager_line::in(part_head),
+    message_update::out, pager_info::in, pager_info::out, io::di, io::uo)
+    is det.
 
-cycle(Part0, HiddenParts0, Part, HiddenParts, MessageUpdate) :-
-    HiddenParts0 = [Part | HiddenParts1],
-    HiddenParts = HiddenParts1 ++ [Part0],
-    Type = Part ^ pt_type,
-    MessageUpdate = set_info("Showing " ++ Type ++ " alternative.").
+toggle_part_expanded(Cols, NodeId, Line0, MessageUpdate, Info0, Info, !IO) :-
+    Line0 = part_head(Part, HiddenParts, Expanded0),
+    (
+        Expanded0 = part_expanded,
+        Expanded = part_not_expanded,
+        MessageUpdate = set_info("Part hidden.")
+    ;
+        Expanded0 = part_not_expanded,
+        Expanded = part_expanded,
+        MessageUpdate = set_info("Showing part.")
+    ),
 
-cycle(Part0, HiddenParts0, Part, HiddenParts, MessageUpdate) :-
-    HiddenParts0 = [],
-    HiddenParts = [],
-    Content0 = Part0 ^ pt_content,
-    toggle_inline(Content0, Content, Message),
-    Part = Part0 ^ pt_content := Content,
-    MessageUpdate = set_info(Message).
-
-:- pred toggle_inline(part_content::in, part_content::out, string::out)
-    is semidet.
-
-toggle_inline(unsupported, unsupported_inline, "Showing part.").
-toggle_inline(unsupported_inline, unsupported, "Part hidden.").
+    Info0 = pager_info(Config, Tree0, Counter0, Scrollable0),
+    (
+        Expanded = part_expanded,
+        make_part_tree_with_alts(Config, Cols, HiddenParts, Part,
+            force(Expanded), NewNode, no, _ElideInitialHeadLine,
+            Counter0, Counter, !IO),
+        replace_node(NodeId, NewNode, Tree0, Tree)
+    ;
+        Expanded = part_not_expanded,
+        Line = part_head(Part, HiddenParts, part_not_expanded),
+        NewNode = node(NodeId, [leaf([Line])], yes),
+        replace_node(NodeId, NewNode, Tree0, Tree),
+        Counter = Counter0
+    ),
+    scrollable.reinit(flatten(Tree), Scrollable0, Scrollable),
+    Info = pager_info(Config, Tree, Counter, Scrollable).
 
 :- inst fold_marker
     --->    fold_marker(ground, ground).
@@ -1565,7 +1623,7 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
             draw(Panel, Attr0 + Attr1, Text, UrlEnd, End, !IO)
         )
     ;
-        Line = part_head(Part, HiddenParts),
+        Line = part_head(Part, HiddenParts, Expanded),
         Part = part(_MessageId, _Part, ContentType, _Content, MaybeFilename,
             MaybeEncoding, MaybeLength),
         (
@@ -1592,7 +1650,7 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
             MaybeLength = no
         ),
         draw(Panel, " --]", !IO),
-        ( toggle_part_message(Part, HiddenParts, AltMessage) ->
+        ( toggle_part_message(Expanded, HiddenParts, AltMessage) ->
             MsgAttr = Attrs ^ p_part_message,
             draw(Panel, MsgAttr, AltMessage, !IO)
         ;
@@ -1655,25 +1713,22 @@ format_length(Size) = String :-
         String = format(" (%.1f MB)", [f(Ms)])
     ).
 
-:- pred toggle_part_message(part::in, list(part)::in, string::out) is semidet.
+:- pred toggle_part_message(part_expanded::in, list(part)::in, string::out)
+    is semidet.
 
-toggle_part_message(Part, HiddenParts, Message) :-
+toggle_part_message(Expanded, HiddenParts, Message) :-
     (
-        HiddenParts = [],
-        Content = Part ^ pt_content,
-        (
-            Content = unsupported,
-            Message = "  z to show"
-        ;
-            Content = unsupported_inline,
-            Message = "  z to hide"
-        )
-    ;
+        Expanded = part_expanded,
         HiddenParts = [_],
         Message = "  z for alternative"
     ;
+        Expanded = part_expanded,
         HiddenParts = [_, _ | _],
         Message = "  z for alternatives"
+    ;
+        Expanded = part_not_expanded,
+        HiddenParts = [_ | _],
+        Message = "  z to show"
     ).
 
 %-----------------------------------------------------------------------------%

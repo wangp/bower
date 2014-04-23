@@ -135,7 +135,7 @@
     ;       prompt_open_part(part)
     ;       prompt_open_url(string)
     ;       prompt_search(search_direction)
-    ;       toggle_content
+    ;       toggle_content(toggle_type)
     ;       toggle_ordering
     ;       addressbook_add
     ;       refresh_results
@@ -701,8 +701,8 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         prompt_search(Screen, SearchDir, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
-        Action = toggle_content,
-        toggle_content(Screen, !Info, !IO),
+        Action = toggle_content(ToggleType),
+        toggle_content(Screen, ToggleType, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = toggle_ordering,
@@ -905,7 +905,12 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ;
         Key = char('z')
     ->
-        Action = toggle_content,
+        Action = toggle_content(cycle_alternatives),
+        MessageUpdate = clear_message
+    ;
+        Key = char('Z')
+    ->
+        Action = toggle_content(toggle_expanded),
         MessageUpdate = clear_message
     ;
         Key = char('/')
@@ -1754,7 +1759,7 @@ open_part(Action, MessageUpdate, !Info) :-
         ;
             Thing = highlighted_fold_marker,
             % This is a bit ugly as we will end up looking up the line again.
-            Action = toggle_content
+            Action = toggle_content(toggle_expanded)
         ),
         MessageUpdate = clear_message
     ;
@@ -2043,13 +2048,13 @@ skip_to_search(SearchKind, MessageUpdate, !Info) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred toggle_content(screen::in,
+:- pred toggle_content(screen::in, toggle_type::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
-toggle_content(Screen, !Info, !IO) :-
+toggle_content(Screen, ToggleType, !Info, !IO) :-
     get_cols(Screen, Cols),
     Pager0 = !.Info ^ tp_pager,
-    pager.toggle_content(Cols, MessageUpdate, Pager0, Pager, !IO),
+    pager.toggle_content(ToggleType, Cols, MessageUpdate, Pager0, Pager, !IO),
     !Info ^ tp_pager := Pager,
     update_message(Screen, MessageUpdate, !IO).
 

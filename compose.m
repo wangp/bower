@@ -335,7 +335,6 @@ first_text_part([Part | Parts], Text, AttachmentParts) :-
     ;
         ( PartContent = encapsulated_messages(_)
         ; PartContent = unsupported
-        ; PartContent = unsupported_inline
         ),
         first_text_part(Parts, Text, AttachmentParts0),
         AttachmentParts = [Part | AttachmentParts0]
@@ -1737,12 +1736,7 @@ write_mime_part_attachment(Stream, Config, Boundary, Attachment, !IO) :-
             Content = text(ContentString),
             CTE = "8bit"
         ;
-            ( Content = unsupported
-            ; Content = unsupported_inline
-            ),
-            % text/html parts are automatically forced to unsupported_inline in
-            % parse_part.  We don't actually support Content-Disposition:
-            % inline attachments yet.
+            Content = unsupported,
             CTE = "base64",
             get_non_text_part_base64(Config, Part, ContentString, !IO)
         ;
