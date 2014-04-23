@@ -64,7 +64,7 @@ skip_ws(Src, unit, !PS) :-
         next_char_no_progress(Src, C, !PS),
         ws(C)
     ->
-        skip_ws(Src, unit, !PS)
+        skip_ws(Src, _, !PS)
     ;
         true
     ).
