@@ -52,6 +52,8 @@
 
 :- pred get_open_url_command(prog_config::in, string::out) is det.
 
+:- pred get_poll_period_secs(prog_config::in, maybe(int)::out) is det.
+
 :- func generic_attrs(prog_config) = generic_attrs.
 :- func status_attrs(prog_config) = status_attrs.
 :- func pager_attrs(prog_config) = pager_attrs.
@@ -69,6 +71,7 @@
 
 :- implementation.
 
+:- import_module int.
 :- import_module map.
 :- import_module parsing_utils.
 :- import_module string.
@@ -87,6 +90,7 @@
                 html_dump       :: maybe(command_prefix),
                 open_part       :: string, % not shell-quoted
                 open_url        :: string, % not shell-quoted
+                poll_period_secs :: maybe(int),
                 colors          :: colors
             ).
 
@@ -192,6 +196,12 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
         OpenUrl = default_open_url_command
     ),
 
+    ( search_config(Config, "index", "poll_period_secs", Value) ->
+        check_poll_period_secs(Value, PollPeriodSecs, !Errors)
+    ;
+        PollPeriodSecs = default_poll_period_secs
+    ),
+
     make_colors(Config, Colors),
 
     ProgConfig ^ notmuch = Notmuch,
@@ -202,6 +212,7 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
     ProgConfig ^ html_dump = MaybeHtmlDump,
     ProgConfig ^ open_part = OpenPart,
     ProgConfig ^ open_url = OpenUrl,
+    ProgConfig ^ poll_period_secs = PollPeriodSecs,
     ProgConfig ^ colors = Colors.
 
 :- pred parse_command(string::in, command_prefix::out,
@@ -247,6 +258,20 @@ check_sendmail_command(command_prefix(shell_quoted(Command), _), !Errors) :-
         true
     ).
 
+:- pred check_poll_period_secs(string::in, maybe(int)::out,
+    list(string)::in, list(string)::out) is det.
+
+check_poll_period_secs(Value, PollPeriodSecs, !Errors) :-
+    ( string.to_lower(Value, "off") ->
+        PollPeriodSecs = no
+    ; string.to_int(Value, Int), Int > 0 ->
+        PollPeriodSecs = yes(Int)
+    ;
+        Error = "poll_period_secs invalid: " ++ Value,
+        cons(Error, !Errors),
+        PollPeriodSecs = default_poll_period_secs
+    ).
+
 %-----------------------------------------------------------------------------%
 
 get_notmuch_command(Config, Notmuch) :-
@@ -274,6 +299,9 @@ get_open_part_command(Config, Command) :-
 
 get_open_url_command(Config, Command) :-
     Command = Config ^ open_url.
+
+get_poll_period_secs(Config, PollPeriodSecs) :-
+    PollPeriodSecs = Config ^ poll_period_secs.
 
 %-----------------------------------------------------------------------------%
 
@@ -322,6 +350,10 @@ default_open_part_command = "xdg-open&".
 :- func default_open_url_command = string.
 
 default_open_url_command = "xdg-open&".
+
+:- func default_poll_period_secs = maybe(int).
+
+default_poll_period_secs = yes(60).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

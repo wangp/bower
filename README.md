@@ -156,8 +156,9 @@ Remember to quit properly using 'q' to flush all changes.  Tag updates will
 be retried a limited number of time on failure, e.g. because the notmuch
 database is locked.
 
-Bower will call notmuch count every 60 seconds while in the index view,
-to notify you of new unread messages matching the current search terms.
+By default, bower will call notmuch count every 60 seconds in the index
+view, to notify you of new unread messages matching the current search
+terms.
 
 
 Thread/pager view

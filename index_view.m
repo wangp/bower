@@ -63,7 +63,7 @@
                 i_search_terms      :: string,
                 i_search_tokens     :: list(token),
                 i_search_time       :: time_t,
-                i_next_poll_time    :: int, % time_t
+                i_next_poll_time    :: maybe(int), % time_t
                 i_poll_count        :: int,
                 i_internal_search   :: maybe(string),
                 i_internal_search_dir :: search_direction,
@@ -181,7 +181,7 @@ open_index(Config, Screen, SearchString, !.CommonHistory, !IO) :-
     ),
     setup_index_scrollable(Time, Threads, Scrollable),
     SearchTime = Time,
-    NextPollTime = next_poll_time(Time),
+    NextPollTime = next_poll_time(Config, Time),
     PollCount = 0,
     MaybeSearch = no,
     IndexInfo = index_info(Config, Scrollable, SearchString, SearchTokens,
@@ -342,7 +342,7 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
                 !IndexInfo ^ i_search_terms := LimitString,
                 !IndexInfo ^ i_search_tokens := Tokens,
                 !IndexInfo ^ i_search_time := Time,
-                !IndexInfo ^ i_next_poll_time := next_poll_time(Time),
+                !IndexInfo ^ i_next_poll_time := next_poll_time(Config, Time),
                 !IndexInfo ^ i_poll_count := 0
             ;
                 MaybeThreads = no
@@ -455,16 +455,22 @@ index_get_keycode(Info, Code, !IO) :-
         get_keycode_child_process_loop(Tenths, Code, !IO)
     ;
         HaveChild = no,
-        time(Time, !IO),
-        time_to_int(Time, TimeInt),
-        NextPollTime = Info ^ i_next_poll_time,
-        DeltaSecs = NextPollTime - TimeInt,
-        ( DeltaSecs =< 0 ->
-            Tenths = 10
+        MaybeNextPollTime = Info ^ i_next_poll_time,
+        (
+            MaybeNextPollTime = yes(NextPollTime),
+            time(Time, !IO),
+            time_to_int(Time, TimeInt),
+            DeltaSecs = NextPollTime - TimeInt,
+            ( DeltaSecs =< 0 ->
+                Tenths = 10
+            ;
+                Tenths = 10 * DeltaSecs + 1
+            ),
+            get_keycode_timeout(Tenths, Code, !IO)
         ;
-            Tenths = 10 * DeltaSecs + 1
-        ),
-        get_keycode_timeout(Tenths, Code, !IO)
+            MaybeNextPollTime = no,
+            get_keycode_blocking(Code, !IO)
+        )
     ).
 
 :- pred get_keycode_child_process_loop(int::in, keycode::out,
@@ -1506,7 +1512,7 @@ refresh_all_2(Screen, Time, Tokens, Threads, !Info, !IO) :-
         !Info ^ i_scrollable := !.Scrollable,
         !Info ^ i_search_tokens := Tokens,
         !Info ^ i_search_time := Time,
-        !Info ^ i_next_poll_time := next_poll_time(Time),
+        !Info ^ i_next_poll_time := next_poll_time(!.Info ^ i_config, Time),
         !Info ^ i_poll_count := 0
     ).
 
@@ -1584,27 +1590,38 @@ handle_screen_transition(!Screen, Transition, T, !Info, !IO) :-
     is det.
 
 maybe_sched_poll(!Info, !IO) :-
-    time(Time, !IO),
-    time_to_int(Time, TimeInt),
-    NextPollTime = !.Info ^ i_next_poll_time,
-    ( TimeInt < NextPollTime ->
-        true
+    MaybeNextPollTime = !.Info ^ i_next_poll_time,
+    (
+        MaybeNextPollTime = no
     ;
-        Config = !.Info ^ i_config,
-        get_notmuch_command(Config, Notmuch),
-        Tokens = !.Info ^ i_search_tokens,
-        SearchTime = !.Info ^ i_search_time,
-        time_to_int(SearchTime, SearchTimeInt),
-        tokens_to_search_terms(Tokens, Terms1, _ApplyCap, !IO),
-        Args = [
-            "count", "--",
-            "(", Terms1, ")", from_int(SearchTimeInt) ++ "..",
-            "AND", "tag:unread"
-        ],
-        Op = async_lowprio_command(Notmuch, Args),
-        push_lowprio_async(Op, _Pushed, !IO),
-        !Info ^ i_next_poll_time := next_poll_time(Time)
+        MaybeNextPollTime = yes(NextPollTime),
+        time(Time, !IO),
+        time_to_int(Time, TimeInt),
+        ( TimeInt < NextPollTime ->
+            true
+        ;
+            sched_poll(Time, !Info, !IO)
+        )
     ).
+
+:- pred sched_poll(time_t::in, index_info::in, index_info::out, io::di, io::uo)
+    is det.
+
+sched_poll(Time, !Info, !IO) :-
+    Config = !.Info ^ i_config,
+    get_notmuch_command(Config, Notmuch),
+    Tokens = !.Info ^ i_search_tokens,
+    SearchTime = !.Info ^ i_search_time,
+    time_to_int(SearchTime, SearchTimeInt),
+    tokens_to_search_terms(Tokens, Terms1, _ApplyCap, !IO),
+    Args = [
+        "count", "--",
+        "(", Terms1, ")", from_int(SearchTimeInt) ++ "..",
+        "AND", "tag:unread"
+    ],
+    Op = async_lowprio_command(Notmuch, Args),
+    push_lowprio_async(Op, _Pushed, !IO),
+    !Info ^ i_next_poll_time := next_poll_time(Config, Time).
 
 :- pred handle_poll_result(screen::in, string::in,
     index_info::in, index_info::out, io::di, io::uo) is det.
@@ -1625,15 +1642,18 @@ handle_poll_result(Screen, CountOutput, !Info, !IO) :-
             set_warning("notmuch count return unexpected result"), !IO)
     ).
 
-:- func next_poll_time(time_t) = int.
+:- func next_poll_time(prog_config, time_t) = maybe(int).
 
-next_poll_time(Time) = NextTimeInt :-
-    time_to_int(Time, TimeInt),
-    NextTimeInt = TimeInt + poll_period_secs.
-
-:- func poll_period_secs = int.
-
-poll_period_secs = 60.
+next_poll_time(Config, Time) = NextPollTime :-
+    get_poll_period_secs(Config, Maybe),
+    (
+        Maybe = yes(PollPeriodSecs),
+        time_to_int(Time, TimeInt),
+        NextPollTime = yes(TimeInt + PollPeriodSecs)
+    ;
+        Maybe = no,
+        NextPollTime = no
+    ).
 
 %-----------------------------------------------------------------------------%
 

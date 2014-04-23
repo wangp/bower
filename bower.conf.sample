@@ -55,6 +55,14 @@
 
 #-----------------------------------------------------------------------------#
 
+[index]
+
+# How often to check for new unread messages matching the current search
+# terms in the index view. Disable with "off".
+; poll_period_secs = 60
+
+#-----------------------------------------------------------------------------#
+
 # Colours are defined in the [color] and [color.CONTEXT] sections.
 # The more-specific sections override keys in the generic section.
 #
