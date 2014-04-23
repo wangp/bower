@@ -27,23 +27,23 @@
 
 # How to edit a message.
 # The default is to use $EDITOR, or else "vi".
-; editor=vim '+set ft=mail'
+; editor = vim '+set ft=mail'
 
 # How to send a message.
 # The default is to use sendmail (untested) but I use msmtp.
 # The command should understand the "-t" option, to read recipients
 # from the message headers itself.
-; sendmail=/usr/bin/sendmail -oi -oem
-; sendmail=/usr/bin/msmtp
+; sendmail = /usr/bin/sendmail -oi -oem
+; sendmail = /usr/bin/msmtp
 
 # Command to execute after the sendmail command is successful.
 # The default is to use notmuch-deliver to add the sent message to the
 # maildir.  You can disable it by setting an empty command.
-; post_sendmail=
+; post_sendmail =
 
 # How to format HTML on stdin to plain text.
 # The command should output UTF-8.
-; html_dump=lynx -dump -force-html -stdin -display-charset=utf-8
+; html_dump = lynx -dump -force-html -stdin -display-charset=utf-8
 
 # Default command to open a part.
 # An unquoted & suffix causes the command to run in the background.
