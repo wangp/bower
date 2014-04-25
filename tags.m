@@ -86,7 +86,7 @@ nondisplay_tag(tag("unread")).
 
 get_standard_tags(Tags, StdTags, DisplayTagsWidth) :-
     StdTags0 = standard_tags(read, not_replied, not_deleted, unflagged),
-    set.foldl2(get_standard_tags_2, Tags, StdTags0, StdTags,
+    set.fold2(get_standard_tags_2, Tags, StdTags0, StdTags,
         0, DisplayTagsWidth).
 
 :- pred get_standard_tags_2(tag::in, standard_tags::in, standard_tags::out,
