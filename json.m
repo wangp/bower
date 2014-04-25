@@ -61,7 +61,7 @@ parse_json_eof(Src, Value, !PS) :-
 
 skip_ws(Src, unit, !PS) :-
     (
-        next_char_no_progress(Src, C, !PS),
+        next_char_np(Src, C, !PS),
         ws(C)
     ->
         skip_ws(Src, _, !PS)
@@ -76,10 +76,17 @@ ws('\t').
 ws('\n').
 ws('\r').
 
+:- pred next_char_np(src::in, char::out, ps::in, ps::out) is semidet.
+
+next_char_np(Src, C, !PS) :-
+    % All calls to next_char_np can be changed to next_char_no_progress
+    % when compatibility with Mercury 11.07 is dropped.
+    parsing_utils.next_char(Src, C, !PS).
+
 :- pred value(src::in, json::out, ps::in, ps::out) is semidet.
 
 value(Src, Value, !PS) :-
-    next_char_no_progress(Src, C, !.PS, _PS),
+    next_char_np(Src, C, !.PS, _PS),
     (
         C = ('n'),
         keyword(id_chars, "null", Src, _, !PS),
@@ -190,7 +197,7 @@ number(Src, Number, !PS) :-
 :- pred 'DIGIT'(src::in, char::out, ps::in, ps::out) is semidet.
 
 'DIGIT'(Src, C, !PS) :-
-    next_char_no_progress(Src, C, !PS), % for better error messages
+    next_char_np(Src, C, !PS), % for better error messages
     char.is_digit(C).
 
 :- pred digits0(src::in, unit::out, ps::in, ps::out) is det.
