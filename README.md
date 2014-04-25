@@ -241,9 +241,9 @@ Simple addressbook
 ------------------
 
 When entering an email address, bower will try to expand any simple words
-containing only alphanumeric, underscore or '-' or '+' characters.
-The expansions should be added to the notmuch config file `~/.notmuch-config`
-in a section called `[bower:addressbook]`, e.g.
+containing only alphanumeric, underscore, '-', '+', '.' or non-ASCII
+characters.  The expansions should be added to the notmuch config file
+`~/.notmuch-config` in a section called `[bower:addressbook]`, e.g.
 
     [bower:addressbook]
     someone = Someone <someone@example.org>
