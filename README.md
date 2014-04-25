@@ -127,22 +127,24 @@ these macros:
     ~F              tag:flagged
     ~U              tag:unread
     ~D              tag:deleted
-    ~d DATE..DATE   (optional space)
+    ~d DATE..DATE   (optional space after ~d)
     ~d DATE..
     ~d ..DATE
+    ~d DATE
 
 By default, a maximum of 300 search results will be displayed.
 Add ~A to the search string to get all results.
 
-The ~d syntax passes dates through to notmuch as a "date:" search term
-except that you may use curly brackets to surround date strings containing
-spaces, and the spaces will be replaced by underscores.
-See `notmuch-search-terms`(7) for the date range syntax.
+The ~d syntax passes dates through to notmuch as a "date:" range;
+see `notmuch-search-terms`(7) for the date range syntax.
+You may use curly brackets to surround date strings containing spaces.
+The single date form ~d DATE is equivalent to ~d DATE..DATE.
 
 Some examples:
 
     ~d 2011-06-01..
     ~d {2 weeks ago}..{last week}
+    ~d yesterday
 
 In addition to the built-in macros, you can add your own search term
 expansions.  See below for "Search term aliases".

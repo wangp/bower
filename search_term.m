@@ -106,9 +106,14 @@ token(Src, Token, !PS) :-
 
 date_range(Src, date_range(FromString, ToString), !PS) :-
     date_string(Src, FromString, !PS),
-    next_char(Src, '.', !PS),
-    next_char(Src, '.', !PS),
-    date_string(Src, ToString, !PS).
+    (
+        next_char(Src, '.', !PS),
+        next_char(Src, '.', !PS)
+    ->
+        date_string(Src, ToString, !PS)
+    ;
+        ToString = FromString
+    ).
 
 :- pred date_string(src::in, string::out, ps::in, ps::out) is semidet.
 
