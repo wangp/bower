@@ -62,7 +62,6 @@
 :- import_module int.
 :- import_module list.
 :- import_module require.
-:- import_module stack.
 :- import_module string.
 
 :- import_module curs.
@@ -77,13 +76,18 @@
     --->    info(
                 prompt          :: string,          % static
                 state           :: te_state,
-                states          :: stack(te_state),
+                states          :: te_states,
                 first_time      :: bool,
                 left_offset     :: int,
                 compl_type      :: completion_type, % static
                 compl_choices   :: list(string),
                 compl_point     :: int
             ).
+
+    % This is a stack implemented as a reverse list.  The stack module
+    % predicates changed argument order between Mercury 11.07 and 13.05.
+    %
+:- type te_states == list(te_state).
 
 :- type te_state
     --->    te_state(
@@ -139,7 +143,7 @@ text_entry_full(Screen, Prompt, History, Initial, CompleteType, FirstTime,
         Return, !IO) :-
     Before = list.reverse(string.to_char_list(Initial)),
     State = te_state(Before, [], History, []),
-    States = stack.init,
+    States = [],
     LeftOffset = 0,
     Info0 = info(Prompt, State, States, FirstTime, LeftOffset, CompleteType,
         [], 0),
@@ -345,7 +349,7 @@ enter_state(State, Push, !Info) :-
         Push = yes,
         OldState = !.Info ^ state,
         States0 = !.Info ^ states,
-        stack.push(OldState, States0, States),
+        States = [OldState | States0],
         !Info ^ states := States
     ;
         Push = no
@@ -502,11 +506,12 @@ insert(Char, !Info) :-
 
 undo(!Info) :-
     !.Info ^ states = States0,
-    ( stack.pop(State, States0, States) ->
+    (
+        States0 = []
+    ;
+        States0 = [State | States],
         !Info ^ state := State,
         !Info ^ states := States
-    ;
-        true
     ).
 
 :- pred move_history(move_history_dir::in, info::in, info::out) is det.
