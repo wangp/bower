@@ -114,40 +114,29 @@ date_range(Src, date_range(FromString, ToString), !PS) :-
 
 date_string(Src, DateString, !PS) :-
     ( next_char(Src, '{', !PS) ->
-        current_offset(Src, Start, !PS),
-        date_string_2(unify('}'), Src, Start, DateString, !PS),
-        next_char(Src, '}', !PS)
+        zero_or_more(bracketed_date_char, Src, Chars, !PS),
+        next_char(Src, '}', !PS),
+        DateString = string.strip(from_char_list(Chars))
     ;
-        current_offset(Src, Start, !PS),
-        date_string_2(not_unbracketed_date_char, Src, Start, DateString, !PS)
+        zero_or_more(non_bracketed_date_char, Src, Chars, !PS),
+        DateString = string.from_char_list(Chars)
     ).
 
-:- pred date_string_2(pred(char)::in(pred(in) is semidet),
-    src::in, int::in, string::out, ps::in, ps::out) is semidet.
+:- pred bracketed_date_char(src::in, char::out, ps::in, ps::out) is semidet.
 
-date_string_2(EndPred, Src, Start, DateString, PS0, PS) :-
-    ( next_char(Src, C_prime, PS0, PS1_prime) ->
-        C = C_prime,
-        PS1 = PS1_prime
-    ;
-        % Treat eof as whitespace.
-        eof(Src, _, PS0, PS1),
-        C = ' '
-    ),
-    ( EndPred(C) ->
-        current_offset(Src, Prev, PS0, PS), % backtrack one char
-        input_substring(Src, Start, Prev, DateString)
-    ;
-        date_string_2(EndPred, Src, Start, DateString, PS1, PS)
-    ).
+bracketed_date_char(Src, C, !PS) :-
+    next_char(Src, C, !PS),
+    C \= ('}').
 
-:- pred not_unbracketed_date_char(char::in) is semidet.
+:- pred non_bracketed_date_char(src::in, char::out, ps::in, ps::out)
+    is semidet.
 
-not_unbracketed_date_char(C) :-
-    (
-        char.is_whitespace(C)
+non_bracketed_date_char(Src, C, !PS) :-
+    next_char(Src, C, !PS),
+    ( C = ('.') ->
+        not next_char(Src, '.', !.PS, _PS)
     ;
-        C = ('.')
+        not char.is_whitespace(C)
     ).
 
 :- pred macro_or_literal(src::in, token::out, ps::in, ps::out) is semidet.
