@@ -43,8 +43,8 @@ null
 
 --------
 « null , true »
-      ^
-1:6: parse error
+       ^
+1:7: parse error
 --------
 «﻿null»
  ^
@@ -119,8 +119,8 @@ float(-2.71828)
 1:7: parse error
 --------
 «271828.e-5»
-       ^
-1:7: parse error
+        ^
+1:8: parse error
 --------
 «271828.0e-5»
 float(2.71828)
@@ -147,8 +147,8 @@ float(2.71828e-36)
 
 --------
 «0.00271828e+333»
-            ^
-1:12: parse error
+               ^
+1:15: parse error
 --------
 «0.00271828e-333»
 float(0.0)
@@ -391,8 +391,8 @@ list([null])
 
 --------
 «[null,]»
-      ^
-1:6: parse error
+       ^
+1:7: parse error
 --------
 «[null ,true, false]»
 list([null, bool(yes), bool(no)])
@@ -427,8 +427,8 @@ map(map([]))
 1:5: parse error
 --------
 «{"a":}»
-     ^
-1:5: parse error
+      ^
+1:6: parse error
 --------
 «{"a":null}»
 map(map([("a" -> null)]))
