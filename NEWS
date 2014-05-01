@@ -1,3 +1,36 @@
+Bower 0.6 (2014-05-01)
+======================
+This release requires notmuch 0.15 or above.  Users who access notmuch
+via ssh must update their configuration (see bower.conf.sample).
+
+* Use notmuch 0.15 date parser instead of GNU date.
+* Use notmuch reply --reply-to=(sender|all).
+* Support single ~d DATE syntax.
+* Use the terminal's default background colour.
+* Configurable colours.
+* Use shell-style word splitting of all commands.
+* Automatically perform extra round of shell-quoting for ssh commands.
+* Run open part/URL command in background if suffixed by '&'.
+* Leave curses when running open part/URL command in foreground.
+* Configurable open URL and open part commands.
+* Configurable polling period in index view.
+* Configurable Drafts/Sent maildir folders in ~/.notmuch-config.
+* Fold/unfold header lines when composing messages.
+* Parse address lists per RFC 5322.
+* Refuse to send message when a header contains an invalid address.
+* Encode/decode headers per RFC 2047.
+* Encode attachment filenames per RFC 2231.
+* Allow non-ASCII characters in addressbook aliases.
+* Hide long blocks of quoted text by default.
+* Toggle inline display of any selected part with 'Z'.
+* Allow inline display of unsupported part if it contains text.
+* Improve handling of multipart/* parts.
+* Support undo in text entry.
+* Support text entry scrolling for lines wider than the screen.
+* Support ^W to delete word backwards.
+* Expand to common prefix initially when completing.
+* Bug fixes and minor improvements.
+
 Bower 0.5 (2013-04-20)
 ======================
 
