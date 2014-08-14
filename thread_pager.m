@@ -1915,8 +1915,8 @@ make_open_command(CommandWords0, Arg, CommandToShow, CommandToRun, Bg) :-
             CommandToRun)
     ).
 
-:- pred remove_bg_operator(list(word)::in(non_empty_list),
-    list(word)::out(non_empty_list), run_in_background::out) is det.
+:- pred remove_bg_operator(list(word)::in(non_empty_list), list(word)::out,
+    run_in_background::out) is det.
 
 remove_bg_operator(Words0, Words, Bg) :-
     (
