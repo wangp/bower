@@ -1,4 +1,4 @@
--include ../Mercury.options
+-include ../src/Mercury.options
 MAIN_TARGET =
 
 # Add workspace-specific options here.

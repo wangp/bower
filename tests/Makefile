@@ -2,7 +2,7 @@ MMC = mmc
 PARALLEL =
 DIFF = diff -u
 
-files = $(wildcard *.m ../*.m)
+files = $(wildcard *.m ../src/*.m)
 
 TESTS = test_base64 \
 	test_rfc5322 \
