@@ -35,6 +35,7 @@
 
 :- typeclass encode(T) where [
     pred set_byte(int::in, int::in, T::di, T::uo) is det,
+    pred set_length(int::in, T::di, T::uo) is det,
     pred copy_bytes(buffer::ui, int::in, int::in, T::di, T::uo, int::in)
         is det
 ].
@@ -43,31 +44,27 @@
 
 :- instance encode(preflight) where [
     set_byte(_, _, X, X),
+    set_length(_, X, X),
     copy_bytes(_, _, _, X, X, _)
 ].
 
 :- instance encode(byte_array) where [
-    pred(set_byte/4) is byte_array.unsafe_set_byte,
-    pred(copy_bytes/6) is byte_array.unsafe_copy_bytes
+    pred(set_byte/4) is byte_array.set_byte,
+    pred(set_length/3) is byte_array.set_length,
+    pred(copy_bytes/6) is byte_array.copy_bytes
 ].
 
 %-----------------------------------------------------------------------------%
 
 make_utf8_string(ErrorLimit, Buffers0, String) :-
-    preflight(Buffers0, Buffers, 0, FirstBads, ErrorLimit, 0, _Errors,
-        0, TotalLength),
-
-    allocate_for_string(TotalLength, Enc0),
-    second_pass(Buffers, 0, FirstBads, 0, EncPos, Enc0, Enc1),
-    unsafe_set_length(EncPos, Enc1, Enc),
+    preflight(Buffers0, BuffersWithMargins, 0, FirstBads, ErrorLimit,
+        0, _Errors, 0, TotalLength),
+    % Add 1 for NUL terminator.
+    allocate(TotalLength + 1, Enc0),
+    second_pass(BuffersWithMargins, 0, FirstBads, 0, EncPos, Enc0, Enc),
     expect(unify(EncPos, TotalLength), $module, $pred, "wrong length: " ++
         from_int(EncPos) ++ " != " ++ from_int(TotalLength)),
-
-    ( finalise_as_string(Enc, StringPrime) ->
-        String = StringPrime
-    ;
-        unexpected($module, $pred, "finalise_as_string failed")
-    ).
+    make_string(Enc, String).
 
 %-----------------------------------------------------------------------------%
 
@@ -77,17 +74,17 @@ make_utf8_string(ErrorLimit, Buffers0, String) :-
 preflight([], [], _BufPos0, [], _ErrorLimit, !Errors, !TotalLength).
 preflight([Buf0 | Bufs0], [Buf | Bufs], BufPos0, [FirstBad | FirstBads],
         ErrorLimit, !Errors, !TotalLength) :-
-    clear_margin(Buf0, Buf1),
+    % MarginPos is the length of Buf before adding the margin.
+    MarginPos = length(Buf0),
     (
         Bufs0 = [],
-        Buf = Buf1
+        make_empty_margin(Buf0, Buf)
     ;
         Bufs0 = [NextBuf | _],
         unsafe_promise_unique(NextBuf, NextBufUniq),
-        copy_head_into_margin(NextBufUniq, Buf1, Buf)
+        make_filled_margin(NextBufUniq, Buf0, Buf)
     ),
 
-    MarginPos = length(Buf),
     scan(Buf, BufPos0, BufPos1, MarginPos, -1, FirstBad, 0, Errors,
         !TotalLength, preflight, _),
     expect(FirstBad >= 0, $module, $pred, "FirstBad < 0"),
@@ -104,23 +101,22 @@ preflight([Buf0 | Bufs0], [Buf | Bufs], BufPos0, [FirstBad | FirstBads],
     preflight(Bufs0_uniq, Bufs, BufPos1 - MarginPos, FirstBads, ErrorLimit,
         !Errors, !TotalLength).
 
-:- pred clear_margin(buffer::di, buffer::uo) is det.
-
-clear_margin(!ByteArray) :-
-    Len = length(!.ByteArray),
-    % buffer_margin = 3
-    unsafe_set_byte(Len,     0x0, !ByteArray),
-    unsafe_set_byte(Len + 1, 0x0, !ByteArray),
-    unsafe_set_byte(Len + 2, 0x0, !ByteArray).
-
 buffer_margin = 3.
 
-:- pred copy_head_into_margin(buffer::ui, buffer::di, buffer::uo) is det.
+:- pred make_empty_margin(buffer::di, buffer::uo) is det.
 
-copy_head_into_margin(Src, !Dest) :-
-    SrcLen = length(Src),
-    DestLen = length(!.Dest),
-    unsafe_copy_bytes(Src, 0, min(SrcLen, buffer_margin), !Dest, DestLen).
+make_empty_margin(!ByteArray) :-
+    Len = length(!.ByteArray),
+    byte_array.set_length(Len + buffer_margin, !ByteArray).
+
+:- pred make_filled_margin(buffer::ui, buffer::di, buffer::uo) is det.
+
+make_filled_margin(Src, !Dest) :-
+    % Extend Dest with margin space and then fill it with head of Src.
+    DestPos = length(!.Dest),
+    make_empty_margin(!Dest),
+    byte_array.copy_bytes(Src, 0, min(length(Src), buffer_margin),
+        !Dest, DestPos).
 
 %-----------------------------------------------------------------------------%
 
@@ -130,7 +126,8 @@ copy_head_into_margin(Src, !Dest) :-
 second_pass([], BufPos0, [], !EncPos, !Enc) :-
     expect(unify(BufPos0, 0), $module, $pred, "BufPos0 != 0").
 
-second_pass([Buf | Bufs], BufPos0, [FirstBad | FirstBads], !EncPos, !Enc) :-
+second_pass([BufWithMargin | BufsWithMargins], BufPos0, [FirstBad | FirstBads],
+        !EncPos, !Enc) :-
     % In the first pass we recorded the first invalid code unit in the buffer.
     % If this is beyond MarginPos then the entire buffer was valid.  In the
     % second pass, we can immediately copy the data from BufPos0 up to that
@@ -139,14 +136,15 @@ second_pass([Buf | Bufs], BufPos0, [FirstBad | FirstBads], !EncPos, !Enc) :-
     % buffer again.
     expect(FirstBad >= BufPos0, $module, $pred, "FirstBad < BufPos0"),
     BufPos1 = FirstBad,
-    add_run(Buf, BufPos0, BufPos1, !EncPos, !Enc),
+    add_run(BufWithMargin, BufPos0, BufPos1, !EncPos, !Enc),
 
-    MarginPos = length(Buf),
-    scan(Buf, BufPos1, BufPos, MarginPos, FirstBad, _FirstBad, 0, _Errors,
-        !EncPos, !Enc),
+    % Every buffer was extended with a margin in preflight.
+    MarginPos = length(BufWithMargin) - buffer_margin,
+    scan(BufWithMargin, BufPos1, BufPos, MarginPos, FirstBad, _FirstBad,
+        0, _Errors, !EncPos, !Enc),
 
     NextBufPos = BufPos - MarginPos,
-    second_pass(Bufs, NextBufPos, FirstBads, !EncPos, !Enc).
+    second_pass(BufsWithMargins, NextBufPos, FirstBads, !EncPos, !Enc).
 
 second_pass([_ | _], _, [], !EncPos, !Enc) :-
     unexpected($module, $pred, "list length mismatch").
@@ -170,7 +168,7 @@ scan(Buf, BufPos0, BufPos, MarginPos, !FirstBad, !Errors, !EncPos, !Enc) :-
             true
         )
     ;
-        unsafe_byte(Buf, BufPos0, C0),
+        /* unsafe */ get_byte(Buf, BufPos0, C0),
         ( C0 = 0x00 ->
             % Replace NUL.
             % XXX and unprintables?
@@ -254,7 +252,7 @@ extract_multibyte(Buf, BufPos0, BufPos, MaxPos, LeadByte, Char) :-
 :- pred extract_trail_byte(buffer::ui, int::in, int::in, int::out) is semidet.
 
 extract_trail_byte(Buf, I, Acc0, Acc) :-
-    unsafe_byte(Buf, I, TrailByte),
+    /* unsafe */ get_byte(Buf, I, TrailByte),
     TrailByte /\ 0xC0 = 0x80,
     Acc = (Acc0 `unchecked_left_shift` 6) \/ (TrailByte /\ 0x3F).
 
@@ -297,9 +295,11 @@ add_replacement_char(!EncPos, !String) :-
 :- pred add_run(buffer::ui, int::in, int::in, int::in, int::out, T::di, T::uo)
     is det <= encode(T).
 
-add_run(Buf, BufPos0, BufPos, EncPos, EncPos + RunLen, !Enc) :-
-    copy_bytes(Buf, BufPos0, BufPos, !Enc, EncPos),
-    RunLen = BufPos - BufPos0.
+add_run(Buf, BufPos0, BufPos, EncPos0, EncPos, !Enc) :-
+    RunLen = BufPos - BufPos0,
+    EncPos = EncPos0 + RunLen,
+    set_length(EncPos, !Enc),
+    copy_bytes(Buf, BufPos0, BufPos, !Enc, EncPos0).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
