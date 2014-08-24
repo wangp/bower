@@ -574,7 +574,7 @@ add_encapsulated_header(Header, Value, RevLines0, RevLines) :-
 
 make_unsupported_part_tree(Config, Cols, PartNodeId, Part, ExpandUnsupported,
         AltParts, Tree, !IO) :-
-    Part = part(MessageId, PartId, Type, _Content, _MaybeFilename,
+    Part = part(MessageId, MaybePartId, Type, _Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength),
     % XXX we should use mailcap, though we don't want to show everything
     IsHtml = ( strcase_equal(Type, "text/html") -> yes ; no ),
@@ -586,6 +586,7 @@ make_unsupported_part_tree(Config, Cols, PartNodeId, Part, ExpandUnsupported,
     ),
     (
         Expanded = part_expanded,
+        MaybePartId = yes(PartId),
         MaybeFilterCommand = maybe_filter_command(Config, IsHtml),
         expand_part(Config, MessageId, PartId, MaybeFilterCommand,
             MaybeText, !IO),
@@ -596,6 +597,10 @@ make_unsupported_part_tree(Config, Cols, PartNodeId, Part, ExpandUnsupported,
             MaybeText = error(Error),
             make_text_lines(Cols, "(" ++ Error ++ ")", TextLines)
         )
+    ;
+        Expanded = part_expanded,
+        MaybePartId = no,
+        make_text_lines(Cols, "(no part id)", TextLines)
     ;
         Expanded = part_not_expanded,
         TextLines = []
@@ -1157,7 +1162,9 @@ get_highlighted_thing(Info, Thing) :-
         Line = header(yes(Message), _, _, _),
         MessageId = Message ^ m_id,
         Subject = Message ^ m_headers ^ h_subject,
-        Part = part(MessageId, 0, "text/plain", unsupported, no, no, no),
+        PartId = 0,
+        Part = part(MessageId, yes(PartId), "text/plain", unsupported, no, no,
+            no),
         MaybeSubject = yes(Subject),
         Thing = highlighted_part(Part, MaybeSubject)
     ;
@@ -1380,8 +1387,8 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
         )
     ;
         Line = part_head(Part, HiddenParts, Expanded),
-        Part = part(_MessageId, _Part, ContentType, _Content, MaybeFilename,
-            MaybeEncoding, MaybeLength),
+        Part = part(_MessageId, _Part, ContentType, _Content,
+            MaybeFilename, MaybeEncoding, MaybeLength),
         (
             IsCursor = yes,
             Attr = Attrs ^ p_part_head + reverse

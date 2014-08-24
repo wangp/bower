@@ -75,7 +75,7 @@
 :- type part
     --->    part(
                 pt_msgid        :: message_id,
-                pt_part         :: int,
+                pt_part         :: maybe(int),
                 pt_type         :: string,
                 pt_content      :: part_content,
                 pt_filename     :: maybe(string),

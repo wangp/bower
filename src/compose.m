@@ -1939,14 +1939,19 @@ write_mime_part_attachment(Stream, Config, Boundary, Attachment, !IO) :-
     io::di, io::uo) is det.
 
 get_non_text_part_base64(Config, Part, Content, !IO) :-
-    Part = part(MessageId, PartId, _, _, _, _, _),
-    get_notmuch_command(Config, Notmuch),
-    make_quoted_command(Notmuch, [
-        "show", "--format=raw", "--part=" ++ from_int(PartId),
-        message_id_to_search_term(MessageId)
-    ], redirect_input("/dev/null"), no_redirect, Command),
-    call_system_capture_stdout(Command ++ " |base64", no, CallRes,
-        !IO),
+    Part = part(MessageId, MaybePartId, _, _, _, _, _),
+    (
+        MaybePartId = yes(PartId),
+        get_notmuch_command(Config, Notmuch),
+        make_quoted_command(Notmuch, [
+            "show", "--format=raw", "--part=" ++ from_int(PartId),
+            message_id_to_search_term(MessageId)
+        ], redirect_input("/dev/null"), no_redirect, Command),
+        call_system_capture_stdout(Command ++ " |base64", no, CallRes, !IO)
+    ;
+        MaybePartId = no,
+        CallRes = error(io.make_io_error("no part id"))
+    ),
     (
         CallRes = ok(Content)
     ;

@@ -259,8 +259,8 @@ parse_part(MessageId, JSON, Part) :-
                 MaybeLength = no
             )
         ),
-        Part = part(MessageId, PartId, ContentType, Content, MaybeFilename,
-            MaybeEncoding, MaybeLength)
+        Part = part(MessageId, yes(PartId), ContentType, Content,
+            MaybeFilename, MaybeEncoding, MaybeLength)
     ;
         notmuch_json_error
     ).

@@ -1667,7 +1667,7 @@ save_part(Action, MessageUpdate, !Info) :-
 
 prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
     MessageId = Part ^ pt_msgid,
-    PartId = Part ^ pt_part,
+    MaybePartId = Part ^ pt_part,
     MaybePartFilename = Part ^ pt_filename,
     (
         MaybePartFilename = yes(PartFilename)
@@ -1679,7 +1679,13 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
         MaybePartFilename = no,
         MaybeSubject = no,
         MessageId = message_id(IdStr),
-        PartFilename = string.format("%s.part_%d", [s(IdStr), i(PartId)])
+        (
+            MaybePartId = yes(PartId),
+            PartFilename = string.format("%s.part_%d", [s(IdStr), i(PartId)])
+        ;
+            MaybePartId = no,
+            PartFilename = IdStr ++ ".part"
+        )
     ),
     History0 = !.Info ^ tp_common_history ^ ch_save_history,
     make_save_part_initial_prompt(History0, PartFilename, Initial),
@@ -1704,10 +1710,10 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
             ResType = error(_),
             % This assumes the file doesn't exist.
             Config = !.Info ^ tp_config,
-            do_save_part(Config, MessageId, PartId, FileName, Res, !IO),
+            do_save_part(Config, MessageId, MaybePartId, FileName, Res, !IO),
             (
                 Res = ok,
-                ( PartId = 0 ->
+                ( MaybePartId = yes(0) ->
                     MessageUpdate = set_info("Message saved.")
                 ;
                     MessageUpdate = set_info("Attachment saved.")
@@ -1763,16 +1769,22 @@ make_save_part_initial_prompt(History, PartFilename, Initial) :-
         Initial = PrevDirName / PartFilename
     ).
 
-:- pred do_save_part(prog_config::in, message_id::in, int::in, string::in,
-    maybe_error::out, io::di, io::uo) is det.
+:- pred do_save_part(prog_config::in, message_id::in, maybe(int)::in,
+    string::in, maybe_error::out, io::di, io::uo) is det.
 
-do_save_part(Config, MessageId, Part, FileName, Res, !IO) :-
-    get_notmuch_command(Config, Notmuch),
-    make_quoted_command(Notmuch, [
-        "show", "--format=raw", "--part=" ++ from_int(Part),
-        message_id_to_search_term(MessageId)
-    ], no_redirect, redirect_output(FileName), Command),
-    io.call_system(Command, CallRes, !IO),
+do_save_part(Config, MessageId, MaybePartId, FileName, Res, !IO) :-
+    (
+        MaybePartId = yes(PartId),
+        get_notmuch_command(Config, Notmuch),
+        make_quoted_command(Notmuch, [
+            "show", "--format=raw", "--part=" ++ from_int(PartId),
+            message_id_to_search_term(MessageId)
+        ], no_redirect, redirect_output(FileName), Command),
+        io.call_system(Command, CallRes, !IO)
+    ;
+        MaybePartId = no,
+        CallRes = error(io.make_io_error("no part id"))
+    ),
     (
         CallRes = ok(ExitStatus),
         ( ExitStatus = 0 ->
@@ -1870,7 +1882,7 @@ do_open_part(Config, Screen, Part, Command, MessageUpdate, MaybeNextKey,
 
 do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, MaybeNextKey,
         !IO) :-
-    Part = part(MessageId, PartId, _Type, _Content, MaybePartFileName,
+    Part = part(MessageId, MaybePartId, _Type, _Content, MaybePartFileName,
         _MaybeEncoding, _MaybeLength),
     (
         MaybePartFileName = yes(PartFilename),
@@ -1880,7 +1892,7 @@ do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, MaybeNextKey,
     ;
         io.make_temp(FileName, !IO)
     ),
-    do_save_part(Config, MessageId, PartId, FileName, Res, !IO),
+    do_save_part(Config, MessageId, MaybePartId, FileName, Res, !IO),
     (
         Res = ok,
         call_open_command(Screen, CommandWords, FileName, MaybeError, !IO),
