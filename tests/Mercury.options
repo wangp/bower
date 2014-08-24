@@ -1,5 +1,14 @@
 -include ../src/Mercury.options
 MAIN_TARGET =
 
+# Build with gmime.
+GMIME = gmime-2.6
+MCFLAGS += --cflags "`pkg-config --cflags $(GMIME)`"
+MCFLAGS-test_crypto += --ld-flags "`pkg-config --libs $(GMIME)`"
+
+# Build with gpgme.
+CFLAGS += -D_FILE_OFFSET_BITS=64
+MLLIBS-test_crypto += -lgpgme
+
 # Add workspace-specific options here.
 -include Mercury.params
