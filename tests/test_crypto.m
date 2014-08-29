@@ -27,7 +27,8 @@
 
 :- type op
     --->    decrypt(string)
-    ;       verify(string, string).
+    ;       verify_detached(string, string)
+    ;       verify_clearsigned(string).
 
 %-----------------------------------------------------------------------------%
 
@@ -49,9 +50,18 @@ main(!IO) :-
             ResSig = ok(Sig),
             ResText = ok(Text)
         ->
-            main_1(verify(Sig, Text), !IO)
+            main_1(verify_detached(Sig, Text), !IO)
         ;
             report_error("error reading files", !IO)
+        )
+    ; Args = ["--verify", FileName] ->
+        read_file_as_string(FileName, ResRead, !IO),
+        (
+            ResRead = ok(Sig),
+            main_1(verify_clearsigned(Sig), !IO)
+        ;
+            ResRead = error(Error),
+            report_error(Error, !IO)
         )
     ;
         report_error("bad arguments", !IO)
@@ -104,8 +114,21 @@ main_2(Ctx, Op, !IO) :-
     ).
 
 main_2(Ctx, Op, !IO) :-
-    Op = verify(Sig, SignedText),
-    verify(Ctx, Sig, SignedText, Res, !IO),
+    Op = verify_detached(Sig, SignedText),
+    verify_detached(Ctx, Sig, SignedText, Res, !IO),
+    (
+        Res = ok(VerifyResult),
+        write_string("VerifyResult:\n", !IO),
+        write_doc(format(VerifyResult), !IO),
+        write_string("\n", !IO)
+    ;
+        Res = error(Error),
+        report_error(Error, !IO)
+    ).
+
+main_2(Ctx, Op, !IO) :-
+    Op = verify_clearsigned(Sig),
+    verify_clearsigned(Ctx, Sig, Res, !IO),
     (
         Res = ok(VerifyResult),
         write_string("VerifyResult:\n", !IO),
@@ -169,10 +192,10 @@ decrypt(Ctx, InputString, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred verify(ctx::in, string::in, string::in,
+:- pred verify_detached(ctx::in, string::in, string::in,
     maybe_error(verify_result)::out, io::di, io::uo) is det.
 
-verify(Ctx, Sig, SignedText, Res, !IO) :-
+verify_detached(Ctx, Sig, SignedText, Res, !IO) :-
     gpgme_data_new_from_string(Sig, ResSigData, !IO),
     (
         ResSigData = ok(SigData),
@@ -183,6 +206,30 @@ verify(Ctx, Sig, SignedText, Res, !IO) :-
             gpgme_data_release(SignedTextData, !IO)
         ;
             ResSignedTextData = error(Error),
+            Res = error(Error)
+        ),
+        gpgme_data_release(SigData, !IO)
+    ;
+        ResSigData = error(Error),
+        Res = error(Error)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred verify_clearsigned(ctx::in, string::in,
+    maybe_error(verify_result)::out, io::di, io::uo) is det.
+
+verify_clearsigned(Ctx, Sig, Res, !IO) :-
+    gpgme_data_new_from_string(Sig, ResSigData, !IO),
+    (
+        ResSigData = ok(SigData),
+        gpgme_data_new(ResPlainData, !IO),
+        (
+            ResPlainData = ok(PlainData),
+            gpgme_op_verify_clearsigned(Ctx, SigData, PlainData, Res, !IO),
+            gpgme_data_release(PlainData, !IO)
+        ;
+            ResPlainData = error(Error),
             Res = error(Error)
         ),
         gpgme_data_release(SigData, !IO)

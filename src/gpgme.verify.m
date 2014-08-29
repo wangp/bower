@@ -62,6 +62,9 @@
 :- pred gpgme_op_verify_detached(ctx::in, data::in, data::in,
     maybe_error(verify_result)::out, io::di, io::uo) is det.
 
+:- pred gpgme_op_verify_clearsigned(ctx::in, data::in, data::in,
+    maybe_error(verify_result)::out, io::di, io::uo) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -156,6 +159,41 @@ gpgme_op_verify_detached(Ctx, data(Sig, _), data(SignedText, _), Res, !IO) :-
     gpgme_error_t err;
 
     err = gpgme_op_verify(Ctx, Sig, SignedText, NULL);
+    if (err == GPG_ERR_NO_ERROR) {
+        Ok = MR_YES;
+        Error = MR_make_string_const("""");
+    } else {
+        Ok = MR_NO;
+        Error = _gpgme_error_to_string(err);
+    }
+").
+
+%-----------------------------------------------------------------------------%
+
+gpgme_op_verify_clearsigned(Ctx, data(Sig, _), data(Plain, _), Res, !IO) :-
+    promise_pure
+    (
+        gpgme_op_verify_clearsigned_2(Ctx, Sig, Plain, Ok, Error, !IO),
+        (
+            Ok = yes,
+            semipure gpgme_op_verify_result(Ctx, Res)
+        ;
+            Ok = no,
+            Res = error(Error)
+        )
+    ).
+
+:- pred gpgme_op_verify_clearsigned_2(ctx::in, gpgme_data::in, gpgme_data::in,
+    bool::out, string::out, io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    gpgme_op_verify_clearsigned_2(Ctx::in, Sig::in, Plain::in,
+        Ok::out, Error::out, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io],
+"
+    gpgme_error_t err;
+
+    err = gpgme_op_verify(Ctx, Sig, NULL, Plain);
     if (err == GPG_ERR_NO_ERROR) {
         Ok = MR_YES;
         Error = MR_make_string_const("""");
