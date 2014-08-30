@@ -23,13 +23,15 @@
 :- import_module gpgme.decrypt.
 :- import_module gpgme.decrypt_verify.
 :- import_module gpgme.gmime.
+:- import_module gpgme.sign.
 :- import_module gpgme.verify.
 
 :- type op
     --->    decrypt(string)
     ;       decrypt_verify(string)
     ;       verify_detached(string, string)
-    ;       verify_clearsigned(string).
+    ;       verify_clearsigned(string)
+    ;       sign(string).
 
 %-----------------------------------------------------------------------------%
 
@@ -73,6 +75,15 @@ main(!IO) :-
             ResRead = error(Error),
             report_error(Error, !IO)
         )
+    ; Args = ["--sign", FileName] ->
+        read_file_as_string(FileName, ResRead, !IO),
+        (
+            ResRead = ok(Text),
+            main_1(sign(Text), !IO)
+        ;
+            ResRead = error(Error),
+            report_error(Error, !IO)
+        )
     ;
         report_error("bad arguments", !IO)
     ).
@@ -91,6 +102,7 @@ main_1(Op, !IO) :-
             gpgme_set_protocol(Context, openpgp, ResProto, !IO),
             (
                 ResProto = ok,
+                gpgme_set_armor(Context, ascii_armor, !IO),
                 main_2(Context, Op, !IO)
             ;
                 ResProto = error(Error),
@@ -167,6 +179,27 @@ main_2(Ctx, Op, !IO) :-
         write_string("\n", !IO)
     ;
         Res = error(Error),
+        report_error(Error, !IO)
+    ).
+
+main_2(Ctx, Op, !IO) :-
+    Op = sign(Text),
+    sign_detached(Ctx, Text, ResSign, ResSig, !IO),
+    (
+        ResSign = ok(SignResult),
+        write_string("SignResult:\n", !IO),
+        write_doc(format(SignResult), !IO),
+        write_string("\n\n", !IO),
+        (
+            ResSig = ok(Sig),
+            io.write_string(Sig, !IO),
+            io.write_string("\n", !IO)
+        ;
+            ResSig = error(Error),
+            report_error(Error, !IO)
+        )
+    ;
+        ResSign = error(Error),
         report_error(Error, !IO)
     ).
 
@@ -314,6 +347,40 @@ verify_clearsigned(Ctx, Sig, Res, !IO) :-
     ;
         ResSigData = error(Error),
         Res = error(Error)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred sign_detached(ctx::in, string::in, maybe_error(sign_result)::out,
+    maybe_error(string)::out, io::di, io::uo) is det.
+
+sign_detached(Ctx, Plain, ResSign, ResSig, !IO) :-
+    gpgme_data_new_from_string(Plain, ResPlainData, !IO),
+    (
+        ResPlainData = ok(PlainData),
+        gpgme_data_new(ResSigData, !IO),
+        (
+            ResSigData = ok(SigData),
+            % XXX set signers
+            gpgme_op_sign_detached(Ctx, PlainData, SigData, ResSign, !IO),
+            (
+                ResSign = ok(_),
+                gpgme_data_to_string(SigData, ResSig, !IO)
+            ;
+                ResSign = error(_),
+                ResSig = error("sign failed")
+            ),
+            gpgme_data_release(SigData, !IO)
+        ;
+            ResSigData = error(Error),
+            ResSign = error(Error),
+            ResSig = error("sign failed")
+        ),
+        gpgme_data_release(PlainData, !IO)
+    ;
+        ResPlainData = error(Error),
+        ResSign = error(Error),
+        ResSig = error("sign failed")
     ).
 
 %-----------------------------------------------------------------------------%
