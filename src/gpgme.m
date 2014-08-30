@@ -46,6 +46,7 @@
 % Crypto Operations
 
 :- include_module gpgme.decrypt.
+:- include_module gpgme.decrypt_verify.
 :- include_module gpgme.verify.
 
 %-----------------------------------------------------------------------------%

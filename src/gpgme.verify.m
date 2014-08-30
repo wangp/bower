@@ -65,6 +65,11 @@
 :- pred gpgme_op_verify_clearsigned(ctx::in, data::in, data::in,
     maybe_error(verify_result)::out, io::di, io::uo) is det.
 
+    % Only for gpgme.decrypt_verify.
+    %
+:- pred gpgme_op_verify_result(ctx::in, maybe_error(verify_result)::out,
+    io::di, io::uo) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -136,16 +141,13 @@ signature_summary_bit(sys_error).
 %-----------------------------------------------------------------------------%
 
 gpgme_op_verify_detached(Ctx, data(Sig, _), data(SignedText, _), Res, !IO) :-
-    promise_pure
+    gpgme_op_verify_detached_2(Ctx, Sig, SignedText, Ok, Error, !IO),
     (
-        gpgme_op_verify_detached_2(Ctx, Sig, SignedText, Ok, Error, !IO),
-        (
-            Ok = yes,
-            semipure gpgme_op_verify_result(Ctx, Res)
-        ;
-            Ok = no,
-            Res = error(Error)
-        )
+        Ok = yes,
+        gpgme_op_verify_result(Ctx, Res, !IO)
+    ;
+        Ok = no,
+        Res = error(Error)
     ).
 
 :- pred gpgme_op_verify_detached_2(ctx::in, gpgme_data::in, gpgme_data::in,
@@ -171,16 +173,13 @@ gpgme_op_verify_detached(Ctx, data(Sig, _), data(SignedText, _), Res, !IO) :-
 %-----------------------------------------------------------------------------%
 
 gpgme_op_verify_clearsigned(Ctx, data(Sig, _), data(Plain, _), Res, !IO) :-
-    promise_pure
+    gpgme_op_verify_clearsigned_2(Ctx, Sig, Plain, Ok, Error, !IO),
     (
-        gpgme_op_verify_clearsigned_2(Ctx, Sig, Plain, Ok, Error, !IO),
-        (
-            Ok = yes,
-            semipure gpgme_op_verify_result(Ctx, Res)
-        ;
-            Ok = no,
-            Res = error(Error)
-        )
+        Ok = yes,
+        gpgme_op_verify_result(Ctx, Res, !IO)
+    ;
+        Ok = no,
+        Res = error(Error)
     ).
 
 :- pred gpgme_op_verify_clearsigned_2(ctx::in, gpgme_data::in, gpgme_data::in,
@@ -205,26 +204,28 @@ gpgme_op_verify_clearsigned(Ctx, data(Sig, _), data(Plain, _), Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- semipure pred gpgme_op_verify_result(ctx::in,
-    maybe_error(verify_result)::out) is det.
-
-gpgme_op_verify_result(Ctx, Res) :-
-    semipure gpgme_op_verify_result_2(Ctx, Ok, VerifyResult0),
+gpgme_op_verify_result(Ctx, Res, !IO) :-
+    promise_pure
     (
-        Ok = yes,
-        semipure convert_verify_result(VerifyResult0, VerifyResult),
-        Res = ok(VerifyResult)
-    ;
-        Ok = no,
-        Res = error("gpgme_op_verify_result failed")
+        gpgme_op_verify_result_2(Ctx, Ok, VerifyResult0, !IO),
+        (
+            Ok = yes,
+            semipure convert_verify_result(VerifyResult0, VerifyResult),
+            Res = ok(VerifyResult)
+        ;
+            Ok = no,
+            Res = error("gpgme_op_verify_result failed")
+        )
     ).
 
-:- semipure pred gpgme_op_verify_result_2(ctx::in, bool::out,
-    gpgme_verify_result::out) is det.
+:- pred gpgme_op_verify_result_2(ctx::in, bool::out, gpgme_verify_result::out,
+    io::di, io::uo) is det.
 
 :- pragma foreign_proc("C",
-    gpgme_op_verify_result_2(Ctx::in, Ok::out, VerifyResult::out),
-    [will_not_call_mercury, promise_semipure, thread_safe, may_not_duplicate],
+    gpgme_op_verify_result_2(Ctx::in, Ok::out, VerifyResult::out,
+        _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
 "
     VerifyResult = gpgme_op_verify_result(Ctx);
     Ok = (VerifyResult != NULL) ? MR_YES : MR_NO;

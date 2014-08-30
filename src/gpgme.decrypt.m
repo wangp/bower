@@ -15,6 +15,11 @@
 :- pred gpgme_op_decrypt(ctx::in, data::in, data::in,
     maybe_error(decrypt_result)::out, io::di, io::uo) is det.
 
+    % Only for gpgme.decrypt_verify
+    %
+:- pred gpgme_op_decrypt_result(ctx::in, decrypt_result::out, io::di, io::uo)
+    is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -55,9 +60,6 @@ gpgme_op_decrypt(Ctx, data(Cipher, _), data(Plain, _), Res, !IO) :-
 ").
 
 %-----------------------------------------------------------------------------%
-
-:- pred gpgme_op_decrypt_result(ctx::in, decrypt_result::out, io::di, io::uo)
-    is det.
 
 gpgme_op_decrypt_result(Ctx, DecryptResult, !IO) :-
     gpgme_op_decrypt_result_2(Ctx, UnsupportedAlgorithm, WrongKeyUsage,

@@ -14,7 +14,6 @@
 
 :- import_module list.
 :- import_module maybe.
-:- import_module pair.
 :- import_module pretty_printer.
 
 :- import_module data.
@@ -22,11 +21,13 @@
 :- import_module gmime_adaptor.
 :- import_module gpgme.
 :- import_module gpgme.decrypt.
+:- import_module gpgme.decrypt_verify.
 :- import_module gpgme.gmime.
 :- import_module gpgme.verify.
 
 :- type op
     --->    decrypt(string)
+    ;       decrypt_verify(string)
     ;       verify_detached(string, string)
     ;       verify_clearsigned(string).
 
@@ -39,6 +40,15 @@ main(!IO) :-
         (
             ResRead = ok(CipherText),
             main_1(decrypt(CipherText), !IO)
+        ;
+            ResRead = error(Error),
+            report_error(Error, !IO)
+        )
+    ; Args = ["--decrypt-verify", FileName] ->
+        read_file_as_string(FileName, ResRead, !IO),
+        (
+            ResRead = ok(CipherText),
+            main_1(decrypt_verify(CipherText), !IO)
         ;
             ResRead = error(Error),
             report_error(Error, !IO)
@@ -99,18 +109,39 @@ main_1(Op, !IO) :-
 :- pred main_2(ctx::in, op::in, io::di, io::uo) is det.
 
 main_2(Ctx, Op, !IO) :-
-    Op = decrypt(CipherText),
-    decrypt(Ctx, CipherText, Res, !IO),
     (
-        Res = ok(DecryptResult - Part),
+        Op = decrypt(CipherText),
+        decrypt(Ctx, CipherText, ResDecrypt, ResPart, !IO),
+        MaybeVerifyResult = no
+    ;
+        Op = decrypt_verify(CipherText),
+        decrypt_verify(Ctx, CipherText, ResDecrypt, ResPart,
+            MaybeVerifyResult, !IO)
+    ),
+    (
+        ResDecrypt = ok(DecryptResult),
         write_string("DecryptResult:\n", !IO),
         write_doc(format(DecryptResult), !IO),
-        write_string("\n\nPart:\n", !IO),
-        write_doc(format(Part), !IO),
+        (
+            ResPart = ok(Part),
+            write_string("\n\nPart:\n", !IO),
+            write_doc(format(Part), !IO),
+            write_string("\n", !IO)
+        ;
+            ResPart = error(Error),
+            report_error(Error, !IO)
+        )
+    ;
+        ResDecrypt = error(Error),
+        report_error(Error, !IO)
+    ),
+    (
+        MaybeVerifyResult = yes(VerifyResult),
+        write_string("\nVerifyResult:\n", !IO),
+        write_doc(format(VerifyResult), !IO),
         write_string("\n", !IO)
     ;
-        Res = error(Error),
-        report_error(Error, !IO)
+        MaybeVerifyResult = no
     ).
 
 main_2(Ctx, Op, !IO) :-
@@ -141,10 +172,10 @@ main_2(Ctx, Op, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred decrypt(ctx::in, string::in,
-    maybe_error(pair(decrypt_result, part))::out, io::di, io::uo) is det.
+:- pred decrypt(ctx::in, string::in, maybe_error(decrypt_result)::out,
+    maybe_error(part)::out, io::di, io::uo) is det.
 
-decrypt(Ctx, InputString, Res, !IO) :-
+decrypt(Ctx, InputString, ResDecrypt, ResPart, !IO) :-
     gpgme_data_new_from_string(InputString, ResCipher, !IO),
     (
         ResCipher = ok(Cipher),
@@ -155,39 +186,86 @@ decrypt(Ctx, InputString, Res, !IO) :-
             gpgme_op_decrypt(Ctx, Cipher, Plain, ResDecrypt, !IO),
             gpgme_data_release(Plain, !IO),
             (
-                ResDecrypt = ok(DecryptResult),
-                seek_start(PlainStream, ResSeek, !IO),
-                (
-                    ResSeek = ok,
-                    parser_new_with_stream(PlainStream, Parser, !IO),
-                    construct_message(Parser, MaybeMessage, !IO),
-                    parser_unref(Parser, !IO),
-                    (
-                        MaybeMessage = yes(Message),
-                        message_to_part(Message, Part, !IO),
-                        message_unref(Message, !IO),
-                        Res = ok(DecryptResult - Part)
-                    ;
-                        MaybeMessage = no,
-                        Res = error("could not parse message")
-                    )
-                ;
-                    ResSeek = error(Error),
-                    Res = error(Error)
-                )
+                ResDecrypt = ok(_),
+                stream_to_part(PlainStream, ResPart, !IO)
             ;
-                ResDecrypt = error(Error),
-                Res = error(Error)
+                ResDecrypt = error(_),
+                ResPart = error("no data")
             )
         ;
             ResPlain = error(Error),
-            Res = error(Error)
+            ResDecrypt = error(Error),
+            ResPart = error("no data")
         ),
         stream_unref(PlainStream, !IO),
         gpgme_data_release(Cipher, !IO)
     ;
         ResCipher = error(Error),
+        ResDecrypt = error(Error),
+        ResPart = error("no data")
+    ).
+
+:- pred stream_to_part(g_mime_stream(T)::in, maybe_error(part)::out,
+    io::di, io::uo) is det.
+
+stream_to_part(PlainStream, Res, !IO) :-
+    seek_start(PlainStream, ResSeek, !IO),
+    (
+        ResSeek = ok,
+        parser_new_with_stream(PlainStream, Parser, !IO),
+        construct_message(Parser, MaybeMessage, !IO),
+        parser_unref(Parser, !IO),
+        (
+            MaybeMessage = yes(Message),
+            message_to_part(Message, Part, !IO),
+            message_unref(Message, !IO),
+            Res = ok(Part)
+        ;
+            MaybeMessage = no,
+            Res = error("could not parse message")
+        )
+    ;
+        ResSeek = error(Error),
         Res = error(Error)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred decrypt_verify(ctx::in, string::in, maybe_error(decrypt_result)::out,
+    maybe_error(part)::out, maybe(verify_result)::out, io::di, io::uo) is det.
+
+decrypt_verify(Ctx, InputString, ResDecrypt, ResPart, MaybeVerifyResult, !IO)
+        :-
+    gpgme_data_new_from_string(InputString, ResCipher, !IO),
+    (
+        ResCipher = ok(Cipher),
+        stream_mem_new(PlainStream, !IO),
+        gpgme_data_new_from_gmime_stream(PlainStream, ResPlain, !IO),
+        (
+            ResPlain = ok(Plain),
+            gpgme_op_decrypt_verify(Ctx, Cipher, Plain, ResDecrypt,
+                MaybeVerifyResult, !IO),
+            gpgme_data_release(Plain, !IO),
+            (
+                ResDecrypt = ok(_),
+                stream_to_part(PlainStream, ResPart, !IO)
+            ;
+                ResDecrypt = error(_),
+                ResPart = error("no data")
+            )
+        ;
+            ResPlain = error(Error),
+            ResDecrypt = error(Error),
+            ResPart = error("no data"),
+            MaybeVerifyResult = no
+        ),
+        stream_unref(PlainStream, !IO),
+        gpgme_data_release(Cipher, !IO)
+    ;
+        ResCipher = error(Error),
+        ResDecrypt = error(Error),
+        ResPart = error("no data"),
+        MaybeVerifyResult = no
     ).
 
 %-----------------------------------------------------------------------------%
