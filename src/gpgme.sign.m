@@ -31,13 +31,11 @@
 
 :- implementation.
 
+:- import_module gpgme.invalid_key.
+
 :- type gpgme_sign_result.
 
 :- pragma foreign_type("C", gpgme_sign_result, "gpgme_sign_result_t").
-
-:- type gpgme_invalid_key.
-
-:- pragma foreign_type("C", gpgme_invalid_key, "gpgme_invalid_key_t").
 
 :- type gpgme_new_signature.
 
@@ -126,43 +124,6 @@ convert_sign_result(SignResult0, SignResult) :-
 "
     InvalidSigners = SignResult->invalid_signers;
     Signatures = SignResult->signatures;
-").
-
-:- semipure pred convert_invalid_keys(gpgme_invalid_key::in,
-    list(invalid_key)::out) is det.
-
-convert_invalid_keys(Key0, Res) :-
-    ( semipure convert_invalid_key(Key0, Key1, Key) ->
-        semipure convert_invalid_keys(Key1, Keys),
-        Res = [Key | Keys]
-    ;
-        Res = []
-    ).
-
-:- semipure pred convert_invalid_key(gpgme_invalid_key::in,
-    gpgme_invalid_key::out, invalid_key::out) is semidet.
-
-convert_invalid_key(Key0, Next, Key) :-
-    semipure invalid_key_fields(Key0, Next, Fingerprint, Reason),
-    Key = invalid_key(Fingerprint, Reason).
-
-:- semipure pred invalid_key_fields(gpgme_invalid_key::in,
-    gpgme_invalid_key::out, string::out, string::out) is semidet.
-
-:- pragma foreign_proc("C",
-    invalid_key_fields(Key::in, Next::out, Fingerprint::out, Reason::out),
-    [will_not_call_mercury, promise_semipure, thread_safe],
-"
-    SUCCESS_INDICATOR = (Key != NULL);
-    if (SUCCESS_INDICATOR) {
-        Next = Key->next;
-        MR_make_aligned_string_copy_msg(Fingerprint, Key->fpr, MR_ALLOC_ID);
-        Reason = _gpgme_error_to_string(Key->reason);
-    } else {
-        Next = NULL;
-        Fingerprint = MR_make_string_const("""");
-        Reason = MR_make_string_const("""");
-    }
 ").
 
 :- semipure pred convert_signatures(gpgme_new_signature::in,

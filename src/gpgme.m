@@ -4,16 +4,10 @@
 :- module gpgme.
 :- interface.
 
+:- import_module bool.
 :- import_module io.
+:- import_module list.
 :- import_module maybe.
-
-:- include_module gpgme.gmime.
-
-%-----------------------------------------------------------------------------%
-
-    % XXX gpgme_signature_t has unsigned long timestamps, other places use long
-    % int timestamps. Either way not guaranteed to fit in Mercury int.
-:- type timestamp == int.
 
 %-----------------------------------------------------------------------------%
 
@@ -44,6 +38,76 @@
 
 :- pred gpgme_set_armor(ctx::in, armor::in, io::di, io::uo) is det.
 
+% Key Management
+
+:- type key.
+
+:- type key_info
+    --->    key_info(
+                key_revoked         :: bool,
+                key_expired         :: bool,
+                key_disabled        :: bool,
+                key_invalid         :: bool,
+                key_can_encrypt     :: bool,
+                key_can_sign        :: bool,
+                key_can_certify     :: bool,
+                key_can_authenticate:: bool,
+                key_is_qualified    :: bool,
+                key_secret          :: bool,
+                % protocol
+                % issuer_serial
+                % issuer_serial
+                % chain_id
+                key_owner_trust     :: validity,
+                key_subkeys         :: list(subkey),
+                key_userids         :: list(user_id)
+            ).
+
+:- type subkey
+    --->    subkey(
+                subkey_revoked          :: bool,
+                subkey_expired          :: bool,
+                subkey_disabled         :: bool,
+                subkey_invalid          :: bool,
+                subkey_can_encrypt      :: bool,
+                subkey_can_sign         :: bool,
+                subkey_can_certify      :: bool,
+                subkey_can_authenticate :: bool,
+                subkey_is_qualified     :: bool,
+                subkey_secret           :: bool,
+                % pubkey_algo
+                subkey_length           :: int, % bits
+                subkey_keyid            :: string,
+                subkey_fingerprint      :: string,
+                subkey_timestamp        :: subkey_timestamp,
+                subkey_expires          :: maybe(timestamp)
+            ).
+
+:- type subkey_timestamp
+    --->    invalid
+    ;       unavailable
+    ;       creation(timestamp).
+
+:- type user_id
+    --->    user_id(
+                uid_revoked     :: bool,
+                uid_invalid     :: bool,
+                uid_validity    :: validity,
+                uid             :: string,
+                name            :: maybe(string),
+                comment         :: maybe(string),
+                email           :: maybe(string)
+                % signatures
+            ).
+
+:- type validity
+    --->    validity_unknown
+    ;       validity_undefined
+    ;       validity_never
+    ;       validity_marginal
+    ;       validity_full
+    ;       validity_ultimate.
+
 % Data buffers
 
 :- type data.
@@ -68,15 +132,28 @@
 
 :- include_module gpgme.decrypt.
 :- include_module gpgme.decrypt_verify.
+:- include_module gpgme.encrypt.
+:- include_module gpgme.key.
 :- include_module gpgme.sign.
 :- include_module gpgme.verify.
+
+% Misc
+
+    % XXX gpgme_signature_t has unsigned long timestamps, other places use long
+    % int timestamps. Either way not guaranteed to fit in Mercury int.
+:- type timestamp == int.
+
+:- include_module gpgme.gmime.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
-:- import_module bool.
+:- import_module store.
+
+:- include_module gpgme.invalid_key.
+:- include_module gpgme.key_array.
 
 :- pragma foreign_decl("C", "
     #include <gpgme.h>
@@ -92,6 +169,25 @@
 
 :- pragma foreign_type("C", ctx, "gpgme_ctx_t").
 
+:- type key
+    --->    key(
+                key_info,
+                io_mutvar(maybe(gpgme_key))
+            ).
+
+:- type gpgme_key.
+
+:- pragma foreign_type("C", gpgme_key, "gpgme_key_t").
+
+:- pragma foreign_enum("C", validity/0, [
+    validity_unknown - "GPGME_VALIDITY_UNKNOWN",
+    validity_undefined - "GPGME_VALIDITY_UNDEFINED",
+    validity_never - "GPGME_VALIDITY_NEVER",
+    validity_marginal - "GPGME_VALIDITY_MARGINAL",
+    validity_full - "GPGME_VALIDITY_FULL",
+    validity_ultimate - "GPGME_VALIDITY_ULTIMATE"
+]).
+
 :- type data
     --->    data(
                 real_data   :: gpgme_data,
@@ -101,6 +197,10 @@
 :- type gpgme_data.
 
 :- pragma foreign_type("C", gpgme_data, "gpgme_data_t").
+
+:- type gpgme_invalid_key.
+
+:- pragma foreign_type("C", gpgme_invalid_key, "gpgme_invalid_key_t").
 
 %-----------------------------------------------------------------------------%
 

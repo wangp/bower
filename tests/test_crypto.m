@@ -22,7 +22,9 @@
 :- import_module gpgme.
 :- import_module gpgme.decrypt.
 :- import_module gpgme.decrypt_verify.
+:- import_module gpgme.encrypt.
 :- import_module gpgme.gmime.
+:- import_module gpgme.key.
 :- import_module gpgme.sign.
 :- import_module gpgme.verify.
 
@@ -31,7 +33,8 @@
     ;       decrypt_verify(string)
     ;       verify_detached(string, string)
     ;       verify_clearsigned(string)
-    ;       sign(string).
+    ;       sign(string)
+    ;       encrypt(string, list(string)).
 
 %-----------------------------------------------------------------------------%
 
@@ -80,6 +83,15 @@ main(!IO) :-
         (
             ResRead = ok(Text),
             main_1(sign(Text), !IO)
+        ;
+            ResRead = error(Error),
+            report_error(Error, !IO)
+        )
+    ; Args = ["--encrypt", FileName | Recipients] ->
+        read_file_as_string(FileName, ResRead, !IO),
+        (
+            ResRead = ok(Text),
+            main_1(encrypt(Text, Recipients), !IO)
         ;
             ResRead = error(Error),
             report_error(Error, !IO)
@@ -200,6 +212,26 @@ main_2(Ctx, Op, !IO) :-
         )
     ;
         ResSign = error(Error),
+        report_error(Error, !IO)
+    ).
+
+main_2(Ctx, Op, !IO) :-
+    Op = encrypt(Text, Recipients),
+    encrypt(Ctx, Text, Recipients, ResEncrypt, ResCipher, !IO),
+    (
+        ResEncrypt = ok(EncryptResult),
+        write_string("EncryptResult:\n", !IO),
+        write_doc(format(EncryptResult), !IO),
+        write_string("\n\n", !IO),
+        (
+            ResCipher = ok(Cipher),
+            io.write_string(Cipher, !IO)
+        ;
+            ResCipher = error(Error),
+            report_error(Error, !IO)
+        )
+    ;
+        ResEncrypt = error(Error),
         report_error(Error, !IO)
     ).
 
@@ -382,6 +414,93 @@ sign_detached(Ctx, Plain, ResSign, ResSig, !IO) :-
         ResSign = error(Error),
         ResSig = error("sign failed")
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred encrypt(ctx::in, string::in, list(string)::in,
+    maybe_error(encrypt_result)::out, maybe_error(string)::out,
+    io::di, io::uo) is det.
+
+encrypt(Ctx, Plain, Recipients, ResEncrypt, ResCipher, !IO) :-
+    get_keys(Ctx, Recipients, ResKeys, [], Keys, !IO),
+    (
+        ResKeys = ok,
+        Keys = [],
+        ResEncrypt = error("no keys"),
+        ResCipher = error("encrypt failed")
+    ;
+        ResKeys = ok,
+        Keys = [_ | _],
+        io.write_string("Encryption keys:\n", !IO),
+        list.foldl(write_key_info, Keys, !IO),
+        io.flush_output(!IO),
+        encrypt_2(Ctx, Plain, Keys, ResEncrypt, ResCipher, !IO)
+    ;
+        ResKeys = error(Error),
+        ResEncrypt = error(Error),
+        ResCipher = error("encrypt failed")
+    ),
+    unref_keys(Keys, !IO).
+
+:- pred encrypt_2(ctx::in, string::in, list(key)::in,
+    maybe_error(encrypt_result)::out, maybe_error(string)::out,
+    io::di, io::uo) is det.
+
+encrypt_2(Ctx, Plain, Keys, ResEncrypt, ResCipher, !IO) :-
+    gpgme_data_new_from_string(Plain, ResPlainData, !IO),
+    (
+        ResPlainData = ok(PlainData),
+        gpgme_data_new(ResCipherData, !IO),
+        (
+            ResCipherData = ok(CipherData),
+            gpgme_op_encrypt(Ctx, Keys, [always_trust], PlainData,
+                CipherData, ResEncrypt, !IO),
+            (
+                ResEncrypt = ok(_),
+                gpgme_data_to_string(CipherData, ResCipher, !IO)
+            ;
+                ResEncrypt = error(_),
+                ResCipher = error("encrypt failed")
+            ),
+            gpgme_data_release(CipherData, !IO)
+        ;
+            ResCipherData = error(Error),
+            ResEncrypt = error(Error),
+            ResCipher = error("encrypt failed")
+        ),
+        gpgme_data_release(PlainData, !IO)
+    ;
+        ResPlainData = error(Error),
+        ResEncrypt = error(Error),
+        ResCipher = error("encrypt failed")
+    ).
+
+:- pred get_keys(ctx::in, list(string)::in, maybe_error::out,
+    list(key)::in, list(key)::out, io::di, io::uo) is det.
+
+get_keys(Ctx, Recipients, Res, !Keys, !IO) :-
+    (
+        Recipients = [],
+        Res = ok
+    ;
+        Recipients = [Recp | Recps],
+        gpgme_op_keylist(Ctx, yes(Recp), not_secret_only, ResKeys, !IO),
+        (
+            ResKeys = ok(Keys),
+            append(Keys, !Keys),
+            get_keys(Ctx, Recps, Res, !Keys, !IO)
+        ;
+            ResKeys = error(Error),
+            Res = error(Error)
+        )
+    ).
+
+:- pred write_key_info(key::in, io::di, io::uo) is det.
+
+write_key_info(Key, !IO) :-
+    Info = get_key_info(Key),
+    write_doc(format(Info), !IO),
+    write_string("\n\n", !IO).
 
 %-----------------------------------------------------------------------------%
 

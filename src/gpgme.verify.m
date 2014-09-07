@@ -43,21 +43,11 @@
     ;       bad_policy
     ;       sys_error.
 
-:- type timestamp == int.   % XXX unsigned long
-
 :- type pka_trust
     --->    pka_no_info
     ;       pka_verification_failed
     ;       pka_verification_succeeded
     ;       pka_reserved.   % for future use
-
-:- type validity
-    --->    validity_unknown
-    ;       validity_undefined
-    ;       validity_never
-    ;       validity_marginal
-    ;       validity_full
-    ;       validity_ultimate.
 
 :- pred gpgme_op_verify_detached(ctx::in, data::in, data::in,
     maybe_error(verify_result)::out, io::di, io::uo) is det.
@@ -104,15 +94,6 @@
     pka_verification_failed - "1",
     pka_verification_succeeded - "2",
     pka_reserved - "3"
-]).
-
-:- pragma foreign_enum("C", validity/0, [
-    validity_unknown - "GPGME_VALIDITY_UNKNOWN",
-    validity_undefined - "GPGME_VALIDITY_UNDEFINED",
-    validity_never - "GPGME_VALIDITY_NEVER",
-    validity_marginal - "GPGME_VALIDITY_MARGINAL",
-    validity_full - "GPGME_VALIDITY_FULL",
-    validity_ultimate - "GPGME_VALIDITY_ULTIMATE"
 ]).
 
 %-----------------------------------------------------------------------------%
