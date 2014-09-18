@@ -34,7 +34,7 @@
     ;       verify_detached(string, string)
     ;       verify_clearsigned(string)
     ;       sign(string)
-    ;       encrypt(string, list(string)).
+    ;       encrypt(encrypt_op, string, list(string)).
 
 %-----------------------------------------------------------------------------%
 
@@ -87,11 +87,19 @@ main(!IO) :-
             ResRead = error(Error),
             report_error(Error, !IO)
         )
-    ; Args = ["--encrypt", FileName | Recipients] ->
+    ;
+        (
+            Args = ["--encrypt", FileName | Recipients],
+            Op = encrypt_only
+        ;
+            Args = ["--encrypt-sign", FileName | Recipients],
+            Op = encrypt_sign
+        )
+    ->
         read_file_as_string(FileName, ResRead, !IO),
         (
             ResRead = ok(Text),
-            main_1(encrypt(Text, Recipients), !IO)
+            main_1(encrypt(Op, Text, Recipients), !IO)
         ;
             ResRead = error(Error),
             report_error(Error, !IO)
@@ -216,8 +224,8 @@ main_2(Ctx, Op, !IO) :-
     ).
 
 main_2(Ctx, Op, !IO) :-
-    Op = encrypt(Text, Recipients),
-    encrypt(Ctx, Text, Recipients, ResEncrypt, ResCipher, !IO),
+    Op = encrypt(EncryptOp, Text, Recipients),
+    encrypt(EncryptOp, Ctx, Text, Recipients, ResEncrypt, ResCipher, !IO),
     (
         ResEncrypt = ok(EncryptResult),
         write_string("EncryptResult:\n", !IO),
@@ -417,11 +425,11 @@ sign_detached(Ctx, Plain, ResSign, ResSig, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred encrypt(ctx::in, string::in, list(string)::in,
+:- pred encrypt(encrypt_op::in, ctx::in, string::in, list(string)::in,
     maybe_error(encrypt_result)::out, maybe_error(string)::out,
     io::di, io::uo) is det.
 
-encrypt(Ctx, Plain, Recipients, ResEncrypt, ResCipher, !IO) :-
+encrypt(Op, Ctx, Plain, Recipients, ResEncrypt, ResCipher, !IO) :-
     get_keys(Ctx, Recipients, ResKeys, [], Keys, !IO),
     (
         ResKeys = ok,
@@ -434,7 +442,7 @@ encrypt(Ctx, Plain, Recipients, ResEncrypt, ResCipher, !IO) :-
         io.write_string("Encryption keys:\n", !IO),
         list.foldl(write_key_info, Keys, !IO),
         io.flush_output(!IO),
-        encrypt_2(Ctx, Plain, Keys, ResEncrypt, ResCipher, !IO)
+        encrypt_2(Op, Ctx, Plain, Keys, ResEncrypt, ResCipher, !IO)
     ;
         ResKeys = error(Error),
         ResEncrypt = error(Error),
@@ -442,18 +450,18 @@ encrypt(Ctx, Plain, Recipients, ResEncrypt, ResCipher, !IO) :-
     ),
     unref_keys(Keys, !IO).
 
-:- pred encrypt_2(ctx::in, string::in, list(key)::in,
+:- pred encrypt_2(encrypt_op::in, ctx::in, string::in, list(key)::in,
     maybe_error(encrypt_result)::out, maybe_error(string)::out,
     io::di, io::uo) is det.
 
-encrypt_2(Ctx, Plain, Keys, ResEncrypt, ResCipher, !IO) :-
+encrypt_2(Op, Ctx, Plain, Keys, ResEncrypt, ResCipher, !IO) :-
     gpgme_data_new_from_string(Plain, ResPlainData, !IO),
     (
         ResPlainData = ok(PlainData),
         gpgme_data_new(ResCipherData, !IO),
         (
             ResCipherData = ok(CipherData),
-            gpgme_op_encrypt(Ctx, Keys, [always_trust], PlainData,
+            gpgme_op_encrypt(Op, Ctx, Keys, [always_trust], PlainData,
                 CipherData, ResEncrypt, !IO),
             (
                 ResEncrypt = ok(_),

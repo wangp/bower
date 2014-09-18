@@ -6,6 +6,10 @@
 
 :- import_module io.
 
+:- type encrypt_op
+    --->    encrypt_only
+    ;       encrypt_sign.
+
 :- type encrypt_flag
     --->    always_trust
     ;       no_encrypt_to.
@@ -15,9 +19,9 @@
                 invalid_recipients :: list(invalid_key)
             ).
 
-:- pred gpgme_op_encrypt(ctx::in, list(key)::in, list(encrypt_flag)::in,
-    data::in, data::in, maybe_error(encrypt_result)::out, io::di, io::uo)
-    is det.
+:- pred gpgme_op_encrypt(encrypt_op::in, ctx::in, list(key)::in,
+    list(encrypt_flag)::in, data::in, data::in,
+    maybe_error(encrypt_result)::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -38,10 +42,10 @@
 
 %-----------------------------------------------------------------------------%
 
-gpgme_op_encrypt(Ctx, Recipients, Flags, data(Plain, _), data(Cipher, _), Res,
-        !IO) :-
+gpgme_op_encrypt(Op, Ctx, Recipients, Flags, data(Plain, _), data(Cipher, _),
+        Res, !IO) :-
     FlagsInt = encrypt_flags_to_int(Flags),
-    with_key_array(gpgme_op_encrypt_2(Ctx, FlagsInt, Plain, Cipher),
+    with_key_array(gpgme_op_encrypt_2(Op, Ctx, FlagsInt, Plain, Cipher),
         Recipients, {Ok, Error}, !IO),
     (
         Ok = yes,
@@ -64,23 +68,30 @@ encrypt_flags_to_int(Flags) = list.foldl(or_encrypt_flag, Flags, 0).
     X = X0 | F;
 ").
 
-:- pred gpgme_op_encrypt_2(ctx::in, int::in, gpgme_data::in, gpgme_data::in,
-    gpgme_key_array::in, {bool, string}::out, io::di, io::uo) is det.
+:- pred gpgme_op_encrypt_2(encrypt_op::in, ctx::in, int::in, gpgme_data::in,
+    gpgme_data::in, gpgme_key_array::in, {bool, string}::out, io::di, io::uo)
+    is det.
 
-gpgme_op_encrypt_2(Ctx, Flags, Plain, Cipher, Recp, {Ok, Error}, !IO) :-
-    gpgme_op_encrypt_3(Ctx, Flags, Plain, Cipher, Recp, Ok, Error, !IO).
+gpgme_op_encrypt_2(Op, Ctx, Flags, Plain, Cipher, Recp, {Ok, Error}, !IO) :-
+    gpgme_op_encrypt_3(sign(Op), Ctx, Flags, Plain, Cipher, Recp, Ok, Error,
+        !IO).
 
-:- pred gpgme_op_encrypt_3(ctx::in, int::in, gpgme_data::in, gpgme_data::in,
-    gpgme_key_array::in, bool::out, string::out, io::di, io::uo) is det.
+:- pred gpgme_op_encrypt_3(bool::in, ctx::in, int::in, gpgme_data::in,
+    gpgme_data::in, gpgme_key_array::in, bool::out, string::out,
+    io::di, io::uo) is det.
 
 :- pragma foreign_proc("C",
-    gpgme_op_encrypt_3(Ctx::in, Flags::in, Plain::in, Cipher::in, Recp::in,
-        Ok::out, Error::out, _IO0::di, _IO::uo),
+    gpgme_op_encrypt_3(Sign::in, Ctx::in, Flags::in, Plain::in, Cipher::in,
+        Recp::in, Ok::out, Error::out, _IO0::di, _IO::uo),
     [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io],
 "
     gpgme_error_t err;
 
-    err = gpgme_op_encrypt(Ctx, Recp, Flags, Plain, Cipher);
+    if (Sign) {
+        err = gpgme_op_encrypt_sign(Ctx, Recp, Flags, Plain, Cipher);
+    } else {
+        err = gpgme_op_encrypt(Ctx, Recp, Flags, Plain, Cipher);
+    }
     if (err == GPG_ERR_NO_ERROR) {
         Ok = MR_YES;
         Error = MR_make_string_const("""");
@@ -89,6 +100,11 @@ gpgme_op_encrypt_2(Ctx, Flags, Plain, Cipher, Recp, {Ok, Error}, !IO) :-
         Error = _gpgme_error_to_string(err);
     }
 ").
+
+:- func sign(encrypt_op) = bool.
+
+sign(encrypt_only) = no.
+sign(encrypt_sign) = yes.
 
 %-----------------------------------------------------------------------------%
 
