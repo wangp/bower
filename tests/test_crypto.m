@@ -12,9 +12,11 @@
 
 :- implementation.
 
+:- import_module bool.
 :- import_module list.
 :- import_module maybe.
 :- import_module pretty_printer.
+:- import_module string.
 
 :- import_module data.
 :- import_module gmime.
@@ -26,6 +28,7 @@
 :- import_module gpgme.gmime.
 :- import_module gpgme.key.
 :- import_module gpgme.sign.
+:- import_module gpgme.signer.
 :- import_module gpgme.verify.
 
 :- type op
@@ -33,8 +36,8 @@
     ;       decrypt_verify(string)
     ;       verify_detached(string, string)
     ;       verify_clearsigned(string)
-    ;       sign(string)
-    ;       encrypt(encrypt_op, string, list(string)).
+    ;       sign(string, string)
+    ;       encrypt(maybe(string), string, list(string)).
 
 %-----------------------------------------------------------------------------%
 
@@ -78,11 +81,11 @@ main(!IO) :-
             ResRead = error(Error),
             report_error(Error, !IO)
         )
-    ; Args = ["--sign", FileName] ->
+    ; Args = ["--signer", Signer, "--sign", FileName] ->
         read_file_as_string(FileName, ResRead, !IO),
         (
             ResRead = ok(Text),
-            main_1(sign(Text), !IO)
+            main_1(sign(Signer, Text), !IO)
         ;
             ResRead = error(Error),
             report_error(Error, !IO)
@@ -90,16 +93,17 @@ main(!IO) :-
     ;
         (
             Args = ["--encrypt", FileName | Recipients],
-            Op = encrypt_only
+            MaybeSigner = no
         ;
-            Args = ["--encrypt-sign", FileName | Recipients],
-            Op = encrypt_sign
+            Args = ["--signer", Signer, "--encrypt-sign", FileName
+                | Recipients],
+            MaybeSigner = yes(Signer)
         )
     ->
         read_file_as_string(FileName, ResRead, !IO),
         (
             ResRead = ok(Text),
-            main_1(encrypt(Op, Text, Recipients), !IO)
+            main_1(encrypt(MaybeSigner, Text, Recipients), !IO)
         ;
             ResRead = error(Error),
             report_error(Error, !IO)
@@ -203,8 +207,8 @@ main_2(Ctx, Op, !IO) :-
     ).
 
 main_2(Ctx, Op, !IO) :-
-    Op = sign(Text),
-    sign_detached(Ctx, Text, ResSign, ResSig, !IO),
+    Op = sign(Signer, Text),
+    sign_detached(Ctx, Signer, Text, ResSign, ResSig, !IO),
     (
         ResSign = ok(SignResult),
         write_string("SignResult:\n", !IO),
@@ -224,8 +228,8 @@ main_2(Ctx, Op, !IO) :-
     ).
 
 main_2(Ctx, Op, !IO) :-
-    Op = encrypt(EncryptOp, Text, Recipients),
-    encrypt(EncryptOp, Ctx, Text, Recipients, ResEncrypt, ResCipher, !IO),
+    Op = encrypt(MaybeSigner, Text, Recipients),
+    encrypt(Ctx, MaybeSigner, Text, Recipients, ResEncrypt, ResCipher, !IO),
     (
         ResEncrypt = ok(EncryptResult),
         write_string("EncryptResult:\n", !IO),
@@ -391,17 +395,31 @@ verify_clearsigned(Ctx, Sig, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred sign_detached(ctx::in, string::in, maybe_error(sign_result)::out,
+:- pred sign_detached(ctx::in, string::in, string::in,
+    maybe_error(sign_result)::out, maybe_error(string)::out, io::di, io::uo)
+    is det.
+
+sign_detached(Ctx, Signer, Plain, ResSign, ResSig, !IO) :-
+    set_signer(Ctx, Signer, ResSigner, !IO),
+    (
+        ResSigner = ok,
+        sign_detached_2(Ctx, Plain, ResSign, ResSig, !IO)
+    ;
+        ResSigner = error(Error),
+        ResSign = error(Error),
+        ResSig = error("sign failed")
+    ).
+
+:- pred sign_detached_2(ctx::in, string::in, maybe_error(sign_result)::out,
     maybe_error(string)::out, io::di, io::uo) is det.
 
-sign_detached(Ctx, Plain, ResSign, ResSig, !IO) :-
+sign_detached_2(Ctx, Plain, ResSign, ResSig, !IO) :-
     gpgme_data_new_from_string(Plain, ResPlainData, !IO),
     (
         ResPlainData = ok(PlainData),
         gpgme_data_new(ResSigData, !IO),
         (
             ResSigData = ok(SigData),
-            % XXX set signers
             gpgme_op_sign_detached(Ctx, PlainData, SigData, ResSign, !IO),
             (
                 ResSign = ok(_),
@@ -423,32 +441,112 @@ sign_detached(Ctx, Plain, ResSign, ResSig, !IO) :-
         ResSig = error("sign failed")
     ).
 
+:- pred set_signer(ctx::in, string::in, maybe_error::out, io::di, io::uo)
+    is det.
+
+set_signer(Ctx, Signer, Res, !IO) :-
+    gpgme_op_keylist(Ctx, yes(Signer), secret_only, ResKeys, !IO),
+    (
+        ResKeys = ok(Keys),
+        (
+            Keys = [],
+            Res = error("no secret keys found")
+        ;
+            Keys = [_ | _],
+            gpgme_signers_clear(Ctx, !IO),
+            add_signers(Ctx, Keys, Res, !IO),
+            unref_keys(Keys, !IO)
+        )
+    ;
+        ResKeys = error(Error),
+        Res = error(Error)
+    ).
+
+:- pred add_signers(ctx::in, list(key)::in, maybe_error::out, io::di, io::uo)
+    is det.
+
+add_signers(_Ctx, [], Res, !IO) :-
+    Res = ok.
+add_signers(Ctx, [Key | Keys], Res, !IO) :-
+    % Not really sure how useful these are:
+    % gpgme / gpg seems not to tell correctly that a key is expired.
+    KeyInfo = get_key_info(Key),
+    KeyInfo ^ key_revoked = Revoked,
+    KeyInfo ^ key_expired = Expired,
+    KeyInfo ^ key_can_sign = CanSign,
+    (
+        Revoked = no,
+        Expired = no,
+        CanSign = yes
+    ->
+        io.write_string("adding key: " ++ describe_key(KeyInfo) ++ "\n", !IO),
+        gpgme_signers_add(Ctx, Key, Res0, !IO)
+    ;
+        io.write_string("skipped key: " ++ describe_key(KeyInfo) ++ "\n", !IO),
+        Res0 = ok
+    ),
+    (
+        Res0 = ok,
+        add_signers(Ctx, Keys, Res, !IO)
+    ;
+        Res0 = error(Error),
+        Res = error(Error)
+    ).
+
+:- func describe_key(key_info) = string.
+
+describe_key(KeyInfo) = Desc :-
+    UserIds = KeyInfo ^ key_userids,
+    (
+        UserIds = [],
+        Desc = "(no user id)" % should not happen
+    ;
+        UserIds = [UserId | _],
+        Desc = UserId ^ uid
+    ).
+
 %-----------------------------------------------------------------------------%
 
-:- pred encrypt(encrypt_op::in, ctx::in, string::in, list(string)::in,
+:- pred encrypt(ctx::in, maybe(string)::in, string::in, list(string)::in,
     maybe_error(encrypt_result)::out, maybe_error(string)::out,
     io::di, io::uo) is det.
 
-encrypt(Op, Ctx, Plain, Recipients, ResEncrypt, ResCipher, !IO) :-
-    get_keys(Ctx, Recipients, ResKeys, [], Keys, !IO),
+encrypt(Ctx, MaybeSigner, Plain, Recipients, ResEncrypt, ResCipher, !IO) :-
     (
-        ResKeys = ok,
-        Keys = [],
-        ResEncrypt = error("no keys"),
-        ResCipher = error("encrypt failed")
+        MaybeSigner = yes(Signer),
+        set_signer(Ctx, Signer, ResSigner, !IO),
+        Op = encrypt_sign
     ;
-        ResKeys = ok,
-        Keys = [_ | _],
-        io.write_string("Encryption keys:\n", !IO),
-        list.foldl(write_key_info, Keys, !IO),
-        io.flush_output(!IO),
-        encrypt_2(Op, Ctx, Plain, Keys, ResEncrypt, ResCipher, !IO)
+        MaybeSigner = no,
+        ResSigner = ok,
+        Op = encrypt_only
+    ),
+    (
+        ResSigner = ok,
+        get_keys(Ctx, Recipients, ResKeys, [], Keys, !IO),
+        (
+            ResKeys = ok,
+            Keys = [],
+            ResEncrypt = error("no recipient keys"),
+            ResCipher = error("encrypt failed")
+        ;
+            ResKeys = ok,
+            Keys = [_ | _],
+            io.write_string("Encryption keys:\n", !IO),
+            list.foldl(write_key_info, Keys, !IO),
+            io.flush_output(!IO),
+            encrypt_2(Op, Ctx, Plain, Keys, ResEncrypt, ResCipher, !IO)
+        ;
+            ResKeys = error(Error),
+            ResEncrypt = error(Error),
+            ResCipher = error("encrypt failed")
+        ),
+        unref_keys(Keys, !IO)
     ;
-        ResKeys = error(Error),
+        ResSigner = error(Error),
         ResEncrypt = error(Error),
         ResCipher = error("encrypt failed")
-    ),
-    unref_keys(Keys, !IO).
+    ).
 
 :- pred encrypt_2(encrypt_op::in, ctx::in, string::in, list(key)::in,
     maybe_error(encrypt_result)::out, maybe_error(string)::out,

@@ -135,6 +135,7 @@
 :- include_module gpgme.encrypt.
 :- include_module gpgme.key.
 :- include_module gpgme.sign.
+:- include_module gpgme.signer.
 :- include_module gpgme.verify.
 
 % Misc
