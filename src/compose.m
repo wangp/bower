@@ -61,9 +61,7 @@
 :- import_module maybe.
 :- import_module pair.
 :- import_module require.
-:- import_module stream.
 :- import_module string.
-:- import_module string.builder.
 
 :- import_module addressbook.
 :- import_module call_system.
@@ -87,7 +85,7 @@
 :- import_module send_util.
 :- import_module string_util.
 :- import_module tags.
-:- use_module rfc2231.
+:- import_module write_message.
 
 :- type header_type
     --->    from
@@ -1584,51 +1582,30 @@ tag_replied_message(Config, Headers, Res, !IO) :-
 
 create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
         Attachments, Res, !IO) :-
-    some [!State] (
-        !:State = init,
-        generate_date_msg_id(Date, MessageId, !IO),
-        write_most_headers(string.builder.handle, Prepare, Headers,
-            ParsedHeaders, Date, MessageId, HeaderError, !State),
-        (
-            HeaderError = error(Error),
-            stop_at_header_error(Prepare) = yes
-        ->
-            Res = error(Error)
-        ;
-            HeaderString = to_string(!.State),
-            maybe_mime(Prepare, Attachments, MaybeMIME, !IO),
-            write_temp_message_file(Config, HeaderString, MaybeMIME, Text,
-                Attachments, Res, !IO)
-        )
-    ).
+    generate_date_msg_id(Date, MessageId, !IO),
+    generate_boundary(Boundary, !IO),
+    generate_message_spec(Prepare, Headers, ParsedHeaders, Date, MessageId,
+        boundary(Boundary), Text, Attachments, Spec),
+    create_temp_message_file_2(Config, Prepare, Spec, Res, !IO).
 
-:- func stop_at_header_error(prepare_temp) = bool.
+:- pred create_temp_message_file_2(prog_config::in, prepare_temp::in,
+    message_spec::in, maybe_error(string)::out, io::di, io::uo) is det.
 
-stop_at_header_error(prepare_send) = yes.
-stop_at_header_error(prepare_edit) = no.
-stop_at_header_error(prepare_postpone) = no.
-
-:- pred write_temp_message_file(prog_config::in, string::in, maybe(mime)::in,
-    string::in, list(attachment)::in, maybe_error(string)::out, io::di, io::uo)
-    is det.
-
-write_temp_message_file(Config, HeaderString, MaybeMIME, Text, Attachments,
-        Res, !IO) :-
+create_temp_message_file_2(Config, Prepare, Spec, Res, !IO) :-
     io.make_temp(Filename, !IO),
     io.open_output(Filename, ResOpen, !IO),
     (
         ResOpen = ok(Stream),
-        promise_equivalent_solutions [Res, !:IO] (
-          try [io(!IO)] (
-            write_temp_message_file_2(Stream, Config, HeaderString, MaybeMIME,
-                Text, Attachments, !IO),
-            io.close_output(Stream, !IO)
-          )
-          then
+        write_message(Stream, Config, Spec, allow_header_error(Prepare),
+            ResWrite, !IO),
+        io.close_output(Stream, !IO),
+        (
+            ResWrite = ok,
             Res = ok(Filename)
-          catch_any Excp ->
+        ;
+            ResWrite = error(Error),
             io.remove_file(Filename, _, !IO),
-            Res = error("Caught exception: " ++ string(Excp))
+            Res = error(Error)
         )
     ;
         ResOpen = error(_Error),
@@ -1636,328 +1613,178 @@ write_temp_message_file(Config, HeaderString, MaybeMIME, Text, Attachments,
         Res = error(Message)
     ).
 
-:- pred write_temp_message_file_2(io.output_stream::in, prog_config::in,
-    string::in, maybe(mime)::in, string::in, list(attachment)::in, io::di,
-    io::uo) is det.
+:- func allow_header_error(prepare_temp) = bool.
 
-write_temp_message_file_2(Stream, Config, HeaderString, MaybeMIME, Text,
-        Attachments, !IO) :-
-    % XXX detect charset
-    Charset = "utf-8",
-    io.write_string(Stream, HeaderString, !IO),
-    write_mime_headers(Stream, MaybeMIME, Charset, !IO),
+allow_header_error(prepare_send) = no.
+allow_header_error(prepare_edit) = yes.
+allow_header_error(prepare_postpone) = yes.
 
-    % End header fields.
-    io.nl(Stream, !IO),
+:- pred generate_message_spec(prepare_temp::in, headers::in,
+    parsed_headers::in, header_value::in, header_value::in, boundary::in,
+    string::in, list(attachment)::in, message_spec::out) is det.
 
-    % Begin body.
+generate_message_spec(Prepare, Headers, ParsedHeaders, Date, MessageId,
+        Boundary, Text, Attachments, Spec) :-
+    generate_headers(Prepare, Headers, ParsedHeaders, Date, MessageId,
+        WriteHeaders),
     (
-        MaybeMIME = no,
-        io.write_string(Stream, Text, !IO)
+        ( Prepare = prepare_send
+        ; Prepare = prepare_postpone
+        ),
+        % XXX detect charset
+        TextPart = discrete(text_plain(yes(utf8)), inline, cte_8bit,
+            text(Text)),
+        (
+            Attachments = [],
+            % Pure ASCII messages do not require MIME but it doesn't hurt.
+            MimeMessage = mime_message(mime_version_1_0, TextPart)
+        ;
+            Attachments = [_ | _],
+            MimeMessage = mime_message(mime_version_1_0, MultiPart),
+            MultiPart = composite(multipart_mixed, Boundary, inline, cte_8bit,
+                [TextPart | AttachmentParts]),
+            list.map(generate_attachment_mime_part, Attachments,
+                AttachmentParts)
+        ),
+        Spec = message_spec(WriteHeaders, mime(MimeMessage))
     ;
-        MaybeMIME = yes(mime_single_part),
-        io.write_string(Stream, Text, !IO)
-    ;
-        MaybeMIME = yes(mime_multipart(Boundary)),
-        write_mime_part_boundary(Stream, Boundary, !IO),
-        write_mime_part_text(Stream, Charset, Text, !IO),
-        list.foldl(write_mime_part_attachment(Stream, Config, Boundary),
-            Attachments, !IO),
-        write_mime_final_boundary(Stream, Boundary, !IO)
+        Prepare = prepare_edit,
+        Spec = message_spec(WriteHeaders, plain(plain_body(Text)))
     ).
 
-%-----------------------------------------------------------------------------%
+:- pred generate_headers(prepare_temp::in, headers::in, parsed_headers::in,
+    header_value::in, header_value::in, list(header)::out) is det.
 
-:- pred write_most_headers(Stream::in, prepare_temp::in, headers::in,
-    parsed_headers::in, header_value::in, header_value::in, maybe_error::out,
-    State::di, State::uo) is det <= stream.writer(Stream, string, State).
-
-write_most_headers(Stream, Prepare, Headers, ParsedHeaders, Date, MessageId,
-        !:Error, !State) :-
+generate_headers(Prepare, Headers, ParsedHeaders, Date, MessageId,
+        WriteHeaders) :-
     Headers = headers(_Date, _From, _To, _Cc, _Bcc, Subject, _ReplyTo,
         References, InReplyTo, RestHeaders),
     ParsedHeaders = parsed_headers(From, To, Cc, Bcc, ReplyTo),
-    (
-        Prepare = prepare_send,
-        write_as_unstructured_header(no_encoding, Stream,
-            "Date", Date, !State),
-        write_as_unstructured_header(no_encoding, Stream,
-            "Message-ID", MessageId, !State)
-    ;
-        Prepare = prepare_postpone,
-        write_as_unstructured_header(no_encoding, Stream,
-            "Date", Date, !State)
-    ;
-        Prepare = prepare_edit
-    ),
-    (
-        ( Prepare = prepare_send
-        ; Prepare = prepare_postpone
+    some [!Acc] (
+        !:Acc = [],
+        (
+            ( Prepare = prepare_send
+            ; Prepare = prepare_postpone
+            ),
+            cons(header(field_name("Date"), unstructured(Date, no_encoding)),
+                !Acc)
+        ;
+            Prepare = prepare_edit
         ),
-        WriteAsUnstructured = skip_if_empty_header_value(
-            write_as_unstructured_header(rfc2047_encoding)),
-        WriteAddrs = skip_if_empty_list(
-            write_address_list_header(rfc2047_encoding)),
-        WriteRefs = skip_if_empty_header_value(write_references_header)
-    ;
-        Prepare = prepare_edit,
-        WriteAsUnstructured = write_as_unstructured_header(no_encoding),
-        WriteAddrs = write_address_list_header(no_encoding),
-        WriteRefs = write_references_header
-    ),
-    !:Error = ok,
-    WriteAddrs(Stream, "From", From, !Error, !State),
-    WriteAddrs(Stream, "To", To, !Error, !State),
-    WriteAddrs(Stream, "Cc", Cc, !Error, !State),
-    WriteAddrs(Stream, "Bcc", Bcc, !Error, !State),
-    WriteAsUnstructured(Stream, "Subject", Subject, !State),
-    WriteAddrs(Stream, "Reply-To", ReplyTo, !Error, !State),
-    WriteRefs(Stream, "In-Reply-To", InReplyTo, !State),
-    (
-        ( Prepare = prepare_send
-        ; Prepare = prepare_postpone
+        (
+            Prepare = prepare_send,
+            cons(header(field_name("Message-ID"), unstructured(MessageId,
+                no_encoding)), !Acc)
+        ;
+            Prepare = prepare_postpone
+        ;
+            Prepare = prepare_edit
         ),
-        WriteRefs(Stream, "References", References, !State)
-    ;
-        Prepare = prepare_edit
-    ),
-    map.foldl(pred(K::in, V::in, IO0::di, IO::uo) is det :-
-        WriteAsUnstructured(Stream, K, V, IO0, IO), RestHeaders, !State).
+        (
+            ( Prepare = prepare_send
+            ; Prepare = prepare_postpone
+            ),
+            SkipEmpty = yes,
+            Options = rfc2047_encoding
+        ;
+            Prepare = prepare_edit,
+            SkipEmpty = no,
+            Options = no_encoding
+        ),
+        list.foldl(maybe_cons(SkipEmpty), [
+            header(field_name("From"), address_list(From, Options)),
+            header(field_name("To"), address_list(To, Options)),
+            header(field_name("Cc"), address_list(Cc, Options)),
+            header(field_name("Bcc"), address_list(Bcc, Options)),
+            header(field_name("Subject"), unstructured(Subject, Options)),
+            header(field_name("Reply-To"), address_list(ReplyTo, Options)),
+            header(field_name("In-Reply-To"), references(InReplyTo))],
+            !Acc),
+        (
+            ( Prepare = prepare_send
+            ; Prepare = prepare_postpone
+            ),
+            cons(header(field_name("References"), references(References)),
+                !Acc)
+        ;
+            Prepare = prepare_edit
+        ),
+        map.foldl(maybe_cons_unstructured(SkipEmpty, Options), RestHeaders,
+            !Acc),
+        list.reverse(!.Acc, WriteHeaders)
+    ).
 
-:- pred skip_if_empty_header_value(pred(Stream, string, header_value,
-    State, State), Stream, string, header_value, State, State)
-    <= stream.writer(Stream, string, State).
-:- mode skip_if_empty_header_value(in(pred(in, in, in, di, uo) is det),
-    in, in, in, di, uo) is det.
+:- pred maybe_cons(bool::in, header::in, list(header)::in, list(header)::out)
+    is det.
 
-skip_if_empty_header_value(Pred, Stream, Field, Value, !IO) :-
-    ( empty_header_value(Value) ->
+maybe_cons(SkipEmpty, Header, !Acc) :-
+    Header = header(_, Body),
+    (
+        SkipEmpty = yes,
+        is_empty_field_body(Body)
+    ->
         true
     ;
-        Pred(Stream, Field, Value, !IO)
+        cons(Header, !Acc)
     ).
 
-:- pred skip_if_empty_list(pred(Stream, string, list(T), U, U, State, State),
-    Stream, string, list(T), U, U, State, State)
-    <= stream.writer(Stream, string, State).
-:- mode skip_if_empty_list(in(pred(in, in, in, in, out, di, uo) is det),
-    in, in, in, in, out, di, uo) is det.
+:- pred maybe_cons_unstructured(bool::in, write_header_options::in,
+    string::in, header_value::in, list(header)::in, list(header)::out) is det.
 
-skip_if_empty_list(Pred, Stream, Field, Value, !Acc, !State) :-
+maybe_cons_unstructured(SkipEmpty, Options, FieldName, Value, !Acc) :-
     (
-        Value = []
+        SkipEmpty = yes,
+        is_empty_header_value(Value)
+    ->
+        true
     ;
-        Value = [_ | _],
-        Pred(Stream, Field, Value, !Acc, !State)
+        cons(header(field_name(FieldName), unstructured(Value, Options)), !Acc)
     ).
 
-%-----------------------------------------------------------------------------%
+:- pred generate_attachment_mime_part(attachment::in, mime_part::out) is det.
 
-:- type mime
-    --->    mime_single_part
-    ;       mime_multipart(string). % boundary
-
-:- pred maybe_mime(prepare_temp::in, list(attachment)::in, maybe(mime)::out,
-    io::di, io::uo) is det.
-
-maybe_mime(Prepare, Attachments, MaybeMIME, !IO) :-
+generate_attachment_mime_part(Attachment, MimePart) :-
     (
-        ( Prepare = prepare_send
-        ; Prepare = prepare_postpone
+        Attachment = old_attachment(OldPart),
+        OldType = OldPart ^ pt_type,
+        OldContent = OldPart ^ pt_content,
+        MaybeFileName0 = OldPart ^ pt_filename,
+        (
+            MaybeFileName0 = yes(FileName),
+            MaybeFileName = yes(filename(FileName))
+        ;
+            MaybeFileName0 = no,
+            MaybeFileName = no
         ),
         (
-            Attachments = [],
-            % This is only really necessary if the body is non-ASCII.
-            MaybeMIME = yes(mime_single_part)
+            OldContent = text(Text),
+            MimePart = discrete(content_type(OldType),
+                attachment(MaybeFileName), cte_8bit, text(Text))
         ;
-            Attachments = [_ | _],
-            generate_boundary(Boundary, !IO),
-            MaybeMIME = yes(mime_multipart(Boundary))
-        )
-    ;
-        Prepare = prepare_edit,
-        MaybeMIME = no
-    ).
-
-:- pred write_mime_headers(io.output_stream::in, maybe(mime)::in, string::in,
-    io::di, io::uo) is det.
-
-write_mime_headers(_Stream, no, _Charset, !IO).
-write_mime_headers(Stream, yes(MIME), Charset, !IO) :-
-    write_mime_version(Stream, !IO),
-    (
-        MIME = mime_single_part,
-        write_content_type(Stream, "text/plain", yes(Charset), !IO)
-    ;
-        MIME = mime_multipart(Boundary),
-        write_content_type_multipart_mixed(Stream, Boundary, !IO)
-    ),
-    write_content_disposition_inline(Stream, !IO),
-    write_content_transfer_encoding(Stream, "8bit", !IO).
-
-:- pred write_mime_version(io.output_stream::in, io::di, io::uo) is det.
-
-write_mime_version(Stream, !IO) :-
-    io.write_string(Stream, "MIME-Version: 1.0\n", !IO).
-
-:- pred write_content_type(io.output_stream::in, string::in,
-    maybe(string)::in, io::di, io::uo) is det.
-
-write_content_type(Stream, Type, MaybeCharset, !IO) :-
-    io.write_string(Stream, "Content-Type: ", !IO),
-    io.write_string(Stream, Type, !IO),
-    (
-        MaybeCharset = yes(Charset),
-        io.write_string(Stream, "; charset=", !IO),
-        io.write_string(Stream, Charset, !IO)
-    ;
-        MaybeCharset = no
-    ),
-    io.write_string(Stream, "\n", !IO).
-
-:- pred write_content_type_multipart_mixed(io.output_stream::in, string::in,
-    io::di, io::uo) is det.
-
-write_content_type_multipart_mixed(Stream, Boundary, !IO) :-
-    io.write_string(Stream, "Content-Type: multipart/mixed; boundary=""", !IO),
-    io.write_string(Stream, Boundary, !IO),
-    io.write_string(Stream, """\n", !IO).
-
-:- pred write_content_disposition_inline(io.output_stream::in,
-    io::di, io::uo) is det.
-
-write_content_disposition_inline(Stream, !IO) :-
-    io.write_string(Stream, "Content-Disposition: inline\n", !IO).
-
-:- pred write_content_disposition_attachment(io.output_stream::in,
-    maybe(string)::in, io::di, io::uo) is det.
-
-write_content_disposition_attachment(Stream, MaybeFileName, !IO) :-
-    io.write_string(Stream, "Content-Disposition: attachment", !IO),
-    (
-        MaybeFileName = yes(FileName),
-        Attr = attribute("filename"),
-        Value = quoted_string(make_quoted_string(FileName)),
-        rfc2231.encode_parameter(Attr - Value, Param),
-        parameter_to_string(Param, ParamString, Valid),
-        (
-            Valid = yes,
-            io.write_string(Stream, "; ", !IO),
-            io.write_string(Stream, ParamString, !IO)
+            OldContent = unsupported,
+            MimePart = discrete(content_type(OldType),
+                attachment(MaybeFileName), cte_base64,
+                external_base64(OldPart))
         ;
-            Valid = no
-            % Shouldn't happen.
-        )
-    ;
-        MaybeFileName = no
-    ),
-    io.nl(Stream, !IO).
-
-:- pred write_content_transfer_encoding(io.output_stream::in,
-    string::in, io::di, io::uo) is det.
-
-write_content_transfer_encoding(Stream, CTE, !IO) :-
-    io.write_string(Stream, "Content-Transfer-Encoding: ", !IO),
-    io.write_string(Stream, CTE, !IO),
-    io.write_string(Stream, "\n", !IO).
-
-:- pred write_mime_part_boundary(io.output_stream::in, string::in,
-    io::di, io::uo) is det.
-
-write_mime_part_boundary(Stream, Boundary, !IO) :-
-    io.write_string(Stream, "\n--", !IO),
-    io.write_string(Stream, Boundary, !IO),
-    io.nl(Stream, !IO).
-
-:- pred write_mime_final_boundary(io.output_stream::in, string::in,
-    io::di, io::uo) is det.
-
-write_mime_final_boundary(Stream, Boundary, !IO) :-
-    io.write_string(Stream, "\n--", !IO),
-    io.write_string(Stream, Boundary, !IO),
-    io.write_string(Stream, "--\n", !IO).
-
-:- pred write_mime_part_text(io.output_stream::in, string::in, string::in,
-    io::di, io::uo) is det.
-
-write_mime_part_text(Stream, Charset, Text, !IO) :-
-    write_content_type(Stream, "text/plain", yes(Charset), !IO),
-    write_content_disposition_inline(Stream, !IO),
-    write_content_transfer_encoding(Stream, "8bit", !IO),
-    io.nl(Stream, !IO),
-    io.write_string(Stream, Text, !IO).
-
-:- pred write_mime_part_attachment(io.output_stream::in, prog_config::in,
-    string::in, attachment::in, io::di, io::uo) is det.
-
-write_mime_part_attachment(Stream, Config, Boundary, Attachment, !IO) :-
-    (
-        Attachment = old_attachment(Part),
-        Type = Part ^ pt_type,
-        Content = Part ^ pt_content,
-        (
-            Content = text(ContentString),
-            CTE = "8bit"
-        ;
-            Content = unsupported,
-            CTE = "base64",
-            get_non_text_part_base64(Config, Part, ContentString, !IO)
-        ;
-            Content = subparts(_),
+            OldContent = subparts(_),
             unexpected($module, $pred, "nested part")
         ;
-            Content = encapsulated_messages(_),
+            OldContent = encapsulated_messages(_),
             unexpected($module, $pred, "encapsulated_messages")
-        ),
-        MaybeFileName = Part ^ pt_filename
+        )
     ;
         Attachment = new_attachment(Type, Content, FileName, _Size),
-        MaybeFileName = yes(FileName),
+        MaybeFileName = yes(filename(FileName)),
         (
-            Content = text(ContentString),
-            CTE = "8bit"
+            Content = text(Text),
+            % XXX detect charset
+            MimePart = discrete(text_plain(yes(utf8)),
+                attachment(MaybeFileName), cte_8bit, text(Text))
         ;
-            Content = binary_base64(ContentString),
-            CTE = "base64"
+            Content = binary_base64(Base64),
+            MimePart = discrete(content_type(Type),
+                attachment(MaybeFileName), cte_base64, text(Base64))
         )
-    ),
-
-    write_mime_part_boundary(Stream, Boundary, !IO),
-    ( CTE = "base64" ->
-        write_content_type(Stream, Type, no, !IO)
-    ;
-        % XXX detect charset
-        Charset = "utf-8",
-        write_content_type(Stream, Type, yes(Charset), !IO)
-    ),
-    write_content_disposition_attachment(Stream, MaybeFileName, !IO),
-    write_content_transfer_encoding(Stream, CTE, !IO),
-    io.nl(Stream, !IO),
-    io.write_string(Stream, ContentString, !IO).
-
-:- pred get_non_text_part_base64(prog_config::in, part::in, string::out,
-    io::di, io::uo) is det.
-
-get_non_text_part_base64(Config, Part, Content, !IO) :-
-    Part = part(MessageId, MaybePartId, _, _, _, _, _),
-    (
-        MaybePartId = yes(PartId),
-        get_notmuch_command(Config, Notmuch),
-        make_quoted_command(Notmuch, [
-            "show", "--format=raw", "--part=" ++ from_int(PartId),
-            message_id_to_search_term(MessageId)
-        ], redirect_input("/dev/null"), no_redirect, Command),
-        call_system_capture_stdout(Command ++ " |base64", no, CallRes, !IO)
-    ;
-        MaybePartId = no,
-        CallRes = error(io.make_io_error("no part id"))
-    ),
-    (
-        CallRes = ok(Content)
-    ;
-        CallRes = error(Error),
-        % XXX handle this gracefully
-        unexpected($module, $pred, io.error_message(Error))
     ).
 
 %-----------------------------------------------------------------------------%
