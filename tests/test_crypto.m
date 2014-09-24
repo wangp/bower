@@ -22,6 +22,7 @@
 :- import_module gmime.
 :- import_module gmime_adaptor.
 :- import_module gpgme.
+:- import_module gpgme.data.
 :- import_module gpgme.decrypt.
 :- import_module gpgme.decrypt_verify.
 :- import_module gpgme.encrypt.
