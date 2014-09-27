@@ -17,6 +17,10 @@
     Stream::in, State::di, State::uo) is det
     <= stream.writer(Stream, char, State).
 
+:- pred encode_wrap(string::in, int::in, int::in,
+    Stream::in, State::di, State::uo) is det
+    <= stream.writer(Stream, char, State).
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -80,13 +84,19 @@ next_value(!Cursor, CursorEnd, Value) :-
 encode(Plain, PlainPos0, PlainEnd, Stream, !State) :-
     cursor_offset(Plain, PlainPos0, Cursor0),
     cursor_offset(Plain, PlainEnd, CursorEnd),
-    encode_loop(Cursor0, _Cursor, CursorEnd, Stream, !State).
+    encode_loop(Cursor0, _Cursor, CursorEnd, Stream, !State, -1, _Wrap).
+
+encode_wrap(Plain, PlainPos0, PlainEnd, Stream, !State) :-
+    cursor_offset(Plain, PlainPos0, Cursor0),
+    cursor_offset(Plain, PlainEnd, CursorEnd),
+    encode_loop(Cursor0, _Cursor, CursorEnd, Stream, !State,
+        wrap_width, _Wrap).
 
 :- pred encode_loop(cursor::in, cursor::out, cursor::in,
-    Stream::in, State::di, State::uo) is det
+    Stream::in, State::di, State::uo, int::in, int::out) is det
     <= stream.writer(Stream, char, State).
 
-encode_loop(!Cursor, CursorEnd, Stream, !State) :-
+encode_loop(!Cursor, CursorEnd, Stream, !State, !Wrap) :-
     ( next_byte(!Cursor, CursorEnd, ByteA) ->
         ValueA = mask_rsh(ByteA, 0xfc, 2),
         encode_value(Stream, ValueA, !State),
@@ -100,7 +110,8 @@ encode_loop(!Cursor, CursorEnd, Stream, !State) :-
                 ValueD = mask_rsh(ByteC, 0x3f, 0),
                 encode_value(Stream, ValueC, !State),
                 encode_value(Stream, ValueD, !State),
-                encode_loop(!Cursor, CursorEnd, Stream, !State)
+                maybe_wrap(Stream, !State, !Wrap),
+                encode_loop(!Cursor, CursorEnd, Stream, !State, !Wrap)
             ;
                 encode_value(Stream, ValueC0, !State),
                 pad(Stream, !State)
@@ -131,6 +142,23 @@ encode_value(Stream, Value, !State) :-
 
 pad(Stream, !State) :-
     stream.put(Stream, '=', !State).
+
+:- pred maybe_wrap(Stream::in, State::di, State::uo, int::in, int::out) is det
+    <= stream.writer(Stream, char, State).
+
+maybe_wrap(Stream, !State, Wrap0, Wrap) :-
+    ( Wrap0 < 0 ->
+        Wrap = Wrap0
+    ; Wrap0 - 4 = 0 ->
+        stream.put(Stream, '\n', !State),
+        Wrap = wrap_width
+    ;
+        Wrap = Wrap0 - 4
+    ).
+
+:- func wrap_width = int.
+
+wrap_width = 76.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%

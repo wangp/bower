@@ -12,6 +12,7 @@
 
 :- implementation.
 
+:- import_module bool.
 :- import_module char.
 :- import_module int.
 :- import_module list.
@@ -26,7 +27,9 @@ main(!IO) :-
     ( Args = ["-d"] ->
         test_decode(!IO)
     ; Args = ["-e"] ->
-        test_encode(!IO)
+        test_encode(no, !IO)
+    ; Args = ["-ew"] ->
+        test_encode(yes, !IO)
     ;
         io.set_exit_status(1, !IO)
     ).
@@ -58,14 +61,21 @@ test_decode(!IO) :-
         io.set_exit_status(1, !IO)
     ).
 
-:- pred test_encode(io::di, io::uo) is det.
+:- pred test_encode(bool::in, io::di, io::uo) is det.
 
-test_encode(!IO) :-
+test_encode(Wrap, !IO) :-
     io.read_file_as_string(ReadRes, !IO),
     (
         ReadRes = ok(Input),
+        (
+            Wrap = no,
+            Encode = base64.encode
+        ;
+            Wrap = yes,
+            Encode = base64.encode_wrap
+        ),
         io.stdout_stream(Stream, !IO),
-        base64.encode(Input, 0, string.length(Input), Stream, !IO)
+        Encode(Input, 0, string.length(Input), Stream, !IO)
     ;
         ReadRes = error(_, Error),
         io.stderr_stream(Stderr, !IO),
