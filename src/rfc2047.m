@@ -12,6 +12,7 @@
 
 :- implementation.
 
+:- import_module char.
 :- import_module list.
 :- import_module stream.
 
@@ -34,6 +35,13 @@
 ].
 :- instance stream.writer(octets_builder, base64.byte, octets) where [
     put(octets_builder, Byte, octets(Acc0), octets(Acc)) :- (
+        copy(Byte, UniqueByte),
+        Acc = [UniqueByte | Acc0]
+    )
+].
+:- instance stream.writer(octets_builder, char, octets) where [
+    put(octets_builder, Char, octets(Acc0), octets(Acc)) :- (
+        char.to_int(Char, Byte),
         copy(Byte, UniqueByte),
         Acc = [UniqueByte | Acc0]
     )

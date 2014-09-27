@@ -64,7 +64,7 @@ test_encode(!IO) :-
     io.read_file_as_string(ReadRes, !IO),
     (
         ReadRes = ok(Input),
-        io.stdout_binary_stream(Stream, !IO),
+        io.stdout_stream(Stream, !IO),
         base64.encode(Input, 0, string.length(Input), Stream, !IO)
     ;
         ReadRes = error(_, Error),

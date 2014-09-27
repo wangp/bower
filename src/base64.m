@@ -4,6 +4,7 @@
 :- module base64.
 :- interface.
 
+:- import_module char.
 :- import_module stream.
 
 :- type byte == int.
@@ -14,7 +15,7 @@
 
 :- pred encode(string::in, int::in, int::in,
     Stream::in, State::di, State::uo) is det
-    <= stream.writer(Stream, byte, State).
+    <= stream.writer(Stream, char, State).
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -83,7 +84,7 @@ encode(Plain, PlainPos0, PlainEnd, Stream, !State) :-
 
 :- pred encode_loop(cursor::in, cursor::out, cursor::in,
     Stream::in, State::di, State::uo) is det
-    <= stream.writer(Stream, byte, State).
+    <= stream.writer(Stream, char, State).
 
 encode_loop(!Cursor, CursorEnd, Stream, !State) :-
     ( next_byte(!Cursor, CursorEnd, ByteA) ->
@@ -114,21 +115,22 @@ encode_loop(!Cursor, CursorEnd, Stream, !State) :-
     ).
 
 :- pred encode_value(Stream::in, int::in, State::di, State::uo) is det
-    <= stream.writer(Stream, byte, State).
+    <= stream.writer(Stream, char, State).
 
 encode_value(Stream, Value, !State) :-
     ( val(Code, Value) ->
-        stream.put(Stream, Code, !State)
+        char.det_from_int(Code, Char),
+        stream.put(Stream, Char, !State)
     ;
         % Should never happen.
         pad(Stream, !State)
     ).
 
 :- pred pad(Stream::in, State::di, State::uo) is det
-    <= stream.writer(Stream, byte, State).
+    <= stream.writer(Stream, char, State).
 
 pad(Stream, !State) :-
-    stream.put(Stream, 61, !State).
+    stream.put(Stream, '=', !State).
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
