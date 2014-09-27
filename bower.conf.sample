@@ -163,5 +163,7 @@
 [color.compose]
   ; address = bold blue
   ; invalid = red
+  ; good_key = green
+  ; bad_key = red
 
 #-----------------------------------------------------------------------------#

@@ -6,14 +6,15 @@
 
 :- import_module io.
 
+:- import_module crypto.
 :- import_module prog_config.
 :- import_module screen.
 :- import_module view_common.
 
 %-----------------------------------------------------------------------------%
 
-:- pred open_index(prog_config::in, screen::in, string::in, common_history::in,
-    io::di, io::uo) is det.
+:- pred open_index(prog_config::in, crypto::in, screen::in, string::in,
+    common_history::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -59,6 +60,7 @@
 :- type index_info
     --->    index_info(
                 i_config            :: prog_config,
+                i_crypto            :: crypto,
                 i_scrollable        :: scrollable(index_line),
                 i_search_terms      :: string,
                 i_search_tokens     :: list(token),
@@ -161,7 +163,7 @@
 
 %-----------------------------------------------------------------------------%
 
-open_index(Config, Screen, SearchString, !.CommonHistory, !IO) :-
+open_index(Config, Crypto, Screen, SearchString, !.CommonHistory, !IO) :-
     time(Time, !IO),
     ( SearchString = "" ->
         SearchTokens = [],
@@ -193,9 +195,9 @@ open_index(Config, Screen, SearchString, !.CommonHistory, !IO) :-
     NextPollTime = next_poll_time(Config, Time),
     PollCount = 0,
     MaybeSearch = no,
-    IndexInfo = index_info(Config, Scrollable, SearchString, SearchTokens,
-        SearchTime, NextPollTime, PollCount, MaybeSearch, dir_forward,
-        !.CommonHistory),
+    IndexInfo = index_info(Config, Crypto, Scrollable, SearchString,
+        SearchTokens, SearchTime, NextPollTime, PollCount, MaybeSearch,
+        dir_forward, !.CommonHistory),
     index_loop(Screen, IndexInfo, !IO).
 
 :- pred search_terms_with_progress(prog_config::in, screen::in,
@@ -320,10 +322,11 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         Action = open_pager(ThreadId),
         flush_async_with_progress(Screen, !IO),
         Config = !.IndexInfo ^ i_config,
+        Crypto = !.IndexInfo ^ i_crypto,
         MaybeSearch = !.IndexInfo ^ i_internal_search,
         CommonHistory0 = !.IndexInfo ^ i_common_history,
-        open_thread_pager(Config, Screen, ThreadId, MaybeSearch, Transition,
-            CommonHistory0, CommonHistory, !IO),
+        open_thread_pager(Config, Crypto, Screen, ThreadId, MaybeSearch,
+            Transition, CommonHistory0, CommonHistory, !IO),
         handle_screen_transition(Screen, NewScreen, Transition,
             TagUpdates, !IndexInfo, !IO),
         effect_thread_pager_changes(TagUpdates, !IndexInfo, !IO),
@@ -385,11 +388,12 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         Action = start_compose,
         flush_async_with_progress(Screen, !IO),
         Config = !.IndexInfo ^ i_config,
+        Crypto = !.IndexInfo ^ i_crypto,
         CommonHistory0 = !.IndexInfo ^ i_common_history,
         ToHistory0 = CommonHistory0 ^ ch_to_history,
         SubjectHistory0 = CommonHistory0 ^ ch_subject_history,
-        start_compose(Config, Screen, Transition, ToHistory0, ToHistory,
-            SubjectHistory0, SubjectHistory, !IO),
+        start_compose(Config, Crypto, Screen, Transition,
+            ToHistory0, ToHistory, SubjectHistory0, SubjectHistory, !IO),
         CommonHistory1 = CommonHistory0 ^ ch_to_history := ToHistory,
         CommonHistory = CommonHistory1 ^ ch_subject_history := SubjectHistory,
         !IndexInfo ^ i_common_history := CommonHistory,
@@ -873,12 +877,13 @@ try_reply(!Screen, ThreadId, RequireUnread, ReplyKind, Res, !Info, !IO) :-
         | Args0
     ],
     Config = !.Info ^ i_config,
+    Crypto = !.Info ^ i_crypto,
     run_notmuch(Config, Args, parse_message_id_list, ListRes, !IO),
     (
         ListRes = ok(MessageIds),
         ( MessageIds = [MessageId] ->
-            start_reply_to_message_id(Config, !.Screen, MessageId, ReplyKind,
-                Transition, !IO),
+            start_reply_to_message_id(Config, Crypto, !.Screen, MessageId,
+                ReplyKind, Transition, !IO),
             handle_screen_transition(!Screen, Transition, Sent, !Info, !IO),
             Res = ok(Sent)
         ;
@@ -897,6 +902,7 @@ try_reply(!Screen, ThreadId, RequireUnread, ReplyKind, Res, !Info, !IO) :-
 
 handle_recall(!Screen, Sent, !IndexInfo, !IO) :-
     Config = !.IndexInfo ^ i_config,
+    Crypto = !.IndexInfo ^ i_crypto,
     select_recall(Config, !.Screen, no, TransitionA, !IO),
     handle_screen_transition(!Screen, TransitionA, MaybeSelected,
         !IndexInfo, !IO),
@@ -904,8 +910,8 @@ handle_recall(!Screen, Sent, !IndexInfo, !IO) :-
         MaybeSelected = yes(Message),
         (
             Message = message(_, _, _, _, _, _),
-            continue_from_message(Config, !.Screen, postponed_message, Message,
-                TransitionB, !IO),
+            continue_from_message(Config, Crypto, !.Screen, postponed_message,
+                Message, TransitionB, !IO),
             handle_screen_transition(!Screen, TransitionB, Sent, !IndexInfo,
                 !IO)
         ;

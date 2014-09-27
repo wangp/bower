@@ -16,6 +16,8 @@
 :- pred gpgme_data_write_string(data::in, string::in,
     maybe_error::out, io::di, io::uo) is det.
 
+:- pred gpgme_data_rewind(data::in, maybe_error::out, io::di, io::uo) is det.
+
 :- pred gpgme_data_to_string(data::in, maybe_error(string)::out,
     io::di, io::uo) is det.
 
@@ -153,6 +155,38 @@ gpgme_data_write_string(data(Data, _), String, Res, !IO) :-
             remaining -= written;
             offset += written;
         }
+    }
+").
+
+%-----------------------------------------------------------------------------%
+
+gpgme_data_rewind(data(Data, _), Res, !IO) :-
+    gpgme_data_rewind_2(Data, Ok, Error, !IO),
+    (
+        Ok = yes,
+        Res = ok
+    ;
+        Ok = no,
+        Res = error(Error)
+    ).
+
+:- pred gpgme_data_rewind_2(gpgme_data::in, bool::out, string::out,
+    io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    gpgme_data_rewind_2(Data::in, Ok::out, Error::out, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
+"
+    off_t start;
+
+    start = gpgme_data_seek(Data, 0, SEEK_SET);
+    if (start == -1) {
+        Ok = MR_NO;
+        Error = MR_make_string_const(""gpgme_data_seek failed"");
+    } else {
+        Ok = MR_YES;
+        Error = MR_make_string_const("""");
     }
 ").
 

@@ -8,6 +8,7 @@
 :- import_module io.
 :- import_module list.
 :- import_module maybe.
+:- import_module stream.
 
 :- import_module data.
 :- import_module prog_config.
@@ -49,15 +50,15 @@
 :- type mime_part
     --->    discrete(
                 discrete_content_type,
-                content_disposition,
-                content_transfer_encoding,
+                maybe(content_disposition),
+                maybe(content_transfer_encoding),
                 mime_part_body
             )
     ;       composite(
                 composite_content_type,
                 boundary,
-                content_disposition,
-                content_transfer_encoding,
+                maybe(content_disposition),
+                maybe(content_transfer_encoding),
                 list(mime_part)
             ).
 
@@ -66,16 +67,22 @@
 
 :- type discrete_content_type
     --->    text_plain(maybe(charset))
+    ;       application_octet_stream
+    ;       application_pgp_encrypted
     ;       content_type(string).
 
 :- type composite_content_type
-    --->    multipart_mixed.
+    --->    multipart_mixed
+    ;       multipart_encrypted(protocol).
 
 :- type charset
     --->    utf8.
 
 :- type boundary
     --->    boundary(string).
+
+:- type protocol
+    --->    application_pgp_encrypted.
 
 :- type content_disposition
     --->    inline
@@ -96,8 +103,13 @@
 
 :- pred is_empty_header_value(header_value::in) is semidet.
 
-:- pred write_message(io.output_stream::in, prog_config::in, message_spec::in,
-    bool::in, maybe_error::out, io::di, io::uo) is det.
+:- pred write_message(Stream::in, prog_config::in, message_spec::in,
+    bool::in, maybe_error::out, io::di, io::uo) is det
+    <= stream.writer(Stream, string, io).
+
+:- pred write_message_type(Stream::in, prog_config::in, message_type::in,
+    maybe_error::out, io::di, io::uo) is det
+    <= stream.writer(Stream, string, io).
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -149,8 +161,9 @@ write_message(Stream, Config, Spec, AllowHeaderError, Res, !IO) :-
         Res = error("Caught exception: " ++ string(Excp))
     ).
 
-:- pred write_message_2(io.output_stream::in, prog_config::in,
-    message_spec::in, bool::in, maybe_error::out, io::di, io::uo) is det.
+:- pred write_message_2(Stream::in, prog_config::in,
+    message_spec::in, bool::in, maybe_error::out, io::di, io::uo) is det
+    <= stream.writer(Stream, string, io).
 
 write_message_2(Stream, Config, Spec, AllowHeaderError, Res, !IO) :-
     Spec = message_spec(Headers, MessageType),
@@ -163,20 +176,12 @@ write_message_2(Stream, Config, Spec, AllowHeaderError, Res, !IO) :-
         Res = error(Error)
     ;
         HeaderString = to_string(BuilderState),
-        io.write_string(Stream, HeaderString, !IO),
+        put(Stream, HeaderString, !IO),
         % Do not write the blank line separating header and body yet.
         % MIME messages require more header fields.
-        (
-            MessageType = plain(Body),
-            write_plain_body(Stream, Body, !IO)
-        ;
-            MessageType = mime(MimeMessage),
-            write_mime_message(Stream, Config, MimeMessage, !IO)
-        ),
+        write_message_type_2(Stream, Config, MessageType, !IO),
         Res = ok
     ).
-
-%-----------------------------------------------------------------------------%
 
 :- pred build_header(Stream::in, header::in, maybe_error::in, maybe_error::out,
     State::di, State::uo) is det <= stream.writer(Stream, string, State).
@@ -197,95 +202,137 @@ build_header(Stream, Header, !Error, !State) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred write_plain_body(io.output_stream::in, plain_body::in, io::di, io::uo)
-    is det.
+write_message_type(Stream, Config, MessageType, Res, !IO) :-
+    promise_equivalent_solutions [Res, !:IO]
+    ( try [io(!IO)]
+        write_message_type_2(Stream, Config, MessageType, !IO)
+      then
+        Res = ok
+      catch_any Excp ->
+        Res = error("Caught exception: " ++ string(Excp))
+    ).
 
-write_plain_body(Stream, plain_body(Text), !IO) :-
-    % Separate header and body.
-    io.nl(Stream, !IO),
-    io.write_string(Stream, Text, !IO).
+:- pred write_message_type_2(Stream::in, prog_config::in, message_type::in,
+    io::di, io::uo) is det <= stream.writer(Stream, string, io).
+
+write_message_type_2(Stream, Config, MessageType, !IO) :-
+    (
+        MessageType = plain(PlainBody),
+        write_plain_body(Stream, PlainBody, !IO)
+    ;
+        MessageType = mime(MimeMessage),
+        write_mime_message(Stream, Config, MimeMessage, !IO)
+    ).
 
 %-----------------------------------------------------------------------------%
 
-:- pred write_mime_message(io.output_stream::in, prog_config::in,
-    mime_message::in, io::di, io::uo) is det.
+:- pred write_plain_body(Stream::in, plain_body::in, io::di, io::uo)
+    is det <= stream.writer(Stream, string, io).
+
+write_plain_body(Stream, plain_body(Text), !IO) :-
+    % Separate header and body.
+    put(Stream, "\n", !IO),
+    put(Stream, Text, !IO).
+
+%-----------------------------------------------------------------------------%
+
+:- pred write_mime_message(Stream::in, prog_config::in, mime_message::in,
+    io::di, io::uo) is det <= stream.writer(Stream, string, io).
 
 write_mime_message(Stream, Config, MimeMessage, !IO) :-
     MimeMessage = mime_message(MimeVersion, MimePart),
     write_mime_version(Stream, MimeVersion, !IO),
     write_mime_part(Stream, Config, MimePart, !IO).
 
-:- pred write_mime_version(io.output_stream::in, mime_version::in,
-    io::di, io::uo) is det.
+:- pred write_mime_version(Stream::in, mime_version::in, io::di, io::uo)
+    is det <= stream.writer(Stream, string, io).
 
 write_mime_version(Stream, mime_version_1_0, !IO) :-
-    io.write_string(Stream, "MIME-Version: 1.0\n", !IO).
+    put(Stream, "MIME-Version: 1.0\n", !IO).
 
-:- pred write_mime_part(io.output_stream::in, prog_config::in,
-    mime_part::in, io::di, io::uo) is det.
+:- pred write_mime_part(Stream::in, prog_config::in, mime_part::in,
+    io::di, io::uo) is det <= stream.writer(Stream, string, io).
 
 write_mime_part(Stream, Config, MimePart, !IO) :-
     (
-        MimePart = discrete(ContentType, ContentDisposition, TransferEncoding,
-            Body),
+        MimePart = discrete(ContentType, MaybeContentDisposition,
+            MaybeTransferEncoding, Body),
         write_discrete_content_type(Stream, ContentType, !IO),
-        write_content_disposition(Stream, ContentDisposition, !IO),
-        write_content_transfer_encoding(Stream, TransferEncoding, !IO),
+        fold_maybe(write_content_disposition(Stream),
+            MaybeContentDisposition, !IO),
+        fold_maybe(write_content_transfer_encoding(Stream),
+            MaybeTransferEncoding, !IO),
         % Separate header and body.
-        io.nl(Stream, !IO),
+        put(Stream, "\n", !IO),
         write_mime_part_body(Stream, Config, Body, !IO)
     ;
-        MimePart = composite(ContentType, Boundary, ContentDisposition,
-            TransferEncoding, SubParts),
+        MimePart = composite(ContentType, Boundary, MaybeContentDisposition,
+            MaybeTransferEncoding, SubParts),
         write_composite_content_type(Stream, ContentType, Boundary, !IO),
-        write_content_disposition(Stream, ContentDisposition, !IO),
-        write_content_transfer_encoding(Stream, TransferEncoding, !IO),
+        fold_maybe(write_content_disposition(Stream),
+            MaybeContentDisposition, !IO),
+        fold_maybe(write_content_transfer_encoding(Stream),
+            MaybeTransferEncoding, !IO),
         % Separate header and body.
-        io.nl(Stream, !IO),
+        put(Stream, "\n", !IO),
         list.foldl(write_mime_subpart(Stream, Config, Boundary), SubParts,
             !IO),
         write_mime_final_boundary(Stream, Boundary, !IO)
     ).
 
-:- pred write_discrete_content_type(io.output_stream::in,
-    discrete_content_type::in, io::di, io::uo) is det.
+:- pred write_discrete_content_type(Stream::in, discrete_content_type::in,
+    io::di, io::uo) is det <= stream.writer(Stream, string, io).
 
 write_discrete_content_type(Stream, ContentType, !IO) :-
     (
         ContentType = text_plain(MaybeCharset),
-        io.write_string(Stream, "Content-Type: text/plain", !IO),
         (
             MaybeCharset = yes(utf8),
-            io.write_string(Stream, "; charset=utf-8", !IO)
+            Value = "text/plain; charset=utf-8"
         ;
-            MaybeCharset = no
+            MaybeCharset = no,
+            Value = "text/plain"
         )
     ;
-        ContentType = content_type(Value),
-        io.write_string(Stream, "Content-Type: ", !IO),
-        io.write_string(Stream, Value, !IO)
+        ContentType = application_octet_stream,
+        Value = "application/octet-stream"
+    ;
+        ContentType = application_pgp_encrypted,
+        Value = "application/pgp-encrypted"
+    ;
+        ContentType = content_type(Value)
     ),
-    io.write_string(Stream, "\n", !IO).
+    put(Stream, "Content-Type: ", !IO),
+    put(Stream, Value, !IO),
+    put(Stream, "\n", !IO).
 
-:- pred write_composite_content_type(io.output_stream::in,
-    composite_content_type::in, boundary::in, io::di, io::uo) is det.
+:- pred write_composite_content_type(Stream::in, composite_content_type::in,
+    boundary::in, io::di, io::uo) is det <= stream.writer(Stream, string, io).
 
-write_composite_content_type(Stream, multipart_mixed, boundary(Boundary), !IO)
-        :-
-    io.write_string(Stream, "Content-Type: multipart/mixed; boundary=""", !IO),
-    io.write_string(Stream, Boundary, !IO),
-    io.write_string(Stream, """\n", !IO).
+write_composite_content_type(Stream, ContentType, boundary(Boundary), !IO) :-
+    (
+        ContentType = multipart_mixed,
+        list.foldl(put(Stream),
+            ["Content-Type: multipart/mixed; boundary=""", Boundary, """\n"],
+            !IO)
+    ;
+        ContentType = multipart_encrypted(application_pgp_encrypted),
+        list.foldl(put(Stream),
+            ["Content-Type: multipart/encrypted; boundary=""",
+            Boundary, """; protocol=""application/pgp-encrypted""\n"],
+            !IO)
+    ).
 
-:- pred write_content_disposition(io.output_stream::in,
-    content_disposition::in, io::di, io::uo) is det.
+:- pred write_content_disposition(Stream::in, content_disposition::in,
+    io::di, io::uo) is det <= stream.writer(Stream, string, io).
 
 write_content_disposition(Stream, Disposition, !IO) :-
     (
         Disposition = inline,
-        io.write_string(Stream, "Content-Disposition: inline\n", !IO)
+        put(Stream, "Content-Disposition: inline\n", !IO)
     ;
         Disposition = attachment(MaybeFileName),
-        io.write_string(Stream, "Content-Disposition: attachment", !IO),
+        put(Stream, "Content-Disposition: attachment", !IO),
         (
             MaybeFileName = yes(filename(FileName)),
             Attr = attribute("filename"),
@@ -294,8 +341,8 @@ write_content_disposition(Stream, Disposition, !IO) :-
             parameter_to_string(Param, ParamString, Valid),
             (
                 Valid = yes,
-                io.write_string(Stream, "; ", !IO),
-                io.write_string(Stream, ParamString, !IO)
+                put(Stream, "; ", !IO),
+                put(Stream, ParamString, !IO)
             ;
                 Valid = no
                 % Shouldn't happen.
@@ -303,55 +350,57 @@ write_content_disposition(Stream, Disposition, !IO) :-
         ;
             MaybeFileName = no
         ),
-        io.nl(Stream, !IO)
+        put(Stream, "\n", !IO)
     ).
 
-:- pred write_content_transfer_encoding(io.output_stream::in,
-    content_transfer_encoding::in, io::di, io::uo) is det.
+:- pred write_content_transfer_encoding(Stream::in,
+    content_transfer_encoding::in, io::di, io::uo)
+    is det <= stream.writer(Stream, string, io).
 
 write_content_transfer_encoding(Stream, CTE, !IO) :-
     (
         CTE = cte_8bit,
-        io.write_string(Stream, "Content-Transfer-Encoding: 8bit\n", !IO)
+        put(Stream, "Content-Transfer-Encoding: 8bit\n", !IO)
     ;
         CTE = cte_base64,
-        io.write_string(Stream, "Content-Transfer-Encoding: base64\n", !IO)
+        put(Stream, "Content-Transfer-Encoding: base64\n", !IO)
     ).
 
-:- pred write_mime_subpart(io.output_stream::in, prog_config::in,
-    boundary::in, mime_part::in, io::di, io::uo) is det.
+:- pred write_mime_subpart(Stream::in, prog_config::in, boundary::in,
+    mime_part::in, io::di, io::uo)
+    is det <= stream.writer(Stream, string, io).
 
 write_mime_subpart(Stream, Config, Boundary, Part, !IO) :-
     write_mime_part_boundary(Stream, Boundary, !IO),
     write_mime_part(Stream, Config, Part, !IO).
 
-:- pred write_mime_part_boundary(io.output_stream::in, boundary::in,
-    io::di, io::uo) is det.
+:- pred write_mime_part_boundary(Stream::in, boundary::in, io::di, io::uo)
+    is det <= stream.writer(Stream, string, io).
 
 write_mime_part_boundary(Stream, boundary(Boundary), !IO) :-
-    io.write_string(Stream, "\n--", !IO),
-    io.write_string(Stream, Boundary, !IO),
-    io.nl(Stream, !IO).
+    put(Stream, "\n--", !IO),
+    put(Stream, Boundary, !IO),
+    put(Stream, "\n", !IO).
 
-:- pred write_mime_final_boundary(io.output_stream::in, boundary::in,
-    io::di, io::uo) is det.
+:- pred write_mime_final_boundary(Stream::in, boundary::in, io::di, io::uo)
+    is det <= stream.writer(Stream, string, io).
 
 write_mime_final_boundary(Stream, boundary(Boundary), !IO) :-
-    io.write_string(Stream, "\n--", !IO),
-    io.write_string(Stream, Boundary, !IO),
-    io.write_string(Stream, "--\n", !IO).
+    put(Stream, "\n--", !IO),
+    put(Stream, Boundary, !IO),
+    put(Stream, "--\n", !IO).
 
-:- pred write_mime_part_body(io.output_stream::in, prog_config::in,
-    mime_part_body::in, io::di, io::uo) is det.
+:- pred write_mime_part_body(Stream::in, prog_config::in, mime_part_body::in,
+    io::di, io::uo) is det <= stream.writer(Stream, string, io).
 
 write_mime_part_body(Stream, Config, Body, !IO) :-
     (
         Body = text(Text),
-        io.write_string(Stream, Text, !IO)
+        put(Stream, Text, !IO)
     ;
         Body = external_base64(Part),
         get_external_part_base64(Config, Part, Content, !IO),
-        io.write_string(Stream, Content, !IO)
+        put(Stream, Content, !IO)
     ).
 
 :- pred get_external_part_base64(prog_config::in, part::in, string::out,

@@ -10,6 +10,7 @@
 :- import_module maybe.
 :- import_module set.
 
+:- import_module crypto.
 :- import_module data.
 :- import_module prog_config.
 :- import_module screen.
@@ -30,8 +31,9 @@
                 added_messages  :: int
             ).
 
-:- pred open_thread_pager(prog_config::in, screen::in, thread_id::in,
-    maybe(string)::in, screen_transition(thread_pager_effects)::out,
+:- pred open_thread_pager(prog_config::in, crypto::in, screen::in,
+    thread_id::in, maybe(string)::in,
+    screen_transition(thread_pager_effects)::out,
     common_history::in, common_history::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
@@ -75,6 +77,7 @@
 :- type thread_pager_info
     --->    thread_pager_info(
                 tp_config           :: prog_config,
+                tp_crypto           :: crypto,
                 tp_thread_id        :: thread_id,
                 tp_messages         :: list(message),
                 tp_ordering         :: ordering,
@@ -161,10 +164,10 @@
 
 %-----------------------------------------------------------------------------%
 
-open_thread_pager(Config, Screen, ThreadId, MaybeSearch, Transition,
+open_thread_pager(Config, Crypto, Screen, ThreadId, MaybeSearch, Transition,
         CommonHistory0, CommonHistory, !IO) :-
-    create_thread_pager(Config, Screen, ThreadId, ordering_threaded, no,
-        CommonHistory0, Info0, ResCount, !IO),
+    create_thread_pager(Config, Crypto, Screen, ThreadId, ordering_threaded,
+        no, CommonHistory0, Info0, ResCount, !IO),
     Info1 = Info0 ^ tp_search := MaybeSearch,
     (
         ResCount = ok(Count),
@@ -193,7 +196,7 @@ reopen_thread_pager(Screen, KeepCached, !Info, !IO) :-
 
 reopen_thread_pager_with_ordering(Screen, KeepCached, Ordering, Info0, Info,
         !IO) :-
-    Info0 = thread_pager_info(Config0, ThreadId0, Cached0, _Ordering0,
+    Info0 = thread_pager_info(Config0, Crypto0, ThreadId0, Cached0, _Ordering0,
         Scrollable0, _NumThreadRows, Pager0, _NumPagerRows,
         Search, SearchDir, CommonHistory, AddedMessages),
     (
@@ -204,8 +207,8 @@ reopen_thread_pager_with_ordering(Screen, KeepCached, Ordering, Info0, Info,
     ;
         MaybeCached = no
     ),
-    create_thread_pager(Config0, Screen, ThreadId0, Ordering, MaybeCached,
-        CommonHistory, Info1, ResCount, !IO),
+    create_thread_pager(Config0, Crypto0, Screen, ThreadId0, Ordering,
+        MaybeCached, CommonHistory, Info1, ResCount, !IO),
     (
         ResCount = ok(Count),
         string.format("Showing %d messages.", [i(Count)], Msg),
@@ -215,7 +218,7 @@ reopen_thread_pager_with_ordering(Screen, KeepCached, Ordering, Info0, Info,
         MessageUpdate = set_warning(Error)
     ),
 
-    Info1 = thread_pager_info(Config, ThreadId, Cached, _Ordering,
+    Info1 = thread_pager_info(Config, Crypto, ThreadId, Cached, _Ordering,
         Scrollable1, NumThreadRows, Pager1, NumPagerRows,
         _Search1, _SearchDir1, _CommonHistory1, _AddedMessages1),
 
@@ -243,18 +246,18 @@ reopen_thread_pager_with_ordering(Screen, KeepCached, Ordering, Info0, Info,
         Pager = Pager1
     ),
 
-    Info2 = thread_pager_info(Config, ThreadId, Cached, Ordering,
+    Info2 = thread_pager_info(Config, Crypto, ThreadId, Cached, Ordering,
         Scrollable, NumThreadRows, Pager, NumPagerRows,
         Search, SearchDir, CommonHistory, AddedMessages),
     sync_thread_to_pager(Info2, Info),
 
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred create_thread_pager(prog_config::in, screen::in, thread_id::in,
-    ordering::in, maybe(list(message))::in, common_history::in,
+:- pred create_thread_pager(prog_config::in, crypto::in, screen::in,
+    thread_id::in, ordering::in, maybe(list(message))::in, common_history::in,
     thread_pager_info::out, maybe_error(int)::out, io::di, io::uo) is det.
 
-create_thread_pager(Config, Screen, ThreadId, Ordering, MaybeCached,
+create_thread_pager(Config, Crypto, Screen, ThreadId, Ordering, MaybeCached,
         CommonHistory, Info, ResCount, !IO) :-
     (
         MaybeCached = yes(MessagesCached),
@@ -275,8 +278,8 @@ create_thread_pager(Config, Screen, ThreadId, Ordering, MaybeCached,
     time(Time, !IO),
     Nowish = localtime(Time),
     get_rows_cols(Screen, Rows, Cols),
-    setup_thread_pager(Config, ThreadId, Ordering, Nowish, Rows - 2, Cols,
-        Messages, CommonHistory, Info, Count, !IO),
+    setup_thread_pager(Config, Crypto, ThreadId, Ordering, Nowish, Rows - 2,
+        Cols, Messages, CommonHistory, Info, Count, !IO),
     (
         ParseResult = ok(_),
         ResCount = ok(Count)
@@ -285,12 +288,13 @@ create_thread_pager(Config, Screen, ThreadId, Ordering, MaybeCached,
         ResCount = error("Error parsing notmuch response: " ++ Error)
     ).
 
-:- pred setup_thread_pager(prog_config::in, thread_id::in, ordering::in,
-    tm::in, int::in, int::in, list(message)::in, common_history::in,
-    thread_pager_info::out, int::out, io::di, io::uo) is det.
+:- pred setup_thread_pager(prog_config::in, crypto::in, thread_id::in,
+    ordering::in, tm::in, int::in, int::in, list(message)::in,
+    common_history::in, thread_pager_info::out, int::out, io::di, io::uo)
+    is det.
 
-setup_thread_pager(Config, ThreadId, Ordering, Nowish, Rows, Cols, Messages,
-        CommonHistory, ThreadPagerInfo, NumThreadLines, !IO) :-
+setup_thread_pager(Config, Crypto, ThreadId, Ordering, Nowish, Rows, Cols,
+        Messages, CommonHistory, ThreadPagerInfo, NumThreadLines, !IO) :-
     (
         Ordering = ordering_threaded,
         append_threaded_messages(Nowish, Messages, ThreadLines),
@@ -329,9 +333,9 @@ setup_thread_pager(Config, ThreadId, Ordering, Nowish, Rows, Cols, Messages,
         )
     ),
     AddedMessages = 0,
-    ThreadPagerInfo = thread_pager_info(Config, ThreadId, Messages, Ordering,
-        Scrollable, NumThreadRows, PagerInfo, NumPagerRows, no, dir_forward,
-        CommonHistory, AddedMessages).
+    ThreadPagerInfo = thread_pager_info(Config, Crypto, ThreadId, Messages,
+        Ordering, Scrollable, NumThreadRows, PagerInfo, NumPagerRows, no,
+        dir_forward, CommonHistory, AddedMessages).
 
 :- pred get_latest_line(thread_line::in, thread_line::in, thread_line::out)
     is det.
@@ -654,7 +658,9 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         (
             Message = message(_, _, _, _, _, _),
             Config = !.Info ^ tp_config,
-            start_reply(Config, Screen, Message, ReplyKind, Transition, !IO),
+            Crypto = !.Info ^ tp_crypto,
+            start_reply(Config, Crypto, Screen, Message, ReplyKind, Transition,
+                !IO),
             handle_screen_transition(Screen, NewScreen, Transition, Sent,
                 !Info, !IO),
             (
@@ -2240,14 +2246,15 @@ handle_resend(Screen, MessageId, !Info, !IO) :-
 
 handle_recall(!Screen, ThreadId, Sent, !Info, !IO) :-
     Config = !.Info ^ tp_config,
+    Crypto = !.Info ^ tp_crypto,
     select_recall(Config, !.Screen, yes(ThreadId), TransitionA, !IO),
     handle_screen_transition(!Screen, TransitionA, MaybeSelected, !Info, !IO),
     (
         MaybeSelected = yes(Message),
         (
             Message = message(_, _, _, _, _, _),
-            continue_from_message(Config, !.Screen, postponed_message, Message,
-                TransitionB, !IO),
+            continue_from_message(Config, Crypto, !.Screen, postponed_message,
+                Message, TransitionB, !IO),
             handle_screen_transition(!Screen, TransitionB, Sent, !Info, !IO)
         ;
             Message = excluded_message(_),
@@ -2279,10 +2286,11 @@ edit_as_template(Info, Action, MessageUpdate) :-
 
 handle_edit_as_template(!Screen, Message, Sent, !Info, !IO) :-
     Config = !.Info ^ tp_config,
+    Crypto = !.Info ^ tp_crypto,
     (
         Message = message(_, _, _, _, _, _),
-        continue_from_message(Config, !.Screen, arbitrary_message, Message,
-            Transition, !IO),
+        continue_from_message(Config, Crypto, !.Screen, arbitrary_message,
+            Message, Transition, !IO),
         handle_screen_transition(!Screen, Transition, Sent, !Info, !IO)
     ;
         Message = excluded_message(_),

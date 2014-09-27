@@ -66,7 +66,9 @@
                 c_generic       :: generic_attrs,
                 c_status        :: status_attrs,
                 c_address       :: attr,
-                c_invalid       :: attr
+                c_invalid       :: attr,
+                c_good_key      :: attr,
+                c_bad_key       :: attr
             ).
 
 :- type colors
@@ -217,7 +219,10 @@ make_compose_attrs(Config, GenericAttrs0, StatusAttrs, Attrs) :-
     Sections = [Section, generic_section],
     cfg(Config, Def ^ c_address, Sections, "address", Address),
     cfg(Config, Def ^ c_invalid, Sections, "invalid", Invalid),
-    Attrs = compose_attrs(GenericAttrs, StatusAttrs, Address, Invalid).
+    cfg(Config, Def ^ c_good_key, Sections, "good_key", GoodKey),
+    cfg(Config, Def ^ c_bad_key, Sections, "bad_key", BadKey),
+    Attrs = compose_attrs(GenericAttrs, StatusAttrs, Address, Invalid,
+        GoodKey, BadKey).
 
 :- pred cfg(config::in, attr::in, list(section)::in, string::in, attr::out)
     is det.
@@ -379,6 +384,8 @@ default_compose_attrs(GenericAttrs, StatusAttrs) =
         GenericAttrs,
         StatusAttrs,
         bold(blue),
+        normal(red),
+        normal(green),
         normal(red)
     ).
 

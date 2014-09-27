@@ -15,9 +15,11 @@
 
 :- import_module bool.
 :- import_module list.
+:- import_module maybe.
 :- import_module string.
 
 :- import_module async.
+:- import_module crypto.
 :- import_module curs.
 :- import_module index_view.
 :- import_module prog_config.
@@ -40,7 +42,19 @@ main(!IO) :-
     load_prog_config(ResConfig, !IO),
     (
         ResConfig = ok(Config),
-        main_2(Config, !IO)
+        init_crypto(ResCrypto, !IO),
+        (
+            ResCrypto = ok(Crypto),
+            main_2(Config, Crypto, !IO),
+            shutdown_crypto(Crypto, !IO)
+        ;
+            ResCrypto = error(Error),
+            io.stderr_stream(Stream, !IO),
+            io.write_string(Stream,
+                "Error initialising crypto support:\n", !IO),
+            print_error(Stream, Error, !IO),
+            io.set_exit_status(1, !IO)
+        )
     ;
         ResConfig = errors(Errors),
         io.stderr_stream(Stream, !IO),
@@ -49,9 +63,9 @@ main(!IO) :-
         io.set_exit_status(1, !IO)
     ).
 
-:- pred main_2(prog_config::in, io::di, io::uo) is cc_multi.
+:- pred main_2(prog_config::in, crypto::in, io::di, io::uo) is cc_multi.
 
-main_2(Config, !IO) :-
+main_2(Config, Crypto, !IO) :-
     % Install our SIGINT, SIGCHLD handlers.
     signal.ignore_sigint(no, !IO),
     async.install_sigchld_handler(!IO),
@@ -69,7 +83,7 @@ main_2(Config, !IO) :-
         create_screen(status_attrs(Config), Screen, !IO),
         draw_status_bar(Screen, !IO),
         curs.refresh(!IO),
-        open_index(Config, Screen, Terms, CommonHistory0, !IO)
+        open_index(Config, Crypto, Screen, Terms, CommonHistory0, !IO)
     ) then
         curs.stop(!IO)
       catch sigint_received ->
