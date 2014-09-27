@@ -17,7 +17,7 @@
     --->    new_signature(
                 % type
                 % pubkey_algo
-                % hash_algo
+                hash_algo       :: hash_algo,
                 % sig_class
                 timestamp       :: timestamp,
                 fingerprint     :: string
@@ -141,23 +141,27 @@ convert_signatures(Signature0, Res) :-
     gpgme_new_signature::out, new_signature::out) is semidet.
 
 convert_signature(Signature0, Next, Signature) :-
-    semipure signature_fields(Signature0, Next, Timestamp, Fingerprint),
-    Signature = new_signature(Timestamp, Fingerprint).
+    semipure signature_fields(Signature0, Next, HashAlgo, Timestamp, Fingerprint),
+    Signature = new_signature(HashAlgo, Timestamp, Fingerprint).
 
 :- semipure pred signature_fields(gpgme_new_signature::in,
-    gpgme_new_signature::out, int::out, string::out) is semidet.
+    gpgme_new_signature::out, hash_algo::out, int::out, string::out)
+    is semidet.
 
 :- pragma foreign_proc("C",
-    signature_fields(Sig::in, Next::out, Timestamp::out, Fingerprint::out),
+    signature_fields(Sig::in, Next::out, HashAlgo::out, Timestamp::out,
+        Fingerprint::out),
     [will_not_call_mercury, promise_semipure, thread_safe],
 "
     SUCCESS_INDICATOR = (Sig != NULL);
     if (SUCCESS_INDICATOR) {
         Next = Sig->next;
+        HashAlgo = Sig->hash_algo;
         Timestamp = Sig->timestamp;
         MR_make_aligned_string_copy_msg(Fingerprint, Sig->fpr, MR_ALLOC_ID);
     } else {
         Next = NULL;
+        HashAlgo = -1;
         Timestamp = 0;
         Fingerprint = MR_make_string_const("""");
     }

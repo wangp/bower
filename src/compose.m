@@ -725,6 +725,9 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
     ; KeyCode = char('E') ->
         toggle_encrypt(!StagingInfo, !CryptoInfo, !IO),
         Action = continue
+    ; KeyCode = char('S') ->
+        toggle_sign(!StagingInfo, !CryptoInfo, !IO),
+        Action = continue
     ;
         ( KeyCode = char('j')
         ; KeyCode = code(key_down)
@@ -906,7 +909,8 @@ edit_header(Screen, HeaderType, !StagingInfo, !CryptoInfo, !IO) :-
         !StagingInfo ^ si_headers := Headers,
         !StagingInfo ^ si_parsed_hdrs := ParsedHeaders,
         !StagingInfo ^ si_account := MaybeAccount,
-        maintain_encrypt_keys(ParsedHeaders, !CryptoInfo, !IO)
+        maintain_encrypt_keys(ParsedHeaders, !CryptoInfo, !IO),
+        maintain_sign_keys(ParsedHeaders, !CryptoInfo, !IO)
     ;
         Return = no
     ).
@@ -976,6 +980,14 @@ toggle_encrypt(!StagingInfo, !CryptoInfo, !IO) :-
     !CryptoInfo ^ ci_encrypt := not(!.CryptoInfo ^ ci_encrypt),
     ParsedHeaders = !.StagingInfo ^ si_parsed_hdrs,
     maintain_encrypt_keys(ParsedHeaders, !CryptoInfo, !IO).
+
+:- pred toggle_sign(staging_info::in, staging_info::out,
+    crypto_info::in, crypto_info::out, io::di, io::uo) is det.
+
+toggle_sign(!StagingInfo, !CryptoInfo, !IO) :-
+    !CryptoInfo ^ ci_sign := not(!.CryptoInfo ^ ci_sign),
+    ParsedHeaders = !.StagingInfo ^ si_parsed_hdrs,
+    maintain_sign_keys(ParsedHeaders, !CryptoInfo, !IO).
 
 %-----------------------------------------------------------------------------%
 
@@ -1251,11 +1263,11 @@ split_panels(Screen, HeaderPanels, AttachmentPanels, MaybeSepPanel,
 
 draw_header_lines(!.Panels, Attrs, Headers, Parsed, Account, CryptoInfo, !IO)
         :-
-    DrawFrom = draw_addresses_and_account(Attrs, show_crypto(yes), CryptoInfo,
-        Account),
-    DrawRecv = draw_addresses(Attrs, show_crypto(yes), CryptoInfo),
+    DrawFrom = draw_addresses_and_account(Attrs, show_crypto(yes, yes),
+        CryptoInfo, Account),
+    DrawRecv = draw_addresses(Attrs, show_crypto(yes, no), CryptoInfo),
     DrawSubj = draw_unstruct(Attrs),
-    DrawRepl = draw_addresses(Attrs, show_crypto(no), CryptoInfo),
+    DrawRepl = draw_addresses(Attrs, show_crypto(no, no), CryptoInfo),
     hdr(!Panels, Attrs, DrawFrom, "    From", Parsed ^ ph_from, !IO),
     hdr(!Panels, Attrs, DrawRecv, "      To", Parsed ^ ph_to, !IO),
     hdr(!Panels, Attrs, DrawRecv, "      Cc", Parsed ^ ph_cc, !IO),
@@ -1309,11 +1321,12 @@ draw_list(Pred, Panel, Attr, [H | T], !IO) :-
 
 :- type show_crypto
     --->    show_crypto(
-                show_encrypt_key :: bool
+                show_encrypt_key    :: bool,
+                show_sign_key       :: bool
             ).
 
-:- pred draw_addresses(compose_attrs::in, show_crypto::in,
-    crypto_info::in, panel::in, list(address)::in, io::di, io::uo) is det.
+:- pred draw_addresses(compose_attrs::in, show_crypto::in, crypto_info::in,
+    panel::in, list(address)::in, io::di, io::uo) is det.
 
 draw_addresses(Attrs, ShowCrypto, CryptoInfo, Panel, Addresses, !IO) :-
     Attr = Attrs ^ c_generic ^ field_body,
@@ -1410,42 +1423,107 @@ draw_addr_spec(Attrs, Panel, AddrSpec, !IO) :-
     crypto_info::in, panel::in, addr_spec::in, io::di, io::uo) is det.
 
 draw_mailbox_crypto(Attrs, ShowCrypto, CryptoInfo, Panel, AddrSpec, !IO) :-
-    ShowCrypto = show_crypto(ShowEncryptKey),
-    CryptoInfo = crypto_info(_, Encrypt, EncryptKeys),
+    ShowCrypto = show_crypto(ShowEncryptKey, ShowSignKey),
+    CryptoInfo = crypto_info(_, Encrypt, EncryptKeys, Sign, SignKeys),
+    E = Encrypt `and` ShowEncryptKey,
+    S = Sign `and` ShowSignKey,
     (
-        ShowEncryptKey = yes,
-        Encrypt = yes
-    ->
-        ( map.search(EncryptKeys, AddrSpec, Key) ->
-            draw_encrypt_key(Attrs, Panel, Key, !IO)
+        E = yes,
+        (
+            S = yes,
+            PrefixE = "E"
         ;
-            draw(Panel, Attrs ^ c_bad_key, " [no key found]", !IO)
+            S = no,
+            PrefixE = ""
+        ),
+        ( map.search(EncryptKeys, AddrSpec, EncryptKey) ->
+            DrawE = found(EncryptKey)
+        ;
+            DrawE = not_found
         )
     ;
-        true
+        E = no,
+        DrawE = none,
+        PrefixE = ""
+    ),
+    (
+        S = yes,
+        PrefixS = "S",
+        ( map.search(SignKeys, AddrSpec, SignKey) ->
+            DrawS = found(SignKey)
+        ;
+            DrawS = not_found
+        )
+    ;
+        S = no,
+        DrawS = none,
+        PrefixS = ""
+    ),
+    ( combine(DrawE, DrawS) ->
+        % Combine E: S:
+        draw_key(Attrs, Panel, PrefixE ++ PrefixS, DrawE, !IO)
+    ;
+        draw_key(Attrs, Panel, PrefixE, DrawE, !IO),
+        draw_key(Attrs, Panel, PrefixS, DrawS, !IO)
     ).
 
-:- pred draw_encrypt_key(compose_attrs::in, panel::in, key_userid::in,
+:- type draw_key
+    --->    none
+    ;       found(key_userid)
+    ;       not_found.
+
+:- pred combine(draw_key::in, draw_key::in) is semidet.
+
+combine(X, Y) :-
+    X = found(key_userid(KeyX, UserId)),
+    Y = found(key_userid(KeyY, UserId)),
+    get_key_info(KeyX) = get_key_info(KeyY).
+
+:- pred draw_key(compose_attrs::in, panel::in, string::in, draw_key::in,
     io::di, io::uo) is det.
 
-draw_encrypt_key(Attrs, Panel, key_userid(Key, UserId), !IO) :-
+draw_key(_Attrs, _Panel, _Prefix, none, !IO).
+draw_key(Attrs, Panel, Prefix, found(key_userid(Key, UserId)), !IO) :-
     KeyInfo = get_key_info(Key),
     SubKeys = KeyInfo ^ key_subkeys,
     ( SubKeys = [SubKey | _] ->
-        string.right_by_codepoint(SubKey ^ subkey_fingerprint, 8, Fpr),
-        validity(UserId ^ uid_validity, Validity, GoodKey),
-        (
-            GoodKey = yes,
-            Attr = Attrs ^ c_good_key
+        Fpr = short_fpr(SubKey ^ subkey_fingerprint),
+        validity_attr(Attrs, UserId ^ uid_validity, Validity, Attr),
+        ( Prefix = "" ->
+            Text = format(" [%s, validity: %s]",
+                [s(Fpr), s(Validity)])
         ;
-            GoodKey = no,
-            Attr = Attrs ^ c_bad_key
+            Text = format(" [%s: %s, validity: %s]",
+                [s(Prefix), s(Fpr), s(Validity)])
         ),
-        draw(Panel, Attr,
-            format(" [%s, validity: %s]", [s(Fpr), s(Validity)]), !IO)
+        draw(Panel, Attr, Text, !IO)
     ;
         % Should not happen. 
-        draw(Panel, Attrs ^ c_good_key, " [bad key info]", !IO)
+        draw(Panel, Attrs ^ c_good_key, " [no subkey]", !IO)
+    ).
+draw_key(Attrs, Panel, Prefix, not_found, !IO) :-
+    ( Prefix = "" ->
+        Text = " [no key found]"
+    ;
+        Text = format(" [%s: no key found]", [s(Prefix)])
+    ),
+    draw(Panel, Attrs ^ c_bad_key, Text, !IO).
+
+:- func short_fpr(string) = string.
+
+short_fpr(Fpr) = string.right_by_codepoint(Fpr, 8).
+
+:- pred validity_attr(compose_attrs::in, validity::in, string::out, attr::out)
+    is det.
+
+validity_attr(Attrs, Validity, String, Attr) :-
+    validity(Validity, String, GoodKey),
+    (
+        GoodKey = yes,
+        Attr = Attrs ^ c_good_key
+    ;
+        GoodKey = no,
+        Attr = Attrs ^ c_bad_key
     ).
 
 :- pred validity(validity::in, string::out, bool::out) is det.
@@ -1462,11 +1540,22 @@ validity(validity_ultimate, "ultimate", yes).
 
 draw_crypto_line(Attrs, Panel, CryptoInfo, !IO) :-
     CryptoInfo ^ ci_encrypt = Encrypt,
+    CryptoInfo ^ ci_sign = Sign,
     (
         Encrypt = yes,
+        Sign = yes,
+        Body = "encrypt & sign"
+    ;
+        Encrypt = yes,
+        Sign = no,
         Body = "encrypt"
     ;
         Encrypt = no,
+        Sign = yes,
+        Body = "sign"
+    ;
+        Encrypt = no,
+        Sign = no,
         Body = "none"
     ),
     panel.erase(Panel, !IO),
@@ -1564,14 +1653,15 @@ draw_staging_bar(Attrs, Screen, StagingInfo, !IO) :-
 
 postpone(Config, Screen, Headers, ParsedHeaders, Text, Attachments, CryptoInfo,
         Res, MessageUpdate, !IO) :-
-    CryptoInfo = crypto_info(_, Encrypt, _),
+    CryptoInfo = crypto_info(_, Encrypt, _, Sign, _),
     (
-        Encrypt = yes,
+        ( Encrypt = yes
+        ; Sign = yes
+        )
+    ->
         Res = no,
-        MessageUpdate = set_warning(
-            "Cannot postpone messages with encryption.")
+        MessageUpdate = set_warning("Cannot postpone messages with crypto.")
     ;
-        Encrypt = no,
         postpone_2(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
             CryptoInfo, Res, MessageUpdate, !IO)
     ).
@@ -1791,79 +1881,94 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
     time_to_int(Time, Seed),
     random.init(Seed, RS0),
     generate_date_msg_id(Date, MessageId, !IO),
-    generate_boundary(BoundaryA, RS0, RS1),
-    generate_message_spec(Prepare, Headers, ParsedHeaders, Date, MessageId,
-        boundary(BoundaryA), Text, Attachments, Spec0),
-    (
-        Prepare \= prepare_edit,
-        CryptoInfo ^ ci_encrypt = yes
-    ->
-        Spec0 = message_spec(WriteHeaders, MessageType),
-        get_encrypt_keys(CryptoInfo, ParsedHeaders, Keys, Missing),
-        (
-            Keys = [],
-            Res = error("No encryption keys available."),
-            Warnings = []
-        ;
-            Keys = [_ | _],
-            missing_keys_warning(Missing, WarningsA),
-            % XXX encrypt could return Cipher as a data buffer instead of
-            % returning it as a string
-            encrypt(CryptoInfo, Keys, Config, MessageType, ResCipher,
-                WarningsB, !IO),
-            (
-                ResCipher = ok(Cipher),
-                generate_boundary(BoundaryB, RS1, _RS),
-                generate_multipart_encrypted(Cipher, boundary(BoundaryB),
-                    MimeMessage),
-                Spec = message_spec(WriteHeaders, mime(MimeMessage)),
-                write_temp_message_file(Config, Prepare, Spec, Res, !IO),
-                Warnings = WarningsA ++ WarningsB
-            ;
-                ResCipher = error(Error),
-                Res = error("Encryption failed: " ++ Error),
-                Warnings = []
-            )
-        )
-    ;
-        write_temp_message_file(Config, Prepare, Spec0, Res, !IO),
-        Warnings = []
-    ).
-
-%-----------------------------------------------------------------------------%
-
-:- pred generate_message_spec(prepare_temp::in, headers::in,
-    parsed_headers::in, header_value::in, header_value::in, boundary::in,
-    string::in, list(attachment)::in, message_spec::out) is det.
-
-generate_message_spec(Prepare, Headers, ParsedHeaders, Date, MessageId,
-        Boundary, Text, Attachments, Spec) :-
     generate_headers(Prepare, Headers, ParsedHeaders, Date, MessageId,
         WriteHeaders),
     (
+        Prepare = prepare_edit,
+        Spec = message_spec(WriteHeaders, plain(plain_body(Text))),
+        write_temp_message_file(Config, Prepare, Spec, Res, !IO),
+        Warnings = []
+    ;
         ( Prepare = prepare_send
         ; Prepare = prepare_postpone
         ),
-        % XXX detect charset
-        TextPart = discrete(text_plain(yes(utf8)), yes(inline), yes(cte_8bit),
-            text(Text)),
+        Encrypt = CryptoInfo ^ ci_encrypt,
+        Sign = CryptoInfo ^ ci_sign,
         (
-            Attachments = [],
-            % Pure ASCII messages do not require MIME but it doesn't hurt.
-            MimeMessage = mime_message(mime_version_1_0, TextPart)
+            Encrypt = no,
+            Sign = no,
+            generate_mime_part(cte_8bit, Text, Attachments, MimePart,
+                RS0, _RS),
+            Spec = message_spec(WriteHeaders, mime_v1(MimePart)),
+            write_temp_message_file(Config, Prepare, Spec, Res, !IO),
+            Warnings = []
         ;
-            Attachments = [_ | _],
-            MimeMessage = mime_message(mime_version_1_0, MultiPart),
-            MultiPart = composite(multipart_mixed, Boundary, yes(inline),
-                yes(cte_8bit), [TextPart | AttachmentParts]),
-            list.map(generate_attachment_mime_part, Attachments,
-                AttachmentParts)
-        ),
-        Spec = message_spec(WriteHeaders, mime(MimeMessage))
-    ;
-        Prepare = prepare_edit,
-        Spec = message_spec(WriteHeaders, plain(plain_body(Text)))
+            Encrypt = yes,
+            Sign = no,
+            generate_mime_part(cte_8bit, Text, Attachments, PartToEncrypt,
+                RS0, RS1),
+            get_encrypt_keys(CryptoInfo, ParsedHeaders, Keys, Missing),
+            (
+                Keys = [],
+                Res = error("No encryption keys available."),
+                Warnings = []
+            ;
+                Keys = [_ | _],
+                missing_keys_warning(Missing, WarningsA),
+                % XXX encrypt could return Cipher as a data buffer instead of
+                % returning it as a string
+                encrypt(CryptoInfo, Keys, Config, PartToEncrypt, ResCipher,
+                    WarningsB, !IO),
+                (
+                    ResCipher = ok(Cipher),
+                    generate_multipart_encrypted(Cipher, MimePart, RS1, _RS),
+                    Spec = message_spec(WriteHeaders, mime_v1(MimePart)),
+                    write_temp_message_file(Config, Prepare, Spec, Res, !IO),
+                    Warnings = WarningsA ++ WarningsB
+                ;
+                    ResCipher = error(Error),
+                    Res = error("Encryption failed: " ++ Error),
+                    Warnings = []
+                )
+            )
+        ;
+            Encrypt = no,
+            Sign = yes,
+            % Force text parts to be base64-encoded to avoid being mangled
+            % during transfer.
+            generate_mime_part(cte_base64, Text, Attachments, PartToSign,
+                RS0, RS1),
+            get_sign_keys(CryptoInfo, ParsedHeaders, Keys),
+            (
+                Keys = [],
+                Res = error("No signing keys available."),
+                Warnings = []
+            ;
+                Keys = [_ | _],
+                % XXX sign_detached converts PartToSign into a a data buffer,
+                % then we convert it again when writing to the temp file
+                sign_detached(CryptoInfo, Keys, Config, PartToSign, ResSign,
+                    Warnings, !IO),
+                (
+                    ResSign = ok(Sig - MicAlg),
+                    generate_multipart_signed(PartToSign, Sig, MicAlg,
+                        MimeMessage, RS1, _RS),
+                    Spec = message_spec(WriteHeaders, mime_v1(MimeMessage)),
+                    write_temp_message_file(Config, Prepare, Spec, Res, !IO)
+                ;
+                    ResSign = error(Error),
+                    Res = error("Signing failed: " ++ Error)
+                )
+            )
+        ;
+            Encrypt = yes,
+            Sign = yes,
+            Res = error("Sign & encrypt NYI."),
+            Warnings = []
+        )
     ).
+
+%-----------------------------------------------------------------------------%
 
 :- pred generate_headers(prepare_temp::in, headers::in, parsed_headers::in,
     header_value::in, header_value::in, list(header)::out) is det.
@@ -1954,9 +2059,38 @@ maybe_cons_unstructured(SkipEmpty, Options, FieldName, Value, !Acc) :-
         cons(header(field_name(FieldName), unstructured(Value, Options)), !Acc)
     ).
 
-:- pred generate_attachment_mime_part(attachment::in, mime_part::out) is det.
+%-----------------------------------------------------------------------------%
 
-generate_attachment_mime_part(Attachment, MimePart) :-
+:- pred generate_mime_part(content_transfer_encoding::in, string::in,
+    list(attachment)::in, mime_part::out,
+    random.supply::mdi, random.supply::muo) is det.
+
+generate_mime_part(TextCTE, Text, Attachments, MimePart, !RS) :-
+    generate_text_mime_part(inline, TextCTE, Text, TextPart),
+    (
+        Attachments = [],
+        MimePart = TextPart
+    ;
+        Attachments = [_ | _],
+        generate_boundary(Boundary, !RS),
+        MimePart = composite(multipart_mixed, boundary(Boundary), yes(inline),
+            yes(cte_8bit), [TextPart | AttachmentParts]),
+        list.map(generate_attachment_mime_part(TextCTE), Attachments,
+            AttachmentParts)
+    ).
+
+:- pred generate_text_mime_part(content_disposition::in,
+    content_transfer_encoding::in, string::in, mime_part::out) is det.
+
+generate_text_mime_part(Disposition, TextCTE, Text, MimePart) :-
+    % XXX detect charset
+    MimePart = discrete(text_plain(yes(utf8)), yes(Disposition), yes(TextCTE),
+        text(Text)).
+
+:- pred generate_attachment_mime_part(content_transfer_encoding::in,
+    attachment::in, mime_part::out) is det.
+
+generate_attachment_mime_part(TextCTE, Attachment, MimePart) :-
     (
         Attachment = old_attachment(OldPart),
         OldType = OldPart ^ pt_type,
@@ -1976,7 +2110,7 @@ generate_attachment_mime_part(Attachment, MimePart) :-
         ;
             OldContent = unsupported,
             MimePart = discrete(content_type(OldType), yes(Disposition),
-                yes(cte_base64), external_base64(OldPart))
+                yes(cte_base64), external(OldPart))
         ;
             OldContent = subparts(_),
             unexpected($module, $pred, "nested part")
@@ -1989,27 +2123,37 @@ generate_attachment_mime_part(Attachment, MimePart) :-
         Disposition = attachment(yes(filename(FileName))),
         (
             Content = text(Text),
-            % XXX detect charset
-            MimePart = discrete(text_plain(yes(utf8)), yes(Disposition),
-                yes(cte_8bit), text(Text))
+            generate_text_mime_part(Disposition, TextCTE, Text, MimePart)
         ;
             Content = binary_base64(Base64),
             MimePart = discrete(content_type(Type), yes(Disposition),
-                yes(cte_base64), text(Base64))
+                yes(cte_base64), base64(Base64))
         )
     ).
 
-:- pred generate_multipart_encrypted(string::in, boundary::in,
-    mime_message::out) is det.
+%-----------------------------------------------------------------------------%
 
-generate_multipart_encrypted(Cipher, Boundary, MimeMessage) :-
+:- pred generate_multipart_encrypted(string::in, mime_part::out,
+    random.supply::mdi, random.supply::muo) is det.
+
+generate_multipart_encrypted(Cipher, MultiPart, !RS) :-
     % RFC 3156
-    MimeMessage = mime_message(mime_version_1_0, MultiPart),
+    generate_boundary(Boundary, !RS),
     MultiPart = composite(multipart_encrypted(application_pgp_encrypted),
-        Boundary, no, no, [SubPartA, SubPartB]),
+        boundary(Boundary), no, no, [SubPartA, SubPartB]),
     SubPartA = discrete(application_pgp_encrypted, no, no,
         text("Version: 1\n")),
     SubPartB = discrete(application_octet_stream, no, no, text(Cipher)).
+
+:- pred generate_multipart_signed(mime_part::in, string::in, micalg::in,
+    mime_part::out, random.supply::mdi, random.supply::muo) is det.
+
+generate_multipart_signed(SignedPart, Sig, MicAlg, MultiPart, !RS) :-
+    % RFC 3156
+    generate_boundary(Boundary, !RS),
+    MultiPart = composite(multipart_signed(MicAlg, application_pgp_signature),
+        boundary(Boundary), no, no, [SignedPart, SignaturePart]),
+    SignaturePart = discrete(application_pgp_signature, no, no, text(Sig)).
 
 %-----------------------------------------------------------------------------%
 

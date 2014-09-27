@@ -4,6 +4,7 @@
 :- module gpgme.data.
 :- interface.
 
+:- import_module char.
 :- import_module stream.
 
 :- pred gpgme_data_new(maybe_error(data)::out, io::di, io::uo) is det.
@@ -13,8 +14,11 @@
 
 :- pred gpgme_data_release(data::in, io::di, io::uo) is det.
 
-:- pred gpgme_data_write_string(data::in, string::in,
-    maybe_error::out, io::di, io::uo) is det.
+:- pred gpgme_data_write_char(data::in, char::in, maybe_error::out,
+    io::di, io::uo) is det.
+
+:- pred gpgme_data_write_string(data::in, string::in, maybe_error::out,
+    io::di, io::uo) is det.
 
 :- pred gpgme_data_rewind(data::in, maybe_error::out, io::di, io::uo) is det.
 
@@ -23,6 +27,7 @@
 
 :- instance stream.stream(data, io).
 :- instance stream.output(data, io).
+:- instance stream.writer(data, char, io).
 :- instance stream.writer(data, string, io).
 
 %-----------------------------------------------------------------------------%
@@ -112,6 +117,45 @@ gpgme_data_release(data(Data, _), !IO) :-
         may_not_duplicate],
 "
     gpgme_data_release(Data);
+").
+
+%-----------------------------------------------------------------------------%
+
+gpgme_data_write_char(data(Data, _), Char, Res, !IO) :-
+    gpgme_data_write_char_2(Data, Char, Ok, Error, !IO),
+    (
+        Ok = yes,
+        Res = ok
+    ;
+        Ok = no,
+        Res = error(Error)
+    ).
+
+:- pred gpgme_data_write_char_2(gpgme_data::in, char::in, bool::out,
+    string::out, io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    gpgme_data_write_char_2(Data::in, Char::in, Ok::out, Error::out,
+        _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
+"
+    unsigned char cs[1] = {Char};
+
+    for (;;) {
+        ssize_t written = gpgme_data_write(Data, cs, sizeof(cs));
+        if (written == -1) {
+            Ok = MR_NO;
+            Error = MR_make_string(MR_ALLOC_ID,
+                ""gpgme_data_write failed: errno=%d"", errno);
+            break;
+        }
+        if (written > 0) {
+            Ok = MR_YES;
+            Error = MR_make_string_const("""");
+            break;
+        }
+    }
 ").
 
 %-----------------------------------------------------------------------------%
@@ -249,6 +293,19 @@ gpgme_data_to_string(data(Data, _), Res, !IO) :-
 
 :- instance stream.output(data, io) where [
     flush(_, !IO)
+].
+
+:- instance stream.writer(data, char, io) where [
+    put(Data, Char, !IO) :-
+    (
+        gpgme_data_write_char(Data, Char, Res, !IO),
+        (
+            Res = ok
+        ;
+            Res = error(Error),
+            throw(io.make_io_error(Error))
+        )
+    )
 ].
 
 :- instance stream.writer(data, string, io) where [

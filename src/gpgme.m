@@ -21,6 +21,12 @@
 :- pred gpgme_engine_check_version(protocol::in, maybe_error::out,
     io::di, io::uo) is det.
 
+% Algorithms
+
+:- type hash_algo.
+
+:- func gpgme_hash_algo_name(hash_algo) = maybe(string).
+
 % Contexts
 
 :- type ctx.
@@ -160,6 +166,8 @@
     openpgp - "GPGME_PROTOCOL_OpenPGP"
 ]).
 
+:- pragma foreign_type("C", hash_algo, "gpgme_hash_algo_t").
+
 :- pragma foreign_type("C", ctx, "gpgme_ctx_t").
 
 :- type key
@@ -257,6 +265,34 @@ gpgme_engine_check_version(Proto, Res, !IO) :-
     } else {
         Ok = MR_NO;
         Error = _gpgme_error_to_string(err);
+    }
+").
+
+%-----------------------------------------------------------------------------%
+
+gpgme_hash_algo_name(Algo) = MaybeName :-
+    gpgme_hash_algo_name_2(Algo, Ok, Name),
+    (
+        Ok = yes,
+        MaybeName = yes(Name)
+    ;
+        Ok = no,
+        MaybeName = no
+    ).
+
+:- pred gpgme_hash_algo_name_2(hash_algo::in, bool::out, string::out) is det.
+
+:- pragma foreign_proc("C",
+    gpgme_hash_algo_name_2(Algo::in, Ok::out, Name::out),
+    [will_not_call_mercury, promise_pure, thread_safe],
+"
+    const char *s = gpgme_hash_algo_name(Algo);
+    if (s != NULL) {
+        Ok = MR_YES;
+        MR_make_aligned_string_copy_msg(Name, s, MR_ALLOC_ID);
+    } else {
+        Ok = MR_NO;
+        Name = MR_make_string_const("""");
     }
 ").
 

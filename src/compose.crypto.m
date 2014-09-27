@@ -4,11 +4,15 @@
 :- module compose.crypto.
 :- interface.
 
+:- import_module pair.
+
 :- type crypto_info
     --->    crypto_info(
                 ci_context      :: crypto,
                 ci_encrypt      :: bool,
-                ci_encrypt_keys :: map(addr_spec, key_userid)
+                ci_encrypt_keys :: map(addr_spec, key_userid),
+                ci_sign         :: bool,
+                ci_sign_keys    :: map(addr_spec, key_userid)
             ).
 
 :- type key_userid
@@ -21,11 +25,21 @@
 :- pred maintain_encrypt_keys(parsed_headers::in,
     crypto_info::in, crypto_info::out, io::di, io::uo) is det.
 
+:- pred maintain_sign_keys(parsed_headers::in,
+    crypto_info::in, crypto_info::out, io::di, io::uo) is det.
+
 :- pred get_encrypt_keys(crypto_info::in, parsed_headers::in,
     list(gpgme.key)::out, list(addr_spec)::out) is det.
 
+:- pred get_sign_keys(crypto_info::in, parsed_headers::in,
+    list(gpgme.key)::out) is det.
+
 :- pred encrypt(crypto_info::in, list(gpgme.key)::in, prog_config::in,
-    message_type::in, maybe_error(string)::out, list(string)::out,
+    mime_part::in, maybe_error(string)::out, list(string)::out,
+    io::di, io::uo) is det.
+
+:- pred sign_detached(crypto_info::in, list(gpgme.key)::in, prog_config::in,
+    mime_part::in, maybe_error(pair(string, micalg))::out, list(string)::out,
     io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
@@ -37,16 +51,21 @@
 
 :- import_module gpgme.data.
 :- import_module gpgme.encrypt.
+:- import_module gpgme.sign.
+:- import_module gpgme.signer.
+
+:- instance write_message.writer(gpgme.data) where [].
 
 %-----------------------------------------------------------------------------%
 
 init_crypto_info(Crypto, EncryptInit) =
-    crypto_info(Crypto, EncryptInit, map.init).
+    crypto_info(Crypto, EncryptInit, map.init, no, map.init).
 
 %-----------------------------------------------------------------------------%
 
-unref_keys(crypto_info(_, _, EncryptKeys), !IO) :-
-    unref_keys(map(fst, values(EncryptKeys)), !IO).
+unref_keys(crypto_info(_, _, EncryptKeys, _, SignKeys), !IO) :-
+    unref_keys(map(fst, values(EncryptKeys)), !IO),
+    unref_keys(map(fst, values(SignKeys)), !IO).
 
 :- func fst(key_userid) = gpgme.key.
 
@@ -54,16 +73,17 @@ fst(key_userid(Key, _)) = Key.
 
 %-----------------------------------------------------------------------------%
 
-maintain_encrypt_keys(ParsedHeaders, CryptoInfo0, CryptoInfo, !IO) :-
-    CryptoInfo0 = crypto_info(Crypto, Encrypt, EncryptKeys0),
+maintain_encrypt_keys(ParsedHeaders, !CryptoInfo, !IO) :-
+    Encrypt = !.CryptoInfo ^ ci_encrypt,
     (
         Encrypt = yes,
+        Crypto = !.CryptoInfo ^ ci_context,
+        EncryptKeys0 = !.CryptoInfo ^ ci_encrypt_keys,
         maintain_encrypt_keys_map(Crypto, ParsedHeaders,
             EncryptKeys0, EncryptKeys, !IO),
-        CryptoInfo = crypto_info(Crypto, Encrypt, EncryptKeys)
+        !CryptoInfo ^ ci_encrypt_keys := EncryptKeys
     ;
-        Encrypt = no,
-        CryptoInfo = CryptoInfo0
+        Encrypt = no
     ).
 
 :- pred maintain_encrypt_keys_map(crypto::in, parsed_headers::in,
@@ -85,8 +105,7 @@ maintain_encrypt_key(Crypto, AddrSpec, !EncryptKeys, !IO) :-
         true
     ;
         addr_spec_to_string(AddrSpec, Email, _Valid),
-        find_suitable_key(Crypto, Email, not_secret_only,
-            pick_encrypt_key(Email), ResKey, !IO),
+        find_suitable_key(Crypto, Email, pick_encrypt_key(Email), ResKey, !IO),
         (
             ResKey = ok(KeyUserId),
             map.det_insert(AddrSpec, KeyUserId, !EncryptKeys)
@@ -95,13 +114,57 @@ maintain_encrypt_key(Crypto, AddrSpec, !EncryptKeys, !IO) :-
         )
     ).
 
-:- pred find_suitable_key(crypto, string, secret_only,
-    pred(list(gpgme.key), key_userid), maybe_error(key_userid), io, io).
-:- mode find_suitable_key(in, in, in,
-    pred(in, out) is semidet, out, di, uo) is det.
+%-----------------------------------------------------------------------------%
 
-find_suitable_key(Context, Email, SecretOnly, Pick, Res, !IO) :-
-    gpgme_op_keylist(Context, yes(Email), SecretOnly, ResKeys, !IO),
+maintain_sign_keys(ParsedHeaders, !CryptoInfo, !IO) :-
+    Sign = !.CryptoInfo ^ ci_sign,
+    (
+        Sign = yes,
+        Crypto = !.CryptoInfo ^ ci_context,
+        SignKeys0 = !.CryptoInfo ^ ci_sign_keys,
+        maintain_sign_keys_map(Crypto, ParsedHeaders, SignKeys0, SignKeys,
+            !IO),
+        !CryptoInfo ^ ci_sign_keys := SignKeys
+    ;
+        Sign = no
+    ).
+
+:- pred maintain_sign_keys_map(crypto::in, parsed_headers::in,
+    map(addr_spec, key_userid)::in, map(addr_spec, key_userid)::out,
+    io::di, io::uo) is det.
+
+maintain_sign_keys_map(Crypto, ParsedHeaders, !SignKeys, !IO) :-
+    ParsedHeaders = parsed_headers(From, _To, _Cc, _Bcc, _ReplyTo),
+    solutions(addr_specs(From), AddrSpecs),
+    list.foldl2(maintain_sign_key(Crypto), AddrSpecs, !SignKeys, !IO).
+
+:- pred maintain_sign_key(crypto::in, addr_spec::in,
+    map(addr_spec, key_userid)::in, map(addr_spec, key_userid)::out,
+    io::di, io::uo) is det.
+
+maintain_sign_key(Crypto, AddrSpec, !SignKeys, !IO) :-
+    ( map.contains(!.SignKeys, AddrSpec) ->
+        true
+    ;
+        addr_spec_to_string(AddrSpec, Email, _Valid),
+        find_suitable_key(Crypto, Email, pick_sign_key(Email), ResKey, !IO),
+        (
+            ResKey = ok(KeyUserId),
+            map.det_insert(AddrSpec, KeyUserId, !SignKeys)
+        ;
+            ResKey = error(_) % display error?
+        )
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred find_suitable_key(crypto, string, pred(list(gpgme.key), key_userid),
+    maybe_error(key_userid), io, io).
+:- mode find_suitable_key(in, in, pred(in, out) is semidet, out, di, uo)
+    is det.
+
+find_suitable_key(Context, Email, Pick, Res, !IO) :-
+    gpgme_op_keylist(Context, yes(Email), not_secret_only, ResKeys, !IO),
     (
         ResKeys = ok(Keys),
         ( Pick(Keys, KeyUserId) ->
@@ -137,6 +200,25 @@ pick_encrypt_key(Email, [Key | Keys], KeyUserId) :-
         pick_encrypt_key(Email, Keys, KeyUserId)
     ).
 
+:- pred pick_sign_key(string::in, list(gpgme.key)::in, key_userid::out)
+    is semidet.
+
+pick_sign_key(Email, [Key | Keys], KeyUserId) :-
+    KeyInfo = get_key_info(Key),
+    (
+        KeyInfo ^ key_revoked = no,
+        KeyInfo ^ key_expired = no,
+        KeyInfo ^ key_disabled = no,
+        KeyInfo ^ key_invalid = no,
+        KeyInfo ^ key_can_sign = yes,
+        list.find_first_match(suitable_user_id(Email),
+            KeyInfo ^ key_userids, UserId)
+    ->
+        KeyUserId = key_userid(Key, UserId)
+    ;
+        pick_sign_key(Email, Keys, KeyUserId)
+    ).
+
 :- pred suitable_user_id(string::in, user_id::in) is semidet.
 
 suitable_user_id(Email, UserId) :-
@@ -151,16 +233,24 @@ get_encrypt_keys(CryptoInfo, ParsedHeaders, SelectedKeys, Missing) :-
     ParsedHeaders = parsed_headers(From, To, Cc, Bcc, _ReplyTo),
     Addresses = From ++ To ++ Cc ++ Bcc,
     solutions(addr_specs(Addresses), AddrSpecs),
-    list.foldr2(get_encrypt_key(EncryptKeys), AddrSpecs,
+    list.foldr2(get_key(EncryptKeys), AddrSpecs,
         [], SelectedKeys, [], Missing).
         % deduplicate SelectedKeys?
 
-:- pred get_encrypt_key(map(addr_spec, key_userid)::in, addr_spec::in,
+get_sign_keys(CryptoInfo, ParsedHeaders, SelectedKeys) :-
+    SignKeys = CryptoInfo ^ ci_sign_keys,
+    ParsedHeaders = parsed_headers(From, _To, _Cc, _Bcc, _ReplyTo),
+    solutions(addr_specs(From), AddrSpecs),
+    list.foldr2(get_key(SignKeys), AddrSpecs,
+        [], SelectedKeys, [], _Missing).
+        % deduplicate SelectedKeys?
+
+:- pred get_key(map(addr_spec, key_userid)::in, addr_spec::in,
     list(gpgme.key)::in, list(gpgme.key)::out,
     list(addr_spec)::in, list(addr_spec)::out) is det.
 
-get_encrypt_key(EncryptKeys, AddrSpec, !Keys, !Missing) :-
-    ( map.search(EncryptKeys, AddrSpec, key_userid(Key, _UserId)) ->
+get_key(KeyMap, AddrSpec, !Keys, !Missing) :-
+    ( map.search(KeyMap, AddrSpec, key_userid(Key, _UserId)) ->
         cons(Key, !Keys)
     ;
         cons(AddrSpec, !Missing)
@@ -199,12 +289,12 @@ addr_specs_3(Mailbox, AddrSpec) :-
 
 %-----------------------------------------------------------------------------%
 
-encrypt(CryptoInfo, Keys, Config, MessageType, Res, Warnings, !IO) :-
+encrypt(CryptoInfo, Keys, Config, PartToEncrypt, Res, Warnings, !IO) :-
     Ctx = CryptoInfo ^ ci_context,
     gpgme_data_new(ResPlainData, !IO),
     (
         ResPlainData = ok(PlainData),
-        write_message_type(PlainData, Config, MessageType, ResPlain, !IO),
+        write_mime_part(PlainData, Config, PartToEncrypt, ResPlain, !IO),
         (
             ResPlain = ok,
             gpgme_data_rewind(PlainData, ResRewind, !IO),
@@ -254,18 +344,129 @@ encrypt_3(Ctx, Keys, PlainData, CipherData, Res, Warnings, !IO) :-
     (
         ResEncrypt = ok(encrypt_result(InvalidRecipients)),
         gpgme_data_to_string(CipherData, Res, !IO),
-        list.map(invalid_recipient_to_warning, InvalidRecipients, Warnings)
+        list.map(invalid_key_to_warning, InvalidRecipients, Warnings)
     ;
         ResEncrypt = error(Error),
         Res = error(Error),
         Warnings = []
     ).
 
-:- pred invalid_recipient_to_warning(invalid_key::in, string::out) is det.
+:- pred invalid_key_to_warning(invalid_key::in, string::out) is det.
 
-invalid_recipient_to_warning(invalid_key(Fingerprint, Reason), Warning) :-
+invalid_key_to_warning(invalid_key(Fingerprint, Reason), Warning) :-
     Warning = "Key " ++ string.right_by_codepoint(Fingerprint, 8) ++
         " is invalid (" ++ Reason ++ ").".
+
+%-----------------------------------------------------------------------------%
+
+sign_detached(CryptoInfo, SignKeys, Config, SignedPart, Res, Warnings, !IO) :-
+    Ctx = CryptoInfo ^ ci_context,
+    gpgme_signers_clear(Ctx, !IO),
+    add_signers(Ctx, SignKeys, ResSigners, !IO),
+    (
+        ResSigners = ok,
+        sign_detached_2(Ctx, Config, SignedPart, Res, Warnings, !IO)
+    ;
+        ResSigners = error(Error),
+        Res = error(Error),
+        Warnings = []
+    ).
+
+:- pred sign_detached_2(crypto::in, prog_config::in, mime_part::in,
+    maybe_error(pair(string, micalg))::out, list(string)::out, io::di, io::uo)
+    is det.
+
+sign_detached_2(Ctx, Config, SignedPart, Res, Warnings, !IO) :-
+    gpgme_data_new(ResPlainData, !IO),
+    (
+        ResPlainData = ok(PlainData),
+        write_mime_part(PlainData, Config, SignedPart, ResPlain, !IO),
+        (
+            ResPlain = ok,
+            gpgme_data_rewind(PlainData, ResRewind, !IO),
+            (
+                ResRewind = ok,
+                gpgme_data_new(ResSigData, !IO),
+                (
+                    ResSigData = ok(SigData),
+                    gpgme_op_sign_detached(Ctx, PlainData, SigData, ResSign,
+                        !IO),
+                    (
+                        ResSign = ok(SignResult),
+                        ( sign_result_to_micalg(SignResult, MicAlg) ->
+                            gpgme_data_to_string(SigData, ResSig, !IO),
+                            (
+                                ResSig = ok(Sig),
+                                Res = ok(Sig - MicAlg),
+                                sign_result_to_warnings(SignResult, Warnings)
+                            ;
+                                ResSig = error(Error),
+                                Res = error(Error),
+                                Warnings = []
+                            )
+                        ;
+                            Res = error("Cannot determine hash algorithm."),
+                            Warnings = []
+                        )
+                    ;
+                        ResSign = error(Error),
+                        Res = error(Error),
+                        Warnings = []
+                    ),
+                    gpgme_data_release(SigData, !IO)
+                ;
+                    ResSigData = error(Error),
+                    Res = error(Error),
+                    Warnings = []
+                )
+            ;
+                ResRewind = error(Error),
+                Res = error(Error),
+                Warnings = []
+            )
+        ;
+            ResPlain = error(Error),
+            Res = error(Error),
+            Warnings = []
+        ),
+        gpgme_data_release(PlainData, !IO)
+    ;
+        ResPlainData = error(Error),
+        Res = error(Error),
+        Warnings = []
+    ).
+
+:- pred add_signers(ctx::in, list(key)::in, maybe_error::out, io::di, io::uo)
+    is det.
+
+add_signers(_Ctx, [], Res, !IO) :-
+    Res = ok.
+add_signers(Ctx, [Key | Keys], Res, !IO) :-
+    gpgme_signers_add(Ctx, Key, Res0, !IO),
+    (
+        Res0 = ok,
+        add_signers(Ctx, Keys, Res, !IO)
+    ;
+        Res0 = error(Error),
+        Res = error(Error)
+    ).
+
+:- pred sign_result_to_micalg(sign_result::in, micalg::out) is semidet.
+
+sign_result_to_micalg(SignResult, MicAlg) :-
+    SignResult = sign_result(_InvalidSigners, NewSigs),
+    solutions(
+        (pred(X::out) is nondet :-
+            list.member(NewSig, NewSigs),
+            X = gpgme_hash_algo_name(NewSig ^ hash_algo)
+        ), Xs),
+    Xs = [yes(HashAlgo)],
+    MicAlg = micalg("pgp-" ++ to_lower(HashAlgo)).
+
+:- pred sign_result_to_warnings(sign_result::in, list(string)::out) is det.
+
+sign_result_to_warnings(sign_result(InvalidSigners, _NewSigs), Warnings) :-
+    list.map(invalid_key_to_warning, InvalidSigners, Warnings).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
