@@ -34,9 +34,9 @@
 :- pred get_sign_keys(crypto_info::in, parsed_headers::in,
     list(gpgme.key)::out) is det.
 
-:- pred encrypt(crypto_info::in, list(gpgme.key)::in, prog_config::in,
-    mime_part::in, maybe_error(string)::out, list(string)::out,
-    io::di, io::uo) is det.
+:- pred encrypt(crypto_info::in, maybe(list(gpgme.key))::in,
+    list(gpgme.key)::in, prog_config::in, mime_part::in,
+    maybe_error(string)::out, list(string)::out, io::di, io::uo) is det.
 
 :- pred sign_detached(crypto_info::in, list(gpgme.key)::in, prog_config::in,
     mime_part::in, maybe_error(pair(string, micalg))::out, list(string)::out,
@@ -289,8 +289,34 @@ addr_specs_3(Mailbox, AddrSpec) :-
 
 %-----------------------------------------------------------------------------%
 
-encrypt(CryptoInfo, Keys, Config, PartToEncrypt, Res, Warnings, !IO) :-
+encrypt(CryptoInfo, MaybeSignKeys, EncryptKeys, Config, PartToEncrypt, Res,
+        Warnings, !IO) :-
     Ctx = CryptoInfo ^ ci_context,
+    (
+        MaybeSignKeys = yes(SignKeys),
+        gpgme_signers_clear(Ctx, !IO),
+        add_signers(Ctx, SignKeys, ResSigners, !IO),
+        Op = encrypt_sign
+    ;
+        MaybeSignKeys = no,
+        ResSigners = ok,
+        Op = encrypt_only
+    ),
+    (
+        ResSigners = ok,
+        encrypt_1(Ctx, Op, EncryptKeys, Config, PartToEncrypt, Res, Warnings,
+            !IO)
+    ;
+        ResSigners = error(Error),
+        Res = error(Error),
+        Warnings = []
+    ).
+
+:- pred encrypt_1(crypto::in, encrypt_op::in, list(gpgme.key)::in,
+    prog_config::in, mime_part::in, maybe_error(string)::out,
+    list(string)::out, io::di, io::uo) is det.
+
+encrypt_1(Ctx, Op, Keys, Config, PartToEncrypt, Res, Warnings, !IO) :-
     gpgme_data_new(ResPlainData, !IO),
     (
         ResPlainData = ok(PlainData),
@@ -300,7 +326,7 @@ encrypt(CryptoInfo, Keys, Config, PartToEncrypt, Res, Warnings, !IO) :-
             gpgme_data_rewind(PlainData, ResRewind, !IO),
             (
                 ResRewind = ok,
-                encrypt_2(Ctx, Keys, PlainData, Res, Warnings, !IO)
+                encrypt_2(Ctx, Op, Keys, PlainData, Res, Warnings, !IO)
             ;
                 ResRewind = error(Error),
                 Res = error(Error),
@@ -318,14 +344,15 @@ encrypt(CryptoInfo, Keys, Config, PartToEncrypt, Res, Warnings, !IO) :-
         Warnings = []
     ).
 
-:- pred encrypt_2(crypto::in, list(gpgme.key)::in, gpgme.data::in,
-    maybe_error(string)::out, list(string)::out, io::di, io::uo) is det.
+:- pred encrypt_2(crypto::in, encrypt_op::in, list(gpgme.key)::in,
+    gpgme.data::in, maybe_error(string)::out, list(string)::out,
+    io::di, io::uo) is det.
 
-encrypt_2(Ctx, Keys, PlainData, Res, Warnings, !IO) :-
+encrypt_2(Ctx, Op, Keys, PlainData, Res, Warnings, !IO) :-
     gpgme_data_new(ResCipherData, !IO),
     (
         ResCipherData = ok(CipherData),
-        encrypt_3(Ctx, Keys, PlainData, CipherData, Res, Warnings, !IO),
+        encrypt_3(Ctx, Op, Keys, PlainData, CipherData, Res, Warnings, !IO),
         gpgme_data_release(CipherData, !IO)
     ;
         ResCipherData = error(Error),
@@ -333,13 +360,13 @@ encrypt_2(Ctx, Keys, PlainData, Res, Warnings, !IO) :-
         Warnings = []
     ).
 
-:- pred encrypt_3(crypto::in, list(gpgme.key)::in, gpgme.data::in,
-    gpgme.data::in, maybe_error(string)::out, list(string)::out,
-    io::di, io::uo) is det.
+:- pred encrypt_3(crypto::in, encrypt_op::in, list(gpgme.key)::in,
+    gpgme.data::in, gpgme.data::in, maybe_error(string)::out,
+    list(string)::out, io::di, io::uo) is det.
 
-encrypt_3(Ctx, Keys, PlainData, CipherData, Res, Warnings, !IO) :-
+encrypt_3(Ctx, Op, Keys, PlainData, CipherData, Res, Warnings, !IO) :-
     % Not sure about always_trust.
-    gpgme_op_encrypt(encrypt_only, Ctx, Keys, [always_trust, no_encrypt_to],
+    gpgme_op_encrypt(Op, Ctx, Keys, [always_trust, no_encrypt_to],
         PlainData, CipherData, ResEncrypt, !IO),
     (
         ResEncrypt = ok(encrypt_result(InvalidRecipients)),

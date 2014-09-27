@@ -1904,21 +1904,37 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
             Warnings = []
         ;
             Encrypt = yes,
-            Sign = no,
-            generate_mime_part(cte_8bit, Text, Attachments, PartToEncrypt,
-                RS0, RS1),
-            get_encrypt_keys(CryptoInfo, ParsedHeaders, Keys, Missing),
             (
-                Keys = [],
+                Sign = no,
+                MaybeSigners = no,
+                TextCTE = cte_8bit
+            ;
+                Sign = yes,
+                get_sign_keys(CryptoInfo, ParsedHeaders, SignKeys),
+                MaybeSigners = yes(SignKeys),
+                % Not sure if this is required by RFC 3156:
+                % "Messages which are encrypted and signed in this
+                % combined fashion are REQUIRED to follow the same
+                % canonicalization rules as multipart/signed objects."
+                TextCTE = cte_base64
+            ),
+            get_encrypt_keys(CryptoInfo, ParsedHeaders, EncryptKeys, Missing),
+            ( MaybeSigners = yes([]) ->
+                Res = error("No signing keys available."),
+                Warnings = []
+            ;
+                EncryptKeys = [],
                 Res = error("No encryption keys available."),
                 Warnings = []
             ;
-                Keys = [_ | _],
+                EncryptKeys = [_ | _],
                 missing_keys_warning(Missing, WarningsA),
+                generate_mime_part(TextCTE, Text, Attachments, PartToEncrypt,
+                    RS0, RS1),
                 % XXX encrypt could return Cipher as a data buffer instead of
                 % returning it as a string
-                encrypt(CryptoInfo, Keys, Config, PartToEncrypt, ResCipher,
-                    WarningsB, !IO),
+                encrypt(CryptoInfo, MaybeSigners, EncryptKeys, Config,
+                    PartToEncrypt, ResCipher, WarningsB, !IO),
                 (
                     ResCipher = ok(Cipher),
                     generate_multipart_encrypted(Cipher, MimePart, RS1, _RS),
@@ -1938,17 +1954,17 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
             % during transfer.
             generate_mime_part(cte_base64, Text, Attachments, PartToSign,
                 RS0, RS1),
-            get_sign_keys(CryptoInfo, ParsedHeaders, Keys),
+            get_sign_keys(CryptoInfo, ParsedHeaders, SignKeys),
             (
-                Keys = [],
+                SignKeys = [],
                 Res = error("No signing keys available."),
                 Warnings = []
             ;
-                Keys = [_ | _],
+                SignKeys = [_ | _],
                 % XXX sign_detached converts PartToSign into a a data buffer,
                 % then we convert it again when writing to the temp file
-                sign_detached(CryptoInfo, Keys, Config, PartToSign, ResSign,
-                    Warnings, !IO),
+                sign_detached(CryptoInfo, SignKeys, Config, PartToSign,
+                    ResSign, Warnings, !IO),
                 (
                     ResSign = ok(Sig - MicAlg),
                     generate_multipart_signed(PartToSign, Sig, MicAlg,
@@ -1960,11 +1976,6 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
                     Res = error("Signing failed: " ++ Error)
                 )
             )
-        ;
-            Encrypt = yes,
-            Sign = yes,
-            Res = error("Sign & encrypt NYI."),
-            Warnings = []
         )
     ).
 
