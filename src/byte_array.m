@@ -11,7 +11,7 @@
 :- type byte == int.
 
 :- type bounds_error
-    --->    bounds_error.
+    --->    bounds_error(string, string).
 
     % allocate(Capacity, ByteArray)
     %
@@ -57,6 +57,7 @@
 
 :- import_module exception.
 :- import_module int.
+:- import_module string.
 
 :- pragma foreign_type("C", byte_array, "struct byte_array *").
 
@@ -126,7 +127,7 @@ set_length(Length, !ByteArray) :-
     ( Length >= 0 ->
         do_set_length(Length, !ByteArray)
     ;
-        throw(bounds_error)
+        throw(bounds_error($pred, "Length: " ++ from_int(Length)))
     ).
 
 :- pred do_set_length(int::in, byte_array::di, byte_array::uo) is det.
@@ -155,13 +156,15 @@ set_length(Length, !ByteArray) :-
 %-----------------------------------------------------------------------------%
 
 get_byte(ByteArray, Index, Byte) :-
+    Length = length(ByteArray),
     (
         Index >= 0,
-        Index < length(ByteArray)
+        Index < Length
     ->
         unsafe_get_byte(ByteArray, Index, Byte)
     ;
-        throw(bounds_error)
+        throw(bounds_error($pred,
+            "Index: " ++ from_int(Index) ++ ", Length: " ++ from_int(Length)))
     ).
 
 :- pragma foreign_proc("C",
@@ -174,13 +177,15 @@ get_byte(ByteArray, Index, Byte) :-
 %-----------------------------------------------------------------------------%
 
 set_byte(Index, Byte, !ByteArray) :-
+    Length = length(!.ByteArray),
     (
         Index >= 0,
-        Index < length(!.ByteArray)
+        Index < Length
     ->
         unsafe_set_byte(Index, Byte, !ByteArray)
     ;
-        throw(bounds_error)
+        throw(bounds_error($pred,
+            "Index: " ++ from_int(Index) ++ ", Length: " ++ from_int(Length)))
     ).
 
 :- pragma foreign_proc("C",
@@ -194,14 +199,21 @@ set_byte(Index, Byte, !ByteArray) :-
 %-----------------------------------------------------------------------------%
 
 copy_bytes(Src, SrcBegin, SrcEnd, Dest0, Dest, DestBegin) :-
+    SrcLength = length(Src),
+    DestLength = length(Dest0),
     (
-        0 =< SrcBegin, SrcBegin =< SrcEnd, SrcEnd =< length(Src),
+        0 =< SrcBegin, SrcBegin =< SrcEnd, SrcEnd =< SrcLength,
         DestEnd = DestBegin + (SrcEnd - SrcBegin),
-        0 =< DestBegin, DestEnd =< length(Dest0)
+        0 =< DestBegin, DestEnd =< DestLength
     ->
         unsafe_copy_bytes(Src, SrcBegin, SrcEnd, Dest0, Dest, DestBegin)
     ;
-        throw(bounds_error)
+        throw(bounds_error($pred,
+            "SrcBegin: " ++ from_int(SrcBegin) ++
+            ", SrcEnd: " ++ from_int(SrcEnd) ++
+            ", SrcLength: " ++ from_int(SrcLength) ++
+            ", DestBegin: " ++ from_int(DestBegin) ++
+            ", DestLength: " ++ from_int(DestLength)))
     ).
 
 :- pragma foreign_proc("C",
