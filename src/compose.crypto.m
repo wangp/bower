@@ -233,17 +233,20 @@ get_encrypt_keys(CryptoInfo, ParsedHeaders, SelectedKeys, Missing) :-
     ParsedHeaders = parsed_headers(From, To, Cc, Bcc, _ReplyTo),
     Addresses = From ++ To ++ Cc ++ Bcc,
     solutions(addr_specs(Addresses), AddrSpecs),
-    list.foldr2(get_key(EncryptKeys), AddrSpecs,
-        [], SelectedKeys, [], Missing).
-        % deduplicate SelectedKeys?
+    list.foldl2(get_key(EncryptKeys), AddrSpecs,
+        [], RevSelectedKeys, [], RevMissing),
+    % deduplicate SelectedKeys?
+    list.reverse(RevSelectedKeys, SelectedKeys),
+    list.reverse(RevMissing, Missing).
 
 get_sign_keys(CryptoInfo, ParsedHeaders, SelectedKeys) :-
     SignKeys = CryptoInfo ^ ci_sign_keys,
     ParsedHeaders = parsed_headers(From, _To, _Cc, _Bcc, _ReplyTo),
     solutions(addr_specs(From), AddrSpecs),
-    list.foldr2(get_key(SignKeys), AddrSpecs,
-        [], SelectedKeys, [], _Missing).
-        % deduplicate SelectedKeys?
+    list.foldl2(get_key(SignKeys), AddrSpecs,
+        [], RevSelectedKeys, [], _RevMissing),
+    % deduplicate SelectedKeys?
+    list.reverse(RevSelectedKeys, SelectedKeys).
 
 :- pred get_key(map(addr_spec, key_userid)::in, addr_spec::in,
     list(gpgme.key)::in, list(gpgme.key)::out,
