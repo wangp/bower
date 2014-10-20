@@ -268,8 +268,10 @@ on_error(Pos, Bad0, Bad, Errors, Errors + 1) :-
 :- pred add_octet(int::in, int::in, int::out, T::di, T::uo)
     is det <= encode(T).
 
-add_octet(Octet, EncPos, EncPos + 1, !Enc) :-
-    set_byte(EncPos, Octet, !Enc).
+add_octet(Octet, EncPos0, EncPos, !Enc) :-
+    EncPos = EncPos0 + 1,
+    set_length(EncPos, !Enc),
+    set_byte(EncPos0, Octet, !Enc).
 
     % Assumes: 0x80 =< Int =< 0xff
     % (Technically the range includes C1 controls.)
