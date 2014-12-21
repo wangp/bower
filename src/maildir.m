@@ -51,9 +51,8 @@ add_sent(Config, FileName, Res, !IO) :-
         ConfigRes = error(_),
         SentFolder = default_sent_folder
     ),
-    call_notmuch_deliver(Config, FileName, SentFolder,
-        ["--tag=sent", "--remove-tag=unread"],
-        Res, !IO).
+    call_notmuch_insert(Config, FileName, SentFolder,
+        ["+sent", "-unread"], Res, !IO).
 
 add_draft(Config, FileName, Res, !IO) :-
     get_notmuch_config(Config, "bower:maildir.drafts_folder", ConfigRes, !IO),
@@ -63,17 +62,16 @@ add_draft(Config, FileName, Res, !IO) :-
         ConfigRes = error(_),
         DraftsFolder = default_drafts_folder
     ),
-    call_notmuch_deliver(Config, FileName, DraftsFolder,
-        ["--tag=draft", "--remove-tag=inbox", "--remove-tag=unread"],
-        Res, !IO).
+    call_notmuch_insert(Config, FileName, DraftsFolder,
+        ["+draft", "-inbox", "-unread"], Res, !IO).
 
-:- pred call_notmuch_deliver(prog_config::in, string::in, string::in,
+:- pred call_notmuch_insert(prog_config::in, string::in, string::in,
     list(string)::in, maybe_error::out, io::di, io::uo) is det.
 
-call_notmuch_deliver(Config, FileName, Folder, TagOps, Res, !IO) :-
-    get_notmuch_deliver_command(Config, NotmuchDeliver),
-    % XXX do we need -f?
-    make_quoted_command(NotmuchDeliver, [Folder | TagOps],
+call_notmuch_insert(Config, FileName, Folder, TagOps, Res, !IO) :-
+    get_notmuch_command(Config, Notmuch),
+    make_quoted_command(Notmuch,
+        ["insert", "--folder=" ++ Folder, "--create-folder" | TagOps],
         redirect_input(FileName), no_redirect, Command),
     io.call_system(Command, CallRes, !IO),
     (
@@ -81,7 +79,7 @@ call_notmuch_deliver(Config, FileName, Folder, TagOps, Res, !IO) :-
         ( ExitStatus = 0 ->
             Res = ok
         ;
-            Msg = string.format("notmuch-deliver returned with exit status %d",
+            Msg = string.format("notmuch insert returned with exit status %d",
                 [i(ExitStatus)]),
             Res = error(Msg)
         )

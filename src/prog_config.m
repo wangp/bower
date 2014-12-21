@@ -35,9 +35,6 @@
 
 :- pred get_notmuch_command(prog_config::in, command_prefix::out) is det.
 
-:- pred get_notmuch_deliver_command(prog_config::in, command_prefix::out)
-    is det.
-
 :- pred get_editor_command(prog_config::in, command_prefix::out) is det.
 
 :- pred get_sendmail_command(prog_config::in, sendmail_option::in,
@@ -83,7 +80,6 @@
 :- type prog_config
     --->    prog_config(
                 notmuch         :: command_prefix,
-                notmuch_deliver :: command_prefix,
                 editor          :: command_prefix,
                 sendmail        :: command_prefix,
                 post_sendmail   :: post_sendmail,
@@ -136,10 +132,11 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
         Notmuch = default_notmuch_command
     ),
 
-    ( search_config(Config, "command", "notmuch_deliver", NotmuchDeliver0) ->
-        parse_command(NotmuchDeliver0, NotmuchDeliver, !Errors)
+    ( search_config(Config, "command", "notmuch_deliver", _) ->
+        cons("notmuch_deliver is no longer supported; " ++
+            "please update to notmuch 0.19 or later.", !Errors)
     ;
-        NotmuchDeliver = default_notmuch_deliver_command
+        true
     ),
 
     ( search_config(Config, "command", "editor", Editor0) ->
@@ -205,7 +202,6 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
     make_colors(Config, Colors),
 
     ProgConfig ^ notmuch = Notmuch,
-    ProgConfig ^ notmuch_deliver = NotmuchDeliver,
     ProgConfig ^ editor = Editor,
     ProgConfig ^ sendmail = Sendmail,
     ProgConfig ^ post_sendmail = PostSendmail,
@@ -277,9 +273,6 @@ check_poll_period_secs(Value, PollPeriodSecs, !Errors) :-
 get_notmuch_command(Config, Notmuch) :-
     Notmuch = Config ^ notmuch.
 
-get_notmuch_deliver_command(Config, NotmuchDeliver) :-
-    NotmuchDeliver = Config ^ notmuch_deliver.
-
 get_editor_command(Config, Editor) :-
     Editor = Config ^ editor.
 
@@ -322,11 +315,6 @@ config_filename = "bower/bower.conf".
 
 default_notmuch_command =
     command_prefix(shell_quoted("notmuch"), quote_once).
-
-:- func default_notmuch_deliver_command = command_prefix.
-
-default_notmuch_deliver_command =
-    command_prefix(shell_quoted("notmuch-deliver"), quote_once).
 
 :- func default_editor_command = command_prefix.
 

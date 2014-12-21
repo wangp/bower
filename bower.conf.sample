@@ -15,15 +15,14 @@
 
 [command]
 
-# How to run notmuch and notmuch-deliver.
-# Set these if notmuch or notmuch-deliver are not already on your PATH.
+# How to run notmuch.
+# Set this if notmuch is not already on your PATH.
 #
 # I run bower locally but keep my mail and notmuch on a remote machine,
 # accessed via ssh.  For that, you may like to enable the OpenSSH
 # ControlMaster option, and also set ControlPersist to greater than 60
 # seconds (the polling period in the index view).
 ; notmuch = ssh user@host /remote/notmuch
-; notmuch_deliver = ssh user@host /remote/notmuch-deliver
 
 # How to edit a message.
 # The default is to use $EDITOR, or else "vi".
@@ -37,7 +36,7 @@
 ; sendmail = /usr/bin/msmtp
 
 # Command to execute after the sendmail command is successful.
-# The default is to use notmuch-deliver to add the sent message to the
+# The default is to use "notmuch insert" to add the sent message to the
 # maildir.  You can disable it by setting an empty command.
 ; post_sendmail =
 

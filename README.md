@@ -24,7 +24,6 @@ At compile time:
 At run time:
 
 * notmuch
-* notmuch-deliver (for adding draft and sent messages)
 * ncurses with wide character support
 * GNU coreutils: base64
 * SMTP client to send messages (configurable)
@@ -263,7 +262,7 @@ Bower performs two steps when sending a message:
 
 2. Call the configured `post_sendmail` command with the message on
    standard input.  When no command is set, the default behaviour is to
-   use `notmuch-deliver` to add the sent message to the mail store, and
+   use `notmuch insert` to add the sent message to the mail store, and
    into the database with the `sent` tag and without the `unread` tag.
    You may replace this with a custom command, or bypass the step by
    setting the command to the empty string.
