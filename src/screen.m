@@ -490,7 +490,7 @@ get_keycode_2(Code, !IO) :-
                 ->
                     Code = meta(Char2)
                 ;
-                    Code = char('\033') % ESC
+                    Code = char(det_from_int(27)) % ESC
                 )
             )
         ;
