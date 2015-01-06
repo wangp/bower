@@ -256,12 +256,12 @@ create_thread_pager(Config, Screen, ThreadId, Ordering, MaybeCached,
     ;
         MaybeCached = no,
         run_notmuch(Config, [
-            "show", "--format=json", "--", thread_id_to_search_term(ThreadId)
+            "show", "--format=json", "--entire-thread=false",
+            "--", thread_id_to_search_term(ThreadId)
         ], parse_messages_list, ParseResult, !IO)
     ),
     (
-        ParseResult = ok(Messages0),
-        list.filter_map(filter_unwanted_messages, Messages0, Messages)
+        ParseResult = ok(Messages)
     ;
         ParseResult = error(_),
         Messages = []
@@ -278,16 +278,6 @@ create_thread_pager(Config, Screen, ThreadId, Ordering, MaybeCached,
         ParseResult = error(Error),
         ResCount = error("Error parsing notmuch response: " ++ Error)
     ).
-
-:- pred filter_unwanted_messages(message::in, message::out) is semidet.
-
-filter_unwanted_messages(!Message) :-
-    Tags = !.Message ^ m_tags,
-    not set.contains(Tags, tag("draft")),
-
-    Replies0 = !.Message ^ m_replies,
-    list.filter_map(filter_unwanted_messages, Replies0, Replies),
-    !Message ^ m_replies := Replies.
 
 :- pred setup_thread_pager(prog_config::in, thread_id::in, ordering::in,
     tm::in, int::in, int::in, list(message)::in, common_history::in,

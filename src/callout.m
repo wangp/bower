@@ -124,17 +124,24 @@ parse_top_message(JSON, Message) :-
 
 parse_inner_message_list(JSON, Messages) :-
     ( JSON = list(Array) ->
-        list.map(parse_message, Array, Messages)
+        list.map(parse_message, Array, Messagess),
+        list.condense(Messagess, Messages)
     ;
         notmuch_json_error
     ).
 
-:- pred parse_message(json::in, message::out) is det.
+:- pred parse_message(json::in, list(message)::out) is det.
 
-parse_message(JSON, Message) :-
+parse_message(JSON, Messages) :-
     ( JSON = list([JSON1, JSON2]) ->
         parse_inner_message_list(JSON2, Replies),
-        parse_message_details(JSON1, Replies, Message)
+        ( JSON1 = null ->
+            % Message excluded, keep replies if any.
+            Messages = Replies
+        ;
+            parse_message_details(JSON1, Replies, Message),
+            Messages = [Message]
+        )
     ;
         notmuch_json_error
     ).
