@@ -873,8 +873,15 @@ handle_recall(!Screen, Sent, !IndexInfo, !IO) :-
         !IndexInfo, !IO),
     (
         MaybeSelected = yes(Message),
-        continue_postponed(Config, !.Screen, Message, TransitionB, !IO),
-        handle_screen_transition(!Screen, TransitionB, Sent, !IndexInfo, !IO)
+        (
+            Message = message(_, _, _, _, _, _),
+            continue_postponed(Config, !.Screen, Message, TransitionB, !IO),
+            handle_screen_transition(!Screen, TransitionB, Sent, !IndexInfo,
+                !IO)
+        ;
+            Message = excluded_message(_),
+            Sent = not_sent
+        )
     ;
         MaybeSelected = no,
         Sent = not_sent
@@ -901,10 +908,10 @@ addressbook_add(Screen, Info, !IO) :-
             ], parse_top_message, MessageRes, !IO),
             (
                 MessageRes = ok(Message),
-                From = Message ^ m_headers ^ h_from,
+                From = Message ^ m_headers ^ h_from
+            ->
                 Address0 = header_value_string(From)
             ;
-                MessageRes = error(_),
                 Address0 = ""
             )
         ;

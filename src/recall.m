@@ -70,7 +70,8 @@ select_recall(Config, Screen, MaybeThreadId, Transition, !IO) :-
         Ids = [_ | _],
         time(Time, !IO),
         Nowish = localtime(Time),
-        list.map_foldl(make_recall_line(Config, Nowish), Ids, Lines, !IO),
+        list.map_foldl(make_recall_line(Config, Nowish), Ids, MaybeLines, !IO),
+        list.filter_map(maybe_is_yes, MaybeLines, Lines),
         Scrollable = scrollable.init_with_cursor(Lines),
         update_message(Screen, clear_message, !IO),
         Info = recall_info(Config, Scrollable),
@@ -79,23 +80,28 @@ select_recall(Config, Screen, MaybeThreadId, Transition, !IO) :-
     ).
 
 :- pred make_recall_line(prog_config::in, tm::in, message_id::in,
-    recall_line::out, io::di, io::uo) is det.
+    maybe(recall_line)::out, io::di, io::uo) is det.
 
-make_recall_line(Config, Nowish, MessageId, Line, !IO) :-
+make_recall_line(Config, Nowish, MessageId, MaybeLine, !IO) :-
     run_notmuch(Config, [
         "show", "--format=json", "--part=0", "--",
         message_id_to_search_term(MessageId)
     ], parse_top_message, Result, !IO),
     (
         Result = ok(Message),
-        Timestamp = Message ^ m_timestamp,
-        Headers = Message ^ m_headers,
-        To = Headers ^ h_to,
-        Subject = Headers ^ h_subject,
-        timestamp_to_tm(Timestamp, TM),
-        Shorter = no,
-        make_reldate(Nowish, TM, Shorter, RelDate),
-        Line = recall_line(Message, RelDate, To, Subject)
+        (
+            Message = message(_Id, Timestamp, Headers, _Tags, _Body, _Replies),
+            To = Headers ^ h_to,
+            Subject = Headers ^ h_subject,
+            timestamp_to_tm(Timestamp, TM),
+            Shorter = no,
+            make_reldate(Nowish, TM, Shorter, RelDate),
+            Line = recall_line(Message, RelDate, To, Subject),
+            MaybeLine = yes(Line)
+        ;
+            Message = excluded_message(_Replies),
+            MaybeLine = no
+        )
     ;
         Result = error(Error),
         unexpected($module, $pred, Error)
@@ -192,9 +198,9 @@ delete_draft(Screen, !Info, !IO) :-
     !.Info = recall_info(Config, Scrollable0),
     (
         get_cursor_line(Scrollable0, _, CursorLine0),
-        delete_cursor_line(Scrollable0, Scrollable)
+        delete_cursor_line(Scrollable0, Scrollable),
+        MessageId = CursorLine0 ^ r_message ^ m_id
     ->
-        MessageId = CursorLine0 ^ r_message ^ m_id,
         tag_messages(Config, [tag_delta("+deleted")], [MessageId], Res, !IO),
         (
             Res = ok,

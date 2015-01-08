@@ -323,6 +323,20 @@ make_message_tree(Config, Mode, Cols, Message, Tree, !Counter, !IO) :-
     SubTrees = [HeaderTree, BodyTree, Separators | ReplyTrees],
     Tree = node(NodeId, SubTrees, no).
 
+make_message_tree(Config, Mode, Cols, Message, Tree, !Counter, !IO) :-
+    Message = excluded_message(Replies),
+    counter.allocate(NodeIdInt, !Counter),
+    NodeId = node_id(NodeIdInt),
+    (
+        Mode = include_replies,
+        list.map_foldl2(make_message_tree(Config, Mode, Cols),
+            Replies, ReplyTrees, !Counter, !IO)
+    ;
+        Mode = toplevel_only,
+        ReplyTrees = []
+    ),
+    Tree = node(NodeId, ReplyTrees, no).
+
 :- pred add_header(string::in, header_value::in,
     list(pager_line)::in, list(pager_line)::out) is det.
 

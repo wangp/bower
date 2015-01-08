@@ -224,8 +224,11 @@ reopen_thread_pager_with_ordering(Screen, Ordering, Info0, Info, !IO) :-
     Scrollable = scrollable.init(ThreadLines),
 
     % Restore cursor and pager position.
-    ( get_cursor_line(Scrollable0, _Cursor, CursorLine0) ->
-        MessageId0 = CursorLine0 ^ tp_message ^ m_id,
+    (
+        get_cursor_line(Scrollable0, _Cursor, CursorLine0),
+        Message0 = CursorLine0 ^ tp_message,
+        Message0 = message(MessageId0, _, _, _, _, _)
+    ->
         pager.skip_to_message(MessageId0, Pager1, Pager2),
         ( get_top_offset(Pager0, TopOffset) ->
             pager.scroll_but_stop_at_message(NumPagerRows, TopOffset, _,
@@ -311,9 +314,16 @@ setup_thread_pager(Config, ThreadId, Ordering, Nowish, Rows, Cols, Messages,
             list.foldl(get_latest_line, RestLines, FirstLine, LatestLine),
             CursorLine = LatestLine
         ),
-        MessageId = CursorLine ^ tp_message ^ m_id,
-        goto_message(MessageId, NumThreadRows, Scrollable0, Scrollable),
-        pager.skip_to_message(MessageId, PagerInfo0, PagerInfo)
+        Message = CursorLine ^ tp_message,
+        (
+            Message = message(MessageId, _, _, _, _, _),
+            goto_message(MessageId, NumThreadRows, Scrollable0, Scrollable),
+            pager.skip_to_message(MessageId, PagerInfo0, PagerInfo)
+        ;
+            Message = excluded_message(_),
+            Scrollable = Scrollable0,
+            PagerInfo = PagerInfo0
+        )
     ),
     AddedMessages = 0,
     ThreadPagerInfo = thread_pager_info(Config, ThreadId, Messages, Ordering,
@@ -324,8 +334,8 @@ setup_thread_pager(Config, ThreadId, Ordering, Nowish, Rows, Cols, Messages,
     is det.
 
 get_latest_line(LineA, LineB, Line) :-
-    TimestampA = LineA ^ tp_message ^ m_timestamp,
-    TimestampB = LineB ^ tp_message ^ m_timestamp,
+    TimestampA = get_timestamp_fallback(LineA ^ tp_message),
+    TimestampB = get_timestamp_fallback(LineB ^ tp_message),
     ( TimestampA >= TimestampB ->
         Line = LineA
     ;
@@ -416,21 +426,21 @@ append_threaded_messages(Nowish, Above0, Below0, MaybeParentId,
     ;
         Above1 = Above0 ++ [blank]
     ),
-    MessageId = Message ^ m_id,
-    Replies = Message ^ m_replies,
-    Subject = Message ^ m_headers ^ h_subject,
-    append_threaded_messages(Nowish, Above1, Below1, yes(MessageId), Replies,
+    MaybeMessageId = get_maybe_message_id(Message),
+    Subject = get_subject_fallback(Message),
+    Replies = get_replies(Message),
+    append_threaded_messages(Nowish, Above1, Below1, MaybeMessageId, Replies,
         Subject, !Cord),
     !:Cord = !.Cord ++ MessagesCord.
 
 :- pred get_last_subject(message::in, header_value::out) is det.
 
 get_last_subject(Message, LastSubject) :-
-    Replies = Message ^ m_replies,
+    Replies = get_replies(Message),
     ( list.last(Replies, LastReply) ->
         get_last_subject(LastReply, LastSubject)
     ;
-        LastSubject = Message ^ m_headers ^ h_subject
+        LastSubject = get_subject_fallback(Message)
     ).
 
 :- pred not_blank_at_column(list(graphic)::in, int::in) is semidet.
@@ -455,17 +465,18 @@ append_flat_messages(Nowish, Messages, ThreadLines, SortedFlatMessages) :-
 
 flatten_messages(_MaybeParentId, [], !Acc).
 flatten_messages(MaybeParentId, [Message | Messages], !Acc) :-
-    Message = message(MessageId, _Timestamp, _Headers, _Tags, _Body, Replies),
+    MaybeMessageId = get_maybe_message_id(Message),
+    Replies = get_replies(Message),
     list.cons(message_flat(Message, MaybeParentId), !Acc),
-    flatten_messages(yes(MessageId), Replies, !Acc),
+    flatten_messages(MaybeMessageId, Replies, !Acc),
     flatten_messages(MaybeParentId, Messages, !Acc).
 
 :- pred compare_by_timestamp(message_flat::in, message_flat::in,
     comparison_result::out) is det.
 
 compare_by_timestamp(A, B, Rel) :-
-    TimestampA = A ^ mf_message ^ m_timestamp,
-    TimestampB = B ^ mf_message ^ m_timestamp,
+    TimestampA = get_timestamp_fallback(A ^ mf_message),
+    TimestampB = get_timestamp_fallback(B ^ mf_message),
     compare(Rel, TimestampA, TimestampB).
 
 :- pred append_flat_message(tm::in, message_flat::in, header_value::in,
@@ -474,7 +485,7 @@ compare_by_timestamp(A, B, Rel) :-
 append_flat_message(Nowish, MessageFlat, PrevSubject, Subject, !RevAcc) :-
     MessageFlat = message_flat(Message, MaybeParentId),
     make_thread_line(Nowish, Message, MaybeParentId, no, PrevSubject, Line),
-    Subject = Message ^ m_headers ^ h_subject,
+    Subject = get_subject_fallback(Message),
     cons(Line, !RevAcc).
 
 :- func mf_message(message_flat) = message. % accessor
@@ -484,15 +495,21 @@ append_flat_message(Nowish, MessageFlat, PrevSubject, Subject, !RevAcc) :-
 
 make_thread_line(Nowish, Message, MaybeParentId, MaybeGraphics, PrevSubject,
         Line) :-
-    Timestamp = Message ^ m_timestamp,
-    Tags = Message ^ m_tags,
-    From = Message ^ m_headers ^ h_from,
-    CleanFrom = clean_email_address(header_value_string(From)),
+    (
+        Message = message(_Id, Timestamp, Headers, Tags, _Body, _Replies),
+        From = Headers ^ h_from,
+        CleanFrom = clean_email_address(header_value_string(From)),
+        Subject = Headers ^ h_subject
+    ;
+        Message = excluded_message(_Replies),
+        Timestamp = get_timestamp_fallback(Message),
+        CleanFrom = "",
+        Subject = get_subject_fallback(Message),
+        Tags = set.init
+    ),
     get_standard_tags(Tags, StdTags, NonstdTagsWidth),
-    Subject = Message ^ m_headers ^ h_subject,
     timestamp_to_tm(Timestamp, TM),
-    Shorter = no,
-    make_reldate(Nowish, TM, Shorter, RelDate),
+    make_reldate(Nowish, TM, no, RelDate),
     ( canonicalise_subject(Subject) = canonicalise_subject(PrevSubject) ->
         MaybeSubject = no
     ;
@@ -539,19 +556,24 @@ is_reply_marker("SV:").
     map(message_id, message_tag_deltas)::out) is det.
 
 create_tag_delta_map(ThreadLine, !DeltaMap) :-
-    MessageId = ThreadLine ^ tp_message ^ m_id,
-    PrevTags = ThreadLine ^ tp_prev_tags,
-    CurrTags = ThreadLine ^ tp_curr_tags,
-    set.difference(CurrTags, PrevTags, AddTags),
-    set.difference(PrevTags, CurrTags, RemoveTags),
+    Message = ThreadLine ^ tp_message,
     (
-        set.is_empty(AddTags),
-        set.is_empty(RemoveTags)
-    ->
-        true
+        Message = message(MessageId, _, _, _, _, _),
+        PrevTags = ThreadLine ^ tp_prev_tags,
+        CurrTags = ThreadLine ^ tp_curr_tags,
+        set.difference(CurrTags, PrevTags, AddTags),
+        set.difference(PrevTags, CurrTags, RemoveTags),
+        (
+            set.is_empty(AddTags),
+            set.is_empty(RemoveTags)
+        ->
+            true
+        ;
+            Deltas = message_tag_deltas(AddTags, RemoveTags),
+            map.det_insert(MessageId, Deltas, !DeltaMap)
+        )
     ;
-        Deltas = message_tag_deltas(AddTags, RemoveTags),
-        map.det_insert(MessageId, Deltas, !DeltaMap)
+        Message = excluded_message(_)
     ).
 
 :- pred restore_tag_deltas(map(message_id, message_tag_deltas)::in,
@@ -561,16 +583,21 @@ restore_tag_deltas(DeltaMap, ThreadLine0, ThreadLine) :-
     ThreadLine0 = thread_line(Message, ParentId, From, PrevTags, CurrTags0,
         _StdTags0, _NonstdTagsWidth0, Selected, ModeGraphics, RelDate,
         MaybeSubject),
-    MessageId = Message ^ m_id,
-    ( map.search(DeltaMap, MessageId, Deltas) ->
-        Deltas = message_tag_deltas(AddTags, RemoveTags),
-        set.difference(CurrTags0, RemoveTags, CurrTags1),
-        set.union(CurrTags1, AddTags, CurrTags),
-        get_standard_tags(CurrTags, StdTags, NonstdTagsWidth),
-        ThreadLine = thread_line(Message, ParentId, From, PrevTags, CurrTags,
-            StdTags, NonstdTagsWidth, Selected, ModeGraphics, RelDate,
-            MaybeSubject)
+    (
+        Message = message(MessageId, _, _, _, _, _),
+        ( map.search(DeltaMap, MessageId, Deltas) ->
+            Deltas = message_tag_deltas(AddTags, RemoveTags),
+            set.difference(CurrTags0, RemoveTags, CurrTags1),
+            set.union(CurrTags1, AddTags, CurrTags),
+            get_standard_tags(CurrTags, StdTags, NonstdTagsWidth),
+            ThreadLine = thread_line(Message, ParentId, From, PrevTags, CurrTags,
+                StdTags, NonstdTagsWidth, Selected, ModeGraphics, RelDate,
+                MaybeSubject)
+        ;
+            ThreadLine = ThreadLine0
+        )
     ;
+        Message = excluded_message(_),
         ThreadLine = ThreadLine0
     ).
 
@@ -621,20 +648,26 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         thread_pager_loop(NewScreen, !Info, !IO)
     ;
         Action = start_reply(Message, ReplyKind),
-        Config = !.Info ^ tp_config,
-        start_reply(Config, Screen, Message, ReplyKind, Transition, !IO),
-        handle_screen_transition(Screen, NewScreen, Transition, Sent,
-            !Info, !IO),
         (
-            Sent = sent,
-            AddedMessages0 = !.Info ^ tp_added_messages,
-            !Info ^ tp_added_messages := AddedMessages0 + 1,
-            % XXX would be nice to move cursor to the sent message
-            reopen_thread_pager(NewScreen, !Info, !IO)
+            Message = message(_, _, _, _, _, _),
+            Config = !.Info ^ tp_config,
+            start_reply(Config, Screen, Message, ReplyKind, Transition, !IO),
+            handle_screen_transition(Screen, NewScreen, Transition, Sent,
+                !Info, !IO),
+            (
+                Sent = sent,
+                AddedMessages0 = !.Info ^ tp_added_messages,
+                !Info ^ tp_added_messages := AddedMessages0 + 1,
+                % XXX would be nice to move cursor to the sent message
+                reopen_thread_pager(NewScreen, !Info, !IO)
+            ;
+                Sent = not_sent
+            ),
+            thread_pager_loop(NewScreen, !Info, !IO)
         ;
-            Sent = not_sent
-        ),
-        thread_pager_loop(NewScreen, !Info, !IO)
+            Message = excluded_message(_),
+            thread_pager_loop(Screen, !Info, !IO)
+        )
     ;
         Action = prompt_resend(MessageId),
         handle_resend(Screen, MessageId, !Info, !IO),
@@ -1107,10 +1140,13 @@ skip_to_unread(MessageUpdate, !Info) :-
             ThreadLine)
     ->
         set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
-        MessageId = ThreadLine ^ tp_message ^ m_id,
-        skip_to_message(MessageId, PagerInfo0, PagerInfo),
-        !Info ^ tp_scrollable := Scrollable,
-        !Info ^ tp_pager := PagerInfo,
+        ( MessageId = ThreadLine ^ tp_message ^ m_id ->
+            skip_to_message(MessageId, PagerInfo0, PagerInfo),
+            !Info ^ tp_scrollable := Scrollable,
+            !Info ^ tp_pager := PagerInfo
+        ;
+            true
+        ),
         MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("No more unread messages.")
@@ -1509,8 +1545,8 @@ update_selected_line_for_tag_changes(AddTags, RemoveTags, Line0, Line,
     Line0 = thread_line(Message, MaybeParentId, From, PrevTags, CurrTags0,
         _StdTags0, _NonstdTagsWidth0, Selected, MaybeGraphics, RelDate,
         MaybeSubject),
-    MessageId = Message ^ m_id,
     (
+        MessageId = Message ^ m_id,
         Selected = selected,
         % Notmuch performs tag removals before addition.
         TagSet0 = CurrTags0,
@@ -2088,8 +2124,10 @@ get_overall_tags(Line, !TagSet) :-
 
 get_changed_status_messages(Line, !TagGroups) :-
     TagSet = get_tag_delta_set(Line),
-    ( set.non_empty(TagSet) ->
-        MessageId = Line ^ tp_message ^ m_id,
+    (
+        set.non_empty(TagSet),
+        MessageId = Line ^ tp_message ^ m_id
+    ->
         ( map.search(!.TagGroups, TagSet, Messages0) ->
             map.det_update(TagSet, [MessageId | Messages0], !TagGroups)
         ;
@@ -2136,9 +2174,12 @@ reply(Info, ReplyKind, Action, MessageUpdate) :-
 
 resend(Info, Action, MessageUpdate) :-
     PagerInfo = Info ^ tp_pager,
-    ( get_top_message(PagerInfo, Message) ->
+    (
+        get_top_message(PagerInfo, Message),
+        MessageId = Message ^ m_id
+    ->
         MessageUpdate = clear_message,
-        Action = prompt_resend(Message ^ m_id)
+        Action = prompt_resend(MessageId)
     ;
         MessageUpdate = set_warning("No message to resend."),
         Action = continue
@@ -2168,8 +2209,14 @@ handle_recall(!Screen, ThreadId, Sent, !Info, !IO) :-
     handle_screen_transition(!Screen, TransitionA, MaybeSelected, !Info, !IO),
     (
         MaybeSelected = yes(Message),
-        continue_postponed(Config, !.Screen, Message, TransitionB, !IO),
-        handle_screen_transition(!Screen, TransitionB, Sent, !Info, !IO)
+        (
+            Message = message(_, _, _, _, _, _),
+            continue_postponed(Config, !.Screen, Message, TransitionB, !IO),
+            handle_screen_transition(!Screen, TransitionB, Sent, !Info, !IO)
+        ;
+            Message = excluded_message(_),
+            Sent = not_sent
+        )
     ;
         MaybeSelected = no,
         Sent = not_sent
@@ -2183,8 +2230,10 @@ handle_recall(!Screen, ThreadId, Sent, !Info, !IO) :-
 addressbook_add(Screen, Info, !IO) :-
     Config = Info ^ tp_config,
     Scrollable = Info ^ tp_scrollable,
-    ( get_cursor_line(Scrollable, _Cursor, Line) ->
-        From = Line ^ tp_message ^ m_headers ^ h_from,
+    (
+        get_cursor_line(Scrollable, _Cursor, Line),
+        From = Line ^ tp_message ^ m_headers ^ h_from
+    ->
         Address0 = header_value_string(From)
     ;
         Address0 = ""

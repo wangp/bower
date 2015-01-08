@@ -26,13 +26,13 @@
     screen_transition(sent)::out, history::in, history::out,
     history::in, history::out, io::di, io::uo) is det.
 
-:- pred start_reply(prog_config::in, screen::in, message::in, reply_kind::in,
-    screen_transition(sent)::out, io::di, io::uo) is det.
+:- pred start_reply(prog_config::in, screen::in, message::in(message),
+    reply_kind::in, screen_transition(sent)::out, io::di, io::uo) is det.
 
 :- pred start_reply_to_message_id(prog_config::in, screen::in, message_id::in,
     reply_kind::in, screen_transition(sent)::out, io::di, io::uo) is det.
 
-:- pred continue_postponed(prog_config::in, screen::in, message::in,
+:- pred continue_postponed(prog_config::in, screen::in, message::in(message),
     screen_transition(sent)::out, io::di, io::uo) is det.
 
     % Exported for resend.
@@ -272,14 +272,22 @@ similar_mailbox(AddrSpec, OtherAddress) :-
 
 %-----------------------------------------------------------------------------%
 
-start_reply_to_message_id(Config, Screen, MessageId, ReplyKind, Sent, !IO) :-
+start_reply_to_message_id(Config, Screen, MessageId, ReplyKind, Transition,
+        !IO) :-
     run_notmuch(Config, [
         "show", "--format=json", "--part=0", "--",
         message_id_to_search_term(MessageId)
     ], parse_top_message, Res, !IO),
     (
         Res = ok(Message),
-        start_reply(Config, Screen, Message, ReplyKind, Sent, !IO)
+        (
+            Message = message(_, _, _, _, _, _),
+            start_reply(Config, Screen, Message, ReplyKind, Transition, !IO)
+        ;
+            Message = excluded_message(_),
+            Warning = "Excluded message.",
+            Transition = screen_transition(not_sent, set_warning(Warning))
+        )
     ;
         Res = error(Error),
         unexpected($module, $pred, Error)

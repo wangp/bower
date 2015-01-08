@@ -34,7 +34,13 @@
                 m_tags      :: set(tag),
                 m_body      :: list(part),
                 m_replies   :: list(message)
+            )
+    ;       excluded_message(
+                em_replies  :: list(message)
             ).
+
+:- inst message
+    --->    message(ground, ground, ground, ground, ground, ground).
 
 :- type message_id
     --->    message_id(string).
@@ -103,6 +109,14 @@
 
 :- pred tag_to_string(tag::in, string::out) is det.
 
+:- func get_maybe_message_id(message) = maybe(message_id).
+
+:- func get_timestamp_fallback(message) = int.
+
+:- func get_subject_fallback(message) = header_value.
+
+:- func get_replies(message) = list(message).
+
 :- pred snoc(T::in, cord(T)::in, cord(T)::out) is det.
 
 %-----------------------------------------------------------------------------%
@@ -131,6 +145,18 @@ header_value_string(header_value(S)) = S.
 header_value_string(decoded_unstructured(S)) = S.
 
 tag_to_string(tag(String), String).
+
+get_maybe_message_id(message(Id, _, _, _, _, _)) = yes(Id).
+get_maybe_message_id(excluded_message(_)) = no.
+
+get_timestamp_fallback(message(_, Timestamp, _, _, _, _)) = Timestamp.
+get_timestamp_fallback(excluded_message(_)) = 0.
+
+get_subject_fallback(message(_, _, Headers, _, _, _)) = Headers ^ h_subject.
+get_subject_fallback(excluded_message(_)) = header_value("(excluded message)").
+
+get_replies(message(_, _, _, _, _, Replies)) = Replies.
+get_replies(excluded_message(Replies)) = Replies.
 
 snoc(X, C, snoc(C, X)).
 

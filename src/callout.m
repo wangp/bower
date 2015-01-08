@@ -136,8 +136,13 @@ parse_message(JSON, Messages) :-
     ( JSON = list([JSON1, JSON2]) ->
         parse_inner_message_list(JSON2, Replies),
         ( JSON1 = null ->
-            % Message excluded, keep replies if any.
-            Messages = Replies
+            (
+                Replies = [],
+                Messages = []
+            ;
+                Replies = [_ | _],
+                Messages = [excluded_message(Replies)]
+            )
         ;
             parse_message_details(JSON1, Replies, Message),
             Messages = [Message]
