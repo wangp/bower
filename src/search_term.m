@@ -7,6 +7,7 @@
 :- import_module bool.
 :- import_module io.
 :- import_module list.
+:- import_module maybe.
 
 :- import_module prog_config.
 
@@ -14,8 +15,8 @@
 
 :- type token.
 
-:- pred predigest_search_string(prog_config::in, string::in, list(token)::out,
-    io::di, io::uo) is det.
+:- pred predigest_search_string(prog_config::in, string::in,
+    maybe_error(list(token))::out, io::di, io::uo) is det.
 
 :- pred tokens_to_search_terms(list(token)::in, string::out, bool::out,
     io::di, io::uo) is det.
@@ -49,28 +50,27 @@
 :- inst macro
     --->    macro(ground).
 
-%-----------------------------------------------------------------------------%
-
-predigest_search_string(Config, String, Tokens, !IO) :-
-    det_parse(String, tokens, Tokens0),
-    Seen = set.init,
-    expand_config_aliases(Config, Seen, Tokens0, Tokens, !IO).
+:- type expand_alias_result
+    --->    found(list(token))
+    ;       not_found
+    ;       error(string).
 
 %-----------------------------------------------------------------------------%
 
-:- pred det_parse(string::in, parser(T)::in(parser), T::out) is det.
-
-det_parse(Input, Parser, X) :-
+predigest_search_string(Config, Input, Res, !IO) :-
     promise_equivalent_solutions [ParseResult] (
-        parsing_utils.parse(Input, Parser, ParseResult)
+        parsing_utils.parse(Input, tokens, ParseResult)
     ),
     (
-        ParseResult = ok(X)
+        ParseResult = ok(Tokens0),
+        Seen = set.init,
+        expand_config_aliases(Config, Seen, Tokens0, Res, !IO)
     ;
-        ParseResult = error(_MaybeError, _Line, Column),
-        unexpected($module, $pred,
-            "parse error at column " ++ string.from_int(Column))
+        ParseResult = error(_MaybeError, _Line, _Column),
+        Res = error("Error parsing search string.")
     ).
+
+%-----------------------------------------------------------------------------%
 
 :- pred tokens(src::in, list(token)::out, ps::in, ps::out) is semidet.
 
@@ -197,55 +197,93 @@ simple_alias("~A", do_not_apply_limit).
 %-----------------------------------------------------------------------------%
 
 :- pred expand_config_aliases(prog_config::in, set(string)::in,
-    list(token)::in, list(token)::out, io::di, io::uo) is det.
+    list(token)::in, maybe_error(list(token))::out, io::di, io::uo) is det.
 
-expand_config_aliases(Config, Seen, Tokens0, Tokens, !IO) :-
-    list.map_foldl(expand_config_alias(Config, Seen), Tokens0, Tokens1, !IO),
-    list.condense(Tokens1, Tokens).
+expand_config_aliases(Config, Seen, Tokens0, Res, !IO) :-
+    (
+        Tokens0 = [],
+        Res = ok([])
+    ;
+        Tokens0 = [H0 | T0],
+        expand_config_alias(Config, Seen, H0, ResH, !IO),
+        (
+            ResH = ok(H),
+            expand_config_aliases(Config, Seen, T0, ResT, !IO),
+            (
+                ResT = ok(T),
+                Res = ok(H ++ T)
+            ;
+                ResT = error(Error),
+                Res = error(Error)
+            )
+        ;
+            ResH = error(Error),
+            Res = error(Error)
+        )
+    ).
 
 :- pred expand_config_alias(prog_config::in, set(string)::in,
-    token::in, list(token)::out, io::di, io::uo) is det.
+    token::in, maybe_error(list(token))::out, io::di, io::uo) is det.
 
-expand_config_alias(Config, Seen, Token0, Tokens, !IO) :-
+expand_config_alias(Config, Seen, Token0, Res, !IO) :-
     (
         Token0 = macro(Word0),
-        expand_config_alias_macro(Config, Seen, Token0, Tokens1, !IO),
+        expand_config_alias_macro(Config, Seen, Token0, Res1, !IO),
         (
-            Tokens1 = [_ | _],
-            Tokens = Tokens1
+            Res1 = found(Tokens),
+            Res = ok(Tokens)
         ;
-            Tokens1 = [],
-            Tokens = [literal(Word0)]
+            Res1 = not_found,
+            Res = ok([literal(Word0)])
+        ;
+            Res1 = error(Error),
+            Res = error(Error)
         )
     ;
         ( Token0 = literal(_)
         ; Token0 = date_range(_, _)
         ; Token0 = do_not_apply_limit
         ),
-        Tokens = [Token0]
+        Res = ok([Token0])
     ).
 
 :- pred expand_config_alias_macro(prog_config::in, set(string)::in,
-    token::in(macro), list(token)::out, io::di, io::uo) is det.
+    token::in(macro), expand_alias_result::out, io::di, io::uo) is det.
 
-expand_config_alias_macro(Config, Seen0, macro(MacroName), Tokens, !IO) :-
+expand_config_alias_macro(Config, Seen0, macro(MacroName), Res, !IO) :-
     (
         string.remove_prefix("~", MacroName, Key),
         not set.contains(Seen0, Key)
     ->
-        get_notmuch_config(Config, search_alias_section, Key, Res, !IO),
+        get_notmuch_config(Config, search_alias_section, Key, ConfigRes, !IO),
         (
-            Res = ok(Expansion),
+            ConfigRes = ok(Expansion),
             set.insert(Key, Seen0, Seen),
-            det_parse(Expansion, tokens, Tokens0),
-            expand_config_aliases(Config, Seen, Tokens0, Tokens1, !IO),
-            Tokens = [literal("(")] ++ Tokens1 ++ [literal(")")]
+            promise_equivalent_solutions [ParseResult] (
+                parsing_utils.parse(Expansion, tokens, ParseResult)
+            ),
+            (
+                ParseResult = ok(Tokens0),
+                expand_config_aliases(Config, Seen, Tokens0, Res1, !IO),
+                (
+                    Res1 = ok(Tokens1),
+                    Tokens = [literal("(")] ++ Tokens1 ++ [literal(")")],
+                    Res = found(Tokens)
+                ;
+                    Res1 = error(Error),
+                    Res = error(Error)
+                )
+            ;
+                ParseResult = error(_, _, _),
+                Res = error("Error parsing expansion of " ++ MacroName ++ ".")
+            )
         ;
-            Res = error(_),
-            Tokens = [] % fail
+            ConfigRes = error(_Error),
+            % XXX Distinguish different types of errors.
+            Res = error("Could not expand " ++ MacroName ++ ".")
         )
     ;
-        Tokens = [] % fail
+        Res = error("Search alias " ++ MacroName ++ " is recursive.")
     ).
 
 %-----------------------------------------------------------------------------%

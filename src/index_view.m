@@ -166,9 +166,17 @@ open_index(Config, Screen, SearchString, !.CommonHistory, !IO) :-
         SearchTokens = [],
         Threads = []
     ;
-        predigest_search_string(Config, SearchString, SearchTokens, !IO),
-        search_terms_with_progress(Config, Screen, SearchTokens, MaybeThreads,
-            !IO),
+        predigest_search_string(Config, SearchString, ParseRes, !IO),
+        (
+            ParseRes = ok(SearchTokens),
+            search_terms_with_progress(Config, Screen, SearchTokens,
+                MaybeThreads, !IO)
+        ;
+            ParseRes = error(Error),
+            SearchTokens = [],
+            MaybeThreads = no,
+            update_message(Screen, set_warning(Error), !IO)
+        ),
         (
             MaybeThreads = yes(Threads)
         ;
@@ -333,20 +341,27 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
             add_history_nodup(LimitString, History0, History),
             !IndexInfo ^ i_common_history ^ ch_limit_history := History,
             time(Time, !IO),
-            predigest_search_string(Config, LimitString, Tokens, !IO),
-            search_terms_with_progress(Config, Screen, Tokens, MaybeThreads,
-                !IO),
+            predigest_search_string(Config, LimitString, ParseRes, !IO),
             (
-                MaybeThreads = yes(Threads),
-                setup_index_scrollable(Time, Threads, Scrollable),
-                !IndexInfo ^ i_scrollable := Scrollable,
-                !IndexInfo ^ i_search_terms := LimitString,
-                !IndexInfo ^ i_search_tokens := Tokens,
-                !IndexInfo ^ i_search_time := Time,
-                !IndexInfo ^ i_next_poll_time := next_poll_time(Config, Time),
-                !IndexInfo ^ i_poll_count := 0
+                ParseRes = ok(Tokens),
+                search_terms_with_progress(Config, Screen, Tokens,
+                    MaybeThreads, !IO),
+                (
+                    MaybeThreads = yes(Threads),
+                    setup_index_scrollable(Time, Threads, Scrollable),
+                    !IndexInfo ^ i_scrollable := Scrollable,
+                    !IndexInfo ^ i_search_terms := LimitString,
+                    !IndexInfo ^ i_search_tokens := Tokens,
+                    !IndexInfo ^ i_search_time := Time,
+                    !IndexInfo ^ i_next_poll_time :=
+                        next_poll_time(Config, Time),
+                    !IndexInfo ^ i_poll_count := 0
+                ;
+                    MaybeThreads = no
+                )
             ;
-                MaybeThreads = no
+                ParseRes = error(Error),
+                update_message(Screen, set_warning(Error), !IO)
             )
         ;
             Return = no,
@@ -1475,19 +1490,27 @@ refresh_all(Screen, Verbose, !Info, !IO) :-
     % refresh, so expand the search terms from the beginning.
     Config = !.Info ^ i_config,
     Terms = !.Info ^ i_search_terms,
-    predigest_search_string(Config, Terms, Tokens, !IO),
+    predigest_search_string(Config, Terms, ParseRes, !IO),
     (
-        Verbose = verbose,
-        search_terms_with_progress(Config, Screen, Tokens, MaybeThreads, !IO)
+        ParseRes = ok(Tokens),
+        (
+            Verbose = verbose,
+            search_terms_with_progress(Config, Screen, Tokens, MaybeThreads,
+                !IO)
+        ;
+            Verbose = quiet,
+            search_terms_quiet(Config, Tokens, MaybeThreads, _MessageUpdate,
+                !IO)
+        ),
+        (
+            MaybeThreads = yes(Threads),
+            refresh_all_2(Screen, Time, Tokens, Threads, !Info, !IO)
+        ;
+            MaybeThreads = no
+        )
     ;
-        Verbose = quiet,
-        search_terms_quiet(Config, Tokens, MaybeThreads, _MessageUpdate, !IO)
-    ),
-    (
-        MaybeThreads = yes(Threads),
-        refresh_all_2(Screen, Time, Tokens, Threads, !Info, !IO)
-    ;
-        MaybeThreads = no
+        ParseRes = error(Error),
+        update_message(Screen, set_warning(Error), !IO)
     ).
 
 :- pred refresh_all_2(screen::in, time_t::in, list(token)::in,
