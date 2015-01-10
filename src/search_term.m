@@ -88,14 +88,24 @@ token(Src, Token, !PS) :-
     ;
         next_char(Src, '~', !PS),
         next_char(Src, 'd', !PS),
-        whitespace(Src, _, !PS),
-        date_range(Src, DateRangeToken, !PS)
+        % Disambiguate ~dDATE from alias beginning with ~d.
+        date_range_prefix(Src, !PS)
     ->
-        Token = DateRangeToken
+        date_range(Src, Token, !PS)
     ;
         macro_or_literal(Src, Token, !PS)
     ),
     whitespace(Src, _, !PS).
+
+:- pred date_range_prefix(src::in, ps::in, ps::out) is semidet.
+
+date_range_prefix(Src, !PS) :-
+    next_char(Src, Char, !.PS, _),
+    ( char.is_whitespace(Char) ->
+        whitespace(Src, _, !PS)
+    ;
+        Char = ('{')
+    ).
 
 :- pred date_range(src::in, token::out, ps::in, ps::out) is semidet.
 

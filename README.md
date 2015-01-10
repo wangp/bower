@@ -132,7 +132,7 @@ these macros:
     ~F              tag:flagged
     ~U              tag:unread
     ~D              tag:deleted
-    ~d DATE..DATE   (optional space after ~d)
+    ~d DATE..DATE
     ~d DATE..
     ~d ..DATE
     ~d DATE
