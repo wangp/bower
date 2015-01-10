@@ -75,7 +75,6 @@ display_tag(Tag) :-
 
 nondisplay_tag(tag("deleted")).
 nondisplay_tag(tag("flagged")).
-nondisplay_tag(tag("inbox")).
 nondisplay_tag(tag("new")).
 nondisplay_tag(tag("replied")).
 nondisplay_tag(tag("sent")).
