@@ -179,27 +179,29 @@ open_thread_pager(Config, Screen, ThreadId, MaybeSearch, Transition,
     Transition = screen_transition(Effects, no_change),
     CommonHistory = Info ^ tp_common_history.
 
-:- pred reopen_thread_pager(screen::in,
+:- pred reopen_thread_pager(screen::in, bool::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
-reopen_thread_pager(Screen, !Info, !IO) :-
+reopen_thread_pager(Screen, KeepCached, !Info, !IO) :-
     Ordering = !.Info ^ tp_ordering,
-    reopen_thread_pager_with_ordering(Screen, Ordering, !Info, !IO).
+    reopen_thread_pager_with_ordering(Screen, KeepCached, Ordering,
+        !Info, !IO).
 
-:- pred reopen_thread_pager_with_ordering(screen::in, ordering::in,
+:- pred reopen_thread_pager_with_ordering(screen::in, bool::in, ordering::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
-reopen_thread_pager_with_ordering(Screen, Ordering, Info0, Info, !IO) :-
+reopen_thread_pager_with_ordering(Screen, KeepCached, Ordering, Info0, Info,
+        !IO) :-
     Info0 = thread_pager_info(Config0, ThreadId0, Cached0, _Ordering0,
         Scrollable0, _NumThreadRows, Pager0, _NumPagerRows,
         Search, SearchDir, CommonHistory, AddedMessages),
-
     (
-        Cached0 = [],
-        MaybeCached = no
-    ;
-        Cached0 = [_ | _],
+        KeepCached = yes,
+        Cached0 = [_ | _]
+    ->
         MaybeCached = yes(Cached0)
+    ;
+        MaybeCached = no
     ),
     create_thread_pager(Config0, Screen, ThreadId0, Ordering, MaybeCached,
         CommonHistory, Info1, ResCount, !IO),
@@ -659,7 +661,7 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
                 AddedMessages0 = !.Info ^ tp_added_messages,
                 !Info ^ tp_added_messages := AddedMessages0 + 1,
                 % XXX would be nice to move cursor to the sent message
-                reopen_thread_pager(NewScreen, !Info, !IO)
+                reopen_thread_pager(NewScreen, no, !Info, !IO)
             ;
                 Sent = not_sent
             ),
@@ -680,7 +682,7 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
             Sent = sent,
             AddedMessages0 = !.Info ^ tp_added_messages,
             !Info ^ tp_added_messages := AddedMessages0 + 1,
-            reopen_thread_pager(NewScreen, !Info, !IO)
+            reopen_thread_pager(NewScreen, no, !Info, !IO)
         ;
             Sent = not_sent
         ),
@@ -730,7 +732,7 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
     ;
         Action = toggle_ordering,
         toggle_ordering(!.Info, Ordering),
-        reopen_thread_pager_with_ordering(Screen, Ordering, !Info, !IO),
+        reopen_thread_pager_with_ordering(Screen, yes, Ordering, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = addressbook_add,
@@ -738,7 +740,7 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = refresh_results,
-        reopen_thread_pager(Screen, !Info, !IO),
+        reopen_thread_pager(Screen, no, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
         Action = leave
