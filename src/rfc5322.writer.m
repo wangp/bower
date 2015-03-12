@@ -8,7 +8,8 @@
 
 :- type options
     --->    no_encoding
-    ;       rfc2047_encoding.
+    ;       rfc2047_encoding
+    ;       for_display.    % no quotes or escaping
 
 :- pred address_list_to_string(options::in, address_list::in,
     string::out, bool::out) is det.
@@ -168,23 +169,49 @@ quoted_string_ascii_only(QuotedString, !Acc, !Ok) :-
 :- pred word(allow_unicode::in, word::in, acc::in, acc::out,
     bool::in, bool::out) is det.
 
-word(AllowUnicode, word_atom(Atom), !Acc, !Ok) :-
-    atom(AllowUnicode, Atom, !Acc, !Ok).
-word(AllowUnicode, word_quoted_string(QuotedString), !Acc, !Ok) :-
-    quoted_string(AllowUnicode, QuotedString, !Acc, !Ok).
+word(AllowUnicode, Word, !Acc, !Ok) :-
+    (
+        Word = word_atom(Atom),
+        atom(AllowUnicode, Atom, !Acc, !Ok)
+    ;
+        Word = word_quoted_string(QuotedString),
+        quoted_string(AllowUnicode, QuotedString, !Acc, !Ok)
+    ).
+
+:- pred word_for_display(word::in, acc::in, acc::out, bool::in, bool::out)
+    is det.
+
+word_for_display(Word, !Acc, !Ok) :-
+    (
+        Word = word_atom(Atom),
+        atom(unicode_allowed, Atom, !Acc, !Ok)
+    ;
+        Word = word_quoted_string(quoted_string(QuotedString)),
+        (
+            QuotedString = ascii(String)
+        ;
+            QuotedString = unicode(String)
+        ),
+        add(String, !Acc)
+    ).
 
 :- pred phrase(options::in, phrase::in, acc::in, acc::out,
     bool::in, bool::out) is det.
 
 phrase(Opt, Words0, !Acc, !Ok) :-
     (
-        Opt = no_encoding,
-        Words = Words0
+        (
+            Opt = no_encoding,
+            Words = Words0
+        ;
+            Opt = rfc2047_encoding,
+            rfc2047.encoder.encode_phrase(Words0, Words)
+        ),
+        intersperse(word(unicode_allowed), " ", Words, !Acc, !Ok)
     ;
-        Opt = rfc2047_encoding,
-        rfc2047.encoder.encode_phrase(Words0, Words)
-    ),
-    intersperse(word(unicode_allowed), " ", Words, !Acc, !Ok).
+        Opt = for_display,
+        intersperse(word_for_display, " ", Words0, !Acc, !Ok)
+    ).
 
 %-----------------------------------------------------------------------------%
 

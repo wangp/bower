@@ -1130,7 +1130,7 @@ draw_address(Attrs, Panel, Address, !IO) :-
     io::di, io::uo) is det.
 
 draw_display_name(Attrs, Panel, DisplayName, !IO) :-
-    display_name_to_string(no_encoding, DisplayName, String, Valid),
+    display_name_to_string(for_display, DisplayName, String, Valid),
     (
         Valid = yes,
         Attr = Attrs ^ c_generic ^ field_body
