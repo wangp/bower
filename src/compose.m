@@ -10,6 +10,7 @@
 :- import_module data.
 :- import_module prog_config.
 :- import_module rfc5322.
+:- import_module rfc5322.parser.
 :- import_module screen.
 :- import_module text_entry.
 
@@ -37,8 +38,9 @@
 
     % Exported for resend.
     %
-:- pred parse_and_expand_addresses_string(prog_config::in, string::in,
-    string::out, address_list::out, bool::out, io::di, io::uo) is det.
+:- pred parse_and_expand_addresses_string(prog_config::in, quote_opt::in,
+    string::in, string::out, address_list::out, bool::out, io::di, io::uo)
+    is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -72,7 +74,6 @@
 :- import_module prog_config.
 :- import_module quote_arg.
 :- import_module rfc2045.
-:- import_module rfc5322.parser.
 :- import_module rfc5322.writer.
 :- import_module scrollable.
 :- import_module send_util.
@@ -147,7 +148,8 @@ start_compose(Config, Screen, Transition, !ToHistory, !SubjectHistory, !IO) :-
             MaybeSubject = yes(Subject),
             add_history_nodup(Subject, !SubjectHistory),
             address_to_string(no_encoding, FromAddress, From, _FromValid),
-            expand_aliases(Config, To, ExpandTo, !IO),
+            expand_aliases(Config, backslash_quote_meta_chars, To, ExpandTo,
+                !IO),
             some [!Headers] (
                 !:Headers = init_headers,
                 !Headers ^ h_from := header_value(From),
@@ -169,12 +171,12 @@ start_compose(Config, Screen, Transition, !ToHistory, !SubjectHistory, !IO) :-
         Transition = screen_transition(not_sent, no_change)
     ).
 
-:- pred expand_aliases(prog_config::in, string::in, string::out,
+:- pred expand_aliases(prog_config::in, quote_opt::in, string::in, string::out,
     io::di, io::uo) is det.
 
-expand_aliases(Config, Input, Output, !IO) :-
-    parse_and_expand_addresses_string(Config, Input, Output, _Addresses,
-        _Valid, !IO).
+expand_aliases(Config, QuoteOpt, Input, Output, !IO) :-
+    parse_and_expand_addresses_string(Config, QuoteOpt, Input, Output,
+        _Addresses, _Valid, !IO).
 
 %-----------------------------------------------------------------------------%
 
@@ -226,8 +228,9 @@ set_headers_for_group_reply(!Headers) :-
 
     To0 = header_value_string(!.Headers ^ h_to),
     Cc0 = header_value_string(!.Headers ^ h_cc),
-    parse_address_list(To0, ToList0),
-    parse_address_list(Cc0, CcList0),
+    Opt = backslash_quote_all,
+    parse_address_list(Opt, To0, ToList0),
+    parse_address_list(Opt, Cc0, CcList0),
     (
         ToList0 = [ToHead | ToTail],
         ToHead = mailbox(_)
@@ -251,8 +254,9 @@ set_headers_for_list_reply(OrigFrom, !Headers) :-
     % without knowing which addresses are list addresses.
 
     To0 = header_value_string(!.Headers ^ h_to),
-    parse_address_list(header_value_string(OrigFrom), FromList),
-    parse_address_list(To0, ToList0),
+    Opt = backslash_quote_all,
+    parse_address_list(Opt, header_value_string(OrigFrom), FromList),
+    parse_address_list(Opt, To0, ToList0),
     (
         FromList = [mailbox(FromMailbox)],
         FromMailbox = mailbox(_, FromAddrSpec),
@@ -396,11 +400,12 @@ make_parsed_headers(Headers, Parsed) :-
         _References, _InReplyTo, _Rest),
 
     % [RFC 6854] allows group syntax in From - saves us work.
-    parse_address_list(header_value_string(From), ParsedFrom),
-    parse_address_list(header_value_string(To), ParsedTo),
-    parse_address_list(header_value_string(Cc), ParsedCc),
-    parse_address_list(header_value_string(Bcc), ParsedBcc),
-    parse_address_list(header_value_string(ReplyTo), ParsedReplyTo),
+    Opt = backslash_quote_all,
+    parse_address_list(Opt, header_value_string(From), ParsedFrom),
+    parse_address_list(Opt, header_value_string(To), ParsedTo),
+    parse_address_list(Opt, header_value_string(Cc), ParsedCc),
+    parse_address_list(Opt, header_value_string(Bcc), ParsedBcc),
+    parse_address_list(Opt, header_value_string(ReplyTo), ParsedReplyTo),
 
     Parsed = parsed_headers(ParsedFrom, ParsedTo, ParsedCc, ParsedBcc,
         ParsedReplyTo).
@@ -471,50 +476,54 @@ parse_and_expand_headers(Config, Headers0, Headers, Parsed, !IO) :-
         References, InReplyTo, Rest),
 
     % [RFC 6854] allows group syntax in From - saves us work.
-    parse_and_expand_addresses(Config, From0, From, ParsedFrom, !IO),
-    parse_and_expand_addresses(Config, To0, To, ParsedTo, !IO),
-    parse_and_expand_addresses(Config, Cc0, Cc, ParsedCc, !IO),
-    parse_and_expand_addresses(Config, Bcc0, Bcc, ParsedBcc, !IO),
-    parse_and_expand_addresses(Config, ReplyTo0, ReplyTo, ParsedReplyTo, !IO),
+    Opt = backslash_quote_all,
+    parse_and_expand_addresses(Config, Opt, From0, From, ParsedFrom, !IO),
+    parse_and_expand_addresses(Config, Opt, To0, To, ParsedTo, !IO),
+    parse_and_expand_addresses(Config, Opt, Cc0, Cc, ParsedCc, !IO),
+    parse_and_expand_addresses(Config, Opt, Bcc0, Bcc, ParsedBcc, !IO),
+    parse_and_expand_addresses(Config, Opt, ReplyTo0, ReplyTo, ParsedReplyTo,
+        !IO),
 
     Headers = headers(Date, From, To, Cc, Bcc, Subject, ReplyTo,
         References, InReplyTo, Rest),
     Parsed = parsed_headers(ParsedFrom, ParsedTo, ParsedCc, ParsedBcc,
         ParsedReplyTo).
 
-:- pred parse_and_expand_addresses(prog_config::in, header_value::in,
-    header_value::out, address_list::out, io::di, io::uo) is det.
+:- pred parse_and_expand_addresses(prog_config::in, quote_opt::in,
+    header_value::in, header_value::out, address_list::out, io::di, io::uo)
+    is det.
 
-parse_and_expand_addresses(Config, Input, header_value(Output), Addresses, !IO)
-        :-
-    parse_and_expand_addresses_string(Config, header_value_string(Input),
+parse_and_expand_addresses(Config, Opt, Input, header_value(Output), Addresses,
+        !IO) :-
+    parse_and_expand_addresses_string(Config, Opt, header_value_string(Input),
         Output, Addresses, _Valid, !IO).
 
-parse_and_expand_addresses_string(Config, Input, Output, Addresses, Valid, !IO)
-        :-
-    parse_address_list(Input, Addresses0),
-    list.map_foldl(maybe_expand_address(Config), Addresses0, Addresses, !IO),
+parse_and_expand_addresses_string(Config, Opt, Input, Output, Addresses, Valid,
+        !IO) :-
+    parse_address_list(Opt, Input, Addresses0),
+    list.map_foldl(maybe_expand_address(Config, Opt), Addresses0, Addresses,
+        !IO),
     address_list_to_string(no_encoding, Addresses, Output, Valid).
 
-:- pred maybe_expand_address(prog_config::in, address::in, address::out,
-    io::di, io::uo) is det.
+:- pred maybe_expand_address(prog_config::in, quote_opt::in,
+    address::in, address::out, io::di, io::uo) is det.
 
-maybe_expand_address(Config, Address0, Address, !IO) :-
+maybe_expand_address(Config, Opt, Address0, Address, !IO) :-
     (
         Address0 = mailbox(Mailbox0),
-        maybe_expand_mailbox(Config, Mailbox0, Mailbox, !IO),
+        maybe_expand_mailbox(Config, Opt, Mailbox0, Mailbox, !IO),
         Address = mailbox(Mailbox)
     ;
         Address0 = group(DisplayName, Mailboxes0),
-        list.map_foldl(maybe_expand_mailbox(Config), Mailboxes0, Mailboxes,
-            !IO),
+        list.map_foldl(maybe_expand_mailbox(Config, Opt),
+            Mailboxes0, Mailboxes, !IO),
         Address = group(DisplayName, Mailboxes)
     ).
 
-:- pred maybe_expand_mailbox(prog_config::in, mailbox::in, mailbox::out,
-    io::di, io::uo) is det.
+:- pred maybe_expand_mailbox(prog_config::in, quote_opt::in,
+    mailbox::in, mailbox::out, io::di, io::uo) is det.
 
-maybe_expand_mailbox(Config, Mailbox0, Mailbox, !IO) :-
+maybe_expand_mailbox(Config, Opt, Mailbox0, Mailbox, !IO) :-
     (
         Mailbox0 = mailbox(_, _),
         Mailbox = Mailbox0
@@ -523,7 +532,7 @@ maybe_expand_mailbox(Config, Mailbox0, Mailbox, !IO) :-
         search_addressbook(Config, PotentialAlias, MaybeFound, !IO),
         (
             MaybeFound = yes(Expansion),
-            parse_address(Expansion, mailbox(Mailbox1))
+            parse_address(Opt, Expansion, mailbox(Mailbox1))
             % Can't expand to a group or multiple mailboxes yet.
         ->
             Mailbox = Mailbox1
@@ -732,8 +741,8 @@ edit_header(Screen, HeaderType, !StagingInfo, !IO) :-
             Value = decoded_unstructured(ReturnString)
         ),
         ParsedHeaders0 = !.StagingInfo ^ si_parsed_hdrs,
-        update_header(Config, HeaderType, Value, Headers0, Headers,
-            ParsedHeaders0, ParsedHeaders, !IO),
+        update_header(Config, backslash_quote_meta_chars, HeaderType, Value,
+            Headers0, Headers, ParsedHeaders0, ParsedHeaders, !IO),
         !StagingInfo ^ si_headers := Headers,
         !StagingInfo ^ si_parsed_hdrs := ParsedHeaders
     ;
@@ -750,34 +759,34 @@ get_header(bcc,     H, "Bcc: ",      H ^ h_bcc,     yes).
 get_header(subject, H, "Subject: ",  H ^ h_subject, no).
 get_header(replyto, H, "Reply-To: ", H ^ h_replyto, yes).
 
-:- pred update_header(prog_config::in, header_type::in, header_value::in,
-    headers::in, headers::out, parsed_headers::in, parsed_headers::out,
-    io::di, io::uo) is det.
+:- pred update_header(prog_config::in, quote_opt::in,
+    header_type::in, header_value::in, headers::in, headers::out,
+    parsed_headers::in, parsed_headers::out, io::di, io::uo) is det.
 
-update_header(Config, HeaderType, Input, !Headers, !Parsed, !IO) :-
+update_header(Config, Opt, HeaderType, Input, !Headers, !Parsed, !IO) :-
     (
         HeaderType = from,
-        parse_and_expand_addresses(Config, Input, Output, Parsed, !IO),
+        parse_and_expand_addresses(Config, Opt, Input, Output, Parsed, !IO),
         !Headers ^ h_from := Output,
         !Parsed ^ ph_from := Parsed
     ;
         HeaderType = to,
-        parse_and_expand_addresses(Config, Input, Output, Parsed, !IO),
+        parse_and_expand_addresses(Config, Opt, Input, Output, Parsed, !IO),
         !Headers ^ h_to := Output,
         !Parsed ^ ph_to := Parsed
     ;
         HeaderType = cc,
-        parse_and_expand_addresses(Config, Input, Output, Parsed, !IO),
+        parse_and_expand_addresses(Config, Opt, Input, Output, Parsed, !IO),
         !Headers ^ h_cc := Output,
         !Parsed ^ ph_cc := Parsed
     ;
         HeaderType = bcc,
-        parse_and_expand_addresses(Config, Input, Output, Parsed, !IO),
+        parse_and_expand_addresses(Config, Opt, Input, Output, Parsed, !IO),
         !Headers ^ h_bcc := Output,
         !Parsed ^ ph_bcc := Parsed
     ;
         HeaderType = replyto,
-        parse_and_expand_addresses(Config, Input, Output, Parsed, !IO),
+        parse_and_expand_addresses(Config, Opt, Input, Output, Parsed, !IO),
         !Headers ^ h_replyto := Output,
         !Parsed ^ ph_replyto := Parsed
     ;

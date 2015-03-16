@@ -31,6 +31,7 @@
 :- import_module prog_config.
 :- import_module quote_arg.
 :- import_module rfc5322.
+:- import_module rfc5322.parser.
 :- import_module send_util.
 
 :- type sent
@@ -47,8 +48,8 @@ handle_resend(Config, Screen, MessageId, MessageUpdate, !ToHistory, !IO) :-
         To0 \= ""
     ->
         add_history_nodup(To0, !ToHistory),
-        parse_and_expand_addresses_string(Config, To0, To, ToAddresses,
-            ToValid, !IO),
+        parse_and_expand_addresses_string(Config, backslash_quote_meta_chars,
+            To0, To, ToAddresses, ToValid, !IO),
         (
             ToValid = yes,
             confirm_resend(Screen, To, Confirmation, !IO),

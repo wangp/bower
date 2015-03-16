@@ -43,7 +43,7 @@ test(Input, !IO) :-
     io.write_string(Input, !IO),
     io.write_string("»\n", !IO),
 
-    parse_address_list(Input, Addresses),
+    parse_address_list(backslash_quote_all, Input, Addresses),
     list.foldl(show_address, Addresses, !IO),
     io.nl(!IO),
 

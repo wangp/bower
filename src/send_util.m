@@ -71,7 +71,7 @@ get_from_address(Config, Address, !IO) :-
             ResEmail = ok(Email),
             % XXX Name and Email better be valid
             String = string.append_list([Name, " <", Email, ">"]),
-            ( parse_address(String, AddressPrime) ->
+            ( parse_address(backslash_quote_all, String, AddressPrime) ->
                 Address = AddressPrime
             ;
                 Address = mailbox(bad_mailbox(String))
