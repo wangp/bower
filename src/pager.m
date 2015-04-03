@@ -595,22 +595,25 @@ append_substring(String, Start, End, Context0, Context, !Lines) :-
 
 :- pred detect_quote_level(string::in, int::in, int::out, int::out) is det.
 
-detect_quote_level(String, Pos, QuoteLevel, QuoteMarkerEnd) :-
-    (
-        string.unsafe_index_next(String, Pos, NextPos0, QuoteChar),
-        QuoteChar = ('>')
-    ->
-        % Accept a single optional space after the quote character.
-        ( string.unsafe_index_next(String, NextPos0, NextPos1, ' ') ->
-            NextPos = NextPos1
-        ;
-            NextPos = NextPos0
-        ),
-        detect_quote_level(String, NextPos, QuoteLevel0, QuoteMarkerEnd),
+detect_quote_level(String, Pos0, QuoteLevel, QuoteMarkerEnd) :-
+    ( quote_marker(String, Pos0, Pos1) ->
+        detect_quote_level(String, Pos1, QuoteLevel0, QuoteMarkerEnd),
         QuoteLevel = 1 + QuoteLevel0
     ;
         QuoteLevel = 0,
-        QuoteMarkerEnd = Pos
+        QuoteMarkerEnd = Pos0
+    ).
+
+:- pred quote_marker(string::in, int::in, int::out) is semidet.
+
+quote_marker(String, !Pos) :-
+    string.unsafe_index_next(String, !Pos, Char),
+    (
+        Char = ('>')
+    ;
+        % Accept a single optional space before the quote character.
+        Char = (' '),
+        string.unsafe_index_next(String, !Pos, '>')
     ).
 
 :- pred detect_diff(string::in, int::in, int::in, bool::in, quote_level::in,
