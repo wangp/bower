@@ -49,6 +49,9 @@
 
 :- pred get_open_url_command(prog_config::in, string::out) is det.
 
+:- pred get_poll_notify_command(prog_config::in, maybe(command_prefix)::out)
+    is det.
+
 :- pred get_poll_period_secs(prog_config::in, maybe(int)::out) is det.
 
 :- func generic_attrs(prog_config) = generic_attrs.
@@ -86,6 +89,7 @@
                 html_dump       :: maybe(command_prefix),
                 open_part       :: string, % not shell-quoted
                 open_url        :: string, % not shell-quoted
+                poll_notify     :: maybe(command_prefix),
                 poll_period_secs :: maybe(int),
                 colors          :: colors
             ).
@@ -193,6 +197,16 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
         OpenUrl = default_open_url_command
     ),
 
+    (
+        search_config(Config, "command", "poll_notify", PollNotify0),
+        PollNotify0 \= ""
+    ->
+        parse_command(PollNotify0, PollNotify1, !Errors),
+        PollNotify = yes(PollNotify1)
+    ;
+        PollNotify = no
+    ),
+
     ( search_config(Config, "index", "poll_period_secs", Value) ->
         check_poll_period_secs(Value, PollPeriodSecs, !Errors)
     ;
@@ -208,6 +222,7 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
     ProgConfig ^ html_dump = MaybeHtmlDump,
     ProgConfig ^ open_part = OpenPart,
     ProgConfig ^ open_url = OpenUrl,
+    ProgConfig ^ poll_notify = PollNotify,
     ProgConfig ^ poll_period_secs = PollPeriodSecs,
     ProgConfig ^ colors = Colors.
 
@@ -292,6 +307,9 @@ get_open_part_command(Config, Command) :-
 
 get_open_url_command(Config, Command) :-
     Command = Config ^ open_url.
+
+get_poll_notify_command(Config, Command) :-
+    Command = Config ^ poll_notify.
 
 get_poll_period_secs(Config, PollPeriodSecs) :-
     PollPeriodSecs = Config ^ poll_period_secs.

@@ -1666,11 +1666,52 @@ handle_poll_result(Screen, CountOutput, !Info, !IO) :-
             !Info ^ i_poll_count := Count,
             % Redraw the bar immediately.
             draw_index_bar(Screen, !.Info, !IO),
-            panel.update_panels(!IO)
+            panel.update_panels(!IO),
+
+            % Run notify command if any.
+            ( Count > 0 ->
+                Config = !.Info ^ i_config,
+                maybe_poll_notify(Config, count_messages_since_refresh(Count),
+                    MessageUpdate, !IO),
+                update_message(Screen, MessageUpdate, !IO)
+            ;
+                true
+            )
         )
     ;
         update_message(Screen,
             set_warning("notmuch count return unexpected result"), !IO)
+    ).
+
+:- pred maybe_poll_notify(prog_config::in, string::in, message_update::out,
+    io::di, io::uo) is det.
+
+maybe_poll_notify(Config, Message, MessageUpdate, !IO) :-
+    get_poll_notify_command(Config, MaybeCommandPrefix),
+    (
+        MaybeCommandPrefix = yes(CommandPrefix),
+        make_quoted_command(CommandPrefix, [Message],
+            redirect_input("/dev/null"), redirect_output("/dev/null"),
+            Command),
+        io.call_system(Command, CallRes, !IO),
+        (
+            CallRes = ok(ExitStatus),
+            ( ExitStatus = 0 ->
+                MessageUpdate = no_change
+            ;
+                string.format("poll_notify command returned exit status %d",
+                    [i(ExitStatus)], Warning),
+                MessageUpdate = set_warning(Warning)
+            )
+        ;
+            CallRes = error(Error),
+            Warning = "Error running poll_notify command: " ++
+                io.error_message(Error),
+            MessageUpdate = set_warning(Warning)
+        )
+    ;
+        MaybeCommandPrefix = no,
+        MessageUpdate = no_change
     ).
 
 :- func next_poll_time(prog_config, time_t) = maybe(int).
@@ -1916,9 +1957,13 @@ draw_index_bar(Screen, Info, !IO) :-
     ( Count = 0 ->
         draw_status_bar(Screen, !IO)
     ;
-        string.format("%+d messages since refresh", [i(Count)], Message),
-        draw_status_bar(Screen, Message, !IO)
+        draw_status_bar(Screen, count_messages_since_refresh(Count), !IO)
     ).
+
+:- func count_messages_since_refresh(int) = string.
+
+count_messages_since_refresh(Count) =
+    string.format("%+d messages since refresh", [i(Count)]).
 
 :- func unless(bool, attr) = maybe(attr).
 

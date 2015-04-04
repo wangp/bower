@@ -52,6 +52,11 @@
 # An unquoted & suffix causes the command to run in the background.
 ; open_url = xdg-open&
 
+# Command to execute after polling finds there are new unread messages
+# matching the current search terms in the index view.
+# The notification message is provided as an argument.
+; poll_notify = notify-send -i mail-message-new -c email.arrived -a Bower Bower
+
 #-----------------------------------------------------------------------------#
 
 [index]
