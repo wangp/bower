@@ -9,6 +9,7 @@ TESTS = test_base64 \
 	test_rfc2047_decode \
 	test_rfc2047_encode \
 	test_rfc2231 \
+	test_rfc3986 \
 	test_json
 
 .PHONY: default
@@ -37,3 +38,4 @@ test_rfc5322: | test_base64
 test_rfc2047_decode: | test_rfc5322
 test_rfc2047_encode: | test_rfc2047_decode
 test_rfc2231: | test_rfc2047_encode
+test_rfc3986: | test_rfc2231

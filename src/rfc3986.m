@@ -5,6 +5,19 @@
 :- interface.
 
 :- import_module char.
+:- import_module maybe.
+
+:- type uri_components
+    --->    uri_components(
+                % All strings are left in percent-encoded form.
+                scheme :: maybe(string),
+                authority :: maybe(string),
+                path :: string,
+                query :: maybe(string),
+                fragment :: maybe(string)
+            ).
+
+:- pred split_uri(string::in, uri_components::out) is semidet.
 
 :- pred valid_uri_char(char::in) is semidet.
 
@@ -12,6 +25,131 @@
 %-----------------------------------------------------------------------------%
 
 :- implementation.
+
+:- import_module pair.
+:- import_module parsing_utils.
+:- import_module string.
+:- import_module unit.
+
+%-----------------------------------------------------------------------------%
+
+% Emulate the regular expression from Appendix B:
+% (or we could just use it...)
+%
+%   ^(([^:/?#]+):)?(//([^/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))?
+
+split_uri(Input, URI) :-
+    promise_equivalent_solutions [Result] (
+        parsing_utils.parse(Input, no_skip_whitespace, uri, Result)
+    ),
+    Result = ok(URI).
+
+:- pred no_skip_whitespace(src::in, unit::out, ps::in, ps::out) is semidet.
+
+no_skip_whitespace(_Src, unit, !PS) :-
+    semidet_true.
+
+:- pred uri(src::in, uri_components::out, ps::in, ps::out) is semidet.
+
+uri(Src, URI, !PS) :-
+    optional(scheme, Src, Scheme, !PS),
+    optional(authority, Src, Authority, !PS),
+    optional(path_and_query, Src, PathAndQuery, !PS),
+    optional(fragment, Src, Fragment, !PS),
+    eof(Src, _, !PS),
+    (
+        PathAndQuery = yes(Path - Query)
+    ;
+        PathAndQuery = no,
+        Path = "",
+        Query = no
+    ),
+    URI = uri_components(Scheme, Authority, Path, Query, Fragment).
+
+:- pred scheme(src::in, string::out, ps::in, ps::out) is semidet.
+
+scheme(Src, Scheme, !PS) :-
+    one_or_more(scheme_char, Src, Chars, !PS),
+    next_char(Src, ':', !PS),
+    string.from_char_list(Chars, Scheme).
+
+:- pred scheme_char(src::in, char::out, ps::in, ps::out) is semidet.
+
+scheme_char(Src, Char, !PS) :-
+    valid_char(Src, Char, !PS),
+    Char \= (':'),
+    Char \= ('/'),
+    Char \= ('?'),
+    Char \= ('#').
+
+:- pred authority(src::in, string::out, ps::in, ps::out) is semidet.
+
+authority(Src, Authority, !PS) :-
+    next_char(Src, '/', !PS),
+    next_char(Src, '/', !PS),
+    zero_or_more(authority_char, Src, Chars, !PS),
+    string.from_char_list(Chars, Authority).
+
+:- pred authority_char(src::in, char::out, ps::in, ps::out) is semidet.
+
+authority_char(Src, Char, !PS) :-
+    valid_char(Src, Char, !PS),
+    Char \= ('/'),
+    Char \= ('?'),
+    Char \= ('#').
+
+:- pred path_and_query(src::in, pair(string, maybe(string))::out,
+    ps::in, ps::out) is semidet.
+
+path_and_query(Src, Path - Query, !PS) :-
+    path(Src, Path, !PS),
+    optional(query, Src, Query, !PS).
+
+:- pred path(src::in, string::out, ps::in, ps::out) is semidet.
+
+path(Src, Path, !PS) :-
+    zero_or_more(path_char, Src, PathChars, !PS),
+    string.from_char_list(PathChars, Path).
+
+:- pred path_char(src::in, char::out, ps::in, ps::out) is semidet.
+
+path_char(Src, Char, !PS) :-
+    valid_char(Src, Char, !PS),
+    Char \= ('?'),
+    Char \= ('#').
+
+:- pred query(src::in, string::out, ps::in, ps::out) is semidet.
+
+query(Src, Query, !PS) :-
+    next_char(Src, '?', !PS),
+    zero_or_more(query_char, Src, Chars, !PS),
+    string.from_char_list(Chars, Query).
+
+:- pred query_char(src::in, char::out, ps::in, ps::out) is semidet.
+
+query_char(Src, Char, !PS) :-
+    valid_char(Src, Char, !PS),
+    Char \= ('#').
+
+:- pred fragment(src::in, string::out, ps::in, ps::out) is semidet.
+
+fragment(Src, Fragment, !PS) :-
+    next_char(Src, '#', !PS),
+    zero_or_more(fragment_char, Src, Chars, !PS),
+    string.from_char_list(Chars, Fragment).
+
+:- pred fragment_char(src::in, char::out, ps::in, ps::out) is semidet.
+
+fragment_char(Src, Char, !PS) :-
+    valid_char(Src, Char, !PS).
+
+:- pred valid_char(src::in, char::out, ps::in, ps::out) is semidet.
+
+valid_char(Src, C, !PS) :-
+    next_char(Src, C, !PS),
+    valid_uri_char(C).
+
+%-----------------------------------------------------------------------------%
 
 valid_uri_char('!').    % sub-delims
 valid_uri_char('*').    % sub-delims

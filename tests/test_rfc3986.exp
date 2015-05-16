@@ -1,0 +1,50 @@
+input: «ftp://ftp.is.co.za/rfc/rfc1808.txt»
+uri_components(yes("ftp"), yes("ftp.is.co.za"), "/rfc/rfc1808.txt", no, no)
+--------
+input: «http://www.ietf.org/rfc/rfc2396.txt»
+uri_components(yes("http"), yes("www.ietf.org"), "/rfc/rfc2396.txt", no, no)
+--------
+input: «ldap://[2001:db8::7]/c=GB?objectClass?one»
+uri_components(yes("ldap"), yes("[2001:db8::7]"), "/c=GB", 
+  yes("objectClass?one"), no)
+--------
+input: «mailto:John.Doe@example.com»
+uri_components(yes("mailto"), no, "John.Doe@example.com", no, no)
+--------
+input: «news:comp.infosystems.www.servers.unix»
+uri_components(yes("news"), no, "comp.infosystems.www.servers.unix", no, no)
+--------
+input: «tel:+1-816-555-1212»
+uri_components(yes("tel"), no, "+1-816-555-1212", no, no)
+--------
+input: «telnet://192.0.2.16:80/»
+uri_components(yes("telnet"), yes("192.0.2.16:80"), "/", no, no)
+--------
+input: «urn:oasis:names:specification:docbook:dtd:xml:4.1.2»
+uri_components(yes("urn"), no, 
+  "oasis:names:specification:docbook:dtd:xml:4.1.2", no, no)
+--------
+input: «/example#frag»
+uri_components(no, no, "/example", no, yes("frag"))
+--------
+input: «/example?#frag»
+uri_components(no, no, "/example", yes(""), yes("frag"))
+--------
+input: «/example??#frag»
+uri_components(no, no, "/example", yes("?"), yes("frag"))
+--------
+input: «/example?v=1#frag»
+uri_components(no, no, "/example", yes("v=1"), yes("frag"))
+--------
+input: «/example?v=1&w=2#frag»
+uri_components(no, no, "/example", yes("v=1&w=2"), yes("frag"))
+--------
+input: «/example?q#frag»
+uri_components(no, no, "/example", yes("q"), yes("frag"))
+--------
+input: «/example?q#frag#frag»
+uri_components(no, no, "/example", yes("q"), yes("frag#frag"))
+--------
+input: «»
+uri_components(no, no, "", no, no)
+--------
