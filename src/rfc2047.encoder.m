@@ -24,6 +24,7 @@
 :- import_module string.
 
 :- import_module base64.
+:- import_module rfc5234.
 :- import_module string_util.
 
 :- type encoding_context

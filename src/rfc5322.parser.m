@@ -134,25 +134,6 @@ separated_list_skip_nulls_2(Sep, P, Src, !RevXs, !PS) :-
 
 %-----------------------------------------------------------------------------%
 
-% 3.1. Syntax
-
-% ALPHA
-% DIGIT
-% WSP
-
-:- pred 'VCHAR'(char::in) is semidet.
-
-'VCHAR'(C) :-
-    char.to_int(C, I),
-    0x21 =< I, I =< 0x7e.
-
-:- pred 'DQUOTE'(src::in, ps::in, ps::out) is semidet.
-
-'DQUOTE'(Src, !PS) :-
-    next_char(Src, '"', !PS).
-
-%-----------------------------------------------------------------------------%
-
 % 3.2.1. Quoted characters
 
 :- pred quoted_pair_tail(quote_opt::in, list(char)::in, src::in, char::out,
@@ -337,9 +318,9 @@ ascii_unicode(AllAscii, String, Wrap) :-
 
 quoted_string(Opt, Src, quoted_string(QuotedString), !PS) :-
     skip_CFWS(Opt, Src, !PS),
-    'DQUOTE'(Src, !PS),
+    next_char(Src, 'DQUOTE', !PS),
     zero_or_more(quoted_string_body(Opt), Src, Chars, yes, AllAscii, !PS),
-    'DQUOTE'(Src, !PS),
+    next_char(Src, 'DQUOTE', !PS),
     skip_CFWS(Opt, Src, !PS),
     string.from_char_list(Chars, String),
     ascii_unicode(AllAscii, String, QuotedString).

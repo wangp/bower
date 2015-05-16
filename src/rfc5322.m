@@ -70,14 +70,6 @@
 
 :- pred nonascii(char::in) is semidet.
 
-:- pred 'ALPHA'(char::in) is semidet.
-
-:- pred 'DIGIT'(char::in) is semidet.
-
-:- pred 'WSP'(char::in) is semidet.
-
-:- pred not_WSP(char::in) is semidet.
-
 :- pred atext(char::in) is semidet.
 
 :- pred atext_or_nonascii(char::in) is semidet.
@@ -96,6 +88,8 @@
 :- import_module int.
 :- import_module string.
 
+:- import_module rfc5234.
+
 %-----------------------------------------------------------------------------%
 
 ascii(C) :-
@@ -105,22 +99,6 @@ ascii(C) :-
 nonascii(C) :-
     char.to_int(C, I),
     I > 0x7f.
-
-%-----------------------------------------------------------------------------%
-
-% 3.1. Syntax
-
-'ALPHA'(C) :-
-    char.is_alpha(C).
-
-'DIGIT'(C) :-
-    char.is_digit(C).
-
-'WSP'(' ').
-'WSP'('\t').
-
-not_WSP(C) :-
-    not 'WSP'(C).
 
 %-----------------------------------------------------------------------------%
 
