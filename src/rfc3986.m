@@ -21,6 +21,8 @@
 
 :- pred valid_uri_char(char::in) is semidet.
 
+:- pred unreserved_char(char::in) is semidet.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -169,73 +171,78 @@ valid_uri_char('?').    % gen-delims
 valid_uri_char('#').    % gen-delims
 valid_uri_char('[').    % gen-delims
 valid_uri_char(']').    % gen-delims
-valid_uri_char('A').    % unreserved
-valid_uri_char('B').
-valid_uri_char('C').
-valid_uri_char('D').
-valid_uri_char('E').
-valid_uri_char('F').
-valid_uri_char('G').
-valid_uri_char('H').
-valid_uri_char('I').
-valid_uri_char('J').
-valid_uri_char('K').
-valid_uri_char('L').
-valid_uri_char('M').
-valid_uri_char('N').
-valid_uri_char('O').
-valid_uri_char('P').
-valid_uri_char('Q').
-valid_uri_char('R').
-valid_uri_char('S').
-valid_uri_char('T').
-valid_uri_char('U').
-valid_uri_char('V').
-valid_uri_char('W').
-valid_uri_char('X').
-valid_uri_char('Y').
-valid_uri_char('Z').
-valid_uri_char('a').
-valid_uri_char('b').
-valid_uri_char('c').
-valid_uri_char('d').
-valid_uri_char('e').
-valid_uri_char('f').
-valid_uri_char('g').
-valid_uri_char('h').
-valid_uri_char('i').
-valid_uri_char('j').
-valid_uri_char('k').
-valid_uri_char('l').
-valid_uri_char('m').
-valid_uri_char('n').
-valid_uri_char('o').
-valid_uri_char('p').
-valid_uri_char('q').
-valid_uri_char('r').
-valid_uri_char('s').
-valid_uri_char('t').
-valid_uri_char('u').
-valid_uri_char('v').
-valid_uri_char('w').
-valid_uri_char('x').
-valid_uri_char('y').
-valid_uri_char('z').
-valid_uri_char('0').
-valid_uri_char('1').
-valid_uri_char('2').
-valid_uri_char('3').
-valid_uri_char('4').
-valid_uri_char('5').
-valid_uri_char('6').
-valid_uri_char('7').
-valid_uri_char('8').
-valid_uri_char('9').
-valid_uri_char('-').    % unreserved
-valid_uri_char('_').    % unreserved
-valid_uri_char('.').    % unreserved
-valid_uri_char('~').    % unreserved
 valid_uri_char('%').    % percent-encoding
+valid_uri_char(C) :-
+    unreserved_char(C).
+
+%-----------------------------------------------------------------------------%
+
+unreserved_char('A').
+unreserved_char('B').
+unreserved_char('C').
+unreserved_char('D').
+unreserved_char('E').
+unreserved_char('F').
+unreserved_char('G').
+unreserved_char('H').
+unreserved_char('I').
+unreserved_char('J').
+unreserved_char('K').
+unreserved_char('L').
+unreserved_char('M').
+unreserved_char('N').
+unreserved_char('O').
+unreserved_char('P').
+unreserved_char('Q').
+unreserved_char('R').
+unreserved_char('S').
+unreserved_char('T').
+unreserved_char('U').
+unreserved_char('V').
+unreserved_char('W').
+unreserved_char('X').
+unreserved_char('Y').
+unreserved_char('Z').
+unreserved_char('a').
+unreserved_char('b').
+unreserved_char('c').
+unreserved_char('d').
+unreserved_char('e').
+unreserved_char('f').
+unreserved_char('g').
+unreserved_char('h').
+unreserved_char('i').
+unreserved_char('j').
+unreserved_char('k').
+unreserved_char('l').
+unreserved_char('m').
+unreserved_char('n').
+unreserved_char('o').
+unreserved_char('p').
+unreserved_char('q').
+unreserved_char('r').
+unreserved_char('s').
+unreserved_char('t').
+unreserved_char('u').
+unreserved_char('v').
+unreserved_char('w').
+unreserved_char('x').
+unreserved_char('y').
+unreserved_char('z').
+unreserved_char('0').
+unreserved_char('1').
+unreserved_char('2').
+unreserved_char('3').
+unreserved_char('4').
+unreserved_char('5').
+unreserved_char('6').
+unreserved_char('7').
+unreserved_char('8').
+unreserved_char('9').
+unreserved_char('-').
+unreserved_char('.').
+unreserved_char('_').
+unreserved_char('~').
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

@@ -47,6 +47,7 @@
 
 :- implementation.
 
+:- import_module assoc_list.
 :- import_module char.
 :- import_module dir.
 :- import_module float.
@@ -74,7 +75,10 @@
 :- import_module prog_config.
 :- import_module quote_arg.
 :- import_module rfc2045.
+:- import_module rfc2047.
+:- import_module rfc2047.decoder.
 :- import_module rfc5322.writer.
+:- import_module rfc6068.
 :- import_module scrollable.
 :- import_module send_util.
 :- import_module string_util.
@@ -136,40 +140,111 @@
 %-----------------------------------------------------------------------------%
 
 start_compose(Config, Screen, Transition, !ToHistory, !SubjectHistory, !IO) :-
-    get_from_address(Config, FromAddress, !IO),
     text_entry_initial(Screen, "To: ", !.ToHistory, "",
-        complete_config_key(Config, addressbook_section), MaybeTo, !IO),
+        complete_config_key(Config, addressbook_section), MaybeInput, !IO),
     (
-        MaybeTo = yes(To),
-        add_history_nodup(To, !ToHistory),
+        MaybeInput = yes(Input),
+        add_history_nodup(Input, !ToHistory),
+        ( is_mailto_uri(Input) ->
+            ( extract_mailto(Input, Headers, Body) ->
+                start_compose_2(Config, Screen, Headers, Body, Transition,
+                    !SubjectHistory, !IO)
+            ;
+                Message = set_warning("Could not parse mailto URI."),
+                Transition = screen_transition(not_sent, Message)
+            )
+        ;
+            expand_aliases(Config, backslash_quote_meta_chars, Input, To, !IO),
+            Headers0 = init_headers,
+            Headers = Headers0 ^ h_to := header_value(To),
+            Body = "",
+            start_compose_2(Config, Screen, Headers, Body, Transition,
+                !SubjectHistory, !IO)
+        )
+    ;
+        MaybeInput = no,
+        Transition = screen_transition(not_sent, no_change)
+    ).
+
+:- pred start_compose_2(prog_config::in, screen::in, headers::in, string::in,
+    screen_transition(sent)::out, history::in, history::out, io::di, io::uo)
+    is det.
+
+start_compose_2(Config, Screen, !.Headers, Body, Transition,
+        !SubjectHistory, !IO) :-
+    Subject0 = header_value_string(!.Headers ^ h_subject),
+    ( Subject0 = "" ->
         text_entry_initial(Screen, "Subject: ", !.SubjectHistory, "",
             complete_none, MaybeSubject, !IO),
         (
             MaybeSubject = yes(Subject),
             add_history_nodup(Subject, !SubjectHistory),
-            address_to_string(no_encoding, FromAddress, From, _FromValid),
-            expand_aliases(Config, backslash_quote_meta_chars, To, ExpandTo,
-                !IO),
-            some [!Headers] (
-                !:Headers = init_headers,
-                !Headers ^ h_from := header_value(From),
-                !Headers ^ h_to := header_value(ExpandTo),
-                !Headers ^ h_subject := decoded_unstructured(Subject),
-                Headers = !.Headers
-            ),
-            Text = "",
-            Attachments = [],
-            MaybeOldDraft = no,
-            create_edit_stage(Config, Screen, Headers, Text, Attachments,
-                MaybeOldDraft, Transition, !IO)
+            !Headers ^ h_subject := decoded_unstructured(Subject),
+            start_compose_3(Config, Screen, !.Headers, Body, Transition, !IO)
         ;
             MaybeSubject = no,
             Transition = screen_transition(not_sent, no_change)
         )
     ;
-        MaybeTo = no,
-        Transition = screen_transition(not_sent, no_change)
+        start_compose_3(Config, Screen, !.Headers, Body, Transition, !IO)
     ).
+
+:- pred start_compose_3(prog_config::in, screen::in, headers::in, string::in,
+    screen_transition(sent)::out, io::di, io::uo) is det.
+
+start_compose_3(Config, Screen, !.Headers, Body, Transition, !IO) :-
+    get_from_address(Config, FromAddress, !IO),
+    address_to_string(no_encoding, FromAddress, From, _FromValid),
+    !Headers ^ h_from := header_value(From),
+    Attachments = [],
+    MaybeOldDraft = no,
+    create_edit_stage(Config, Screen, !.Headers, Body, Attachments,
+        MaybeOldDraft, Transition, !IO).
+
+%-----------------------------------------------------------------------------%
+
+:- pred extract_mailto(string::in, headers::out, string::out) is semidet.
+
+extract_mailto(Input, !:Headers, Body) :-
+    parse_mailto_uri(Input, Params),
+    require_det
+    (
+        lookup_header_field(Params, "To", To),
+        lookup_header_field(Params, "Cc", Cc),
+        lookup_header_field(Params, "Bcc", Bcc),
+        lookup_header_field(Params, "Subject", Subject0),
+        lookup_header_field(Params, "Reply-To", ReplyTo),
+        lookup_header_field(Params, "In-Reply-To", InReplyTo),
+        lookup_header_field(Params, "body", Body0),
+        rfc2047.decoder.decode_unstructured(Subject0, Subject),
+        replace_crlf(Body0, Body),
+
+        !:Headers = init_headers,
+        !Headers ^ h_to := header_value(To),
+        !Headers ^ h_cc := header_value(Cc),
+        !Headers ^ h_bcc := header_value(Bcc),
+        !Headers ^ h_subject := decoded_unstructured(Subject),
+        !Headers ^ h_replyto := header_value(ReplyTo),
+        !Headers ^ h_inreplyto := header_value(InReplyTo)
+    ).
+
+:- pred lookup_header_field(assoc_list(hfname, hfvalue)::in, string::in,
+    string::out) is det.
+
+lookup_header_field([], _, "").
+lookup_header_field([K0 - V0 | T], K, V) :-
+    ( strcase_equal(K0, K) ->
+        V = V0
+    ;
+        lookup_header_field(T, K, V)
+    ).
+
+:- pred replace_crlf(string::in, string::out) is det.
+
+replace_crlf(S0, S) :-
+    string.replace_all(S0, "\r\n", "\n", S).
+
+%-----------------------------------------------------------------------------%
 
 :- pred expand_aliases(prog_config::in, quote_opt::in, string::in, string::out,
     io::di, io::uo) is det.

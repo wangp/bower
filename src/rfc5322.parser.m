@@ -351,12 +351,7 @@ qtext_extended(C, !AllAscii) :-
     ( nonascii(C) ->
         !:AllAscii = no
     ;
-        char.to_int(C, I),
-        ( I = 33
-        ; 35 =< I, I =< 91
-        ; 93 =< I, I =< 126
-        )
-        % or obs-qtext
+        qtext(C)
     ).
 
 %-----------------------------------------------------------------------------%
@@ -568,22 +563,14 @@ domain_literal_body(Src, !AllAscii, !PS) :-
 :- pred dtext_or_nonascii(char::in, bool::in, bool::out) is semidet.
 
 dtext_or_nonascii(C, !AllAscii) :-
-    ( dtext(C) ->
+    ( dtext_no_obs(C) ->
         true
     ;
         % Just for consistency...
         nonascii(C),
         !:AllAscii = no
     ).
-
-:- pred dtext(char::in) is semidet.
-
-dtext(C) :-
-    char.to_int(C, I),
-    ( 33 =< I, I =< 90
-    ; 94 =< I, I =< 126
     % or obs-dtext (but update writer then)
-    ).
 
 %-----------------------------------------------------------------------------%
 

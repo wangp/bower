@@ -64,7 +64,7 @@
 
 %-----------------------------------------------------------------------------%
 
-    % Exports for rfc2047, rfc2231.
+    % Exports for rfc2047, rfc2231, rfc6068.
 
 :- pred ascii(char::in) is semidet.
 
@@ -75,6 +75,10 @@
 :- pred atext_or_nonascii(char::in) is semidet.
 
 :- pred atext_or_nonascii(char::in, bool::in, bool::out) is semidet.
+
+:- pred dtext_no_obs(char::in) is semidet.
+
+:- pred qtext(char::in) is semidet.
 
 :- func make_quoted_string(string) = quoted_string.
 
@@ -137,6 +141,20 @@ atext_or_nonascii(C, !AllAscii) :-
         nonascii(C),
         !:AllAscii = no
     ).
+
+dtext_no_obs(C) :-
+    char.to_int(C, I),
+    ( 33 =< I, I =< 90
+    ; 94 =< I, I =< 126
+    ).
+
+qtext(C) :-
+    char.to_int(C, I),
+    ( I = 33
+    ; 35 =< I, I =< 91
+    ; 93 =< I, I =< 126
+    ).
+    % or obs-qtext
 
 make_quoted_string(String) = quoted_string(Wrap) :-
     ( string.all_match(ascii, String) ->

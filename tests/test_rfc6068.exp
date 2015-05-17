@@ -1,0 +1,58 @@
+input: «mailto:chris@example.com»
+["To" - "chris@example.com"]
+--------
+input: «mailto:infobot@example.com?subject=current-issue»
+["To" - "infobot@example.com", "subject" - "current-issue"]
+--------
+input: «mailto:infobot@example.com?body=send%20current-issue»
+["To" - "infobot@example.com", "body" - "send current-issue"]
+--------
+input: «mailto:infobot@example.com?body=send%20current-issue%0D%0Asend%20index»
+["To" - "infobot@example.com", "body" - "send current-issue
+send index"]
+--------
+input: «mailto:list@example.org?In-Reply-To=%3C3469A91.D10AF4C@example.com%3E»
+["To" - "list@example.org", "In-Reply-To" - "<3469A91.D10AF4C@example.com>"]
+--------
+input: «mailto:majordomo@example.com?body=subscribe%20bamboo-l»
+["To" - "majordomo@example.com", "body" - "subscribe bamboo-l"]
+--------
+input: «mailto:joe@example.com?cc=bob@example.com&body=hello»
+["To" - "joe@example.com", "cc" - "bob@example.com", "body" - "hello"]
+--------
+input: «mailto:joe@example.com?cc=bob@example.com?body=hello»
+failed to parse
+--------
+input: «mailto:gorby%25kremvax@example.com»
+["To" - "gorby%kremvax@example.com"]
+--------
+input: «mailto:unlikely%3Faddress@example.com?blat=foop»
+["To" - "unlikely?address@example.com", "blat" - "foop"]
+--------
+input: «mailto:Mike%26family@example.org»
+["To" - "Mike&family@example.org"]
+--------
+input: «mailto:%22not%40me%22@example.org»
+["To" - ""not@me"@example.org"]
+--------
+input: «mailto:%22oh%5C%5Cno%22@example.org»
+["To" - ""oh\\no"@example.org"]
+--------
+input: «mailto:%22%5C%5C%5C%22it's%5C%20ugly%5C%5C%5C%22%22@example.org»
+["To" - ""\\\"it's\ ugly\\\""@example.org"]
+--------
+input: «mailto:user@example.org?subject=caf%C3%A9»
+["To" - "user@example.org", "subject" - "café"]
+--------
+input: «mailto:user@example.org?subject=%3D%3Futf-8%3FQ%3Fcaf%3DC3%3DA9%3F%3D»
+["To" - "user@example.org", "subject" - "=?utf-8?Q?caf=C3=A9?="]
+--------
+input: «mailto:user@example.org?subject=%3D%3Fiso-8859-1%3FQ%3Fcaf%3DE9%3F%3D»
+["To" - "user@example.org", "subject" - "=?iso-8859-1?Q?caf=E9?="]
+--------
+input: «mailto:user@example.org?subject=caf%C3%A9&body=caf%C3%A9»
+["To" - "user@example.org", "subject" - "café", "body" - "café"]
+--------
+input: «mailto:user@%E7%B4%8D%E8%B1%86.example.org?subject=Test&body=NATTO»
+["To" - "user@納豆.example.org", "subject" - "Test", "body" - "NATTO"]
+--------
