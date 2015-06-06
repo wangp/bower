@@ -36,7 +36,7 @@
 'DQUOTE' = '"'.
 
 'HEXDIG'(C, I) :-
-    char.hex_digit_to_int(C, I).
+    char.is_hex_digit(C, I).
 
 'VCHAR'(C) :-
     char.to_int(C, I),
