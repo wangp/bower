@@ -180,16 +180,23 @@ number(Src, Number, !PS) :-
     optional(minus, Src, _, !PS),
     int(Src, _, !PS),
     ( frac(Src, _, !PS) ->
-        optional(exp, Src, _, !PS),
-        current_offset(Src, End, !PS),
-        input_substring(Src, Start, End, FloatString),
-        string.to_float(FloatString, Float),
+        HasFrac = yes
+    ;
+        HasFrac = no
+    ),
+    ( exp(Src, _, !PS) ->
+        HasExp = yes
+    ;
+        HasExp = no
+    ),
+    current_offset(Src, End, !PS),
+    input_substring(Src, Start, End, NumberString),
+    ( if HasFrac = yes ; HasExp = yes then
+        string.to_float(NumberString, Float),
         not is_nan_or_inf(Float),
         Number = float(Float)
-    ;
-        current_offset(Src, End, !PS),
-        input_substring(Src, Start, End, IntString),
-        string.to_int(IntString, Int),
+    else
+        string.to_int(NumberString, Int),
         Number = int(Int)
     ),
     skip_ws(Src, unit, !PS).
