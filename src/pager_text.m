@@ -193,7 +193,9 @@ append_substring(String, Start, End, Context0, Context, !Lines) :-
 
 detect_quote_level(String, Pos0, QuoteLevel, QuoteMarkerEnd) :-
     ( quote_marker(String, Pos0, Pos1) ->
-        detect_quote_level(String, Pos1, QuoteLevel0, QuoteMarkerEnd),
+        % Perhaps this should be limited to one whitespace char?
+        skip_whitespace(String, Pos1, Pos2),
+        detect_quote_level(String, Pos2, QuoteLevel0, QuoteMarkerEnd),
         QuoteLevel = 1 + QuoteLevel0
     ;
         QuoteLevel = 0,
