@@ -33,8 +33,12 @@
 :- pred start_reply_to_message_id(prog_config::in, screen::in, message_id::in,
     reply_kind::in, screen_transition(sent)::out, io::di, io::uo) is det.
 
-:- pred continue_postponed(prog_config::in, screen::in, message::in(message),
-    screen_transition(sent)::out, io::di, io::uo) is det.
+:- type continue_base
+    --->    postponed_message
+    ;       arbitrary_message.
+
+:- pred continue_from_message(prog_config::in, screen::in, continue_base::in,
+    message::in(message), screen_transition(sent)::out, io::di, io::uo) is det.
 
     % Exported for resend.
     %
@@ -374,7 +378,8 @@ start_reply_to_message_id(Config, Screen, MessageId, ReplyKind, Transition,
 
 %-----------------------------------------------------------------------------%
 
-continue_postponed(Config, Screen, Message, Transition, !IO) :-
+continue_from_message(Config, Screen, ContinueBase, Message, Transition, !IO)
+        :-
     MessageId = Message ^ m_id,
     Headers0 = Message ^ m_headers,
     Body0 = Message ^ m_body,
@@ -398,8 +403,15 @@ continue_postponed(Config, Screen, Message, Transition, !IO) :-
             !Headers ^ h_inreplyto := (HeadersB ^ h_inreplyto),
             Headers = !.Headers
         ),
+        (
+            ContinueBase = postponed_message,
+            MaybeOldDraft = yes(MessageId)
+        ;
+            ContinueBase = arbitrary_message,
+            MaybeOldDraft = no
+        ),
         create_edit_stage(Config, Screen, Headers, Text, Attachments,
-            yes(MessageId), Transition, !IO)
+            MaybeOldDraft, Transition, !IO)
     ;
         CallRes = error(Error),
         string.append_list(["Error running notmuch: ",

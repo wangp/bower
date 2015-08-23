@@ -890,7 +890,8 @@ handle_recall(!Screen, Sent, !IndexInfo, !IO) :-
         MaybeSelected = yes(Message),
         (
             Message = message(_, _, _, _, _, _),
-            continue_postponed(Config, !.Screen, Message, TransitionB, !IO),
+            continue_from_message(Config, !.Screen, postponed_message, Message,
+                TransitionB, !IO),
             handle_screen_transition(!Screen, TransitionB, Sent, !IndexInfo,
                 !IO)
         ;
