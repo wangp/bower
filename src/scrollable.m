@@ -27,7 +27,8 @@
 
 :- func init_with_cursor(list(T)) = scrollable(T).
 
-:- pred reinit(list(T)::in, scrollable(T)::in, scrollable(T)::out) is det.
+:- pred reinit(list(T)::in, int::in, scrollable(T)::in, scrollable(T)::out)
+    is det.
 
 :- func get_lines(scrollable(T)) = version_array(T).
 
@@ -129,11 +130,25 @@ init_with_cursor(Lines) = Scrollable :-
     ),
     Scrollable = scrollable(LinesArray, Top, MaybeCursor).
 
-reinit(Lines, Scrollable0, Scrollable) :-
-    % For now keeping the same Top and MaybeCursor values is good enough.
-    Scrollable0 = scrollable(_LinesArray0, Top, MaybeCursor),
+reinit(Lines, NumRows, Scrollable0, Scrollable) :-
+    % For now keeping the same Top and MaybeCursor values is good enough,
+    % but ensure they are in bounds.
+    Scrollable0 = scrollable(_LinesArray0, Top0, MaybeCursor0),
     LinesArray = version_array.from_list(Lines),
-    Scrollable = scrollable(LinesArray, Top, MaybeCursor).
+    Size = version_array.size(LinesArray),
+    ( Size = 0 ->
+        Top = 0
+    ;
+        Top = min(Top0, Size - 1)
+    ),
+    Scrollable1 = scrollable(LinesArray, Top, no),
+    (
+        MaybeCursor0 = yes(Cursor0),
+        set_cursor_visible(Cursor0, NumRows, Scrollable1, Scrollable)
+    ;
+        MaybeCursor0 = no,
+        Scrollable = Scrollable1
+    ).
 
 get_lines(Scrollable) = Scrollable ^ s_lines.
 

@@ -93,7 +93,7 @@
     --->    cycle_alternatives
     ;       toggle_expanded.
 
-:- pred toggle_content(toggle_type::in, int::in, message_update::out,
+:- pred toggle_content(toggle_type::in, int::in, int::in, message_update::out,
     pager_info::in, pager_info::out, io::di, io::uo) is det.
 
 :- pred draw_pager(pager_attrs::in, screen::in, pager_info::in, io::di, io::uo)
@@ -1163,26 +1163,28 @@ get_highlighted_thing(Info, Thing) :-
 
 %-----------------------------------------------------------------------------%
 
-toggle_content(ToggleType, Cols, MessageUpdate, Info0, Info, !IO) :-
-    Scrollable0 = Info0 ^ p_scrollable,
+toggle_content(ToggleType, NumRows, Cols, MessageUpdate, !Info, !IO) :-
+    Scrollable0 = !.Info ^ p_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor, IdLine) ->
-        toggle_line(ToggleType, Cols, IdLine, MessageUpdate, Info0, Info, !IO)
+        toggle_line(ToggleType, NumRows, Cols, IdLine, MessageUpdate,
+            !Info, !IO)
     ;
-        Info = Info0,
         MessageUpdate = clear_message
     ).
 
-:- pred toggle_line(toggle_type::in, int::in, id_pager_line::in,
+:- pred toggle_line(toggle_type::in, int::in, int::in, id_pager_line::in,
     message_update::out, pager_info::in, pager_info::out, io::di, io::uo)
     is det.
 
-toggle_line(ToggleType, Cols, NodeId - Line, MessageUpdate, !Info, !IO) :-
+toggle_line(ToggleType, NumRows, Cols, NodeId - Line, MessageUpdate,
+        !Info, !IO) :-
     (
         Line = part_head(_, _, _),
-        toggle_part(ToggleType, Cols, NodeId, Line, MessageUpdate, !Info, !IO)
+        toggle_part(ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
+            !Info, !IO)
     ;
         Line = fold_marker(_, _),
-        toggle_folding(NodeId, Line, !Info),
+        toggle_folding(NumRows, NodeId, Line, !Info),
         MessageUpdate = clear_message
     ;
         ( Line = start_message_header(_, _, _)
@@ -1196,11 +1198,12 @@ toggle_line(ToggleType, Cols, NodeId - Line, MessageUpdate, !Info, !IO) :-
 :- inst part_head
     --->    part_head(ground, ground, ground).
 
-:- pred toggle_part(toggle_type::in, int::in, node_id::in,
+:- pred toggle_part(toggle_type::in, int::in, int::in, node_id::in,
     pager_line::in(part_head), message_update::out,
     pager_info::in, pager_info::out, io::di, io::uo) is det.
 
-toggle_part(ToggleType, Cols, NodeId, Line, MessageUpdate, Info0, Info, !IO) :-
+toggle_part(ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
+        Info0, Info, !IO) :-
     Line = part_head(Part0, HiddenParts0, Expanded0),
     (
         ToggleType = cycle_alternatives,
@@ -1213,21 +1216,22 @@ toggle_part(ToggleType, Cols, NodeId, Line, MessageUpdate, Info0, Info, !IO) :-
             force(Expanded0), NewNode, no, _ElideInitialHeadLine,
             Counter0, Counter, !IO),
         replace_node(NodeId, NewNode, Tree0, Tree),
-        scrollable.reinit(flatten(Tree), Scrollable0, Scrollable),
+        scrollable.reinit(flatten(Tree), NumRows, Scrollable0, Scrollable),
         Info = pager_info(Config, Tree, Counter, Scrollable),
         Type = Part ^ pt_type,
         MessageUpdate = set_info("Showing " ++ Type ++ " alternative.")
     ;
         % Fallback.
-        toggle_part_expanded(Cols, NodeId, Line, MessageUpdate, Info0, Info,
-            !IO)
+        toggle_part_expanded(NumRows, Cols, NodeId, Line, MessageUpdate,
+            Info0, Info, !IO)
     ).
 
-:- pred toggle_part_expanded(int::in, node_id::in, pager_line::in(part_head),
-    message_update::out, pager_info::in, pager_info::out, io::di, io::uo)
-    is det.
+:- pred toggle_part_expanded(int::in, int::in, node_id::in,
+    pager_line::in(part_head), message_update::out,
+    pager_info::in, pager_info::out, io::di, io::uo) is det.
 
-toggle_part_expanded(Cols, NodeId, Line0, MessageUpdate, Info0, Info, !IO) :-
+toggle_part_expanded(NumRows, Cols, NodeId, Line0, MessageUpdate, Info0, Info,
+        !IO) :-
     Line0 = part_head(Part, HiddenParts, Expanded0),
     (
         Expanded0 = part_expanded,
@@ -1253,16 +1257,16 @@ toggle_part_expanded(Cols, NodeId, Line0, MessageUpdate, Info0, Info, !IO) :-
         replace_node(NodeId, NewNode, Tree0, Tree),
         Counter = Counter0
     ),
-    scrollable.reinit(flatten(Tree), Scrollable0, Scrollable),
+    scrollable.reinit(flatten(Tree), NumRows, Scrollable0, Scrollable),
     Info = pager_info(Config, Tree, Counter, Scrollable).
 
 :- inst fold_marker
     --->    fold_marker(ground, ground).
 
-:- pred toggle_folding(node_id::in, pager_line::in(fold_marker),
+:- pred toggle_folding(int::in, node_id::in, pager_line::in(fold_marker),
     pager_info::in, pager_info::out) is det.
 
-toggle_folding(NodeId, Line, Info0, Info) :-
+toggle_folding(NumRows, NodeId, Line, Info0, Info) :-
     Line = fold_marker(Content, Expanded0),
     (
         Expanded0 = no,
@@ -1277,7 +1281,7 @@ toggle_folding(NodeId, Line, Info0, Info) :-
 
     Info0 = pager_info(Config, Tree0, Counter, Scrollable0),
     replace_node(NodeId, NewNode, Tree0, Tree),
-    scrollable.reinit(flatten(Tree), Scrollable0, Scrollable),
+    scrollable.reinit(flatten(Tree), NumRows, Scrollable0, Scrollable),
     Info = pager_info(Config, Tree, Counter, Scrollable).
 
 %-----------------------------------------------------------------------------%

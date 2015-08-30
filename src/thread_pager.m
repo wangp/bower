@@ -2097,10 +2097,13 @@ skip_to_search(SearchKind, MessageUpdate, !Info) :-
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 toggle_content(Screen, ToggleType, !Info, !IO) :-
+    NumRows = !.Info ^ tp_num_pager_rows,
     get_cols(Screen, Cols),
     Pager0 = !.Info ^ tp_pager,
-    pager.toggle_content(ToggleType, Cols, MessageUpdate, Pager0, Pager, !IO),
+    pager.toggle_content(ToggleType, NumRows, Cols, MessageUpdate,
+        Pager0, Pager, !IO),
     !Info ^ tp_pager := Pager,
+    sync_thread_to_pager(!Info),
     update_message(Screen, MessageUpdate, !IO).
 
 %-----------------------------------------------------------------------------%
