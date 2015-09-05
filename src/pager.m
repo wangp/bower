@@ -330,8 +330,8 @@ make_message_tree(Config, Mode, Cols, Message, Tree, !Counter, !IO) :-
     list(pager_line)::in, list(pager_line)::out) is det.
 
 add_header(StartMessage, Cols, Name, Value, !RevLines) :-
-    % 4 extra columns for "| Name: "
-    RemainCols = max(0, Cols - string_wcwidth(Name) - 4),
+    % 2 extra columns for "Name: "
+    RemainCols = max(0, Cols - string_wcwidth(Name) - 2),
     get_spans_by_whitespace(header_value_string(Value), Spans),
     fill_lines(RemainCols, Spans, Folded),
     (
@@ -1327,13 +1327,12 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
         attr(Panel, GAttrs ^ field_name, !IO),
         (
             Continue = no,
-            draw(Panel, "| ", !IO),
             draw(Panel, Name, !IO),
             draw(Panel, ": ", !IO)
         ;
             Continue = yes,
             getyx(Panel, Y, X, !IO),
-            move(Panel, Y, X + string_wcwidth(Name) + 4, !IO)
+            move(Panel, Y, X + string_wcwidth(Name) + 2, !IO)
         ),
         BodyAttr = GAttrs ^ field_body,
         (
