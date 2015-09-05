@@ -118,6 +118,7 @@
 :- import_module version_array.
 
 :- import_module copious_output.
+:- import_module fold_lines.
 :- import_module pager_text.
 :- import_module quote_arg.
 :- import_module string_util.
@@ -147,8 +148,12 @@
     --->    node_id - pager_line.
 
 :- type pager_line
-    --->    start_message_header(message, string, header_value)
-    ;       header(string, header_value)
+    --->    header(
+                start_message   :: maybe(message),
+                continue        :: bool,
+                name            :: string,
+                value           :: string % folded (wrapped)
+            )
     ;       text(pager_text)
     ;       part_head(
                 part            :: part,
@@ -271,16 +276,16 @@ make_message_tree(Config, Mode, Cols, Message, Tree, !Counter, !IO) :-
     counter.allocate(NodeIdInt, !Counter),
     NodeId = node_id(NodeIdInt),
 
-    some [!RevHeaderLines] (
-        StartMessage = start_message_header(Message, "Date", Headers ^ h_date),
-        !:RevHeaderLines = [StartMessage],
-        add_header("From", Headers ^ h_from, !RevHeaderLines),
-        add_header("Subject", Headers ^ h_subject, !RevHeaderLines),
-        add_header("To", Headers ^ h_to, !RevHeaderLines),
-        maybe_add_header("Cc", Headers ^ h_cc, !RevHeaderLines),
-        maybe_add_header("Reply-To", Headers ^ h_replyto, !RevHeaderLines),
-        cons(blank_line, !RevHeaderLines),
-        HeaderTree = leaf(list.reverse(!.RevHeaderLines))
+    some [!RevLines] (
+        !:RevLines = [],
+        add_header(yes(Message), Cols, "Date", Headers ^ h_date, !RevLines),
+        add_header(no, Cols, "From", Headers ^ h_from, !RevLines),
+        add_header(no, Cols, "Subject", Headers ^ h_subject, !RevLines),
+        add_header(no, Cols, "To", Headers ^ h_to, !RevLines),
+        maybe_add_header(Cols, "Cc", Headers ^ h_cc, !RevLines),
+        maybe_add_header(Cols, "Reply-To", Headers ^ h_replyto, !RevLines),
+        cons(blank_line, !RevLines),
+        HeaderTree = leaf(list.reverse(!.RevLines))
     ),
 
     Body = Message ^ m_body,
@@ -321,20 +326,38 @@ make_message_tree(Config, Mode, Cols, Message, Tree, !Counter, !IO) :-
     ),
     Tree = node(NodeId, ReplyTrees, no).
 
-:- pred add_header(string::in, header_value::in,
+:- pred add_header(maybe(message)::in, int::in, string::in, header_value::in,
     list(pager_line)::in, list(pager_line)::out) is det.
 
-add_header(Header, Value, RevLines0, RevLines) :-
-    RevLines = [header(Header, Value) | RevLines0].
-
-:- pred maybe_add_header(string::in, header_value::in,
-    list(pager_line)::in, list(pager_line)::out) is det.
-
-maybe_add_header(Header, Value, RevLines0, RevLines) :-
-    ( empty_header_value(Value) ->
-        RevLines = RevLines0
+add_header(StartMessage, Cols, Name, Value, !RevLines) :-
+    % 4 extra columns for "| Name: "
+    RemainCols = max(0, Cols - string_wcwidth(Name) - 4),
+    get_spans_by_whitespace(header_value_string(Value), Spans),
+    fill_lines(RemainCols, Spans, Folded),
+    (
+        Folded = [],
+        FoldedHead = "",
+        FoldedTail = []
     ;
-        add_header(Header, Value, RevLines0, RevLines)
+        Folded = [FoldedHead | FoldedTail]
+    ),
+    cons(header(StartMessage, no, Name, FoldedHead), !RevLines),
+    foldl(add_header_cont(Name), FoldedTail, !RevLines).
+
+:- pred add_header_cont(string::in, string::in,
+    list(pager_line)::in, list(pager_line)::out) is det.
+
+add_header_cont(Name, Value, !RevLines) :-
+    cons(header(no, yes, Name, Value), !RevLines).
+
+:- pred maybe_add_header(int::in, string::in, header_value::in,
+    list(pager_line)::in, list(pager_line)::out) is det.
+
+maybe_add_header(Cols, Header, Value, !RevLines) :-
+    ( empty_header_value(Value) ->
+        true
+    ;
+        add_header(no, Cols, Header, Value, !RevLines)
     ).
 
 :- pred make_part_tree(prog_config::in, int::in, part::in, tree::out,
@@ -484,8 +507,7 @@ is_quoted_text(Line) :-
         Line = text(pager_text(Level, _, _, _)),
         Level > 0
     ;
-        ( Line = start_message_header(_, _, _)
-        ; Line = header(_, _)
+        ( Line = header(_, _, _, _)
         ; Line = part_head(_, _, _)
         ; Line = fold_marker(_, _)
         ; Line = message_separator
@@ -866,7 +888,7 @@ goto_end(NumRows, !Info) :-
 
 :- pred is_message_start(id_pager_line::in) is semidet.
 
-is_message_start(_Id - start_message_header(_, _, _)).
+is_message_start(_Id - header(yes(_), _, _, _)).
 
 skip_quoted_text(MessageUpdate, !Info) :-
     Scrollable0 = !.Info ^ p_scrollable,
@@ -893,12 +915,12 @@ is_quoted_text_or_message_start(_Id - Line) :-
 is_quoted_text_or_message_start_2(Line) :-
     require_complete_switch [Line]
     (
-        Line = start_message_header(_, _, _)
+        Line = header(yes(_), _, _, _)
     ;
         Line = text(pager_text(Level, _, _, _)),
         Level > 0
     ;
-        ( Line = header(_, _)
+        ( Line = header(no, _, _, _)
         ; Line = part_head(_, _, _)
         ; Line = fold_marker(_, _)
         ; Line = message_separator
@@ -930,7 +952,7 @@ get_top_message(Info, Message) :-
 get_top_message_2(Lines, I, J, Message) :-
     ( I >= 0 ->
         version_array.lookup(Lines, I) = _Id - Line,
-        ( Line = start_message_header(Message0, _, _) ->
+        ( Line = header(yes(Message0), _, _, _) ->
             J = I,
             Message = Message0
         ;
@@ -968,7 +990,7 @@ skip_to_message(MessageId, !Info) :-
     is semidet.
 
 is_message_start(MessageId, _Id - Line) :-
-    Line = start_message_header(Message, _, _),
+    Line = header(yes(Message), _, _, _),
     Message ^ m_id = MessageId.
 
 %-----------------------------------------------------------------------------%
@@ -1041,20 +1063,16 @@ id_pager_line_matches_search(Search, _Id - Line) :-
 line_matches_search(Search, Line) :-
     require_complete_switch [Line]
     (
-        Line = start_message_header(Message, _, Value),
+        Line = header(StartMessage, _Cont, _, String),
         (
-            String = header_value_string(Value),
             strcase_str(String, Search)
         ;
             % XXX this won't match current tags
+            StartMessage = yes(Message),
             Tags = Message ^ m_tags,
             set.member(tag(TagName), Tags),
             strcase_str(TagName, Search)
         )
-    ;
-        Line = header(_, Value),
-        String = header_value_string(Value),
-        strcase_str(String, Search)
     ;
         Line = text(pager_text(_, String, _, _)),
         strcase_str(String, Search)
@@ -1127,7 +1145,7 @@ is_highlightable_minor(_Id - Line) :-
 :- pred is_highlightable_major(id_pager_line::in) is semidet.
 
 is_highlightable_major(_Id - Line) :-
-    ( Line = start_message_header(_, _, _)
+    ( Line = header(yes(_), _, _, _)
     ; Line = part_head(_, _, _)
     ).
 
@@ -1136,7 +1154,7 @@ get_highlighted_thing(Info, Thing) :-
     get_cursor_line(Scrollable, _, _NodeId - Line),
     require_complete_switch [Line]
     (
-        Line = start_message_header(Message, _, _),
+        Line = header(yes(Message), _, _, _),
         MessageId = Message ^ m_id,
         Subject = Message ^ m_headers ^ h_subject,
         Part = part(MessageId, 0, "text/plain", unsupported, no, no, no),
@@ -1154,7 +1172,7 @@ get_highlighted_thing(Info, Thing) :-
         Line = fold_marker(_, _),
         Thing = highlighted_fold_marker
     ;
-        Line = header(_, _),
+        Line = header(no, _, _, _),
         fail
     ;
         Line = message_separator,
@@ -1187,8 +1205,7 @@ toggle_line(ToggleType, NumRows, Cols, NodeId - Line, MessageUpdate,
         toggle_folding(NumRows, NodeId, Line, !Info),
         MessageUpdate = clear_message
     ;
-        ( Line = start_message_header(_, _, _)
-        ; Line = header(_, _)
+        ( Line = header(_, _, _, _)
         ; Line = text(pager_text(_, _, _, _))
         ; Line = message_separator
         ),
@@ -1306,26 +1323,31 @@ draw_id_pager_line(Attrs, Panel, _Id - Line, _LineNr, IsCursor, !IO) :-
 draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
     GAttrs = Attrs ^ p_generic,
     (
-        ( Line = start_message_header(_Message, Header, Value)
-        ; Line = header(Header, Value)
-        ),
+        Line = header(_, Continue, Name, Value),
         attr(Panel, GAttrs ^ field_name, !IO),
-        draw(Panel, "| ", !IO),
-        draw(Panel, Header, !IO),
-        draw(Panel, ": ", !IO),
+        (
+            Continue = no,
+            draw(Panel, "| ", !IO),
+            draw(Panel, Name, !IO),
+            draw(Panel, ": ", !IO)
+        ;
+            Continue = yes,
+            getyx(Panel, Y, X, !IO),
+            move(Panel, Y, X + string_wcwidth(Name) + 4, !IO)
+        ),
         BodyAttr = GAttrs ^ field_body,
         (
             IsCursor = yes,
             Highlight = reverse
         ;
             IsCursor = no,
-            ( Header = "Subject" ->
+            ( Name = "Subject" ->
                 Highlight = bold
             ;
                 Highlight = normal
             )
         ),
-        draw(Panel, BodyAttr + Highlight, header_value_string(Value), !IO)
+        draw(Panel, BodyAttr + Highlight, Value, !IO)
     ;
         Line = text(pager_text(QuoteLevel, Text, QuoteMarkerEnd, TextType)),
         Attr0 = quote_level_to_attr(Attrs, QuoteLevel),
