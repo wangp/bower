@@ -2,7 +2,7 @@
 MAIN_TARGET = bower
 
 # Link with curses.
-MLLIBS-bower += -lncursesw -lpanel
+MLLIBS-bower += -lncursesw -lpanelw
 
 # Statically link to Mercury libraries.
 MCFLAGS-bower += --mercury-linkage static
