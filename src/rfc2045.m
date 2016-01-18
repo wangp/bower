@@ -8,7 +8,7 @@
 :- import_module char.
 :- import_module pair.
 
-:- use_module rfc5322.
+:- import_module rfc5322.
 
 :- type token
     --->    token(string).
@@ -20,7 +20,7 @@
 
 :- type value
     --->    token(token)
-    ;       quoted_string(rfc5322.quoted_string).
+    ;       quoted_string(quoted_string).
 
 :- pred token_char(char::in) is semidet.
 
@@ -35,7 +35,6 @@
 :- import_module list.
 :- import_module string.
 
-:- import_module rfc5322.
 :- import_module rfc5322.writer.
 
 :- type acc == list(string). % reverse
@@ -83,7 +82,7 @@ attribute(attribute(String), !Acc, !Ok) :-
 value(token(Token), !Acc, !Ok) :-
     token(Token, !Acc, !Ok).
 value(quoted_string(QuotedString), !Acc, !Ok) :-
-    rfc5322.writer.quoted_string_ascii_only(QuotedString, !Acc, !Ok).
+    quoted_string_ascii_only(QuotedString, !Acc, !Ok).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
