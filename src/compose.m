@@ -1667,7 +1667,7 @@ write_most_headers(Stream, Prepare, Headers, ParsedHeaders, Date, MessageId,
 
 :- pred skip_if_empty_header_value(pred(Stream, string, header_value,
     State, State), Stream, string, header_value, State, State)
-    is det <= stream.writer(Stream, string, State).
+    <= stream.writer(Stream, string, State).
 :- mode skip_if_empty_header_value(in(pred(in, in, in, di, uo) is det),
     in, in, in, di, uo) is det.
 
@@ -1680,7 +1680,7 @@ skip_if_empty_header_value(Pred, Stream, Field, Value, !IO) :-
 
 :- pred skip_if_empty_list(pred(Stream, string, list(T), U, U, State, State),
     Stream, string, list(T), U, U, State, State)
-    is det <= stream.writer(Stream, string, State).
+    <= stream.writer(Stream, string, State).
 :- mode skip_if_empty_list(in(pred(in, in, in, in, out, di, uo) is det),
     in, in, in, in, out, di, uo) is det.
 
