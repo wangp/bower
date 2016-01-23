@@ -100,7 +100,7 @@ The keys are:
 
     j,k,g,G, etc.   move around
     [, ]            scroll half page up, down
-    l               change search terms ("limit")
+    l, ~            change search terms ("limit")
     =               refresh search results
     Enter           open thread
     m               compose new message

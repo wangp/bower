@@ -100,6 +100,7 @@
     ;       skip_to_unread
     ;       enter
     ;       enter_limit
+    ;       enter_limit_tilde
     ;       refresh_all
     ;       start_compose
     ;       start_recall
@@ -122,7 +123,7 @@
     ;       continue_no_draw
     ;       resize
     ;       open_pager(thread_id)
-    ;       enter_limit
+    ;       enter_limit(maybe(string))
     ;       refresh_all
     ;       start_compose
     ;       start_recall
@@ -329,13 +330,21 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         !IndexInfo ^ i_common_history := CommonHistory,
         index_loop(NewScreen, !.IndexInfo, !IO)
     ;
-        Action = enter_limit,
+        Action = enter_limit(MaybeInitial),
         Config = !.IndexInfo ^ i_config,
         History0 = !.IndexInfo ^ i_common_history ^ ch_limit_history,
+        (
+            MaybeInitial = yes(Initial),
+            FirstTime = no
+        ;
+            MaybeInitial = no,
+            choose_text_initial(History0, "", Initial),
+            FirstTime = yes
+        ),
         Completion = complete_limit(Config, search_alias_section,
             ["tag:", "+tag:", "-tag:", "is:", "+is:", "-is:"]),
-        text_entry(Screen, "Limit to messages matching: ", History0,
-            Completion, Return, !IO),
+        text_entry_full(Screen, "Limit to messages matching: ", History0,
+            Initial, Completion, FirstTime, Return, !IO),
         (
             Return = yes(LimitString),
             add_history_nodup(LimitString, History0, History),
@@ -567,7 +576,11 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
         ;
             Binding = enter_limit,
             MessageUpdate = no_change,
-            Action = enter_limit
+            Action = enter_limit(no)
+        ;
+            Binding = enter_limit_tilde,
+            MessageUpdate = no_change,
+            Action = enter_limit(yes("~"))
         ;
             Binding = refresh_all,
             MessageUpdate = no_change,
@@ -677,6 +690,7 @@ key_binding_char(']', half_page_down).
 key_binding_char('\t', skip_to_unread).
 key_binding_char('\r', enter).
 key_binding_char('l', enter_limit).
+key_binding_char('~', enter_limit_tilde).
 key_binding_char('m', start_compose).
 key_binding_char('r', start_reply(direct_reply)).
 key_binding_char('e', start_reply(group_reply)).
