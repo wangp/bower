@@ -13,57 +13,68 @@
 # string "ssh" then an additional level of shell quoting will be applied
 # to any arguments that bower adds to the command.
 
+#-----------------------------------------------------------------------------#
+
 [command]
 
-# How to run notmuch.
-# Set this if notmuch is not already on your PATH.
-#
-# I run bower locally but keep my mail and notmuch on a remote machine,
-# accessed via ssh.  For that, you may like to enable the OpenSSH
-# ControlMaster option, and also set ControlPersist to greater than 60
-# seconds (the polling period in the index view).
-; notmuch = ssh user@host /remote/notmuch
+    # How to run notmuch.
+    # Set this if notmuch is not already on your PATH.
+    #
+    # I run bower locally but keep my mail and notmuch on a remote machine,
+    # accessed via ssh.  For that, you may like to enable the OpenSSH
+    # ControlMaster option, and also set ControlPersist to greater than 60
+    # seconds (the polling period in the index view).
+    #
+  ; notmuch = ssh user@host /remote/notmuch
 
-# How to edit a message.
-# The default is to use $EDITOR, or else "vi".
-; editor = vim '+set ft=mail'
+    # How to edit a message.
+    # The default is to use $EDITOR, or else "vi".
+    #
+  ; editor = vim '+set ft=mail'
 
-# How to send a message.
-# The default is to use sendmail (untested) but I use msmtp.
-# The command should understand the "-t" option, to read recipients
-# from the message headers itself.
-; sendmail = /usr/bin/sendmail -oi -oem
-; sendmail = /usr/bin/msmtp
+    # How to send a message.
+    # The default is to use sendmail (untested) but I use msmtp.
+    # The command should understand the "-t" option, to read recipients
+    # from the message headers itself.
+    #
+  ; sendmail = /usr/bin/sendmail -oi -oem
+  ; sendmail = /usr/bin/msmtp
 
-# Command to execute after the sendmail command is successful.
-# The default is to use "notmuch insert" to add the sent message to the
-# maildir.  You can disable it by setting an empty command.
-; post_sendmail =
+    # Command to execute after the sendmail command is successful.
+    # The default is to use "notmuch insert" to add the sent message to the
+    # maildir.  You can disable it by setting an empty command.
+    #
+  ; post_sendmail =
 
-# How to format HTML on stdin to plain text.
-# The command should output UTF-8.
-; html_dump = lynx -dump -force-html -stdin -display-charset=utf-8
+    # How to format HTML on stdin to plain text.
+    # The command should output UTF-8.
+    #
+  ; html_dump = lynx -dump -force-html -stdin -display-charset=utf-8
 
-# Default command to open a part.
-# An unquoted & suffix causes the command to run in the background.
-; open_part = xdg-open&
+    # Default command to open a part.
+    # An unquoted & suffix causes the command to run in the background.
+    #
+  ; open_part = xdg-open&
 
-# Default command to open a URL.
-# An unquoted & suffix causes the command to run in the background.
-; open_url = xdg-open&
+    # Default command to open a URL.
+    # An unquoted & suffix causes the command to run in the background.
+    #
+  ; open_url = xdg-open&
 
-# Command to execute after polling finds there are new unread messages
-# matching the current search terms in the index view.
-# The notification message is provided as an argument.
-; poll_notify = notify-send -i mail-message-new -c email.arrived -a Bower Bower
+    # Command to execute after polling finds there are new unread messages
+    # matching the current search terms in the index view.
+    # The notification message is provided as an argument.
+    #
+  ; poll_notify = notify-send -i mail-message-new -c email.arrived -a Bower Bower
 
 #-----------------------------------------------------------------------------#
 
 [index]
 
-# How often to check for new unread messages matching the current search
-# terms in the index view. Disable with "off".
-; poll_period_secs = 60
+    # How often to check for new unread messages matching the current search
+    # terms in the index view. Disable with "off".
+    #
+  ; poll_period_secs = 60
 
 #-----------------------------------------------------------------------------#
 
@@ -79,49 +90,49 @@
 # foreground and background may be:
 #   default, black, red, green, yellow, blue, magenta, cyan, white
 
-; [color]
-;   current = bold yellow / red
-;   relative_date = bold blue
-;   selected = bold magenta
-;   standard_tag = normal
-;   flagged = bold red
-;   author = normal
-;   subject = normal
-;   other_tag = bold red
-;   field_name = bold red
-;   field_body = normal
-;
-; [color.status]
-;   bar = white / blue
-;   info = bold cyan
-;   warning = bold red
-;   prompt = normal
-;
-; [color.pager]
-;   body = normal
-;   quote_odd = bold blue
-;   quote_even = green
-;   diff_common = normal
-;   diff_add = bold cyan
-;   diff_rem = bold red
-;   diff_hunk = bold yellow
-;   diff_index = bold green
-;   url = magenta
-;   part_head = bold magenta
-;   part_message = magenta
-;   fold = magenta
-;   separator = bold blue
-;
-; [color.index]
-;   count = green
-;
-; [color.thread]
-;   tree = magenta
-;   author = normal
-;   subject = green
-;
-; [color.compose]
-;   address = bold blue
-;   invalid = red
+[color]
+  ; current = bold yellow / red
+  ; relative_date = bold blue
+  ; selected = bold magenta
+  ; standard_tag = normal
+  ; flagged = bold red
+  ; author = normal
+  ; subject = normal
+  ; other_tag = bold red
+  ; field_name = bold red
+  ; field_body = normal
+
+[color.status]
+  ; bar = white / blue
+  ; info = bold cyan
+  ; warning = bold red
+  ; prompt = normal
+
+[color.pager]
+  ; body = normal
+  ; quote_odd = bold blue
+  ; quote_even = green
+  ; diff_common = normal
+  ; diff_add = bold cyan
+  ; diff_rem = bold red
+  ; diff_hunk = bold yellow
+  ; diff_index = bold green
+  ; url = magenta
+  ; part_head = bold magenta
+  ; part_message = magenta
+  ; fold = magenta
+  ; separator = bold blue
+
+[color.index]
+  ; count = green
+
+[color.thread]
+  ; tree = magenta
+  ; author = normal
+  ; subject = green
+
+[color.compose]
+  ; address = bold blue
+  ; invalid = red
 
 #-----------------------------------------------------------------------------#
