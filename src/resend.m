@@ -40,24 +40,116 @@
 
 %-----------------------------------------------------------------------------%
 
-handle_resend(Config, Screen, MessageId, MessageUpdate, !ToHistory, !IO) :-
-    % XXX choose from multiple accounts
-    get_fallback_account(Config, MaybeAccount),
+handle_resend(Config, Screen, MessageId, Message, !ToHistory, !IO) :-
+    prompt_from_account(Config, Screen, FromRes, !IO),
     (
-        MaybeAccount = yes(Account),
-        handle_resend_2(Config, Screen, MessageId, Account, MessageUpdate,
-            !ToHistory, !IO)
+        FromRes = ok(From, FromAddresses, Account),
+        prompt_to(Config, Screen, ToRes, !ToHistory, !IO),
+        (
+            ToRes = ok(To, ToAddresses),
+            confirm_resend(Screen, From, To, Confirmation, !IO),
+            (
+                Confirmation = yes,
+                create_temp_message_file_and_resend(Config, Screen, MessageId,
+                    Account, FromAddresses, ToAddresses, Message, !IO)
+            ;
+                Confirmation = no,
+                Message = set_info("Message not resent.")
+            )
+        ;
+            ToRes = invalid_address,
+            Message = set_warning("Invalid To address, message not resent.")
+        ;
+            ToRes = cancel,
+            Message = set_info("Message not resent.")
+        )
     ;
-        MaybeAccount = no,
-        MessageUpdate = set_info("Message not resent.")
+        FromRes = no_account,
+        Message = set_warning("No matching account, message not resent.")
+    ;
+        FromRes = invalid_address,
+        Message = set_warning("Invalid From address, message not resent.")
+    ;
+        FromRes = cancel,
+        Message = set_info("Message not resent.")
     ).
 
-:- pred handle_resend_2(prog_config::in, screen::in, message_id::in,
-    account::in, message_update::out, history::in, history::out,
-    io::di, io::uo) is det.
+%-----------------------------------------------------------------------------%
 
-handle_resend_2(Config, Screen, MessageId, Account, MessageUpdate, !ToHistory,
-        !IO) :-
+:- type prompt_from_result
+    --->    ok(string, address_list, account)
+    ;       no_account
+    ;       invalid_address
+    ;       cancel.
+
+:- pred prompt_from_account(prog_config::in, screen::in,
+    prompt_from_result::out, io::di, io::uo) is det.
+
+prompt_from_account(Config, Screen, Res, !IO) :-
+    make_from_history(Config, History0, Initial),
+    text_entry_initial(Screen, "From: ", History0, Initial,
+        complete_config_key(Config, addressbook_section), MaybeFrom, !IO),
+    (
+        MaybeFrom = yes(From0),
+        From0 \= ""
+    ->
+        parse_and_expand_addresses_string(Config,
+            backslash_quote_meta_chars, From0, From, FromAddresses,
+            FromValid, !IO),
+        (
+            FromValid = yes,
+            get_some_matching_account(Config, FromAddresses, MaybeAccount),
+            (
+                MaybeAccount = yes(Account),
+                Res = ok(From, FromAddresses, Account)
+            ;
+                MaybeAccount = no,
+                Res = no_account
+            )
+        ;
+            FromValid = no,
+            Res = invalid_address
+        )
+    ;
+        Res = cancel
+    ).
+
+:- pred make_from_history(prog_config::in, history::out, string::out) is det.
+
+make_from_history(Config, History, Initial) :-
+    get_all_accounts(Config, Accounts),
+    get_fallback_account(Config, MaybeFallback),
+    (
+        MaybeFallback = yes(FallbackAccount),
+        get_from_address_as_string(FallbackAccount, Initial)
+    ;
+        MaybeFallback = no,
+        (
+            Accounts = [],
+            Initial = ""
+        ;
+            Accounts = [Account | _],
+            get_from_address_as_string(Account, Initial)
+        )
+    ),
+    map(get_from_address_as_string, Accounts, Strings0),
+    ( delete_first(Strings0, Initial, Strings) ->
+        History = init_history_list(Strings)
+    ;
+        History = init_history_list(Strings0)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- type prompt_to_result
+    --->    ok(string, address_list)
+    ;       invalid_address
+    ;       cancel.
+
+:- pred prompt_to(prog_config::in, screen::in, prompt_to_result::out,
+    history::in, history::out, io::di, io::uo) is det.
+
+prompt_to(Config, Screen, Res, !ToHistory, !IO) :-
     text_entry_initial(Screen, "Resend message to: ", !.ToHistory, "",
         complete_config_key(Config, addressbook_section), MaybeTo, !IO),
     (
@@ -69,23 +161,16 @@ handle_resend_2(Config, Screen, MessageId, Account, MessageUpdate, !ToHistory,
             To0, To, ToAddresses, ToValid, !IO),
         (
             ToValid = yes,
-            get_from_address_as_string(Account, FromAddress),
-            confirm_resend(Screen, FromAddress, To, Confirmation, !IO),
-            (
-                Confirmation = yes,
-                create_temp_message_file_and_resend(Config, Screen, MessageId,
-                    Account, ToAddresses, MessageUpdate, !IO)
-            ;
-                Confirmation = no,
-                MessageUpdate = set_info("Message not resent.")
-            )
+            Res = ok(To, ToAddresses)
         ;
             ToValid = no,
-            MessageUpdate = set_warning("Invalid address. Message not resent.")
+            Res = invalid_address
         )
     ;
-        MessageUpdate = set_info("Message not resent.")
+        Res = cancel
     ).
+
+%-----------------------------------------------------------------------------%
 
 :- pred confirm_resend(screen::in, string::in, string::in, bool::out,
     io::di, io::uo) is det.
@@ -103,12 +188,11 @@ confirm_resend(Screen, From, To, Confirmation, !IO) :-
 %-----------------------------------------------------------------------------%
 
 :- pred create_temp_message_file_and_resend(prog_config::in, screen::in,
-    message_id::in, account::in, address_list::in, message_update::out,
-    io::di, io::uo) is det.
+    message_id::in, account::in, address_list::in, address_list::in,
+    message_update::out, io::di, io::uo) is det.
 
 create_temp_message_file_and_resend(Config, Screen, MessageId, Account,
-        ToAddresses, MessageUpdate, !IO) :-
-    get_from_address(Account, FromAddress),
+        FromAddress, ToAddresses, MessageUpdate, !IO) :-
     write_resent_headers(FromAddress, ToAddresses, ResWrite, !IO),
     (
         ResWrite = ok(FileName),
@@ -140,7 +224,7 @@ create_temp_message_file_and_resend(Config, Screen, MessageId, Account,
         MessageUpdate = set_warning(Error)
     ).
 
-:- pred write_resent_headers(mailbox::in, address_list::in,
+:- pred write_resent_headers(address_list::in, address_list::in,
     maybe_error(string)::out, io::di, io::uo) is det.
 
 write_resent_headers(FromAddress, ToAddresses, Res, !IO) :-
@@ -166,15 +250,14 @@ write_resent_headers(FromAddress, ToAddresses, Res, !IO) :-
             io.error_message(Error))
     ).
 
-:- pred generate_resent_headers(io.output_stream::in, mailbox::in,
+:- pred generate_resent_headers(io.output_stream::in, address_list::in,
     address_list::in, io::di, io::uo) is det.
 
 generate_resent_headers(Stream, FromAddress, ToAddresses, !IO) :-
     generate_date_msg_id(Date, ResentMessageId, !IO),
 
-    % We assume the From address is ok.
     write_address_list_header(rfc2047_encoding, Stream,
-        "Resent-From", [mailbox(FromAddress)], ok, _FromError, !IO),
+        "Resent-From", FromAddress, ok, _FromError, !IO),
     write_as_unstructured_header(no_encoding, Stream,
         "Resent-Date", Date, !IO),
     write_as_unstructured_header(no_encoding, Stream,
