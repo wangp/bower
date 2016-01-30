@@ -1,7 +1,7 @@
 # This configuration file belongs in ~/.config/bower/bower.conf
 # The lines beginning with '#' or ';' are treated as comment lines.
 
-# The commands in the [command] section use shell-style quoting rules.
+# Values representing shell commands use shell-style quoting rules:
 #
 # - within single quotes, all characters represent themselves
 # - within double quotes, all characters represent themselves except for
@@ -32,20 +32,6 @@
     #
   ; editor = vim '+set ft=mail'
 
-    # How to send a message.
-    # The default is to use sendmail (untested) but I use msmtp.
-    # The command should understand the "-t" option, to read recipients
-    # from the message headers itself.
-    #
-  ; sendmail = /usr/bin/sendmail -oi -oem
-  ; sendmail = /usr/bin/msmtp
-
-    # Command to execute after the sendmail command is successful.
-    # The default is to use "notmuch insert" to add the sent message to the
-    # maildir.  You can disable it by setting an empty command.
-    #
-  ; post_sendmail =
-
     # How to format HTML on stdin to plain text.
     # The command should output UTF-8.
     #
@@ -66,6 +52,50 @@
     # The notification message is provided as an argument.
     #
   ; poll_notify = notify-send -i mail-message-new -c email.arrived -a Bower Bower
+
+    # These keys are deprecated and should be moved to an [account.*] section.
+    #
+  ; sendmail =
+  ; post_sendmail =
+
+#-----------------------------------------------------------------------------#
+
+# How to send mail for one or more email accounts.
+# Each account is defined in a section called [account.NAME] where NAME is some
+# short name of your choosing.
+
+[account.default]
+
+    # An account is selected by matching the From address on the message to
+    # from_address value. Defaults to the combination of user.name and
+    # user.primary_email from .notmuch-config.
+    #
+  ; from_address = My Name <user@example.org>
+
+    # One account can be designated as the fallback account, to be used if the
+    # From address on a message does not match that of any other account.
+    #
+  ; fallback = true
+
+    # How to send a message from this account.
+    # The default is to use sendmail but I use msmtp.
+    # The command should understand the "-t" option to read recipients
+    # from the message headers itself.
+    #
+  ; sendmail = /usr/bin/sendmail -oi -oem
+  ; sendmail = /usr/bin/msmtp
+
+    # Command to execute after the sendmail command is successful.
+    # The default is to use "notmuch insert" to add the sent message to the
+    # maildir (see README.md for the folder). You can override the command
+    # or disable it by setting it to the empty string.
+    #
+  ; post_sendmail =
+
+; [account.work]
+;   from_address = My Name <user@work.example.org>
+;   sendmail = /usr/bin/msmtp --account=work
+;   post_sendmail =
 
 #-----------------------------------------------------------------------------#
 

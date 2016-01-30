@@ -41,6 +41,23 @@
 %-----------------------------------------------------------------------------%
 
 handle_resend(Config, Screen, MessageId, MessageUpdate, !ToHistory, !IO) :-
+    % XXX choose from multiple accounts
+    get_fallback_account(Config, MaybeAccount),
+    (
+        MaybeAccount = yes(Account),
+        handle_resend_2(Config, Screen, MessageId, Account, MessageUpdate,
+            !ToHistory, !IO)
+    ;
+        MaybeAccount = no,
+        MessageUpdate = set_info("Message not resent.")
+    ).
+
+:- pred handle_resend_2(prog_config::in, screen::in, message_id::in,
+    account::in, message_update::out, history::in, history::out,
+    io::di, io::uo) is det.
+
+handle_resend_2(Config, Screen, MessageId, Account, MessageUpdate, !ToHistory,
+        !IO) :-
     text_entry_initial(Screen, "Resend message to: ", !.ToHistory, "",
         complete_config_key(Config, addressbook_section), MaybeTo, !IO),
     (
@@ -52,11 +69,12 @@ handle_resend(Config, Screen, MessageId, MessageUpdate, !ToHistory, !IO) :-
             To0, To, ToAddresses, ToValid, !IO),
         (
             ToValid = yes,
-            confirm_resend(Screen, To, Confirmation, !IO),
+            get_from_address_as_string(Account, FromAddress),
+            confirm_resend(Screen, FromAddress, To, Confirmation, !IO),
             (
                 Confirmation = yes,
                 create_temp_message_file_and_resend(Config, Screen, MessageId,
-                    ToAddresses, MessageUpdate, !IO)
+                    Account, ToAddresses, MessageUpdate, !IO)
             ;
                 Confirmation = no,
                 MessageUpdate = set_info("Message not resent.")
@@ -69,11 +87,11 @@ handle_resend(Config, Screen, MessageId, MessageUpdate, !ToHistory, !IO) :-
         MessageUpdate = set_info("Message not resent.")
     ).
 
-:- pred confirm_resend(screen::in, string::in, bool::out, io::di, io::uo)
-    is det.
+:- pred confirm_resend(screen::in, string::in, string::in, bool::out,
+    io::di, io::uo) is det.
 
-confirm_resend(Screen, To, Confirmation, !IO) :-
-    Prompt = "Resend message to " ++ To ++ "? (Y/n) ",
+confirm_resend(Screen, From, To, Confirmation, !IO) :-
+    Prompt = "Resend from " ++ From ++ " to " ++ To ++ "? (Y/n) ",
     update_message_immed(Screen, set_prompt(Prompt), !IO),
     get_keycode_blocking(Code, !IO),
     ( Code = char('Y') ->
@@ -85,12 +103,12 @@ confirm_resend(Screen, To, Confirmation, !IO) :-
 %-----------------------------------------------------------------------------%
 
 :- pred create_temp_message_file_and_resend(prog_config::in, screen::in,
-    message_id::in, address_list::in, message_update::out, io::di, io::uo)
-    is det.
+    message_id::in, account::in, address_list::in, message_update::out,
+    io::di, io::uo) is det.
 
-create_temp_message_file_and_resend(Config, Screen, MessageId, ToAddresses,
-        MessageUpdate, !IO) :-
-    get_from_address(Config, FromAddress, !IO),
+create_temp_message_file_and_resend(Config, Screen, MessageId, Account,
+        ToAddresses, MessageUpdate, !IO) :-
+    get_from_address(Account, FromAddress),
     write_resent_headers(FromAddress, ToAddresses, ResWrite, !IO),
     (
         ResWrite = ok(FileName),
@@ -103,7 +121,7 @@ create_temp_message_file_and_resend(Config, Screen, MessageId, ToAddresses,
         (
             CallRes = ok(ExitStatus),
             ( ExitStatus = 0 ->
-                resend_with_progress(Config, Screen, FileName, MessageUpdate,
+                resend_with_progress(Screen, Account, FileName, MessageUpdate,
                     !IO)
             ;
                 string.format("notmuch returned exit status %d",
@@ -122,7 +140,7 @@ create_temp_message_file_and_resend(Config, Screen, MessageId, ToAddresses,
         MessageUpdate = set_warning(Error)
     ).
 
-:- pred write_resent_headers(address::in, address_list::in,
+:- pred write_resent_headers(mailbox::in, address_list::in,
     maybe_error(string)::out, io::di, io::uo) is det.
 
 write_resent_headers(FromAddress, ToAddresses, Res, !IO) :-
@@ -148,7 +166,7 @@ write_resent_headers(FromAddress, ToAddresses, Res, !IO) :-
             io.error_message(Error))
     ).
 
-:- pred generate_resent_headers(io.output_stream::in, address::in,
+:- pred generate_resent_headers(io.output_stream::in, mailbox::in,
     address_list::in, io::di, io::uo) is det.
 
 generate_resent_headers(Stream, FromAddress, ToAddresses, !IO) :-
@@ -156,7 +174,7 @@ generate_resent_headers(Stream, FromAddress, ToAddresses, !IO) :-
 
     % We assume the From address is ok.
     write_address_list_header(rfc2047_encoding, Stream,
-        "Resent-From", [FromAddress], ok, _FromError, !IO),
+        "Resent-From", [mailbox(FromAddress)], ok, _FromError, !IO),
     write_as_unstructured_header(no_encoding, Stream,
         "Resent-Date", Date, !IO),
     write_as_unstructured_header(no_encoding, Stream,
@@ -167,12 +185,12 @@ generate_resent_headers(Stream, FromAddress, ToAddresses, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred resend_with_progress(prog_config::in, screen::in, string::in,
+:- pred resend_with_progress(screen::in, account::in, string::in,
     message_update::out, io::di, io::uo) is det.
 
-resend_with_progress(Config, Screen, Filename, MessageUpdate, !IO) :-
+resend_with_progress(Screen, Account, Filename, MessageUpdate, !IO) :-
     update_message_immed(Screen, set_info("Sending message..."), !IO),
-    call_send_mail(Config, Filename, SendRes, !IO),
+    call_send_mail(Account, Filename, SendRes, !IO),
     (
         SendRes = ok,
         MessageUpdate = set_info("Message resent.")
@@ -181,13 +199,13 @@ resend_with_progress(Config, Screen, Filename, MessageUpdate, !IO) :-
         MessageUpdate = set_info(Error)
     ).
 
-:- pred call_send_mail(prog_config::in, string::in, maybe_error::out,
+:- pred call_send_mail(account::in, string::in, maybe_error::out,
     io::di, io::uo) is det.
 
-call_send_mail(Config, Filename, Res, !IO) :-
+call_send_mail(Account, Filename, Res, !IO) :-
     % Sendmail-compatible programs should extract the recipient from Resent-To
     % header when passed the "-t" option.
-    get_sendmail_command(Config, sendmail_read_recipients, Sendmail),
+    get_sendmail_command(Account, sendmail_read_recipients, Sendmail),
     make_quoted_command(Sendmail, [], redirect_input(Filename), no_redirect,
         Command),
     io.call_system(Command, ResSend, !IO),

@@ -10,6 +10,7 @@
 
 :- import_module color.
 :- import_module quote_arg.
+:- import_module rfc5322.
 :- import_module shell_word.
 
 %-----------------------------------------------------------------------------%
@@ -19,6 +20,8 @@
 :- type load_prog_config_result
     --->    ok(prog_config)
     ;       errors(list(string)).
+
+:- type account.
 
 :- type sendmail_option
     --->    sendmail_read_recipients. % '-t' option
@@ -37,11 +40,6 @@
 
 :- pred get_editor_command(prog_config::in, command_prefix::out) is det.
 
-:- pred get_sendmail_command(prog_config::in, sendmail_option::in,
-    command_prefix::out) is det.
-
-:- pred get_post_sendmail_action(prog_config::in, post_sendmail::out) is det.
-
 :- pred get_maybe_html_dump_command(prog_config::in,
     maybe(command_prefix)::out) is det.
 
@@ -54,6 +52,27 @@
 
 :- pred get_poll_period_secs(prog_config::in, maybe(int)::out) is det.
 
+:- pred get_all_accounts(prog_config::in, list(account)::out) is det.
+
+:- pred get_fallback_account(prog_config::in, maybe(account)::out) is det.
+
+:- pred get_some_matching_account(prog_config::in, address_list::in,
+    maybe(account)::out) is det.
+
+:- pred get_matching_account(prog_config::in, address::in, account::out)
+    is semidet.
+
+:- pred get_account_name(account::in, string::out) is det.
+
+:- pred get_from_address(account::in, mailbox::out) is det.
+
+:- pred get_from_address_as_string(account::in, string::out) is det.
+
+:- pred get_sendmail_command(account::in, sendmail_option::in,
+    command_prefix::out) is det.
+
+:- pred get_post_sendmail_action(account::in, post_sendmail::out) is det.
+
 :- func generic_attrs(prog_config) = generic_attrs.
 :- func status_attrs(prog_config) = status_attrs.
 :- func pager_attrs(prog_config) = pager_attrs.
@@ -64,35 +83,55 @@
 %-----------------------------------------------------------------------------%
 
     % Exported for open part / URL commands.
-:- pred detect_ssh(list(word)::in) is semidet.
+:- pred detect_ssh(list(shell_word.word)::in) is semidet.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
+:- import_module bool.
 :- import_module int.
 :- import_module map.
 :- import_module parsing_utils.
 :- import_module string.
 
+:- import_module callout.       % XXX cyclic
 :- import_module config.
 :- import_module quote_arg.
+:- import_module rfc5322.parser.
+:- import_module rfc5322.writer.
 :- import_module xdg.
 
 :- type prog_config
     --->    prog_config(
                 notmuch         :: command_prefix,
                 editor          :: command_prefix,
-                sendmail        :: command_prefix,
-                post_sendmail   :: post_sendmail,
                 html_dump       :: maybe(command_prefix),
                 open_part       :: string, % not shell-quoted
                 open_url        :: string, % not shell-quoted
                 poll_notify     :: maybe(command_prefix),
                 poll_period_secs :: maybe(int),
+                accounts        :: list(account),
+                fallback_account :: maybe(account),
                 colors          :: colors
             ).
+
+:- type account == account(mailbox).
+
+:- type account(From)
+    --->    account(
+                account_name    :: string,
+                from_address    :: From,
+                fallback        :: fallback_setting,
+                sendmail        :: command_prefix,
+                post_sendmail   :: post_sendmail
+            ).
+
+:- type fallback_setting
+    --->    unset
+    ;       no
+    ;       yes.
 
 %-----------------------------------------------------------------------------%
 
@@ -156,24 +195,6 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
         )
     ),
 
-    ( search_config(Config, "command", "sendmail", Sendmail0) ->
-        parse_command(Sendmail0, Sendmail, !Errors),
-        check_sendmail_command(Sendmail, !Errors)
-    ;
-        Sendmail = default_sendmail_command
-    ),
-
-    ( search_config(Config, "command", "post_sendmail", PostSendmail0) ->
-        ( PostSendmail0 = "" ->
-            PostSendmail = nothing
-        ;
-            parse_command(PostSendmail0, PostSendmail1, !Errors),
-            PostSendmail = command(PostSendmail1)
-        )
-    ;
-        PostSendmail = default
-    ),
-
     ( search_config(Config, "command", "html_dump", HtmlDump0) ->
         ( HtmlDump0 = "" ->
             MaybeHtmlDump = no
@@ -213,17 +234,30 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
         PollPeriodSecs = default_poll_period_secs
     ),
 
+    parse_accounts(Config, Accounts0, AccountErrors),
+    (
+        AccountErrors = [],
+        fill_default_mailbox(Notmuch, Accounts0, Accounts, !Errors, !IO),
+        % XXX check for duplicate from_address in accounts
+        pick_fallback_account(Accounts, FallbackAccount, !Errors)
+    ;
+        AccountErrors = [_ | _],
+        Accounts = [],
+        FallbackAccount = no,
+        append(AccountErrors, !Errors)
+    ),
+
     make_colors(Config, Colors),
 
     ProgConfig ^ notmuch = Notmuch,
     ProgConfig ^ editor = Editor,
-    ProgConfig ^ sendmail = Sendmail,
-    ProgConfig ^ post_sendmail = PostSendmail,
     ProgConfig ^ html_dump = MaybeHtmlDump,
     ProgConfig ^ open_part = OpenPart,
     ProgConfig ^ open_url = OpenUrl,
     ProgConfig ^ poll_notify = PollNotify,
     ProgConfig ^ poll_period_secs = PollPeriodSecs,
+    ProgConfig ^ accounts = Accounts,
+    ProgConfig ^ fallback_account = FallbackAccount,
     ProgConfig ^ colors = Colors.
 
 :- pred parse_command(string::in, command_prefix::out,
@@ -254,21 +288,6 @@ detect_ssh([FirstWord | _]) :-
     list.member(unquoted(String), Segments),
     string.sub_string_search(String, "ssh", _).
 
-:- pred check_sendmail_command(command_prefix::in,
-    list(string)::in, list(string)::out) is det.
-
-check_sendmail_command(command_prefix(shell_quoted(Command), _), !Errors) :-
-    (
-        ( string.suffix(Command, " -t")
-        ; string.sub_string_search(Command, " -t ", _)
-        )
-    ->
-        Error = "sendmail command contains -t option: " ++ Command,
-        cons(Error, !Errors)
-    ;
-        true
-    ).
-
 :- pred check_poll_period_secs(string::in, maybe(int)::out,
     list(string)::in, list(string)::out) is det.
 
@@ -285,19 +304,250 @@ check_poll_period_secs(Value, PollPeriodSecs, !Errors) :-
 
 %-----------------------------------------------------------------------------%
 
+:- pred parse_accounts(config::in, list(account(maybe(mailbox)))::out,
+    list(string)::out) is cc_multi.
+
+parse_accounts(Config, Accounts, !:Errors) :-
+    map.foldl2(parse_if_account_section, Config, [], Accounts0, [], !:Errors),
+    (
+        Accounts0 = [],
+        parse_compat_account(Config, Account, !Errors),
+        Accounts = [Account]
+    ;
+        Accounts0 = [_ | _],
+        list.sort(Accounts0, Accounts) % sort by name
+    ).
+
+:- pred parse_if_account_section(section::in, map(string, string)::in,
+    list(account(maybe(mailbox)))::in, list(account(maybe(mailbox)))::out,
+    list(string)::in, list(string)::out) is cc_multi.
+
+parse_if_account_section(SectionName, SectionMap, !Accounts, !Errors) :-
+    ( is_account_section(SectionName, Name) ->
+        parse_account(Name, SectionMap, Account, !Errors),
+        cons(Account, !Accounts)
+    ;
+        true
+    ).
+
+:- pred is_account_section(string::in, string::out) is semidet.
+
+is_account_section(SectionName, Name) :-
+    string.remove_prefix("account.", SectionName, Name).
+
+:- pred parse_account(string::in, map(string, string)::in,
+    account(maybe(mailbox))::out, list(string)::in, list(string)::out)
+    is cc_multi.
+
+parse_account(Name, Section, Account, !Errors) :-
+    ( map.search(Section, "from_address", FromString) ->
+        (
+            parse_address(backslash_quote_all, FromString, FromAddress),
+            FromAddress = mailbox(Mailbox),
+            Mailbox = mailbox(_, _)
+        ->
+            MaybeFrom = yes(Mailbox)
+        ;
+            cons("from_address invalid: " ++ FromString, !Errors),
+            MaybeFrom = no
+        )
+    ;
+        MaybeFrom = no
+    ),
+
+    ( map.search(Section, "fallback", Fallback0) ->
+        ( to_bool(Fallback0, Bool) ->
+            (
+                Bool = yes,
+                Fallback = yes
+            ;
+                Bool = no,
+                Fallback = no
+            )
+        ;
+            Error = "fallback invalid: " ++ Fallback0,
+            cons(Error, !Errors),
+            Fallback = unset
+        )
+    ;
+        Fallback = unset
+    ),
+
+    parse_account_rest(Name, Section, MaybeFrom, Fallback, Account, !Errors).
+
+:- pred parse_compat_account(config::in, account(maybe(mailbox))::out,
+    list(string)::in, list(string)::out) is cc_multi.
+
+parse_compat_account(Config, Account, !Errors) :-
+    ( map.search(Config, "command", Section0) ->
+        Section = Section0
+    ;
+        Section = map.init
+    ),
+    MaybeFrom = no,
+    Fallback = unset,
+    parse_account_rest("default", Section, MaybeFrom, Fallback, Account,
+        !Errors).
+
+:- pred parse_account_rest(string::in, map(string, string)::in,
+    maybe(mailbox)::in, fallback_setting::in, account(maybe(mailbox))::out,
+    list(string)::in, list(string)::out) is cc_multi.
+
+parse_account_rest(Name, Section, MaybeFrom, Fallback, Account, !Errors) :-
+    ( map.search(Section, "sendmail", Sendmail0) ->
+        parse_command(Sendmail0, Sendmail, !Errors),
+        check_sendmail_command(Sendmail, !Errors)
+    ;
+        Sendmail = default_sendmail_command
+    ),
+
+    ( map.search(Section, "post_sendmail", PostSendmail0) ->
+        ( PostSendmail0 = "" ->
+            PostSendmail = nothing
+        ;
+            parse_command(PostSendmail0, PostSendmail1, !Errors),
+            PostSendmail = command(PostSendmail1)
+        )
+    ;
+        PostSendmail = default
+    ),
+
+    Account = account(Name, MaybeFrom, Fallback, Sendmail, PostSendmail).
+
+:- pred check_sendmail_command(command_prefix::in,
+    list(string)::in, list(string)::out) is det.
+
+check_sendmail_command(command_prefix(shell_quoted(Command), _), !Errors) :-
+    (
+        ( string.suffix(Command, " -t")
+        ; string.sub_string_search(Command, " -t ", _)
+        )
+    ->
+        Error = "sendmail command contains -t option: " ++ Command,
+        cons(Error, !Errors)
+    ;
+        true
+    ).
+
+:- pred fill_default_mailbox(command_prefix::in,
+    list(account(maybe(mailbox)))::in, list(account)::out,
+    list(string)::in, list(string)::out, io::di, io::uo) is det.
+
+fill_default_mailbox(Notmuch, Accounts0, Accounts, !Errors, !IO) :-
+    (
+        member(SomeAccount, Accounts0),
+        SomeAccount ^ from_address = no
+    ->
+        get_notmuch_from_address(Notmuch, MaybeDefault, !IO),
+        (
+            MaybeDefault = yes(Default)
+        ;
+            MaybeDefault = no,
+            cons("could not derive default from_address from .notmuch-config",
+                !Errors),
+            Default = bad_mailbox("") % dummy
+        )
+    ;
+        Default = bad_mailbox("") % dummy
+    ),
+    map(set_default_from_address(Default), Accounts0, Accounts).
+
+:- pred get_notmuch_from_address(command_prefix::in, maybe(mailbox)::out,
+    io::di, io::uo) is det.
+
+get_notmuch_from_address(Notmuch, MaybeMailbox, !IO) :-
+    get_notmuch_config0(Notmuch, "user.name", ResName, !IO),
+    (
+        ResName = ok(Name),
+        get_notmuch_config0(Notmuch, "user.primary_email", ResEmail, !IO),
+        (
+            ResEmail = ok(Email),
+            String = string.append_list([Name, " <", Email, ">"]),
+            (
+                parse_address(backslash_quote_all, String, Address),
+                Address = mailbox(Mailbox),
+                Mailbox = mailbox(_, _)
+            ->
+                MaybeMailbox = yes(Mailbox)
+            ;
+                MaybeMailbox = no
+            )
+        ;
+            ResEmail = error(_),
+            MaybeMailbox = no
+        )
+    ;
+        ResName = error(_),
+        MaybeMailbox = no
+    ).
+
+:- pred set_default_from_address(mailbox::in, account(maybe(mailbox))::in,
+    account::out) is det.
+
+set_default_from_address(DefaultFrom, Account0, Account) :-
+    Account0 = account(Name, MaybeFrom, Fallback, Sendmail, PostSendmail),
+    (
+        MaybeFrom = yes(From)
+    ;
+        MaybeFrom = no,
+        From = DefaultFrom
+    ),
+    Account = account(Name, From, Fallback, Sendmail, PostSendmail).
+
+:- pred pick_fallback_account(list(account)::in, maybe(account)::out,
+    list(string)::in, list(string)::out) is det.
+
+pick_fallback_account(Accounts, FallbackAccount, !Errors) :-
+    list.filter(is_fallback_account, Accounts, FallbackAccounts),
+    (
+        FallbackAccounts = [],
+        (
+            Accounts = [Account],
+            Account ^ fallback = unset
+        ->
+            FallbackAccount = yes(Account)
+        ;
+            FallbackAccount = no
+        )
+    ;
+        FallbackAccounts = [Account],
+        FallbackAccount = yes(Account)
+    ;
+        FallbackAccounts = [_, _ | _],
+        FallbackAccount = no,
+        cons("multiple fallback accounts defined", !Errors)
+    ).
+
+:- pred is_fallback_account(account::in) is semidet.
+
+is_fallback_account(Account) :-
+    Account ^ fallback = yes.
+
+:- pred to_bool(string::in, bool::out) is semidet.
+
+to_bool(String, Bool) :-
+    string.to_lower(String, Lower),
+    (
+        ( Lower = "true"
+        ; Lower = "yes"
+        ; Lower = "1"
+        ),
+        Bool = yes
+    ;
+        ( Lower = "false"
+        ; Lower = "no"
+        ; Lower = "0"
+        ),
+        Bool = no
+    ).
+
+%-----------------------------------------------------------------------------%
+
 get_notmuch_command(Config, Notmuch) :-
     Notmuch = Config ^ notmuch.
 
 get_editor_command(Config, Editor) :-
     Editor = Config ^ editor.
-
-get_sendmail_command(Config, sendmail_read_recipients, Command) :-
-    Command0 = Config ^ sendmail,
-    Command0 = command_prefix(shell_quoted(Cmd), QuoteTimes),
-    Command = command_prefix(shell_quoted(Cmd ++ " -t"), QuoteTimes).
-
-get_post_sendmail_action(Config, Action) :-
-    Action = Config ^ post_sendmail.
 
 get_maybe_html_dump_command(Config, MaybeCommand) :-
     MaybeCommand = Config ^ html_dump.
@@ -313,6 +563,59 @@ get_poll_notify_command(Config, Command) :-
 
 get_poll_period_secs(Config, PollPeriodSecs) :-
     PollPeriodSecs = Config ^ poll_period_secs.
+
+%-----------------------------------------------------------------------------%
+
+get_all_accounts(Config, Config ^ accounts).
+
+get_fallback_account(Config, Config ^ fallback_account).
+
+get_some_matching_account(Config, Addresses, MaybeAccount) :-
+    (
+        Addresses = [],
+        MaybeAccount = Config ^ fallback_account
+    ;
+        Addresses = [Addr | Addrs],
+        ( get_matching_account(Config, Addr, Account) ->
+            MaybeAccount = yes(Account)
+        ;
+            get_some_matching_account(Config, Addrs, MaybeAccount)
+        )
+    ).
+
+get_matching_account(Config, Address, Account) :-
+    Accounts = Config ^ accounts,
+    find_first_match(match_account(Address), Accounts, Account).
+
+:- pred match_account(address::in, account::in) is semidet.
+
+match_account(Address, Account) :-
+    require_complete_switch [Address]
+    (
+        Address = mailbox(MailboxA)
+    ;
+        Address = group(_, Mailboxes),
+        member(MailboxA, Mailboxes)
+    ),
+    Account ^ from_address = MailboxB,
+    MailboxA = mailbox(_, AddrSpecA),
+    MailboxB = mailbox(_, AddrSpecB),
+    AddrSpecA = AddrSpecB.
+
+get_account_name(Account, Account ^ account_name).
+
+get_from_address(Account, Account ^ from_address).
+
+get_from_address_as_string(Account, String) :-
+    mailbox_to_string(no_encoding, Account ^ from_address, String, _Ok).
+
+get_sendmail_command(Account, sendmail_read_recipients, Command) :-
+    Command0 = Account ^ sendmail,
+    Command0 = command_prefix(shell_quoted(Cmd), QuoteTimes),
+    Command = command_prefix(shell_quoted(Cmd ++ " -t"), QuoteTimes).
+
+get_post_sendmail_action(Account, Action) :-
+    Action = Account ^ post_sendmail.
 
 %-----------------------------------------------------------------------------%
 
@@ -339,11 +642,6 @@ default_notmuch_command =
 default_editor_command =
     command_prefix(shell_quoted("vi"), quote_once).
 
-:- func default_sendmail_command = command_prefix.
-
-default_sendmail_command =
-    command_prefix(shell_quoted("/usr/bin/sendmail -oi -oem"), quote_once).
-
 :- func default_html_dump_command = command_prefix.
 
 default_html_dump_command = command_prefix(shell_quoted(Lynx), quote_once) :-
@@ -360,6 +658,11 @@ default_open_url_command = "xdg-open&".
 :- func default_poll_period_secs = maybe(int).
 
 default_poll_period_secs = yes(60).
+
+:- func default_sendmail_command = command_prefix.
+
+default_sendmail_command =
+    command_prefix(shell_quoted("/usr/bin/sendmail -oi -oem"), quote_once).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

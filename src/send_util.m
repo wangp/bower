@@ -9,10 +9,7 @@
 :- import_module stream.
 
 :- import_module data.
-:- import_module prog_config.
 :- import_module rfc5322.
-
-:- pred get_from_address(prog_config::in, address::out, io::di, io::uo) is det.
 
 :- pred generate_date_msg_id(header_value::out, header_value::out,
     io::di, io::uo) is det.
@@ -49,41 +46,14 @@
 :- import_module string.
 :- import_module time.
 
-:- import_module callout.
 :- import_module fold_lines.
 :- import_module rfc2047.
 :- import_module rfc2047.encoder.
-:- import_module rfc5322.parser.
 :- import_module rfc5322.writer.
 :- import_module sys_util.
 :- import_module time_util.
 
 :- mutable(msgid_counter, int, 0, ground, [untrailed, attach_to_io_state]).
-
-%-----------------------------------------------------------------------------%
-
-get_from_address(Config, Address, !IO) :-
-    get_notmuch_config(Config, "user.name", ResName, !IO),
-    (
-        ResName = ok(Name),
-        get_notmuch_config(Config, "user.primary_email", ResEmail, !IO),
-        (
-            ResEmail = ok(Email),
-            % XXX Name and Email better be valid
-            String = string.append_list([Name, " <", Email, ">"]),
-            ( parse_address(backslash_quote_all, String, AddressPrime) ->
-                Address = AddressPrime
-            ;
-                Address = mailbox(bad_mailbox(String))
-            )
-        ;
-            ResEmail = error(_),
-            Address = mailbox(bad_mailbox(Name))
-        )
-    ;
-        ResName = error(_),
-        Address = mailbox(bad_mailbox("unknown"))
-    ).
 
 %-----------------------------------------------------------------------------%
 

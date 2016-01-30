@@ -100,6 +100,7 @@
 :- type staging_info
     --->    staging_info(
                 si_config       :: prog_config,
+                si_account      :: maybe(account),
                 si_headers      :: headers,
                 si_parsed_hdrs  :: parsed_headers,
                 si_text         :: string,
@@ -197,8 +198,14 @@ start_compose_2(Config, Screen, !.Headers, Body, Transition,
     screen_transition(sent)::out, io::di, io::uo) is det.
 
 start_compose_3(Config, Screen, !.Headers, Body, Transition, !IO) :-
-    get_from_address(Config, FromAddress, !IO),
-    address_to_string(no_encoding, FromAddress, From, _FromValid),
+    get_fallback_account(Config, MaybeAccount),
+    (
+        MaybeAccount = yes(Account),
+        get_from_address_as_string(Account, From)
+    ;
+        MaybeAccount = no,
+        From = ""
+    ),
     !Headers ^ h_from := header_value(From),
     Attachments = [],
     MaybeOldDraft = no,
@@ -547,8 +554,9 @@ update_references(Headers0, !Headers) :-
 enter_staging(Config, Screen, Headers0, Text, Attachments, MaybeOldDraft,
         Transition, !IO) :-
     parse_and_expand_headers(Config, Headers0, Headers, Parsed, !IO),
-    StagingInfo = staging_info(Config, Headers, Parsed, Text, MaybeOldDraft,
-        init_history),
+    get_some_matching_account(Config, Parsed ^ ph_from, MaybeAccount),
+    StagingInfo = staging_info(Config, MaybeAccount, Headers, Parsed, Text,
+        MaybeOldDraft, init_history),
     AttachInfo = scrollable.init_with_cursor(Attachments),
     get_cols(Screen, Cols),
     setup_pager_for_staging(Config, Cols, Text, new_pager, PagerInfo),
@@ -635,14 +643,15 @@ maybe_expand_mailbox(Config, Opt, Mailbox0, Mailbox, !IO) :-
 
 staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         !IO) :-
-    !.StagingInfo = staging_info(Config, Headers, ParsedHeaders, Text,
-        MaybeOldDraft, _AttachHistory),
+    !.StagingInfo = staging_info(Config, MaybeAccount, Headers, ParsedHeaders,
+        Text, MaybeOldDraft, _AttachHistory),
     Attrs = compose_attrs(Config),
     PagerAttrs = pager_attrs(Config),
 
     split_panels(Screen, HeaderPanels, AttachmentPanels, MaybeSepPanel,
         PagerPanels),
-    draw_header_lines(HeaderPanels, Attrs, Headers, ParsedHeaders, !IO),
+    draw_header_lines(HeaderPanels, Attrs, Headers, ParsedHeaders,
+        MaybeAccount, !IO),
     scrollable.draw(draw_attachment_line(Attrs), AttachmentPanels,
         !.AttachInfo, !IO),
     draw_attachments_label(Attrs, AttachmentPanels, !IO),
@@ -713,8 +722,15 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         )
     ; KeyCode = char('Y') ->
         Attachments = get_lines_list(!.AttachInfo),
-        send_mail(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
-            Sent0, MessageUpdate0, !IO),
+        (
+            MaybeAccount = yes(Account),
+            send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text,
+                Attachments, Sent0, MessageUpdate0, !IO)
+        ;
+            MaybeAccount = no,
+            Sent0 = not_sent,
+            MessageUpdate0 = set_warning("No account to send message from.")
+        ),
         (
             Sent0 = sent,
             tag_replied_message(Config, Headers, TagRes, !IO),
@@ -816,8 +832,20 @@ edit_header(Screen, HeaderType, !StagingInfo, !IO) :-
         CompleteAddressbook = no,
         Completion = complete_none
     ),
-    text_entry_full(Screen, Prompt, init_history, InitialString, Completion,
-        no, Return, !IO),
+    (
+        HeaderType = from,
+        make_from_history(!.StagingInfo ^ si_config, InitialString, History0)
+    ;
+        ( HeaderType = to
+        ; HeaderType = cc
+        ; HeaderType = bcc
+        ; HeaderType = subject
+        ; HeaderType = replyto
+        ),
+        History0 = init_history
+    ),
+    text_entry_full(Screen, Prompt, History0, InitialString,
+        Completion, no, Return, !IO),
     (
         Return = yes(ReturnString),
         (
@@ -830,10 +858,24 @@ edit_header(Screen, HeaderType, !StagingInfo, !IO) :-
         ParsedHeaders0 = !.StagingInfo ^ si_parsed_hdrs,
         update_header(Config, backslash_quote_meta_chars, HeaderType, Value,
             Headers0, Headers, ParsedHeaders0, ParsedHeaders, !IO),
+        get_some_matching_account(Config, ParsedHeaders ^ ph_from,
+            MaybeAccount),
         !StagingInfo ^ si_headers := Headers,
-        !StagingInfo ^ si_parsed_hdrs := ParsedHeaders
+        !StagingInfo ^ si_parsed_hdrs := ParsedHeaders,
+        !StagingInfo ^ si_account := MaybeAccount
     ;
         Return = no
+    ).
+
+:- pred make_from_history(prog_config::in, string::in, history::out) is det.
+
+make_from_history(Config, Initial, History) :-
+    get_all_accounts(Config, Accounts),
+    map(get_from_address_as_string, Accounts, Strings0),
+    ( delete_first(Strings0, Initial, Strings) ->
+        History = init_history_list(Strings)
+    ;
+        History = init_history_list(Strings0)
     ).
 
 :- pred get_header(header_type::in, headers::in, string::out,
@@ -1150,10 +1192,11 @@ split_panels(Screen, HeaderPanels, AttachmentPanels, MaybeSepPanel,
     ).
 
 :- pred draw_header_lines(list(panel)::in, compose_attrs::in, headers::in,
-    parsed_headers::in, io::di, io::uo) is det.
+    parsed_headers::in, maybe(account)::in, io::di, io::uo) is det.
 
-draw_header_lines(!.Panels, Attrs, Headers, Parsed, !IO) :-
-    hdr(!Panels, Attrs, "    From", draw_addresses, Parsed ^ ph_from, !IO),
+draw_header_lines(!.Panels, Attrs, Headers, Parsed, Account, !IO) :-
+    hdr(!Panels, Attrs, "    From", draw_addresses_and_account(Account),
+        Parsed ^ ph_from, !IO),
     hdr(!Panels, Attrs, "      To", draw_addresses, Parsed ^ ph_to, !IO),
     hdr(!Panels, Attrs, "      Cc", draw_addresses, Parsed ^ ph_cc, !IO),
     hdr(!Panels, Attrs, "     Bcc", draw_addresses, Parsed ^ ph_bcc, !IO),
@@ -1205,6 +1248,22 @@ draw_list(Pred, Attrs, Panel, [H | T], !IO) :-
 
 draw_addresses(Attrs, Panel, Addresses, !IO) :-
     draw_list(draw_address, Attrs, Panel, Addresses, !IO).
+
+:- pred draw_addresses_and_account(maybe(account)::in, compose_attrs::in,
+    panel::in, list(address)::in, io::di, io::uo) is det.
+
+draw_addresses_and_account(MaybeAccount, Attrs, Panel, Addresses, !IO) :-
+    draw_addresses(Attrs, Panel, Addresses, !IO),
+    Attr = Attrs ^ c_generic ^ field_body,
+    (
+        MaybeAccount = yes(Account),
+        get_account_name(Account, Name),
+        AccountString = " (account: " ++ Name ++ ")"
+    ;
+        MaybeAccount = no,
+        AccountString = " (no account)"
+    ),
+    draw(Panel, Attr, AccountString, !IO).
 
 :- pred draw_address(compose_attrs::in, panel::in, address::in, io::di, io::uo)
     is det.
@@ -1402,18 +1461,18 @@ maybe_remove_draft(StagingInfo, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred send_mail(prog_config::in, screen::in, headers::in, parsed_headers::in,
-    string::in, list(attachment)::in, sent::out, message_update::out,
-    io::di, io::uo) is det.
+:- pred send_mail(prog_config::in, account::in, screen::in, headers::in,
+    parsed_headers::in, string::in, list(attachment)::in, sent::out,
+    message_update::out, io::di, io::uo) is det.
 
-send_mail(Config, Screen, Headers, ParsedHeaders, Text, Attachments, Res,
-        MessageUpdate, !IO) :-
+send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text, Attachments,
+        Res, MessageUpdate, !IO) :-
     create_temp_message_file(Config, prepare_send, Headers, ParsedHeaders,
         Text, Attachments, ResFilename, !IO),
     (
         ResFilename = ok(Filename),
         update_message_immed(Screen, set_info("Sending message..."), !IO),
-        call_send_mail(Config, Filename, SendRes, !IO),
+        call_send_mail(Config, Account, Filename, SendRes, !IO),
         io.remove_file(Filename, _, !IO),
         (
             SendRes = ok,
@@ -1430,18 +1489,18 @@ send_mail(Config, Screen, Headers, ParsedHeaders, Text, Attachments, Res,
         Res = not_sent
     ).
 
-:- pred call_send_mail(prog_config::in, string::in, call_res::out,
+:- pred call_send_mail(prog_config::in, account::in, string::in, call_res::out,
     io::di, io::uo) is det.
 
-call_send_mail(Config, Filename, Res, !IO) :-
-    get_sendmail_command(Config, sendmail_read_recipients, Sendmail),
+call_send_mail(Config, Account, Filename, Res, !IO) :-
+    get_sendmail_command(Account, sendmail_read_recipients, Sendmail),
     make_quoted_command(Sendmail, [], redirect_input(Filename), no_redirect,
         Command),
     io.call_system(Command, ResSend, !IO),
     (
         ResSend = ok(ExitStatus),
         ( ExitStatus = 0 ->
-            do_post_sendmail(Config, Filename, ResAfter, !IO),
+            do_post_sendmail(Config, Account, Filename, ResAfter, !IO),
             (
                 ResAfter = ok,
                 Res = ok
@@ -1460,11 +1519,11 @@ call_send_mail(Config, Filename, Res, !IO) :-
         Res = error(Msg)
     ).
 
-:- pred do_post_sendmail(prog_config::in, string::in, maybe_error::out,
-    io::di, io::uo) is det.
+:- pred do_post_sendmail(prog_config::in, account::in, string::in,
+    maybe_error::out, io::di, io::uo) is det.
 
-do_post_sendmail(Config, Filename, Res, !IO) :-
-    get_post_sendmail_action(Config, Action),
+do_post_sendmail(Config, Account, Filename, Res, !IO) :-
+    get_post_sendmail_action(Account, Action),
     (
         Action = default,
         % Default behaviour.

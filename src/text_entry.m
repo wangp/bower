@@ -39,6 +39,8 @@
 
 :- func init_history(string) = history.
 
+:- func init_history_list(list(string)) = history.
+
 :- pred add_history_nodup(string::in, history::in, history::out) is det.
 
 :- pred choose_text_initial(history::in, string::in, string::out) is det.
@@ -108,6 +110,8 @@
 init_history = [].
 
 init_history(X) = [X].
+
+init_history_list(Xs) = Xs.
 
 add_history_nodup(Candidate, Hist0, Hist) :-
     ( Hist0 = [Candidate | _] ->

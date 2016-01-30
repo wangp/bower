@@ -11,11 +11,15 @@
 :- import_module data.
 :- import_module json.
 :- import_module prog_config.
+:- import_module quote_arg.
 
 %-----------------------------------------------------------------------------%
 
 :- pred get_notmuch_config(prog_config::in, string::in, io.res(string)::out,
     io::di, io::uo) is det.
+
+:- pred get_notmuch_config0(command_prefix::in, string::in,
+    io.res(string)::out, io::di, io::uo) is det.
 
 :- pred get_notmuch_config(prog_config::in, string::in, string::in,
     io.res(string)::out, io::di, io::uo) is det.
@@ -44,14 +48,15 @@
 :- import_module string.
 
 :- import_module call_system.
-:- import_module prog_config.
-:- import_module quote_arg.
 :- import_module string_util.
 
 %-----------------------------------------------------------------------------%
 
 get_notmuch_config(Config, Key, Res, !IO) :-
     get_notmuch_command(Config, Notmuch),
+    get_notmuch_config0(Notmuch, Key, Res, !IO).
+
+get_notmuch_config0(Notmuch, Key, Res, !IO) :-
     make_quoted_command(Notmuch, ["config", "get", Key],
         redirect_input("/dev/null"), no_redirect, redirect_stderr("/dev/null"),
         run_in_foreground, Command),
