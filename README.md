@@ -259,9 +259,11 @@ You can add to the addressbook using 'a' in the index or thread views.
 
 
 Sending mail
-------------
+============
 
-Bower performs two steps when sending a message:
+You can send mail through one or more accounts defined in `bower.conf`.
+An account is selected by matching the From address on the message to the
+address on the account.  Bower performs two steps when sending a message:
 
 1. Call the configured `sendmail` command with the message on standard
    input.  This command should pass the message onto an SMTP server.
