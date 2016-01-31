@@ -198,7 +198,7 @@ start_compose_2(Config, Screen, !.Headers, Body, Transition,
     screen_transition(sent)::out, io::di, io::uo) is det.
 
 start_compose_3(Config, Screen, !.Headers, Body, Transition, !IO) :-
-    get_fallback_account(Config, MaybeAccount),
+    get_default_account(Config, MaybeAccount),
     (
         MaybeAccount = yes(Account),
         get_from_address_as_string(Account, From)

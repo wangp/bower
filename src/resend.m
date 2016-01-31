@@ -118,12 +118,12 @@ prompt_from_account(Config, Screen, Res, !IO) :-
 
 make_from_history(Config, History, Initial) :-
     get_all_accounts(Config, Accounts),
-    get_fallback_account(Config, MaybeFallback),
+    get_default_account(Config, MaybeDefault),
     (
-        MaybeFallback = yes(FallbackAccount),
-        get_from_address_as_string(FallbackAccount, Initial)
+        MaybeDefault = yes(DefaultAccount),
+        get_from_address_as_string(DefaultAccount, Initial)
     ;
-        MaybeFallback = no,
+        MaybeDefault = no,
         (
             Accounts = [],
             Initial = ""

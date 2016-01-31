@@ -72,10 +72,9 @@
     #
   ; from_address = My Name <user@example.org>
 
-    # One account can be designated as the fallback account, to be used if the
-    # From address on a message does not match that of any other account.
+    # One account can be designated as the default account.
     #
-  ; fallback = true
+  ; default = true
 
     # How to send a message from this account.
     # The default is to use sendmail but I use msmtp.

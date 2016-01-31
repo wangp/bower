@@ -54,7 +54,7 @@
 
 :- pred get_all_accounts(prog_config::in, list(account)::out) is det.
 
-:- pred get_fallback_account(prog_config::in, maybe(account)::out) is det.
+:- pred get_default_account(prog_config::in, maybe(account)::out) is det.
 
 :- pred get_some_matching_account(prog_config::in, address_list::in,
     maybe(account)::out) is det.
@@ -113,7 +113,7 @@
                 poll_notify     :: maybe(command_prefix),
                 poll_period_secs :: maybe(int),
                 accounts        :: list(account),
-                fallback_account :: maybe(account),
+                default_account :: maybe(account),
                 colors          :: colors
             ).
 
@@ -123,12 +123,12 @@
     --->    account(
                 account_name    :: string,
                 from_address    :: From,
-                fallback        :: fallback_setting,
+                default         :: default_setting,
                 sendmail        :: command_prefix,
                 post_sendmail   :: post_sendmail
             ).
 
-:- type fallback_setting
+:- type default_setting
     --->    unset
     ;       no
     ;       yes.
@@ -239,11 +239,11 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
         AccountErrors = [],
         fill_default_mailbox(Notmuch, Accounts0, Accounts, !Errors, !IO),
         % XXX check for duplicate from_address in accounts
-        pick_fallback_account(Accounts, FallbackAccount, !Errors)
+        pick_default_account(Accounts, DefaultAccount, !Errors)
     ;
         AccountErrors = [_ | _],
         Accounts = [],
-        FallbackAccount = no,
+        DefaultAccount = no,
         append(AccountErrors, !Errors)
     ),
 
@@ -257,7 +257,7 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
     ProgConfig ^ poll_notify = PollNotify,
     ProgConfig ^ poll_period_secs = PollPeriodSecs,
     ProgConfig ^ accounts = Accounts,
-    ProgConfig ^ fallback_account = FallbackAccount,
+    ProgConfig ^ default_account = DefaultAccount,
     ProgConfig ^ colors = Colors.
 
 :- pred parse_command(string::in, command_prefix::out,
@@ -355,25 +355,25 @@ parse_account(Name, Section, Account, !Errors) :-
         MaybeFrom = no
     ),
 
-    ( map.search(Section, "fallback", Fallback0) ->
-        ( to_bool(Fallback0, Bool) ->
+    ( map.search(Section, "default", Default0) ->
+        ( to_bool(Default0, Bool) ->
             (
                 Bool = yes,
-                Fallback = yes
+                Default = yes
             ;
                 Bool = no,
-                Fallback = no
+                Default = no
             )
         ;
-            Error = "fallback invalid: " ++ Fallback0,
+            Error = "fallback invalid: " ++ Default0,
             cons(Error, !Errors),
-            Fallback = unset
+            Default = unset
         )
     ;
-        Fallback = unset
+        Default = unset
     ),
 
-    parse_account_rest(Name, Section, MaybeFrom, Fallback, Account, !Errors).
+    parse_account_rest(Name, Section, MaybeFrom, Default, Account, !Errors).
 
 :- pred parse_compat_account(config::in, account(maybe(mailbox))::out,
     list(string)::in, list(string)::out) is cc_multi.
@@ -385,15 +385,15 @@ parse_compat_account(Config, Account, !Errors) :-
         Section = map.init
     ),
     MaybeFrom = no,
-    Fallback = unset,
-    parse_account_rest("default", Section, MaybeFrom, Fallback, Account,
+    Default = unset,
+    parse_account_rest("default", Section, MaybeFrom, Default, Account,
         !Errors).
 
 :- pred parse_account_rest(string::in, map(string, string)::in,
-    maybe(mailbox)::in, fallback_setting::in, account(maybe(mailbox))::out,
+    maybe(mailbox)::in, default_setting::in, account(maybe(mailbox))::out,
     list(string)::in, list(string)::out) is cc_multi.
 
-parse_account_rest(Name, Section, MaybeFrom, Fallback, Account, !Errors) :-
+parse_account_rest(Name, Section, MaybeFrom, Default, Account, !Errors) :-
     ( map.search(Section, "sendmail", Sendmail0) ->
         parse_command(Sendmail0, Sendmail, !Errors),
         check_sendmail_command(Sendmail, !Errors)
@@ -412,7 +412,7 @@ parse_account_rest(Name, Section, MaybeFrom, Fallback, Account, !Errors) :-
         PostSendmail = default
     ),
 
-    Account = account(Name, MaybeFrom, Fallback, Sendmail, PostSendmail).
+    Account = account(Name, MaybeFrom, Default, Sendmail, PostSendmail).
 
 :- pred check_sendmail_command(command_prefix::in,
     list(string)::in, list(string)::out) is det.
@@ -485,43 +485,43 @@ get_notmuch_from_address(Notmuch, MaybeMailbox, !IO) :-
     account::out) is det.
 
 set_default_from_address(DefaultFrom, Account0, Account) :-
-    Account0 = account(Name, MaybeFrom, Fallback, Sendmail, PostSendmail),
+    Account0 = account(Name, MaybeFrom, Default, Sendmail, PostSendmail),
     (
         MaybeFrom = yes(From)
     ;
         MaybeFrom = no,
         From = DefaultFrom
     ),
-    Account = account(Name, From, Fallback, Sendmail, PostSendmail).
+    Account = account(Name, From, Default, Sendmail, PostSendmail).
 
-:- pred pick_fallback_account(list(account)::in, maybe(account)::out,
+:- pred pick_default_account(list(account)::in, maybe(account)::out,
     list(string)::in, list(string)::out) is det.
 
-pick_fallback_account(Accounts, FallbackAccount, !Errors) :-
-    list.filter(is_fallback_account, Accounts, FallbackAccounts),
+pick_default_account(Accounts, DefaultAccount, !Errors) :-
+    list.filter(is_default_account, Accounts, DefaultAccounts),
     (
-        FallbackAccounts = [],
+        DefaultAccounts = [],
         (
             Accounts = [Account],
-            Account ^ fallback = unset
+            Account ^ default = unset
         ->
-            FallbackAccount = yes(Account)
+            DefaultAccount = yes(Account)
         ;
-            FallbackAccount = no
+            DefaultAccount = no
         )
     ;
-        FallbackAccounts = [Account],
-        FallbackAccount = yes(Account)
+        DefaultAccounts = [Account],
+        DefaultAccount = yes(Account)
     ;
-        FallbackAccounts = [_, _ | _],
-        FallbackAccount = no,
+        DefaultAccounts = [_, _ | _],
+        DefaultAccount = no,
         cons("multiple fallback accounts defined", !Errors)
     ).
 
-:- pred is_fallback_account(account::in) is semidet.
+:- pred is_default_account(account::in) is semidet.
 
-is_fallback_account(Account) :-
-    Account ^ fallback = yes.
+is_default_account(Account) :-
+    Account ^ default = yes.
 
 :- pred to_bool(string::in, bool::out) is semidet.
 
@@ -568,12 +568,12 @@ get_poll_period_secs(Config, PollPeriodSecs) :-
 
 get_all_accounts(Config, Config ^ accounts).
 
-get_fallback_account(Config, Config ^ fallback_account).
+get_default_account(Config, Config ^ default_account).
 
 get_some_matching_account(Config, Addresses, MaybeAccount) :-
     (
         Addresses = [],
-        MaybeAccount = Config ^ fallback_account
+        MaybeAccount = Config ^ default_account
     ;
         Addresses = [Addr | Addrs],
         ( get_matching_account(Config, Addr, Account) ->
