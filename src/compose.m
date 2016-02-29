@@ -283,9 +283,10 @@ expand_aliases(Config, QuoteOpt, Input, Output, !IO) :-
 start_reply(Config, Crypto, Screen, Message, ReplyKind, Transition, !IO) :-
     get_notmuch_command(Config, Notmuch),
     Message ^ m_id = MessageId,
+    HasEncrypted = contains_encrypted_tag(Message ^ m_tags),
     make_quoted_command(Notmuch, [
-        "reply", reply_to_arg(ReplyKind), "--",
-        message_id_to_search_term(MessageId)
+        "reply", reply_to_arg(ReplyKind), decrypt_arg(HasEncrypted),
+        "--", message_id_to_search_term(MessageId)
     ], redirect_input("/dev/null"), no_redirect, Command),
     call_system_capture_stdout(Command, no, CommandResult, !IO),
     (
@@ -304,9 +305,8 @@ start_reply(Config, Crypto, Screen, Message, ReplyKind, Transition, !IO) :-
         ),
         Attachments = [],
         MaybeOldDraft = no,
-        EncryptInit = contains_encrypted_tag(Message ^ m_tags),
         create_edit_stage(Config, Crypto, Screen, Headers, Text, Attachments,
-            MaybeOldDraft, EncryptInit, Transition, !IO)
+            MaybeOldDraft, HasEncrypted, Transition, !IO)
     ;
         CommandResult = error(Error),
         string.append_list(["Error running notmuch: ",
@@ -319,6 +319,11 @@ start_reply(Config, Crypto, Screen, Message, ReplyKind, Transition, !IO) :-
 reply_to_arg(direct_reply) = "--reply-to=sender".
 reply_to_arg(group_reply) = "--reply-to=all".
 reply_to_arg(list_reply) = "--reply-to=all".
+
+:- func decrypt_arg(bool) = string.
+
+decrypt_arg(yes) = "--decrypt".
+decrypt_arg(no) = "--decrypt=false".
 
 :- pred set_headers_for_group_reply(headers::in, headers::out) is det.
 
@@ -414,12 +419,15 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message, Transition,
     Body0 = Message ^ m_body,
     first_text_part(Body0, Text, AttachmentParts),
     list.map(to_old_attachment, AttachmentParts, Attachments),
+    HasEncrypted = contains_encrypted_tag(Tags0),
 
     % XXX notmuch show --format=json does not return References and In-Reply-To
     % so we parse them from the raw output.
+    % XXX decryption is not yet supported for --format=raw
     get_notmuch_command(Config, Notmuch),
     make_quoted_command(Notmuch, [
-        "show", "--format=raw", "--", message_id_to_search_term(MessageId)
+        "show", "--format=raw", decrypt_arg(HasEncrypted),
+        "--", message_id_to_search_term(MessageId)
     ], redirect_input("/dev/null"), no_redirect, Command),
     call_system_capture_stdout(Command, no, CallRes, !IO),
     (
@@ -439,9 +447,8 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message, Transition,
             ContinueBase = arbitrary_message,
             MaybeOldDraft = no
         ),
-		EncryptInit = contains_encrypted_tag(Tags0),
         create_edit_stage(Config, Crypto, Screen, Headers, Text, Attachments,
-            MaybeOldDraft, EncryptInit, Transition, !IO)
+            MaybeOldDraft, HasEncrypted, Transition, !IO)
     ;
         CallRes = error(Error),
         string.append_list(["Error running notmuch: ",
@@ -459,7 +466,7 @@ first_text_part([Part | Parts], Text, AttachmentParts) :-
         PartContent = text(Text),
         AttachmentParts = Parts
     ;
-        PartContent = subparts(SubParts),
+        PartContent = subparts(_Encryption, SubParts),
         first_text_part(SubParts, Text, AttachmentParts)
     ;
         ( PartContent = encapsulated_messages(_)
@@ -2123,7 +2130,7 @@ generate_attachment_mime_part(TextCTE, Attachment, MimePart) :-
             MimePart = discrete(content_type(OldType), yes(Disposition),
                 yes(cte_base64), external(OldPart))
         ;
-            OldContent = subparts(_),
+            OldContent = subparts(_, _),
             unexpected($module, $pred, "nested part")
         ;
             OldContent = encapsulated_messages(_),

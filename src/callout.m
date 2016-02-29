@@ -28,9 +28,15 @@
     pred(json, T)::in(pred(in, out) is det), maybe_error(T)::out,
     io::di, io::uo) is det.
 
+:- pred run_notmuch(prog_config::in, list(string)::in,
+    pred(json, T)::in(pred(in, out) is det), redirect_stderr::in,
+    maybe_error(T)::out, io::di, io::uo) is det.
+
 :- pred parse_messages_list(json::in, list(message)::out) is det.
 
 :- pred parse_top_message(json::in, message::out) is det.
+
+:- pred parse_part(message_id::in, json::in, part::out) is det.
 
 :- pred parse_threads_list(json::in, list(thread)::out) is det.
 
@@ -76,9 +82,14 @@ get_notmuch_config(Config, Section, Key, Res, !IO) :-
 %-----------------------------------------------------------------------------%
 
 run_notmuch(Config, Args, P, Result, !IO) :-
+    RedirectStderr = no_redirect,
+    run_notmuch(Config, Args, P, RedirectStderr, Result, !IO).
+
+run_notmuch(Config, Args, P, RedirectStderr, Result, !IO) :-
     get_notmuch_command(Config, Notmuch),
     make_quoted_command(Notmuch, Args,
-        redirect_input("/dev/null"), no_redirect, Command),
+        redirect_input("/dev/null"), no_redirect, RedirectStderr,
+        run_in_foreground, Command),
     promise_equivalent_solutions [Result, !:IO] (
         call_command_parse_json(Command, P, Result, !IO)
     ).
@@ -205,8 +216,6 @@ parse_header(Key, unesc_string(Value), !Headers) :-
         !Headers ^ h_rest := Rest
     ).
 
-:- pred parse_part(message_id::in, json::in, part::out) is det.
-
 parse_part(MessageId, JSON, Part) :-
     (
         JSON/"id" = int(PartId),
@@ -215,8 +224,21 @@ parse_part(MessageId, JSON, Part) :-
         % NOTE: ContentType must be compared case-insensitively.
         ( strcase_prefix(ContentType, "multipart/") ->
             ( JSON/"content" = list(SubParts0) ->
+                ( strcase_equal(ContentType, "multipart/encrypted") ->
+                    ( JSON/"encstatus" = EncStatus ->
+                        ( parse_encstatus(EncStatus, Encryption0) ->
+                            Encryption = Encryption0
+                        ;
+                            notmuch_json_error
+                        )
+                    ;
+                        Encryption = encrypted
+                    )
+                ;
+                    Encryption = not_encrypted
+                ),
                 list.map(parse_part(MessageId), SubParts0, SubParts),
-                Content = subparts(SubParts),
+                Content = subparts(Encryption, SubParts),
                 MaybeFilename = no,
                 MaybeEncoding = no,
                 MaybeLength = no
@@ -263,6 +285,19 @@ parse_part(MessageId, JSON, Part) :-
             MaybeFilename, MaybeEncoding, MaybeLength)
     ;
         notmuch_json_error
+    ).
+
+:- pred parse_encstatus(json::in, encryption::out) is semidet.
+
+parse_encstatus(JSON, Encryption) :-
+    JSON = list([Obj]),
+    Obj/"status" = unesc_string(Status),
+    (
+        Status = "good",
+        Encryption = decryption_good
+    ;
+        Status = "bad",
+        Encryption = decryption_bad
     ).
 
 :- pred parse_encapsulated_message(message_id::in, json::in,

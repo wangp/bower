@@ -139,6 +139,7 @@
     ;       prompt_open_part(part)
     ;       prompt_open_url(string)
     ;       prompt_search(search_direction)
+    ;       decrypt_part
     ;       toggle_content(toggle_type)
     ;       toggle_ordering
     ;       addressbook_add
@@ -745,6 +746,10 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         prompt_search(Screen, SearchDir, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
+        Action = decrypt_part,
+        decrypt_part(Screen, !Info, !IO),
+        thread_pager_loop(Screen, !Info, !IO)
+    ;
         Action = toggle_content(ToggleType),
         toggle_content(Screen, ToggleType, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
@@ -949,12 +954,14 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ;
         Key = char('z')
     ->
-        Action = toggle_content(cycle_alternatives),
+        choose_toggle_action(!.Info, toggle_content(cycle_alternatives),
+            Action),
         MessageUpdate = clear_message
     ;
         Key = char('Z')
     ->
-        Action = toggle_content(toggle_expanded),
+        choose_toggle_action(!.Info, toggle_content(toggle_expanded),
+            Action),
         MessageUpdate = clear_message
     ;
         Key = char('/')
@@ -2107,6 +2114,115 @@ skip_to_search(SearchKind, MessageUpdate, !Info) :-
     ;
         MaybeSearch = no,
         MessageUpdate = set_warning("No search string.")
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred choose_toggle_action(thread_pager_info::in, thread_pager_action::in,
+    thread_pager_action::out) is det.
+
+choose_toggle_action(Info, Action0, Action) :-
+    Pager = Info ^ tp_pager,
+    ( get_highlighted_thing(Pager, Thing) ->
+        (
+            Thing = highlighted_part(Part, _),
+            Content = Part ^ pt_content,
+            (
+                ( Content = text(_)
+                ; Content = subparts(not_encrypted, _)
+                ; Content = encapsulated_messages(_)
+                ; Content = unsupported
+                ),
+                Action = Action0
+            ;
+                Content = subparts(decryption_good, _),
+                Action = Action0
+            ;
+                Content = subparts(encrypted, _),
+                Action = decrypt_part
+            ;
+                Content = subparts(decryption_bad, _),
+                Action = decrypt_part
+            )
+        ;
+            Thing = highlighted_url(_),
+            Action = continue
+        ;
+            Thing = highlighted_fold_marker,
+            Action = Action0
+        )
+    ;
+        Action = continue
+    ).
+
+:- pred decrypt_part(screen::in, thread_pager_info::in, thread_pager_info::out,
+    io::di, io::uo) is det.
+
+decrypt_part(Screen, !Info, !IO) :-
+    Pager = !.Info ^ tp_pager,
+    (
+        get_highlighted_thing(Pager, Thing),
+        Thing = highlighted_part(Part, _)
+    ->
+        MessageId = Part ^ pt_msgid,
+        MaybePartId = Part ^ pt_part,
+        (
+            MaybePartId = yes(PartId),
+            do_decrypt_part(Screen, MessageId, PartId, MessageUpdate,
+                !Info, !IO)
+        ;
+            MaybePartId = no,
+            MessageUpdate = set_warning("Missing part id.")
+        )
+    ;
+        MessageUpdate = set_warning("No part selected.")
+    ),
+    update_message(Screen, MessageUpdate, !IO).
+
+:- pred do_decrypt_part(screen::in, message_id::in, int::in,
+    message_update::out, thread_pager_info::in, thread_pager_info::out,
+    io::di, io::uo) is det.
+
+do_decrypt_part(Screen, MessageId, PartId, MessageUpdate, !Info, !IO) :-
+    Config = !.Info ^ tp_config,
+    run_notmuch(Config, [
+        "show", "--format=json", "--decrypt", "--part=" ++ from_int(PartId),
+        "--", message_id_to_search_term(MessageId)
+    ], parse_part(MessageId), redirect_stderr("/dev/null"), ParseResult, !IO),
+    (
+        ParseResult = ok(Part),
+        Content = Part ^ pt_content,
+        (
+            Content = subparts(EncStatus, _SubParts)
+        ;
+            ( Content = text(_)
+            ; Content = encapsulated_messages(_)
+            ; Content = unsupported
+            ),
+            % Should not happen.
+            EncStatus = not_encrypted
+        ),
+        (
+            EncStatus = not_encrypted,
+            MessageUpdate = set_info("Part not encrypted.")
+        ;
+            EncStatus = encrypted,
+            MessageUpdate = set_warning("Part encrypted.")
+        ;
+            EncStatus = decryption_good,
+            MessageUpdate = set_info("Part decrypted.")
+        ;
+            EncStatus = decryption_bad,
+            MessageUpdate = set_warning("Decryption failed.")
+        ),
+        Pager0 = !.Info ^ tp_pager,
+        NumRows = !.Info ^ tp_num_pager_rows,
+        get_cols(Screen, Cols),
+        replace_node_under_cursor(NumRows, Cols, Part, Pager0, Pager, !IO),
+        !Info ^ tp_pager := Pager
+    ;
+        ParseResult = error(Error),
+        MessageUpdate = set_warning("Error: " ++ Error)
     ).
 
 %-----------------------------------------------------------------------------%

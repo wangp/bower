@@ -85,9 +85,15 @@
 
 :- type part_content
     --->    text(string)
-    ;       subparts(list(part))
+    ;       subparts(encryption, list(part))
     ;       encapsulated_messages(list(encapsulated_message))
     ;       unsupported.
+
+:- type encryption
+    --->    not_encrypted
+    ;       encrypted
+    ;       decryption_good
+    ;       decryption_bad.
 
 :- type encapsulated_message
     --->    encapsulated_message(

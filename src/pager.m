@@ -89,6 +89,9 @@
 :- pred get_highlighted_thing(pager_info::in, highlighted_thing::out)
     is semidet.
 
+:- pred replace_node_under_cursor(int::in, int::in, part::in,
+    pager_info::in, pager_info::out, io::di, io::uo) is det.
+
 :- type toggle_type
     --->    cycle_alternatives
     ;       toggle_expanded.
@@ -394,7 +397,7 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
         Tree = node(PartNodeId, SubTrees, yes),
         !:ElideInitialHeadLine = no
     ;
-        Content = subparts(SubParts),
+        Content = subparts(Encryption, SubParts),
         (
             strcase_equal(Type, "multipart/alternative"),
             select_alternative(SubParts, [FirstSubPart | RestSubParts])
@@ -402,19 +405,34 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
             make_part_tree_with_alts(Config, Cols, RestSubParts, FirstSubPart,
                 default, Tree, no, _ElideInitialHeadLine, !Counter, !IO)
         ;
-            AltParts = [],
-            hide_multipart_head_line(Type)
-        ->
-            list.map_foldl3(make_part_tree(Config, Cols), SubParts,
-                SubPartsTrees, !ElideInitialHeadLine, !Counter, !IO),
-            Tree = node(PartNodeId, SubPartsTrees, no)
-        ;
-            list.map_foldl3(make_part_tree(Config, Cols), SubParts,
-                SubPartsTrees, yes, _ElideInitialHeadLine, !Counter, !IO),
-            HeadLine = part_head(Part, AltParts, part_expanded),
-            SubTrees = [leaf([HeadLine]) | SubPartsTrees],
-            Tree = node(PartNodeId, SubTrees, yes),
-            !:ElideInitialHeadLine = no
+            (
+                ( Encryption = not_encrypted
+                ; Encryption = decryption_good
+                ),
+                (
+                    AltParts = [],
+                    hide_multipart_head_line(Type)
+                ->
+                    list.map_foldl3(make_part_tree(Config, Cols), SubParts,
+                        SubPartsTrees, !ElideInitialHeadLine, !Counter, !IO),
+                    Tree = node(PartNodeId, SubPartsTrees, no)
+                ;
+                    list.map_foldl3(make_part_tree(Config, Cols), SubParts,
+                        SubPartsTrees, yes, _ElideInitialHeadLine, !Counter, !IO),
+                    HeadLine = part_head(Part, AltParts, part_expanded),
+                    SubTrees = [leaf([HeadLine]) | SubPartsTrees],
+                    Tree = node(PartNodeId, SubTrees, yes),
+                    !:ElideInitialHeadLine = no
+                )
+            ;
+                ( Encryption = encrypted
+                ; Encryption = decryption_bad
+                ),
+                HeadLine = part_head(Part, AltParts, part_not_expanded),
+                SubTrees = [leaf([HeadLine])],
+                Tree = node(PartNodeId, SubTrees, yes),
+                !:ElideInitialHeadLine = no
+            )
         )
     ;
         Content = encapsulated_messages(EncapMessages),
@@ -426,8 +444,15 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
         !:ElideInitialHeadLine = no
     ;
         Content = unsupported,
-        make_unsupported_part_tree(Config, Cols, PartNodeId, Part,
-            ExpandUnsupported, AltParts, Tree, !IO),
+        (
+            AltParts = [],
+            hide_unsupported_part(Type)
+        ->
+            Tree = leaf([])
+        ;
+            make_unsupported_part_tree(Config, Cols, PartNodeId, Part,
+                ExpandUnsupported, AltParts, Tree, !IO)
+        ),
         !:ElideInitialHeadLine = no
     ).
 
@@ -455,6 +480,11 @@ hide_multipart_head_line(PartType) :-
     ;
         strcase_equal(PartType, "multipart/signed")
     ).
+
+:- pred hide_unsupported_part(string::in) is semidet.
+
+hide_unsupported_part(PartType) :-
+    strcase_equal(PartType, "application/pgp-encrypted").
 
 %-----------------------------------------------------------------------------%
 
@@ -1188,6 +1218,20 @@ get_highlighted_thing(Info, Thing) :-
 
 %-----------------------------------------------------------------------------%
 
+replace_node_under_cursor(NumRows, Cols, Part, Info0, Info, !IO) :-
+    Info0 = pager_info(Config, Tree0, Counter0, Scrollable0),
+    ( get_cursor_line(Scrollable0, _, NodeId - _Line) ->
+        make_part_tree(Config, Cols, Part, NewNode, no, _ElideInitialHeadLine,
+            Counter0, Counter, !IO),
+        replace_node(NodeId, NewNode, Tree0, Tree),
+        scrollable.reinit(flatten(Tree), NumRows, Scrollable0, Scrollable),
+        Info = pager_info(Config, Tree, Counter, Scrollable)
+    ;
+        Info = Info0
+    ).
+
+%-----------------------------------------------------------------------------%
+
 toggle_content(ToggleType, NumRows, Cols, MessageUpdate, !Info, !IO) :-
     Scrollable0 = !.Info ^ p_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor, IdLine) ->
@@ -1413,9 +1457,9 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
             MaybeLength = no
         ),
         draw(Panel, " --]", !IO),
-        ( toggle_part_message(Expanded, HiddenParts, AltMessage) ->
+        ( part_message(Part, HiddenParts, Expanded, Message) ->
             MsgAttr = Attrs ^ p_part_message,
-            draw(Panel, MsgAttr, AltMessage, !IO)
+            draw(Panel, MsgAttr, Message, !IO)
         ;
             true
         )
@@ -1476,22 +1520,45 @@ format_length(Size) = String :-
         String = format(" (%.1f MB)", [f(Ms)])
     ).
 
-:- pred toggle_part_message(part_expanded::in, list(part)::in, string::out)
+:- pred part_message(part::in, list(part)::in, part_expanded::in, string::out)
     is semidet.
 
-toggle_part_message(Expanded, HiddenParts, Message) :-
+part_message(Part, HiddenParts, Expanded, Message) :-
+    Content = Part ^ pt_content,
+    require_complete_switch [Content]
     (
-        Expanded = part_expanded,
-        HiddenParts = [_],
-        Message = "  z for alternative"
+        Content = subparts(EncStatus, _)
     ;
-        Expanded = part_expanded,
-        HiddenParts = [_, _ | _],
-        Message = "  z for alternatives"
+        ( Content = text(_)
+        ; Content = encapsulated_messages(_)
+        ; Content = unsupported
+        ),
+        EncStatus = not_encrypted
+    ),
+    require_complete_switch [EncStatus]
+    (
+        ( EncStatus = encrypted
+        ; EncStatus = decryption_bad
+        ),
+        Message = "  z to decrypt"
     ;
-        Expanded = part_not_expanded,
-        HiddenParts = [_ | _],
-        Message = "  z to show"
+        EncStatus = decryption_good,
+        Message = "  decrypted"
+    ;
+        EncStatus = not_encrypted,
+        (
+            Expanded = part_expanded,
+            HiddenParts = [_],
+            Message = "  z for alternative"
+        ;
+            Expanded = part_expanded,
+            HiddenParts = [_, _ | _],
+            Message = "  z for alternatives"
+        ;
+            Expanded = part_not_expanded,
+            HiddenParts = [_ | _],
+            Message = "  z to show"
+        )
     ).
 
 %-----------------------------------------------------------------------------%
