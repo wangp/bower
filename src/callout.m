@@ -4,6 +4,7 @@
 :- module callout.
 :- interface.
 
+:- import_module bool.
 :- import_module io.
 :- import_module list.
 :- import_module maybe.
@@ -36,7 +37,7 @@
 
 :- pred parse_top_message(json::in, message::out) is det.
 
-:- pred parse_part(message_id::in, json::in, part::out) is det.
+:- pred parse_part(message_id::in, bool::in, json::in, part::out) is det.
 
 :- pred parse_threads_list(json::in, list(thread)::out) is det.
 
@@ -179,7 +180,8 @@ parse_message_details(JSON, Replies, Message) :-
         JSON/"tags" = list(TagsList),
         list.map(parse_tag, TagsList, Tags),
         JSON/"body" = list(BodyList),
-        list.map(parse_part(MessageId), BodyList, Body)
+        IsDecrypted = no,
+        list.map(parse_part(MessageId, IsDecrypted), BodyList, Body)
     ->
         TagSet = set.from_list(Tags),
         Message = message(MessageId, Timestamp, Headers, TagSet, Body, Replies)
@@ -216,7 +218,7 @@ parse_header(Key, unesc_string(Value), !Headers) :-
         !Headers ^ h_rest := Rest
     ).
 
-parse_part(MessageId, JSON, Part) :-
+parse_part(MessageId, IsDecrypted0, JSON, Part) :-
     (
         JSON/"id" = int(PartId),
         JSON/"content-type" = unesc_string(ContentType)
@@ -233,11 +235,22 @@ parse_part(MessageId, JSON, Part) :-
                         )
                     ;
                         Encryption = encrypted
+                    ),
+                    (
+                        Encryption = decryption_good,
+                        IsDecrypted = yes
+                    ;
+                        ( Encryption = encrypted
+                        ; Encryption = decryption_bad
+                        ; Encryption = not_encrypted % should not occur
+                        ),
+                        IsDecrypted = no
                     )
                 ;
-                    Encryption = not_encrypted
+                    Encryption = not_encrypted,
+                    IsDecrypted = IsDecrypted0
                 ),
-                list.map(parse_part(MessageId), SubParts0, SubParts),
+                list.map(parse_part(MessageId, IsDecrypted), SubParts0, SubParts),
                 Content = subparts(Encryption, SubParts),
                 MaybeFilename = no,
                 MaybeEncoding = no,
@@ -247,12 +260,13 @@ parse_part(MessageId, JSON, Part) :-
             )
         ; strcase_equal(ContentType, "message/rfc822") ->
             ( JSON/"content" = list(List) ->
-                list.map(parse_encapsulated_message(MessageId), List,
-                    EncapMessages),
+                list.map(parse_encapsulated_message(MessageId, IsDecrypted0),
+                    List, EncapMessages),
                 Content = encapsulated_messages(EncapMessages),
                 MaybeFilename = no,
                 MaybeEncoding = no,
-                MaybeLength = no
+                MaybeLength = no,
+                IsDecrypted = IsDecrypted0
             ;
                 notmuch_json_error
             )
@@ -279,10 +293,11 @@ parse_part(MessageId, JSON, Part) :-
                 MaybeLength = yes(Length)
             ;
                 MaybeLength = no
-            )
+            ),
+            IsDecrypted = IsDecrypted0
         ),
         Part = part(MessageId, yes(PartId), ContentType, Content,
-            MaybeFilename, MaybeEncoding, MaybeLength)
+            MaybeFilename, MaybeEncoding, MaybeLength, IsDecrypted)
     ;
         notmuch_json_error
     ).
@@ -300,15 +315,15 @@ parse_encstatus(JSON, Encryption) :-
         Encryption = decryption_bad
     ).
 
-:- pred parse_encapsulated_message(message_id::in, json::in,
+:- pred parse_encapsulated_message(message_id::in, bool::in, json::in,
     encapsulated_message::out) is det.
 
-parse_encapsulated_message(MessageId, JSON, EncapMessage) :-
+parse_encapsulated_message(MessageId, IsDecrypted0, JSON, EncapMessage) :-
     (
         JSON/"headers" = map(HeaderMap),
         map.foldl(parse_header, HeaderMap, init_headers, Headers),
         JSON/"body" = list(BodyList),
-        list.map(parse_part(MessageId), BodyList, Body)
+        list.map(parse_part(MessageId, IsDecrypted0), BodyList, Body)
     ->
         EncapMessage = encapsulated_message(Headers, Body)
     ;

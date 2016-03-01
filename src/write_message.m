@@ -466,13 +466,15 @@ write_mime_part_body(Stream, Config, TransferEncoding, Body, !IO) :-
     io::di, io::uo) is det.
 
 get_external_part_base64(Config, Part, Content, !IO) :-
-    Part = part(MessageId, MaybePartId, _, _, _, _, _),
+    Part = part(MessageId, MaybePartId, _, _, _, _, _, IsDecrypted),
     (
         MaybePartId = yes(PartId),
         get_notmuch_command(Config, Notmuch),
         make_quoted_command(Notmuch, [
-            "show", "--format=raw", "--part=" ++ from_int(PartId),
-            message_id_to_search_term(MessageId)
+            "show", "--format=raw",
+            decrypt_arg(IsDecrypted), % should not happen yet
+            "--part=" ++ from_int(PartId),
+            "--", message_id_to_search_term(MessageId)
         ], redirect_input("/dev/null"), no_redirect, Command),
         call_system_capture_stdout(Command ++ " |base64", no, CallRes, !IO)
     ;
@@ -486,6 +488,11 @@ get_external_part_base64(Config, Part, Content, !IO) :-
         % XXX handle this gracefully
         unexpected($module, $pred, io.error_message(Error))
     ).
+
+:- func decrypt_arg(bool) = string.
+
+decrypt_arg(yes) = "--decrypt".
+decrypt_arg(no) = "--decrypt=false".
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

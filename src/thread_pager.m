@@ -1679,9 +1679,8 @@ save_part(Action, MessageUpdate, !Info) :-
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
-    MessageId = Part ^ pt_msgid,
-    MaybePartId = Part ^ pt_part,
-    MaybePartFilename = Part ^ pt_filename,
+    Part = part(MessageId, MaybePartId, _Type, _Content, MaybePartFilename,
+        _MaybeEncoding, _MaybeLength, IsDecrypted),
     (
         MaybePartFilename = yes(PartFilename)
     ;
@@ -1723,7 +1722,8 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
             ResType = error(_),
             % This assumes the file doesn't exist.
             Config = !.Info ^ tp_config,
-            do_save_part(Config, MessageId, MaybePartId, FileName, Res, !IO),
+            do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName,
+                Res, !IO),
             (
                 Res = ok,
                 ( MaybePartId = yes(0) ->
@@ -1783,15 +1783,17 @@ make_save_part_initial_prompt(History, PartFilename, Initial) :-
     ).
 
 :- pred do_save_part(prog_config::in, message_id::in, maybe(int)::in,
-    string::in, maybe_error::out, io::di, io::uo) is det.
+    bool::in, string::in, maybe_error::out, io::di, io::uo) is det.
 
-do_save_part(Config, MessageId, MaybePartId, FileName, Res, !IO) :-
+do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName, Res, !IO)
+        :-
     (
         MaybePartId = yes(PartId),
         get_notmuch_command(Config, Notmuch),
         make_quoted_command(Notmuch, [
-            "show", "--format=raw", "--part=" ++ from_int(PartId),
-            message_id_to_search_term(MessageId)
+            "show", "--format=raw", decrypt_arg(IsDecrypted),
+            "--part=" ++ from_int(PartId),
+            "--", message_id_to_search_term(MessageId)
         ], no_redirect, redirect_output(FileName), Command),
         io.call_system(Command, CallRes, !IO)
     ;
@@ -1811,6 +1813,11 @@ do_save_part(Config, MessageId, MaybePartId, FileName, Res, !IO) :-
         CallRes = error(Error),
         Res = error(io.error_message(Error))
     ).
+
+:- func decrypt_arg(bool) = string.
+
+decrypt_arg(yes) = "--decrypt".
+decrypt_arg(no) = "--decrypt=false".
 
 %-----------------------------------------------------------------------------%
 
@@ -1896,7 +1903,7 @@ do_open_part(Config, Screen, Part, Command, MessageUpdate, MaybeNextKey,
 do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, MaybeNextKey,
         !IO) :-
     Part = part(MessageId, MaybePartId, _Type, _Content, MaybePartFileName,
-        _MaybeEncoding, _MaybeLength),
+        _MaybeEncoding, _MaybeLength, IsDecrypted),
     (
         MaybePartFileName = yes(PartFilename),
         get_extension(PartFilename, Ext)
@@ -1905,7 +1912,8 @@ do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, MaybeNextKey,
     ;
         io.make_temp(FileName, !IO)
     ),
-    do_save_part(Config, MessageId, MaybePartId, FileName, Res, !IO),
+    do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName, Res,
+        !IO),
     (
         Res = ok,
         call_open_command(Screen, CommandWords, FileName, MaybeError, !IO),
@@ -2185,10 +2193,14 @@ decrypt_part(Screen, !Info, !IO) :-
 
 do_decrypt_part(Screen, MessageId, PartId, MessageUpdate, !Info, !IO) :-
     Config = !.Info ^ tp_config,
-    run_notmuch(Config, [
-        "show", "--format=json", "--decrypt", "--part=" ++ from_int(PartId),
-        "--", message_id_to_search_term(MessageId)
-    ], parse_part(MessageId), redirect_stderr("/dev/null"), ParseResult, !IO),
+    run_notmuch(Config,
+        [
+            "show", "--format=json", "--decrypt",
+            "--part=" ++ from_int(PartId),
+            "--", message_id_to_search_term(MessageId)
+        ],
+        parse_part(MessageId, no), redirect_stderr("/dev/null"),
+        ParseResult, !IO),
     (
         ParseResult = ok(Part),
         Content = Part ^ pt_content,

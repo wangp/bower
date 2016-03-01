@@ -378,7 +378,7 @@ make_part_tree(Config, Cols, Part, Tree, !ElideInitialHeadLine, !Counter, !IO)
 make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
         !ElideInitialHeadLine, !Counter, !IO) :-
     Part = part(_MessageId, _PartId, Type, Content, _MaybeFilename,
-        _MaybeEncoding, _MaybeLength),
+        _MaybeEncoding, _MaybeLength, _IsDecrypted),
     allocate_node_id(PartNodeId, !Counter),
     (
         Content = text(Text),
@@ -605,7 +605,7 @@ add_encapsulated_header(Header, Value, RevLines0, RevLines) :-
 make_unsupported_part_tree(Config, Cols, PartNodeId, Part, ExpandUnsupported,
         AltParts, Tree, !IO) :-
     Part = part(MessageId, MaybePartId, Type, _Content, _MaybeFilename,
-        _MaybeEncoding, _MaybeLength),
+        _MaybeEncoding, _MaybeLength, _IsDecrypted),
     % XXX we should use mailcap, though we don't want to show everything
     IsHtml = ( strcase_equal(Type, "text/html") -> yes ; no ),
     (
@@ -1194,7 +1194,7 @@ get_highlighted_thing(Info, Thing) :-
         Subject = Message ^ m_headers ^ h_subject,
         PartId = 0,
         Part = part(MessageId, yes(PartId), "text/plain", unsupported, no, no,
-            no),
+            no, no),
         MaybeSubject = yes(Subject),
         Thing = highlighted_part(Part, MaybeSubject)
     ;
@@ -1432,7 +1432,7 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
     ;
         Line = part_head(Part, HiddenParts, Expanded),
         Part = part(_MessageId, _Part, ContentType, _Content,
-            MaybeFilename, MaybeEncoding, MaybeLength),
+            MaybeFilename, MaybeEncoding, MaybeLength, _IsDecrypted),
         (
             IsCursor = yes,
             Attr = Attrs ^ p_part_head + reverse

@@ -4,6 +4,7 @@
 :- module data.
 :- interface.
 
+:- import_module bool.
 :- import_module cord.
 :- import_module list.
 :- import_module map.
@@ -80,7 +81,8 @@
                 pt_content      :: part_content,
                 pt_filename     :: maybe(string),
                 pt_encoding     :: maybe(string),
-                pt_content_len  :: maybe(int)
+                pt_content_len  :: maybe(int),
+                pt_decrypted    :: bool
             ).
 
 :- type part_content

@@ -49,7 +49,7 @@ object_to_part(MessageId, Object, Part, !IO) :-
             % is_message_part(Object, IsMessagePart, !IO),
             % is_message(Object, IsMessage, !IO)
             Part = part(MessageId, no, default_content_type, unsupported,
-                no, no, no)
+                no, no, no, no)
         )
     ).
 
@@ -88,7 +88,7 @@ part_to_part(MessageId, Object, GPart, Part, !IO) :-
     get_content_encoding(GPart, Encoding, !IO),
     content_encoding(Encoding, MaybeEncoding),
     Part = part(MessageId, MaybePartId, ContentType, Content, MaybeFileName,
-        MaybeEncoding, MaybeContentLength).
+        MaybeEncoding, MaybeContentLength, no).
 
 :- pred get_text_content(g_mime_part::in, part_content::out, io::di, io::uo)
     is det.
@@ -146,12 +146,12 @@ multipart_to_part(MessageId, Object, Multipart, Part, !IO) :-
         MaybeContentType = no,
         ContentType = default_content_type
     ),
-    Content = subparts(SubParts),
+    Content = subparts(not_encrypted, SubParts),
     MaybeFileName = no,
     MaybeEncoding = no,
     MaybeContentLength = no,
     Part = part(MessageId, MaybePartId, ContentType, Content, MaybeFileName,
-        MaybeEncoding, MaybeContentLength).
+        MaybeEncoding, MaybeContentLength, no).
 
 :- pred multipart_to_part_2(message_id::in, g_mime_multipart::in, int::in,
     part::out, io::di, io::uo) is det.
