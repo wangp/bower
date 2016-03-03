@@ -30,12 +30,26 @@
 :- instance stream.writer(data, char, io).
 :- instance stream.writer(data, string, io).
 
+    % Write to a data object where \n is written as CR/LF.
+    %
+:- type data_crlf
+    --->    data_crlf(data).
+
+:- instance stream.stream(data_crlf, io).
+:- instance stream.output(data_crlf, io).
+:- instance stream.writer(data_crlf, char, io).
+:- instance stream.writer(data_crlf, string, io).
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
 :- import_module exception.
+:- import_module int.
+:- import_module string.
+
+:- import_module string_util.
 
 %-----------------------------------------------------------------------------%
 
@@ -158,10 +172,18 @@ gpgme_data_write_char(data(Data, _), Char, Res, !IO) :-
     }
 ").
 
+
+
 %-----------------------------------------------------------------------------%
 
-gpgme_data_write_string(data(Data, _), String, Res, !IO) :-
-    gpgme_data_write_string_2(Data, String, Ok, Error, !IO),
+gpgme_data_write_string(Data, String, Res, !IO) :-
+    unsafe_write_substring(Data, String, 0, length(String), Res, !IO).
+
+:- pred unsafe_write_substring(data::in, string::in, int::in, int::in,
+    maybe_error::out, io::di, io::uo) is det.
+
+unsafe_write_substring(data(Data, _), String, Start, End, Res, !IO) :-
+    unsafe_write_substring_2(Data, String, Start, End, Ok, Error, !IO),
     (
         Ok = yes,
         Res = ok
@@ -170,12 +192,12 @@ gpgme_data_write_string(data(Data, _), String, Res, !IO) :-
         Res = error(Error)
     ).
 
-:- pred gpgme_data_write_string_2(gpgme_data::in, string::in, bool::out,
-    string::out, io::di, io::uo) is det.
+:- pred unsafe_write_substring_2(gpgme_data::in, string::in, int::in, int::in,
+    bool::out, string::out, io::di, io::uo) is det.
 
 :- pragma foreign_proc("C",
-    gpgme_data_write_string_2(Data::in, String::in, Ok::out, Error::out,
-        _IO0::di, _IO::uo),
+    unsafe_write_substring_2(Data::in, String::in, Start::in, End::in,
+        Ok::out, Error::out, _IO0::di, _IO::uo),
     [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
         may_not_duplicate],
 "
@@ -185,8 +207,8 @@ gpgme_data_write_string(data(Data, _), String, Res, !IO) :-
     Ok = MR_YES;
     Error = MR_make_string_const("""");
 
-    offset = 0;
-    remaining = strlen(String);
+    offset = Start;
+    remaining = End - Start;
 
     while (remaining > 0) {
         ssize_t written = gpgme_data_write(Data, String + offset, remaining);
@@ -296,30 +318,83 @@ gpgme_data_to_string(data(Data, _), Res, !IO) :-
 ].
 
 :- instance stream.writer(data, char, io) where [
-    put(Data, Char, !IO) :-
-    (
-        gpgme_data_write_char(Data, Char, Res, !IO),
-        (
-            Res = ok
-        ;
-            Res = error(Error),
-            throw(io.make_io_error(Error))
-        )
+    ( put(Data, Char, !IO) :-
+        write_char_or_throw(Data, Char, !IO)
     )
 ].
 
 :- instance stream.writer(data, string, io) where [
-    put(Data, String, !IO) :-
-    (
-        gpgme_data_write_string(Data, String, Res, !IO),
-        (
-            Res = ok
-        ;
-            Res = error(Error),
-            throw(io.make_io_error(Error))
-        )
+    ( put(Data, String, !IO) :-
+        write_substring_or_throw(Data, String, 0, length(String), !IO)
     )
 ].
+
+:- pred write_char_or_throw(data::in, char::in, io::di, io::uo) is det.
+
+write_char_or_throw(Data, Char, !IO) :-
+    gpgme_data_write_char(Data, Char, Res, !IO),
+    (
+        Res = ok
+    ;
+        Res = error(Error),
+        throw(io.make_io_error(Error))
+    ).
+
+:- pred write_substring_or_throw(data::in, string::in, int::in, int::in,
+    io::di, io::uo) is det.
+
+write_substring_or_throw(Data, String, Start, End, !IO) :-
+    unsafe_write_substring(Data, String, Start, End, Res, !IO),
+    (
+        Res = ok
+    ;
+        Res = error(Error),
+        throw(io.make_io_error(Error))
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- instance stream(data_crlf, io) where [
+    name(_, "<<gpgme.data_crlf>>", !IO)
+].
+
+:- instance stream.output(data_crlf, io) where [
+    flush(_, !IO)
+].
+
+:- instance stream.writer(data_crlf, char, io) where [
+    ( put(data_crlf(Data), Char, !IO) :-
+        ( Char = ('\n') ->
+            write_char_or_throw(Data, ('\r'), !IO)
+        ;
+            true
+        ),
+        write_char_or_throw(Data, Char, !IO)
+    )
+].
+
+:- instance stream.writer(data_crlf, string, io) where [
+    ( put(Data, String, !IO) :-
+        put_string_crlf_loop(Data, String, 0, length(String), !IO)
+    )
+].
+
+:- pred put_string_crlf_loop(data_crlf::in, string::in, int::in, int::in,
+    io::di, io::uo) is det.
+
+put_string_crlf_loop(data_crlf(Data), String, Start, End, !IO) :-
+    ( Start >= End ->
+        true
+    ;
+        ( unsafe_strstr(String, "\n", Start, Nl) ->
+            write_substring_or_throw(Data, String, Start, Nl, !IO),
+            write_char_or_throw(Data, ('\r'), !IO),
+            write_char_or_throw(Data, ('\n'), !IO),
+            put_string_crlf_loop(data_crlf(Data), String, Nl + 1, End, !IO)
+        ;
+            write_substring_or_throw(Data, String, Start, End, !IO)
+        )
+    ).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

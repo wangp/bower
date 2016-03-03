@@ -55,6 +55,7 @@
 :- import_module gpgme.signer.
 
 :- instance write_message.writer(gpgme.data) where [].
+:- instance write_message.writer(gpgme.data.data_crlf) where [].
 
 %-----------------------------------------------------------------------------%
 
@@ -410,7 +411,9 @@ sign_detached_2(Ctx, Config, SignedPart, Res, Warnings, !IO) :-
     gpgme_data_new(ResPlainData, !IO),
     (
         ResPlainData = ok(PlainData),
-        write_mime_part(PlainData, Config, SignedPart, ResPlain, !IO),
+        % Must use CR/LF line terminators when generating the signature.
+        write_mime_part(data_crlf(PlainData), Config, SignedPart, ResPlain,
+            !IO),
         (
             ResPlain = ok,
             gpgme_data_rewind(PlainData, ResRewind, !IO),
