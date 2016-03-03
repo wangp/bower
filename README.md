@@ -210,6 +210,7 @@ This view pages through an entire thread.  The keys are:
     z               cycle alternative parts / toggle inline display / decrypt
     Z               toggle inline display of part / decrypt
     z, o            expand/collapse folded text
+    y               verify signed part
 
     i, q            return to index
     I               return to index, removing 'unread' tag on all messages

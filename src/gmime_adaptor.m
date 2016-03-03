@@ -146,7 +146,7 @@ multipart_to_part(MessageId, Object, Multipart, Part, !IO) :-
         MaybeContentType = no,
         ContentType = default_content_type
     ),
-    Content = subparts(not_encrypted, SubParts),
+    Content = subparts(not_encrypted, [], SubParts),
     MaybeFileName = no,
     MaybeEncoding = no,
     MaybeContentLength = no,

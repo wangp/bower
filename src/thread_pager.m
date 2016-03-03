@@ -140,6 +140,7 @@
     ;       prompt_open_url(string)
     ;       prompt_search(search_direction)
     ;       decrypt_part
+    ;       verify_part
     ;       toggle_content(toggle_type)
     ;       toggle_ordering
     ;       addressbook_add
@@ -750,6 +751,10 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         decrypt_part(Screen, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
     ;
+        Action = verify_part,
+        verify_part(Screen, !Info, !IO),
+        thread_pager_loop(Screen, !Info, !IO)
+    ;
         Action = toggle_content(ToggleType),
         toggle_content(Screen, ToggleType, !Info, !IO),
         thread_pager_loop(Screen, !Info, !IO)
@@ -962,6 +967,11 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ->
         choose_toggle_action(!.Info, toggle_content(toggle_expanded),
             Action),
+        MessageUpdate = clear_message
+    ;
+        Key = char('y')
+    ->
+        Action = verify_part,
         MessageUpdate = clear_message
     ;
         Key = char('/')
@@ -2137,19 +2147,19 @@ choose_toggle_action(Info, Action0, Action) :-
             Content = Part ^ pt_content,
             (
                 ( Content = text(_)
-                ; Content = subparts(not_encrypted, _)
+                ; Content = subparts(not_encrypted, _, _)
                 ; Content = encapsulated_messages(_)
                 ; Content = unsupported
                 ),
                 Action = Action0
             ;
-                Content = subparts(decryption_good, _),
+                Content = subparts(decryption_good, _, _),
                 Action = Action0
             ;
-                Content = subparts(encrypted, _),
+                Content = subparts(encrypted, _, _),
                 Action = decrypt_part
             ;
-                Content = subparts(decryption_bad, _),
+                Content = subparts(decryption_bad, _, _),
                 Action = decrypt_part
             )
         ;
@@ -2205,7 +2215,7 @@ do_decrypt_part(Screen, MessageId, PartId, MessageUpdate, !Info, !IO) :-
         ParseResult = ok(Part),
         Content = Part ^ pt_content,
         (
-            Content = subparts(EncStatus, _SubParts)
+            Content = subparts(EncStatus, _SigStatus, _SubParts)
         ;
             ( Content = text(_)
             ; Content = encapsulated_messages(_)
@@ -2235,6 +2245,122 @@ do_decrypt_part(Screen, MessageId, PartId, MessageUpdate, !Info, !IO) :-
     ;
         ParseResult = error(Error),
         MessageUpdate = set_warning("Error: " ++ Error)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred verify_part(screen::in, thread_pager_info::in, thread_pager_info::out,
+    io::di, io::uo) is det.
+
+verify_part(Screen, !Info, !IO) :-
+    Pager = !.Info ^ tp_pager,
+    (
+        get_highlighted_thing(Pager, Thing),
+        Thing = highlighted_part(Part, _)
+    ->
+        ( is_multipart_signed(Part) ->
+            do_verify_part(Screen, Part, MessageUpdate, !Info, !IO)
+        ;
+            MessageUpdate =
+                set_warning("Please select multipart/signed part to verify.")
+        )
+    ;
+        MessageUpdate = set_warning("No part selected.")
+    ),
+    update_message(Screen, MessageUpdate, !IO).
+
+:- pred do_verify_part(screen::in, part::in, message_update::out,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+
+do_verify_part(Screen, Part0, MessageUpdate, !Info, !IO) :-
+    Part0 = part(MessageId, MaybePartId, Type, _Content0,
+        _MaybeFilename0, _MaybeEncoding0, _MaybeLength0, IsDecrypted),
+    (
+        MaybePartId = yes(PartId),
+        Config = !.Info ^ tp_config,
+        % Why doesn't notmuch allow --body=false? We could avoid downloading
+        % the content again.
+        run_notmuch(Config,
+            [
+                "show", "--format=json",
+                "--verify", decrypt_arg(IsDecrypted), % seems unlikely
+                "--part=" ++ from_int(PartId),
+                "--", message_id_to_search_term(MessageId)
+            ],
+            parse_part(MessageId, no), redirect_stderr("/dev/null"),
+            ParseResult, !IO),
+        (
+            ParseResult = ok(Part1),
+            (
+                Part1 = part(MessageId, MaybePartId, Type, Content,
+                    MaybeFilename, MaybeEncoding, MaybeLength, _IsDecrypted1)
+            ->
+                Part = part(MessageId, MaybePartId, Type, Content,
+                    MaybeFilename, MaybeEncoding, MaybeLength, IsDecrypted),
+
+                Pager0 = !.Info ^ tp_pager,
+                NumRows = !.Info ^ tp_num_pager_rows,
+                get_cols(Screen, Cols),
+                % Regenerating the part tree is overkill...
+                replace_node_under_cursor(NumRows, Cols, Part, Pager0, Pager,
+                    !IO),
+                !Info ^ tp_pager := Pager,
+
+                post_verify_message_update(Content, MessageUpdate)
+            ;
+                MessageUpdate = set_warning("notmuch return unexpected part.")
+            )
+        ;
+            ParseResult = error(Error),
+            MessageUpdate = set_warning("Error: " ++ Error)
+        )
+    ;
+        MaybePartId = no,
+        MessageUpdate = set_warning("Missing part id.")
+    ).
+
+:- pred post_verify_message_update(part_content::in, message_update::out)
+    is det.
+
+post_verify_message_update(Content, MessageUpdate) :-
+    (
+        Content = subparts(_, Signatures, _),
+        ( all_true(good_signature, Signatures) ->
+            (
+                Signatures = [],
+                MessageUpdate = set_info("No signature.")
+            ;
+                Signatures = [_],
+                MessageUpdate = set_info("Verified signature.")
+            ;
+                Signatures = [_, _ | _],
+                MessageUpdate = set_info("Verified signatures.")
+            )
+        ;
+            MessageUpdate = set_warning("Failed to verify signature.")
+        )
+    ;
+        ( Content = text(_)
+        ; Content = encapsulated_messages(_)
+        ; Content = unsupported
+        ),
+        MessageUpdate = set_warning("Unexpected content.")
+    ).
+
+:- pred good_signature(signature::in) is semidet.
+
+good_signature(Signature) :-
+    Signature = signature(Status, Errors),
+    Errors = 0,
+    require_complete_switch [Status]
+    (
+        Status = good(_, _, _, _)
+    ;
+        Status = none,
+        fail
+    ;
+        Status = not_good(_, _),
+        fail
     ).
 
 %-----------------------------------------------------------------------------%

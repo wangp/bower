@@ -466,7 +466,7 @@ first_text_part([Part | Parts], Text, AttachmentParts) :-
         PartContent = text(Text),
         AttachmentParts = Parts
     ;
-        PartContent = subparts(_Encryption, SubParts),
+        PartContent = subparts(_Encryption, _Signatures, SubParts),
         first_text_part(SubParts, Text, AttachmentParts)
     ;
         ( PartContent = encapsulated_messages(_)
@@ -1506,7 +1506,7 @@ draw_key(Attrs, Panel, Prefix, found(key_userid(Key, UserId)), !IO) :-
         draw(Panel, Attr, Text, !IO)
     ;
         % Should not happen. 
-        draw(Panel, Attrs ^ c_good_key, " [no subkey]", !IO)
+        draw(Panel, Attrs ^ c_generic ^ good_key, " [no subkey]", !IO)
     ).
 draw_key(Attrs, Panel, Prefix, not_found, !IO) :-
     ( Prefix = "" ->
@@ -1514,7 +1514,7 @@ draw_key(Attrs, Panel, Prefix, not_found, !IO) :-
     ;
         Text = format(" [%s: no key found]", [s(Prefix)])
     ),
-    draw(Panel, Attrs ^ c_bad_key, Text, !IO).
+    draw(Panel, Attrs ^ c_generic ^ bad_key, Text, !IO).
 
 :- func short_fpr(string) = string.
 
@@ -1527,10 +1527,10 @@ validity_attr(Attrs, Validity, String, Attr) :-
     validity(Validity, String, GoodKey),
     (
         GoodKey = yes,
-        Attr = Attrs ^ c_good_key
+        Attr = Attrs ^ c_generic ^ good_key
     ;
         GoodKey = no,
-        Attr = Attrs ^ c_bad_key
+        Attr = Attrs ^ c_generic ^ bad_key
     ).
 
 :- pred validity(validity::in, string::out, bool::out) is det.
@@ -2130,7 +2130,7 @@ generate_attachment_mime_part(TextCTE, Attachment, MimePart) :-
             MimePart = discrete(content_type(OldType), yes(Disposition),
                 yes(cte_base64), external(OldPart))
         ;
-            OldContent = subparts(_, _),
+            OldContent = subparts(_, _, _),
             unexpected($module, $pred, "nested part")
         ;
             OldContent = encapsulated_messages(_),

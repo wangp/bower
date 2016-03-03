@@ -130,6 +130,8 @@
   ; other_tag = bold red
   ; field_name = bold red
   ; field_body = normal
+  ; good_key = bold green
+  ; bad_key = bold red
 
 [color.status]
   ; bar = white / blue
@@ -163,7 +165,5 @@
 [color.compose]
   ; address = bold blue
   ; invalid = red
-  ; good_key = green
-  ; bad_key = red
 
 #-----------------------------------------------------------------------------#

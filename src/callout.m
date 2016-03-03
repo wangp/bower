@@ -250,8 +250,17 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
                     Encryption = not_encrypted,
                     IsDecrypted = IsDecrypted0
                 ),
+                ( JSON/"sigstatus" = SigStatus ->
+                    ( parse_sigstatus(SigStatus, Signatures0) ->
+                        Signatures = Signatures0
+                    ;
+                        notmuch_json_error
+                    )
+                ;
+                    Signatures = []
+                ),
                 list.map(parse_part(MessageId, IsDecrypted), SubParts0, SubParts),
-                Content = subparts(Encryption, SubParts),
+                Content = subparts(Encryption, Signatures, SubParts),
                 MaybeFilename = no,
                 MaybeEncoding = no,
                 MaybeLength = no
@@ -314,6 +323,68 @@ parse_encstatus(JSON, Encryption) :-
         Status = "bad",
         Encryption = decryption_bad
     ).
+
+:- pred parse_sigstatus(json::in, list(signature)::out) is semidet.
+
+parse_sigstatus(JSON, Signatures) :-
+    JSON = list(Objs),
+    map(parse_signature, Objs, Signatures).
+
+:- pred parse_signature(json::in, signature::out) is semidet.
+
+parse_signature(JSON, Signature) :-
+    JSON/"status" = unesc_string(Status0),
+    (
+        Status0 = "none", % documented but not in the source code?
+        SigStatus = none
+    ;
+        Status0 = "good",
+        ( JSON/"fingerprint" = unesc_string(Fingerprint) ->
+            MaybeFingerprint = yes(Fingerprint)
+        ;
+            MaybeFingerprint = no
+        ),
+        ( JSON/"created" = int(Created) ->
+            MaybeCreated = yes(timestamp(Created))
+        ;
+            MaybeCreated = no
+        ),
+        ( JSON/"expires" = int(Expires) ->
+            MaybeExpires = yes(timestamp(Expires))
+        ;
+            MaybeExpires = no
+        ),
+        ( JSON/"userid" = unesc_string(UserId) ->
+            MaybeUserId = yes(UserId)
+        ;
+            MaybeUserId = no
+        ),
+        SigStatus = good(MaybeFingerprint, MaybeCreated, MaybeExpires,
+            MaybeUserId)
+    ;
+        (
+            Status0 = "bad",
+            Status1 = bad
+        ;
+            Status0 = "error",
+            Status1 = error
+        ;
+            Status0 = "unknown",
+            Status1 = unknown
+        ),
+        ( JSON/"keyid" = unesc_string(KeyId) ->
+            MaybeKeyId = yes(KeyId)
+        ;
+            MaybeKeyId = no
+        ),
+        SigStatus = not_good(Status1, MaybeKeyId)
+    ),
+    ( JSON/"errors" = int(Errors0) ->
+        Errors = Errors0
+    ;
+        Errors = 0
+    ),
+    Signature = signature(SigStatus, Errors).
 
 :- pred parse_encapsulated_message(message_id::in, bool::in, json::in,
     encapsulated_message::out) is det.

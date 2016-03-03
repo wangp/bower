@@ -19,7 +19,9 @@
                 subject         :: attr,
                 other_tag       :: attr,
                 field_name      :: attr,
-                field_body      :: attr
+                field_body      :: attr,
+                good_key        :: attr,
+                bad_key         :: attr
             ).
 
 :- type status_attrs
@@ -66,9 +68,7 @@
                 c_generic       :: generic_attrs,
                 c_status        :: status_attrs,
                 c_address       :: attr,
-                c_invalid       :: attr,
-                c_good_key      :: attr,
-                c_bad_key       :: attr
+                c_invalid       :: attr
             ).
 
 :- type colors
@@ -128,8 +128,10 @@ override_generic_attrs(Config, Section, Def, Attrs) :-
     cfg(Config, Def ^ other_tag, Sections, "other_tag", OtherTag),
     cfg(Config, Def ^ field_name, Sections, "field_name", FieldName),
     cfg(Config, Def ^ field_body, Sections, "field_body", FieldBody),
+    cfg(Config, Def ^ good_key, Sections, "good_key", GoodKey),
+    cfg(Config, Def ^ bad_key, Sections, "bad_key", BadKey),
     Attrs1 = generic_attrs(Current, RelDate, Selected, StandardTag, Flagged,
-        Author, Subject, OtherTag, FieldName, FieldBody),
+        Author, Subject, OtherTag, FieldName, FieldBody, GoodKey, BadKey),
     % Keep common structure if possible.
     Attrs = ( Def = Attrs1 -> Def ; Attrs1 ).
 
@@ -219,10 +221,7 @@ make_compose_attrs(Config, GenericAttrs0, StatusAttrs, Attrs) :-
     Sections = [Section, generic_section],
     cfg(Config, Def ^ c_address, Sections, "address", Address),
     cfg(Config, Def ^ c_invalid, Sections, "invalid", Invalid),
-    cfg(Config, Def ^ c_good_key, Sections, "good_key", GoodKey),
-    cfg(Config, Def ^ c_bad_key, Sections, "bad_key", BadKey),
-    Attrs = compose_attrs(GenericAttrs, StatusAttrs, Address, Invalid,
-        GoodKey, BadKey).
+    Attrs = compose_attrs(GenericAttrs, StatusAttrs, Address, Invalid).
 
 :- pred cfg(config::in, attr::in, list(section)::in, string::in, attr::out)
     is det.
@@ -327,7 +326,9 @@ default_generic_attrs =
         normal,
         bold(red),
         bold(red),
-        normal
+        normal,
+        bold(cyan),
+        normal(white, red)
     ).
 
 :- func default_status_attrs = status_attrs.
@@ -384,8 +385,6 @@ default_compose_attrs(GenericAttrs, StatusAttrs) =
         GenericAttrs,
         StatusAttrs,
         bold(blue),
-        normal(red),
-        normal(green),
         normal(red)
     ).
 

@@ -118,6 +118,7 @@
 :- import_module int.
 :- import_module set.
 :- import_module string.
+:- import_module time.
 :- import_module version_array.
 
 :- import_module copious_output.
@@ -125,6 +126,7 @@
 :- import_module pager_text.
 :- import_module quote_arg.
 :- import_module string_util.
+:- import_module time_util.
 
 %-----------------------------------------------------------------------------%
 
@@ -167,6 +169,9 @@
     ;       fold_marker(
                 content         :: list(pager_line),
                 expanded        :: bool
+            )
+    ;       signature(
+                signature       :: signature
             )
     ;       message_separator.
 
@@ -397,20 +402,23 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
         Tree = node(PartNodeId, SubTrees, yes),
         !:ElideInitialHeadLine = no
     ;
-        Content = subparts(Encryption, SubParts),
+        Content = subparts(Encryption, Signatures, SubParts),
         (
             strcase_equal(Type, "multipart/alternative"),
             select_alternative(SubParts, [FirstSubPart | RestSubParts])
         ->
+            % Assuming Signatures = []
             make_part_tree_with_alts(Config, Cols, RestSubParts, FirstSubPart,
                 default, Tree, no, _ElideInitialHeadLine, !Counter, !IO)
         ;
+            map(make_signature_line, Signatures, SignatureLines),
             (
                 ( Encryption = not_encrypted
                 ; Encryption = decryption_good
                 ),
                 (
                     AltParts = [],
+                    SignatureLines = [],
                     hide_multipart_head_line(Type)
                 ->
                     list.map_foldl3(make_part_tree(Config, Cols), SubParts,
@@ -420,7 +428,8 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
                     list.map_foldl3(make_part_tree(Config, Cols), SubParts,
                         SubPartsTrees, yes, _ElideInitialHeadLine, !Counter, !IO),
                     HeadLine = part_head(Part, AltParts, part_expanded),
-                    SubTrees = [leaf([HeadLine]) | SubPartsTrees],
+                    SubTrees = [leaf([HeadLine | SignatureLines])
+                        | SubPartsTrees],
                     Tree = node(PartNodeId, SubTrees, yes),
                     !:ElideInitialHeadLine = no
                 )
@@ -429,7 +438,7 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
                 ; Encryption = decryption_bad
                 ),
                 HeadLine = part_head(Part, AltParts, part_not_expanded),
-                SubTrees = [leaf([HeadLine])],
+                SubTrees = [leaf([HeadLine | SignatureLines])],
                 Tree = node(PartNodeId, SubTrees, yes),
                 !:ElideInitialHeadLine = no
             )
@@ -470,6 +479,10 @@ select_alternative([X | Xs], Parts) :-
         Parts = [X | Xs]
     ).
 
+:- pred make_signature_line(signature::in, pager_line::out) is det.
+
+make_signature_line(Signature, signature(Signature)).
+
 :- pred hide_multipart_head_line(string::in) is semidet.
 
 hide_multipart_head_line(PartType) :-
@@ -477,14 +490,16 @@ hide_multipart_head_line(PartType) :-
         strcase_equal(PartType, "multipart/mixed")
     ;
         strcase_equal(PartType, "multipart/related")
-    ;
-        strcase_equal(PartType, "multipart/signed")
     ).
 
 :- pred hide_unsupported_part(string::in) is semidet.
 
 hide_unsupported_part(PartType) :-
-    strcase_equal(PartType, "application/pgp-encrypted").
+    (
+        strcase_equal(PartType, "application/pgp-encrypted")
+    ;
+        strcase_equal(PartType, "application/pgp-signature")
+    ).
 
 %-----------------------------------------------------------------------------%
 
@@ -540,6 +555,7 @@ is_quoted_text(Line) :-
         ( Line = header(_, _, _, _)
         ; Line = part_head(_, _, _)
         ; Line = fold_marker(_, _)
+        ; Line = signature(_)
         ; Line = message_separator
         ),
         fail
@@ -958,6 +974,7 @@ is_quoted_text_or_message_start_2(Line) :-
         ( Line = header(no, _, _, _)
         ; Line = part_head(_, _, _)
         ; Line = fold_marker(_, _)
+        ; Line = signature(_)
         ; Line = message_separator
         ),
         fail
@@ -1124,6 +1141,9 @@ line_matches_search(Search, Line) :-
         Line = fold_marker(_, _),
         fail
     ;
+        Line = signature(signature(_Status, _Errors)),
+        fail
+    ;
         Line = message_separator,
         fail
     ).
@@ -1212,6 +1232,9 @@ get_highlighted_thing(Info, Thing) :-
         Line = header(no, _, _, _),
         fail
     ;
+        Line = signature(_),
+        fail
+    ;
         Line = message_separator,
         fail
     ).
@@ -1258,6 +1281,7 @@ toggle_line(ToggleType, NumRows, Cols, NodeId - Line, MessageUpdate,
     ;
         ( Line = header(_, _, _, _)
         ; Line = text(pager_text(_, _, _, _))
+        ; Line = signature(_)
         ; Line = message_separator
         ),
         MessageUpdate = clear_message
@@ -1474,6 +1498,74 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
         ),
         draw(Panel, Attr, "...", !IO)
     ;
+        Line = signature(signature(Status, Errors)),
+        BodyAttr = GAttrs ^ field_body,
+        GoodAttr = GAttrs ^ good_key,
+        BadAttr = GAttrs ^ bad_key,
+        (
+            Status = none,
+            draw(Panel, BadAttr, " ─• No signature ", !IO)
+        ;
+            Status = good(MaybeFingerprint, _MaybeCreated, MaybeExpires,
+                MaybeUserId),
+            draw(Panel, GoodAttr, " ─• Good signature ", !IO),
+            (
+                MaybeUserId = yes(UserId),
+                draw(Panel, BodyAttr, lstrip(UserId), !IO),
+                (
+                    MaybeFingerprint = yes(Fingerprint),
+                    draw(Panel, BodyAttr, ", fpr ", !IO),
+                    draw(Panel, BodyAttr, Fingerprint, !IO)
+                ;
+                    MaybeFingerprint = no
+                )
+            ;
+                MaybeUserId = no,
+                MaybeFingerprint = yes(Fingerprint),
+                draw(Panel, BodyAttr, "fingerprint ", !IO),
+                draw(Panel, BodyAttr, Fingerprint, !IO)
+            ;
+                MaybeUserId = no,
+                MaybeFingerprint = no,
+                draw(Panel, BodyAttr, "(no user id)", !IO)
+            ),
+            % Not really tested; don't know when it occurs.
+            (
+                MaybeExpires = yes(timestamp(Expires)),
+                timestamp_to_tm(Expires, TM),
+                draw(Panel, BodyAttr, "; expires ", !IO),
+                draw(Panel, BodyAttr, asctime(TM), !IO)
+            ;
+                MaybeExpires = no
+            )
+        ;
+            Status = not_good(BadStatus, MaybeKeyId),
+            (
+                BadStatus = bad,
+                BadMessage = " ─• Bad signature "
+            ;
+                BadStatus = error,
+                BadMessage = " ─• Error verifying signature "
+            ;
+                BadStatus = unknown,
+                BadMessage = " ─• Problem verifying signature "
+            ),
+            draw(Panel, BadAttr, BadMessage, !IO),
+            (
+                MaybeKeyId = yes(KeyId),
+                draw(Panel, BodyAttr, "key id ", !IO),
+                draw(Panel, BodyAttr, KeyId, !IO)
+            ;
+                MaybeKeyId = no,
+                draw(Panel, BodyAttr, "(no key id)", !IO)
+            )
+        ),
+        ( Errors > 0 ->
+            draw(Panel, BodyAttr, format(" (errors: %d)", [i(Errors)]), !IO)
+        ;
+            true
+        )
+    ;
         Line = message_separator,
         Attr = Attrs ^ p_separator,
         draw(Panel, Attr, "~", !IO)
@@ -1527,13 +1619,14 @@ part_message(Part, HiddenParts, Expanded, Message) :-
     Content = Part ^ pt_content,
     require_complete_switch [Content]
     (
-        Content = subparts(EncStatus, _)
+        Content = subparts(EncStatus, Signatures, _)
     ;
         ( Content = text(_)
         ; Content = encapsulated_messages(_)
         ; Content = unsupported
         ),
-        EncStatus = not_encrypted
+        EncStatus = not_encrypted,
+        Signatures = []
     ),
     require_complete_switch [EncStatus]
     (
@@ -1558,6 +1651,11 @@ part_message(Part, HiddenParts, Expanded, Message) :-
             Expanded = part_not_expanded,
             HiddenParts = [_ | _],
             Message = "  z to show"
+        ;
+            HiddenParts = [],
+            Signatures = [],
+            is_multipart_signed(Part),
+            Message = "  y to verify"
         )
     ).
 

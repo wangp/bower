@@ -87,7 +87,7 @@
 
 :- type part_content
     --->    text(string)
-    ;       subparts(encryption, list(part))
+    ;       subparts(encryption, list(signature), list(part))
     ;       encapsulated_messages(list(encapsulated_message))
     ;       unsupported.
 
@@ -96,6 +96,33 @@
     ;       encrypted
     ;       decryption_good
     ;       decryption_bad.
+
+:- type signature
+    --->    signature(
+                signature_status :: signature_status,
+                signature_errors :: int
+            ).
+
+:- type signature_status
+    --->    none
+    ;       good(
+                fingerprint     :: maybe(string),
+                created         :: maybe(timestamp),
+                expires         :: maybe(timestamp),
+                userid          :: maybe(string)
+            )
+    ;       not_good(
+                not_good_status :: signature_not_good_status,
+                not_good_keyid  :: maybe(string)
+            ).
+
+:- type signature_not_good_status
+    --->    bad
+    ;       error
+    ;       unknown.
+
+:- type timestamp
+    --->    timestamp(int). % unix time
 
 :- type encapsulated_message
     --->    encapsulated_message(
@@ -125,6 +152,8 @@
 
 :- func get_replies(message) = list(message).
 
+:- pred is_multipart_signed(part::in) is semidet.
+
 :- pred snoc(T::in, cord(T)::in, cord(T)::out) is det.
 
 %-----------------------------------------------------------------------------%
@@ -134,6 +163,8 @@
 
 :- import_module map.
 :- import_module string.
+
+:- import_module string_util.
 
 %-----------------------------------------------------------------------------%
 
@@ -165,6 +196,9 @@ get_subject_fallback(excluded_message(_)) = header_value("(excluded message)").
 
 get_replies(message(_, _, _, _, _, Replies)) = Replies.
 get_replies(excluded_message(Replies)) = Replies.
+
+is_multipart_signed(Part) :-
+    strcase_equal(Part ^ pt_type, "multipart/signed").
 
 snoc(X, C, snoc(C, X)).
 
