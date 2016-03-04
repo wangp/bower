@@ -128,21 +128,16 @@
                 reason          :: string
             ).
 
-:- include_module gpgme.decrypt.
-:- include_module gpgme.decrypt_verify.
 :- include_module gpgme.encrypt.
 :- include_module gpgme.key.
 :- include_module gpgme.sign.
 :- include_module gpgme.signer.
-:- include_module gpgme.verify.
 
 % Misc
 
     % XXX gpgme_signature_t has unsigned long timestamps, other places use long
     % int timestamps. Either way not guaranteed to fit in Mercury int.
 :- type timestamp == int.
-
-:- include_module gpgme.gmime.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%

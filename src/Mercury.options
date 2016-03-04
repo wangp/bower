@@ -4,11 +4,6 @@ MAIN_TARGET = bower
 # Link with curses.
 MLLIBS-bower += -lncursesw -lpanelw
 
-# Build with gmime.
-GMIME = gmime-2.6
-MCFLAGS += --cflags "`pkg-config --cflags $(GMIME)`"
-MCFLAGS-bower += --ld-flags "`pkg-config --libs $(GMIME)`"
-
 # Build with gpgme.
 CFLAGS += -D_FILE_OFFSET_BITS=64
 MLLIBS-bower += -lgpgme
