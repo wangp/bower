@@ -170,6 +170,7 @@
   ; diff_index = bold green
   ; url = magenta
   ; part_head = bold magenta
+  ; part_head_low = magenta
   ; part_message = magenta
   ; fold = magenta
   ; separator = bold blue

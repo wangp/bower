@@ -45,6 +45,7 @@
                 p_diff_index    :: attr,
                 p_url           :: attr,
                 p_part_head     :: attr,
+                p_part_head_low :: attr,
                 p_part_message  :: attr,
                 p_fold          :: attr,
                 p_separator     :: attr
@@ -165,13 +166,14 @@ make_pager_attrs(Config, GenericAttrs0, Attrs) :-
     cfg(Config, Def ^ p_diff_index, Sections, "diff_index", DiffIndex),
     cfg(Config, Def ^ p_url, Sections, "url", Url),
     cfg(Config, Def ^ p_part_head, Sections, "part_head", PartHead),
+    cfg(Config, Def ^ p_part_head_low, Sections, "part_head_low", PartHeadLow),
     cfg(Config, Def ^ p_part_message, Sections, "part_message", PartMsg),
     cfg(Config, Def ^ p_fold, Sections, "fold", Fold),
     cfg(Config, Def ^ p_separator, Sections, "separator", Separator),
 
     Attrs = pager_attrs(GenericAttrs, Body, QuoteOdd, QuoteEven,
         DiffCommon, DiffAdd, DiffRem, DiffHunk, DiffIndex, Url,
-        PartHead, PartMsg, Fold, Separator).
+        PartHead, PartHeadLow, PartMsg, Fold, Separator).
 
 :- pred make_index_attrs(config::in, generic_attrs::in, index_attrs::out)
     is det.
@@ -356,6 +358,7 @@ default_pager_attrs(GenericAttrs) =
         bold(green),
         normal(magenta),
         bold(magenta),
+        normal(magenta), % part_head_low
         normal(magenta),
         normal(magenta),
         bold(blue)

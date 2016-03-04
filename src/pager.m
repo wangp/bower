@@ -162,9 +162,10 @@
     ;       text(pager_text)
     ;       part_head(
                 part            :: part,
-                alternatives    :: list(part),
                 % Hidden alternatives for multipart/alternative.
-                part_expanded   :: part_expanded
+                alternatives    :: list(part),
+                part_expanded   :: part_expanded,
+                importance      :: part_importance
             )
     ;       fold_marker(
                 content         :: list(pager_line),
@@ -178,6 +179,10 @@
 :- type part_expanded
     --->    part_expanded
     ;       part_not_expanded.
+
+:- type part_importance
+    --->    importance_normal
+    ;       importance_low.
 
 :- type binding
     --->    leave_pager
@@ -396,7 +401,8 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
         ->
             SubTrees = TextTrees
         ;
-            HeadLine = part_head(Part, AltParts, part_expanded),
+            HeadLine = part_head(Part, AltParts, part_expanded,
+                importance_normal),
             SubTrees = [leaf([HeadLine]) | TextTrees]
         ),
         Tree = node(PartNodeId, SubTrees, yes),
@@ -411,10 +417,13 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
             make_part_tree_with_alts(Config, Cols, RestSubParts, FirstSubPart,
                 default, Tree, no, _ElideInitialHeadLine, !Counter, !IO)
         ;
+            get_importance(Type, AltParts, Encryption, Signatures, Importance),
             map(make_signature_line, Signatures, SignatureLines),
             (
-                ( Encryption = not_encrypted
-                ; Encryption = decryption_good
+                (
+                    Encryption = not_encrypted
+                ;
+                    Encryption = decryption_good
                 ),
                 (
                     AltParts = [],
@@ -427,17 +436,21 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
                 ;
                     list.map_foldl3(make_part_tree(Config, Cols), SubParts,
                         SubPartsTrees, yes, _ElideInitialHeadLine, !Counter, !IO),
-                    HeadLine = part_head(Part, AltParts, part_expanded),
+                    HeadLine = part_head(Part, AltParts, part_expanded,
+                        Importance),
                     SubTrees = [leaf([HeadLine | SignatureLines])
                         | SubPartsTrees],
                     Tree = node(PartNodeId, SubTrees, yes),
                     !:ElideInitialHeadLine = no
                 )
             ;
-                ( Encryption = encrypted
-                ; Encryption = decryption_bad
+                (
+                    Encryption = encrypted
+                ;
+                    Encryption = decryption_bad
                 ),
-                HeadLine = part_head(Part, AltParts, part_not_expanded),
+                HeadLine = part_head(Part, AltParts, part_not_expanded,
+                    Importance),
                 SubTrees = [leaf([HeadLine | SignatureLines])],
                 Tree = node(PartNodeId, SubTrees, yes),
                 !:ElideInitialHeadLine = no
@@ -447,7 +460,7 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
         Content = encapsulated_messages(EncapMessages),
         list.map_foldl2(make_encapsulated_message_tree(Config, Cols),
             EncapMessages, SubTrees0, !Counter, !IO),
-        HeadLine = part_head(Part, AltParts, part_expanded),
+        HeadLine = part_head(Part, AltParts, part_expanded, importance_normal),
         SubTrees = [leaf([HeadLine]) | SubTrees0],
         Tree = node(PartNodeId, SubTrees, yes),
         !:ElideInitialHeadLine = no
@@ -477,6 +490,36 @@ select_alternative([X | Xs], Parts) :-
         Parts = Xs ++ [X]
     ;
         Parts = [X | Xs]
+    ).
+
+:- pred get_importance(string::in, list(part)::in, encryption::in,
+    list(signature)::in, part_importance::out) is det.
+
+get_importance(Type, AltParts, Encryption, Signatures, Importance) :-
+    (
+        AltParts = [_ | _],
+        Importance = importance_normal
+    ;
+        AltParts = [],
+        (
+            ( Encryption = encrypted
+            ; Encryption = decryption_bad
+            ),
+            Importance = importance_normal
+        ;
+            Encryption = decryption_good,
+            Importance = importance_low         % already decrypted
+        ;
+            Encryption = not_encrypted,
+            (
+                strcase_equal(Type, "multipart/signed"),
+                Signatures = [_ | _]
+            ->
+                Importance = importance_low     % already verified
+            ;
+                Importance = importance_normal
+            )
+        )
     ).
 
 :- pred make_signature_line(signature::in, pager_line::out) is det.
@@ -553,7 +596,7 @@ is_quoted_text(Line) :-
         Level > 0
     ;
         ( Line = header(_, _, _, _)
-        ; Line = part_head(_, _, _)
+        ; Line = part_head(_, _, _, _)
         ; Line = fold_marker(_, _)
         ; Line = signature(_)
         ; Line = message_separator
@@ -651,7 +694,7 @@ make_unsupported_part_tree(Config, Cols, PartNodeId, Part, ExpandUnsupported,
         Expanded = part_not_expanded,
         TextLines = []
     ),
-    HeadLine = part_head(Part, AltParts, Expanded),
+    HeadLine = part_head(Part, AltParts, Expanded, importance_normal),
     Lines = [HeadLine | wrap_texts(TextLines)],
     Tree = node(PartNodeId, [leaf(Lines)], yes).
 
@@ -972,7 +1015,7 @@ is_quoted_text_or_message_start_2(Line) :-
         Level > 0
     ;
         ( Line = header(no, _, _, _)
-        ; Line = part_head(_, _, _)
+        ; Line = part_head(_, _, _, _)
         ; Line = fold_marker(_, _)
         ; Line = signature(_)
         ; Line = message_separator
@@ -1129,7 +1172,7 @@ line_matches_search(Search, Line) :-
         Line = text(pager_text(_, String, _, _)),
         strcase_str(String, Search)
     ;
-        Line = part_head(Part, _, _),
+        Line = part_head(Part, _, _, _),
         (
             Part ^ pt_type = Type,
             strcase_str(Type, Search)
@@ -1192,16 +1235,19 @@ do_highlight(Highlightable, NumRows, !Info) :-
 :- pred is_highlightable_minor(id_pager_line::in) is semidet.
 
 is_highlightable_minor(_Id - Line) :-
-    ( Line = part_head(_, _, _)
-    ; Line = text(pager_text(_, _, _, url(_, _)))
-    ; Line = fold_marker(_, _)
+    (
+        Line = part_head(_, _, _, importance_normal)
+    ;
+        Line = text(pager_text(_, _, _, url(_, _)))
+    ;
+        Line = fold_marker(_, _)
     ).
 
 :- pred is_highlightable_major(id_pager_line::in) is semidet.
 
 is_highlightable_major(_Id - Line) :-
     ( Line = header(yes(_), _, _, _)
-    ; Line = part_head(_, _, _)
+    ; Line = part_head(_, _, _, _)
     ).
 
 get_highlighted_thing(Info, Thing) :-
@@ -1218,7 +1264,7 @@ get_highlighted_thing(Info, Thing) :-
         MaybeSubject = yes(Subject),
         Thing = highlighted_part(Part, MaybeSubject)
     ;
-        Line = part_head(Part, _, _),
+        Line = part_head(Part, _, _, _),
         MaybeSubject = no,
         Thing = highlighted_part(Part, MaybeSubject)
     ;
@@ -1271,7 +1317,7 @@ toggle_content(ToggleType, NumRows, Cols, MessageUpdate, !Info, !IO) :-
 toggle_line(ToggleType, NumRows, Cols, NodeId - Line, MessageUpdate,
         !Info, !IO) :-
     (
-        Line = part_head(_, _, _),
+        Line = part_head(_, _, _, _),
         toggle_part(ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
             !Info, !IO)
     ;
@@ -1288,7 +1334,7 @@ toggle_line(ToggleType, NumRows, Cols, NodeId - Line, MessageUpdate,
     ).
 
 :- inst part_head
-    --->    part_head(ground, ground, ground).
+    --->    part_head(ground, ground, ground, ground).
 
 :- pred toggle_part(toggle_type::in, int::in, int::in, node_id::in,
     pager_line::in(part_head), message_update::out,
@@ -1296,7 +1342,7 @@ toggle_line(ToggleType, NumRows, Cols, NodeId - Line, MessageUpdate,
 
 toggle_part(ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
         Info0, Info, !IO) :-
-    Line = part_head(Part0, HiddenParts0, Expanded0),
+    Line = part_head(Part0, HiddenParts0, Expanded0, _Importance0),
     (
         ToggleType = cycle_alternatives,
         Expanded0 = part_expanded,
@@ -1324,7 +1370,7 @@ toggle_part(ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
 
 toggle_part_expanded(NumRows, Cols, NodeId, Line0, MessageUpdate, Info0, Info,
         !IO) :-
-    Line0 = part_head(Part, HiddenParts, Expanded0),
+    Line0 = part_head(Part, HiddenParts, Expanded0, Importance),
     (
         Expanded0 = part_expanded,
         Expanded = part_not_expanded,
@@ -1344,7 +1390,7 @@ toggle_part_expanded(NumRows, Cols, NodeId, Line0, MessageUpdate, Info0, Info,
         replace_node(NodeId, NewNode, Tree0, Tree)
     ;
         Expanded = part_not_expanded,
-        Line = part_head(Part, HiddenParts, part_not_expanded),
+        Line = part_head(Part, HiddenParts, part_not_expanded, Importance),
         NewNode = node(NodeId, [leaf([Line])], yes),
         replace_node(NodeId, NewNode, Tree0, Tree),
         Counter = Counter0
@@ -1454,15 +1500,22 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
             draw(Panel, Attr0 + Attr1, Text, UrlEnd, End, !IO)
         )
     ;
-        Line = part_head(Part, HiddenParts, Expanded),
+        Line = part_head(Part, HiddenParts, Expanded, Importance),
         Part = part(_MessageId, _Part, ContentType, _Content,
             MaybeFilename, MaybeEncoding, MaybeLength, _IsDecrypted),
         (
+            Importance = importance_normal,
+            Attr0 = Attrs ^ p_part_head
+        ;
+            Importance = importance_low,
+            Attr0 = Attrs ^ p_part_head_low
+        ),
+        (
             IsCursor = yes,
-            Attr = Attrs ^ p_part_head + reverse
+            Attr = Attr0 + reverse
         ;
             IsCursor = no,
-            Attr = Attrs ^ p_part_head
+            Attr = Attr0
         ),
         draw(Panel, Attr, "[-- ", !IO),
         draw(Panel, ContentType, !IO),
