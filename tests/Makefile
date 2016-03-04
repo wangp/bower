@@ -5,7 +5,6 @@ DIFF = diff -u
 files = $(wildcard *.m ../src/*.m)
 
 TESTS = test_base64 \
-	test_crypto \
 	test_rfc5322 \
 	test_rfc2047_decode \
 	test_rfc2047_encode \
@@ -28,9 +27,6 @@ test_base64.runtest: test_base64
 	./test_base64 -e < test_base64.m | \
 		./test_base64 -d > test_base64.out && \
 		$(DIFF) test_base64.m test_base64.out
-
-.PHONY: test_crypto.runtest
-test_crypto.runtest: test_crypto
 
 .PHONY: %.runtest
 %.runtest: %
