@@ -266,10 +266,23 @@ create_thread_pager(Config, Crypto, Screen, ThreadId, Ordering, MaybeCached,
         ParseResult = ok(MessagesCached)
     ;
         MaybeCached = no,
-        run_notmuch(Config, [
-            "show", "--format=json", "--entire-thread=false",
-            "--", thread_id_to_search_term(ThreadId)
-        ], parse_messages_list, ParseResult, !IO)
+        get_decrypt_by_default(Config, DecryptByDefault),
+        get_verify_by_default(Config, VerifyByDefault),
+        (
+            DecryptByDefault = yes,
+            % Avoid likely error messages about missing keys.
+            RedirectStderr = redirect_stderr("/dev/null")
+        ;
+            DecryptByDefault = no,
+            RedirectStderr = no_redirect
+        ),
+        run_notmuch(Config,
+            [
+                "show", "--format=json", "--entire-thread=false",
+                decrypt_arg(DecryptByDefault),
+                verify_arg(VerifyByDefault),
+                "--", thread_id_to_search_term(ThreadId)
+            ], parse_messages_list, RedirectStderr, ParseResult, !IO)
     ),
     (
         ParseResult = ok(Messages)
@@ -289,6 +302,16 @@ create_thread_pager(Config, Crypto, Screen, ThreadId, Ordering, MaybeCached,
         ParseResult = error(Error),
         ResCount = error("Error parsing notmuch response: " ++ Error)
     ).
+
+:- func decrypt_arg(bool) = string.
+
+decrypt_arg(yes) = "--decrypt".
+decrypt_arg(no) = "--decrypt=false".
+
+:- func verify_arg(bool) = string.
+
+verify_arg(yes) = "--verify".
+verify_arg(no) = "--verify=false".
 
 :- pred setup_thread_pager(prog_config::in, crypto::in, thread_id::in,
     ordering::in, tm::in, int::in, int::in, list(message)::in,
@@ -1823,11 +1846,6 @@ do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName, Res, !IO)
         CallRes = error(Error),
         Res = error(io.error_message(Error))
     ).
-
-:- func decrypt_arg(bool) = string.
-
-decrypt_arg(yes) = "--decrypt".
-decrypt_arg(no) = "--decrypt=false".
 
 %-----------------------------------------------------------------------------%
 

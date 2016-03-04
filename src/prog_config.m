@@ -4,6 +4,7 @@
 :- module prog_config.
 :- interface.
 
+:- import_module bool.
 :- import_module io.
 :- import_module list.
 :- import_module maybe.
@@ -52,6 +53,14 @@
 
 :- pred get_poll_period_secs(prog_config::in, maybe(int)::out) is det.
 
+:- pred get_encrypt_by_default(prog_config::in, bool::out) is det.
+
+:- pred get_sign_by_default(prog_config::in, bool::out) is det.
+
+:- pred get_decrypt_by_default(prog_config::in, bool::out) is det.
+
+:- pred get_verify_by_default(prog_config::in, bool::out) is det.
+
 :- pred get_all_accounts(prog_config::in, list(account)::out) is det.
 
 :- pred get_default_account(prog_config::in, maybe(account)::out) is det.
@@ -90,7 +99,6 @@
 
 :- implementation.
 
-:- import_module bool.
 :- import_module int.
 :- import_module map.
 :- import_module parsing_utils.
@@ -112,6 +120,10 @@
                 open_url        :: string, % not shell-quoted
                 poll_notify     :: maybe(command_prefix),
                 poll_period_secs :: maybe(int),
+                encrypt_by_default :: bool,
+                sign_by_default :: bool,
+                decrypt_by_default :: bool,
+                verify_by_default :: bool,
                 accounts        :: list(account),
                 default_account :: maybe(account),
                 colors          :: colors
@@ -234,6 +246,51 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
         PollPeriodSecs = default_poll_period_secs
     ),
 
+    ( search_config(Config, "crypto", "encrypt_by_default", Encrypt0) ->
+        ( to_bool(Encrypt0, Encrypt1) ->
+            EncryptByDefault = Encrypt1
+        ;
+            cons("encrypt_by_default invalid: " ++ Encrypt0, !Errors),
+            EncryptByDefault = no
+        )
+    ;
+        EncryptByDefault = no
+    ),
+
+    ( search_config(Config, "crypto", "sign_by_default", Sign0) ->
+        ( to_bool(Sign0, Sign1) ->
+            SignByDefault = Sign1
+        ;
+            cons("sign_by_default invalid: " ++ Sign0, !Errors),
+            SignByDefault = no
+        )
+    ;
+        SignByDefault = no
+    ),
+
+    ( search_config(Config, "crypto", "decrypt_by_default", Decrypt0) ->
+        ( to_bool(Decrypt0, Decrypt1) ->
+            DecryptByDefault = Decrypt1
+        ;
+            cons("decrypt_by_default invalid: " ++ Decrypt0, !Errors),
+            DecryptByDefault = no
+        )
+    ;
+        DecryptByDefault = no
+    ),
+
+    ( search_config(Config, "crypto", "verify_by_default", Verify0) ->
+        ( to_bool(Verify0, Verify1) ->
+            VerifyByDefault = Verify1
+        ;
+            Error = "verify_by_default invalid: " ++ Verify0,
+            cons(Error, !Errors),
+            VerifyByDefault = no
+        )
+    ;
+        VerifyByDefault = no
+    ),
+
     parse_accounts(Config, Accounts0, AccountErrors),
     (
         AccountErrors = [],
@@ -256,6 +313,10 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
     ProgConfig ^ open_url = OpenUrl,
     ProgConfig ^ poll_notify = PollNotify,
     ProgConfig ^ poll_period_secs = PollPeriodSecs,
+    ProgConfig ^ encrypt_by_default = EncryptByDefault,
+    ProgConfig ^ sign_by_default = SignByDefault,
+    ProgConfig ^ decrypt_by_default = DecryptByDefault,
+    ProgConfig ^ verify_by_default = VerifyByDefault,
     ProgConfig ^ accounts = Accounts,
     ProgConfig ^ default_account = DefaultAccount,
     ProgConfig ^ colors = Colors.
@@ -563,6 +624,18 @@ get_poll_notify_command(Config, Command) :-
 
 get_poll_period_secs(Config, PollPeriodSecs) :-
     PollPeriodSecs = Config ^ poll_period_secs.
+
+get_encrypt_by_default(Config, EncryptByDefault) :-
+    EncryptByDefault = Config ^ encrypt_by_default.
+
+get_sign_by_default(Config, SignByDefault) :-
+    SignByDefault = Config ^ sign_by_default.
+
+get_decrypt_by_default(Config, DecryptByDefault) :-
+    DecryptByDefault = Config ^ decrypt_by_default.
+
+get_verify_by_default(Config, VerifyByDefault) :-
+    VerifyByDefault = Config ^ verify_by_default.
 
 %-----------------------------------------------------------------------------%
 

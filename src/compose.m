@@ -222,9 +222,8 @@ start_compose_3(Config, Crypto, Screen, !.Headers, Body, Transition, !IO) :-
     !Headers ^ h_from := header_value(From),
     Attachments = [],
     MaybeOldDraft = no,
-    EncryptInit = no,
     create_edit_stage(Config, Crypto, Screen, !.Headers, Body, Attachments,
-        MaybeOldDraft, EncryptInit, Transition, !IO).
+        MaybeOldDraft, no, Transition, !IO).
 
 %-----------------------------------------------------------------------------%
 
@@ -283,9 +282,9 @@ expand_aliases(Config, QuoteOpt, Input, Output, !IO) :-
 start_reply(Config, Crypto, Screen, Message, ReplyKind, Transition, !IO) :-
     get_notmuch_command(Config, Notmuch),
     Message ^ m_id = MessageId,
-    HasEncrypted = contains_encrypted_tag(Message ^ m_tags),
+    WasEncrypted = contains_encrypted_tag(Message ^ m_tags),
     make_quoted_command(Notmuch, [
-        "reply", reply_to_arg(ReplyKind), decrypt_arg(HasEncrypted),
+        "reply", reply_to_arg(ReplyKind), decrypt_arg(WasEncrypted),
         "--", message_id_to_search_term(MessageId)
     ], redirect_input("/dev/null"), no_redirect, Command),
     call_system_capture_stdout(Command, no, CommandResult, !IO),
@@ -306,7 +305,7 @@ start_reply(Config, Crypto, Screen, Message, ReplyKind, Transition, !IO) :-
         Attachments = [],
         MaybeOldDraft = no,
         create_edit_stage(Config, Crypto, Screen, Headers, Text, Attachments,
-            MaybeOldDraft, HasEncrypted, Transition, !IO)
+            MaybeOldDraft, WasEncrypted, Transition, !IO)
     ;
         CommandResult = error(Error),
         string.append_list(["Error running notmuch: ",
@@ -419,14 +418,14 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message, Transition,
     Body0 = Message ^ m_body,
     first_text_part(Body0, Text, AttachmentParts),
     list.map(to_old_attachment, AttachmentParts, Attachments),
-    HasEncrypted = contains_encrypted_tag(Tags0),
+    WasEncrypted = contains_encrypted_tag(Tags0),
 
     % XXX notmuch show --format=json does not return References and In-Reply-To
     % so we parse them from the raw output.
     % XXX decryption is not yet supported for --format=raw
     get_notmuch_command(Config, Notmuch),
     make_quoted_command(Notmuch, [
-        "show", "--format=raw", decrypt_arg(HasEncrypted),
+        "show", "--format=raw", decrypt_arg(WasEncrypted),
         "--", message_id_to_search_term(MessageId)
     ], redirect_input("/dev/null"), no_redirect, Command),
     call_system_capture_stdout(Command, no, CallRes, !IO),
@@ -448,7 +447,7 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message, Transition,
             MaybeOldDraft = no
         ),
         create_edit_stage(Config, Crypto, Screen, Headers, Text, Attachments,
-            MaybeOldDraft, HasEncrypted, Transition, !IO)
+            MaybeOldDraft, WasEncrypted, Transition, !IO)
     ;
         CallRes = error(Error),
         string.append_list(["Error running notmuch: ",
@@ -487,8 +486,12 @@ to_old_attachment(Part, old_attachment(Part)).
     screen_transition(sent)::out, io::di, io::uo) is det.
 
 create_edit_stage(Config, Crypto, Screen, Headers0, Text0, Attachments,
-        MaybeOldDraft, EncryptInit, Transition, !IO) :-
-    CryptoInfo0 = init_crypto_info(Crypto, EncryptInit),
+        MaybeOldDraft, WasEncrypted, Transition, !IO) :-
+    get_encrypt_by_default(Config, EncryptByDefault),
+    get_encrypt_by_default(Config, SignByDefault),
+    CryptoInfo0 = init_crypto_info(Crypto,
+        EncryptByDefault `or` WasEncrypted,
+        SignByDefault),
     create_edit_stage_2(Config, Screen, Headers0, Text0, Attachments,
         MaybeOldDraft, Transition, CryptoInfo0, CryptoInfo, !IO),
     unref_keys(CryptoInfo, !IO).

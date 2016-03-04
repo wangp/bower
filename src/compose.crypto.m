@@ -18,7 +18,7 @@
 :- type key_userid
     --->    key_userid(gpgme.key, gpgme.user_id).
 
-:- func init_crypto_info(crypto, bool) = crypto_info.
+:- func init_crypto_info(crypto, bool, bool) = crypto_info.
 
 :- pred unref_keys(crypto_info::in, io::di, io::uo) is det.
 
@@ -59,8 +59,8 @@
 
 %-----------------------------------------------------------------------------%
 
-init_crypto_info(Crypto, EncryptInit) =
-    crypto_info(Crypto, EncryptInit, map.init, no, map.init).
+init_crypto_info(Crypto, EncryptInit, SignInit) =
+    crypto_info(Crypto, EncryptInit, map.init, SignInit, map.init).
 
 %-----------------------------------------------------------------------------%
 

@@ -107,6 +107,26 @@
 
 #-----------------------------------------------------------------------------#
 
+[crypto]
+
+    # Enable encryption by default when composing messages.
+    #
+  ; encrypt_by_default = false
+
+    # Enable signing by default when composing messages.
+    #
+  ; sign_by_default = false
+
+    # Attempt to decrypt messages when a thread is opened.
+    #
+  ; decrypt_by_default = false
+
+    # Attempt to verify signatures when a thread is opened.
+    #
+  ; verify_by_default = false
+
+#-----------------------------------------------------------------------------#
+
 # Colours are defined in the [color] and [color.CONTEXT] sections.
 # The more-specific sections override keys in the generic section.
 #
