@@ -602,6 +602,7 @@ enter_staging(Config, Screen, Headers0, Text, Attachments, MaybeOldDraft,
     parse_and_expand_headers(Config, Headers0, Headers, Parsed, !IO),
     get_some_matching_account(Config, Parsed ^ ph_from, MaybeAccount),
     maintain_encrypt_keys(Parsed, !CryptoInfo, !IO),
+    maintain_sign_keys(Parsed, !CryptoInfo, !IO),
 
     StagingInfo = staging_info(Config, MaybeAccount, Headers, Parsed, Text,
         MaybeOldDraft, init_history),
