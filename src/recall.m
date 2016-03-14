@@ -23,6 +23,7 @@
 :- import_module int.
 :- import_module list.
 :- import_module require.
+:- import_module set.
 :- import_module time.
 
 :- import_module callout.
@@ -48,7 +49,8 @@
                 r_message       :: message,
                 r_reldate       :: string,
                 r_to            :: header_value,
-                r_subject       :: header_value
+                r_subject       :: header_value,
+                r_tags          :: set(tag)
             ).
 
 %-----------------------------------------------------------------------------%
@@ -90,13 +92,13 @@ make_recall_line(Config, Nowish, MessageId, MaybeLine, !IO) :-
     (
         Result = ok(Message),
         (
-            Message = message(_Id, Timestamp, Headers, _Tags, _Body, _Replies),
+            Message = message(_Id, Timestamp, Headers, Tags, _Body, _Replies),
             To = Headers ^ h_to,
             Subject = Headers ^ h_subject,
             timestamp_to_tm(Timestamp, TM),
             Shorter = no,
             make_reldate(Nowish, TM, Shorter, RelDate),
-            Line = recall_line(Message, RelDate, To, Subject),
+            Line = recall_line(Message, RelDate, To, Subject, Tags),
             MaybeLine = yes(Line)
         ;
             Message = excluded_message(_Replies),
@@ -229,7 +231,7 @@ draw_recall(Screen, Info, !IO) :-
     int::in, bool::in, io::di, io::uo) is det.
 
 draw_recall_line(Attrs, Panel, Line, _LineNr, IsCursor, !IO) :-
-    Line = recall_line(_FileName, RelDate, To, Subject),
+    Line = recall_line(_FileName, RelDate, To, Subject, Tags),
     (
         IsCursor = yes,
         RelDateAttr = Attrs ^ current
@@ -246,7 +248,22 @@ draw_recall_line(Attrs, Panel, Line, _LineNr, IsCursor, !IO) :-
         25, header_value_string(To), ' ', !IO),
     mattr_draw(Panel, unless(IsCursor, NameAttr), " Subject: ", !IO),
     mattr_draw(Panel, unless(IsCursor, BodyAttr), header_value_string(Subject),
-        !IO).
+        !IO),
+    attr_set(Panel, Attrs ^ other_tag, !IO),
+    set.fold(draw_display_tag(Panel), Tags, !IO).
+
+:- pred draw_display_tag(panel::in, tag::in, io::di, io::uo) is det.
+
+draw_display_tag(Panel, Tag, !IO) :-
+    (
+        Tag \= draft_tag,
+        display_tag(Tag)
+    ->
+        Tag = tag(TagName),
+        draw2(Panel, " ", TagName, !IO)
+    ;
+        true
+    ).
 
 :- func unless(bool, attr) = maybe(attr).
 

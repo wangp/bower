@@ -17,8 +17,8 @@
 :- pred add_sent(prog_config::in, string::in, maybe_error::out,
     io::di, io::uo) is det.
 
-:- pred add_draft(prog_config::in, string::in, maybe_error::out,
-    io::di, io::uo) is det.
+:- pred add_draft(prog_config::in, string::in, list(tag_delta)::in,
+    maybe_error::out, io::di, io::uo) is det.
 
 :- pred find_drafts(prog_config::in, maybe(thread_id)::in,
     list(message_id)::out, io::di, io::uo) is det.
@@ -52,9 +52,9 @@ add_sent(Config, FileName, Res, !IO) :-
         SentFolder = default_sent_folder
     ),
     call_notmuch_insert(Config, FileName, SentFolder,
-        ["+sent", "-unread"], Res, !IO).
+        [tag_delta("+sent"), tag_delta("-unread")], Res, !IO).
 
-add_draft(Config, FileName, Res, !IO) :-
+add_draft(Config, FileName, TagDeltas0, Res, !IO) :-
     get_notmuch_config(Config, "bower:maildir.drafts_folder", ConfigRes, !IO),
     (
         ConfigRes = ok(DraftsFolder)
@@ -62,14 +62,19 @@ add_draft(Config, FileName, Res, !IO) :-
         ConfigRes = error(_),
         DraftsFolder = default_drafts_folder
     ),
-    call_notmuch_insert(Config, FileName, DraftsFolder,
-        ["+draft", "-inbox", "-unread"], Res, !IO).
+    TagDeltas = TagDeltas0 ++ [
+        tag_delta("+draft"),
+        tag_delta("-inbox"),
+        tag_delta("-unread")
+    ],
+    call_notmuch_insert(Config, FileName, DraftsFolder, TagDeltas, Res, !IO).
 
 :- pred call_notmuch_insert(prog_config::in, string::in, string::in,
-    list(string)::in, maybe_error::out, io::di, io::uo) is det.
+    list(tag_delta)::in, maybe_error::out, io::di, io::uo) is det.
 
-call_notmuch_insert(Config, FileName, Folder, TagOps, Res, !IO) :-
+call_notmuch_insert(Config, FileName, Folder, TagDeltas, Res, !IO) :-
     get_notmuch_command(Config, Notmuch),
+    TagOps = map(tag_delta_to_string, TagDeltas),
     make_quoted_command(Notmuch,
         ["insert", "--folder=" ++ Folder, "--create-folder" | TagOps],
         redirect_input(FileName), no_redirect, Command),

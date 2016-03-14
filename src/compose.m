@@ -223,7 +223,7 @@ start_compose_3(Config, Crypto, Screen, !.Headers, Body, Transition, !IO) :-
     Attachments = [],
     MaybeOldDraft = no,
     create_edit_stage(Config, Crypto, Screen, !.Headers, Body, Attachments,
-        MaybeOldDraft, no, Transition, !IO).
+        MaybeOldDraft, no, no, Transition, !IO).
 
 %-----------------------------------------------------------------------------%
 
@@ -282,7 +282,7 @@ expand_aliases(Config, QuoteOpt, Input, Output, !IO) :-
 start_reply(Config, Crypto, Screen, Message, ReplyKind, Transition, !IO) :-
     get_notmuch_command(Config, Notmuch),
     Message ^ m_id = MessageId,
-    WasEncrypted = contains_encrypted_tag(Message ^ m_tags),
+    WasEncrypted = contains(Message ^ m_tags, encrypted_tag),
     make_quoted_command(Notmuch, [
         "reply", reply_to_arg(ReplyKind), decrypt_arg(WasEncrypted),
         "--", message_id_to_search_term(MessageId)
@@ -304,8 +304,9 @@ start_reply(Config, Crypto, Screen, Message, ReplyKind, Transition, !IO) :-
         ),
         Attachments = [],
         MaybeOldDraft = no,
+        SignInit = no,
         create_edit_stage(Config, Crypto, Screen, Headers, Text, Attachments,
-            MaybeOldDraft, WasEncrypted, Transition, !IO)
+            MaybeOldDraft, WasEncrypted, SignInit, Transition, !IO)
     ;
         CommandResult = error(Error),
         string.append_list(["Error running notmuch: ",
@@ -379,10 +380,9 @@ set_headers_for_list_reply(OrigFrom, !Headers) :-
 similar_mailbox(AddrSpec, OtherAddress) :-
     OtherAddress = mailbox(mailbox(_DisplayName, AddrSpec)).
 
-:- func contains_encrypted_tag(set(tag)) = bool.
+:- func contains(set(T), T) = bool.
 
-contains_encrypted_tag(Tags) =
-    pred_to_bool(contains(Tags, tag("encrypted"))).
+contains(Set, X) = pred_to_bool(contains(Set, X)).
 
 %-----------------------------------------------------------------------------%
 
@@ -418,7 +418,8 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message, Transition,
     Body0 = Message ^ m_body,
     first_text_part(Body0, Text, AttachmentParts),
     list.map(to_old_attachment, AttachmentParts, Attachments),
-    WasEncrypted = contains_encrypted_tag(Tags0),
+    WasEncrypted = contains(Tags0, encrypted_tag),
+    DraftSign = contains(Tags0, draft_sign_tag),
 
     % XXX notmuch show --format=json does not return References and In-Reply-To
     % so we parse them from the raw output.
@@ -447,7 +448,7 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message, Transition,
             MaybeOldDraft = no
         ),
         create_edit_stage(Config, Crypto, Screen, Headers, Text, Attachments,
-            MaybeOldDraft, WasEncrypted, Transition, !IO)
+            MaybeOldDraft, WasEncrypted, DraftSign, Transition, !IO)
     ;
         CallRes = error(Error),
         string.append_list(["Error running notmuch: ",
@@ -483,15 +484,15 @@ to_old_attachment(Part, old_attachment(Part)).
 
 :- pred create_edit_stage(prog_config::in, crypto::in, screen::in, headers::in,
     string::in, list(attachment)::in, maybe(message_id)::in, bool::in,
-    screen_transition(sent)::out, io::di, io::uo) is det.
+    bool::in, screen_transition(sent)::out, io::di, io::uo) is det.
 
 create_edit_stage(Config, Crypto, Screen, Headers0, Text0, Attachments,
-        MaybeOldDraft, WasEncrypted, Transition, !IO) :-
+        MaybeOldDraft, EncryptInit, SignInit, Transition, !IO) :-
     get_encrypt_by_default(Config, EncryptByDefault),
     get_encrypt_by_default(Config, SignByDefault),
     CryptoInfo0 = init_crypto_info(Crypto,
-        EncryptByDefault `or` WasEncrypted,
-        SignByDefault),
+        EncryptByDefault `or` EncryptInit,
+        SignByDefault `or` SignInit),
     create_edit_stage_2(Config, Screen, Headers0, Text0, Attachments,
         MaybeOldDraft, Transition, CryptoInfo0, CryptoInfo, !IO),
     unref_keys(CryptoInfo, !IO).
@@ -1664,15 +1665,13 @@ draw_staging_bar(Attrs, Screen, StagingInfo, !IO) :-
 
 postpone(Config, Screen, Headers, ParsedHeaders, Text, Attachments, CryptoInfo,
         Res, MessageUpdate, !IO) :-
-    CryptoInfo = crypto_info(_, Encrypt, _, Sign, _),
+    CryptoInfo = crypto_info(_, Encrypt, _, _Sign, _),
     (
-        ( Encrypt = yes
-        ; Sign = yes
-        )
-    ->
+        Encrypt = yes,
         Res = no,
-        MessageUpdate = set_warning("Cannot postpone messages with crypto.")
+        MessageUpdate = set_warning("Cannot postpone message with encryption.")
     ;
+        Encrypt = no,
         postpone_2(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
             CryptoInfo, Res, MessageUpdate, !IO)
     ).
@@ -1699,7 +1698,15 @@ postpone_2(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
             Confirmation = yes,
             update_message_immed(Screen, set_info("Postponing message..."),
                 !IO),
-            add_draft(Config, Filename, DraftRes, !IO),
+            Sign = CryptoInfo ^ ci_sign,
+            (
+                Sign = yes,
+                ExtraTagDeltas = [tag_delta("+draft-sign")]
+            ;
+                Sign = no,
+                ExtraTagDeltas = []
+            ),
+            add_draft(Config, Filename, ExtraTagDeltas, DraftRes, !IO),
             (
                 DraftRes = ok,
                 MessageUpdate = set_info("Message postponed."),
@@ -1900,11 +1907,15 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
         write_temp_message_file(Config, Prepare, Spec, Res, !IO),
         Warnings = []
     ;
-        ( Prepare = prepare_send
-        ; Prepare = prepare_postpone
+        (
+            Prepare = prepare_send,
+            Encrypt = CryptoInfo ^ ci_encrypt,
+            Sign = CryptoInfo ^ ci_sign
+        ;
+            Prepare = prepare_postpone,
+            Encrypt = no,
+            Sign = no
         ),
-        Encrypt = CryptoInfo ^ ci_encrypt,
-        Sign = CryptoInfo ^ ci_sign,
         (
             Encrypt = no,
             Sign = no,

@@ -42,6 +42,11 @@
 
 :- func tag_delta_to_string(tag_delta) = string.
 
+    % There should be more of these instead of bare strings.
+:- func draft_tag = tag.
+:- func draft_sign_tag = tag.
+:- func encrypted_tag = tag.
+
 :- pred display_tag(tag::in) is semidet.
 
 :- pred get_standard_tags(set(tag)::in, standard_tags::out, int::out) is det.
@@ -65,6 +70,12 @@
 %-----------------------------------------------------------------------------%
 
 tag_delta_to_string(tag_delta(String)) = String.
+
+%-----------------------------------------------------------------------------%
+
+draft_tag = tag("draft").
+draft_sign_tag = tag("draft-sign").
+encrypted_tag = tag("encrypted").
 
 %-----------------------------------------------------------------------------%
 
