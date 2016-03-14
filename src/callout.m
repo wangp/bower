@@ -37,6 +37,8 @@
 
 :- pred parse_top_message(json::in, message::out) is det.
 
+:- pred parse_message_for_recall(json::in, message_for_recall::out) is det.
+
 :- pred parse_part(message_id::in, bool::in, json::in, part::out) is det.
 
 :- pred parse_threads_list(json::in, list(thread)::out) is det.
@@ -168,9 +170,16 @@ parse_message(JSON, Messages) :-
         notmuch_json_error
     ).
 
-:- pred parse_message_details(json::in, list(message)::in, message::out) is det.
+:- pred parse_message_details(json::in, list(message)::in, message::out)
+    is det.
 
 parse_message_details(JSON, Replies, Message) :-
+    parse_message_for_recall(JSON, Message0),
+    Message0 = message_for_recall(MessageId, Timestamp, Headers, TagSet),
+    parse_body(JSON, MessageId, Body),
+    Message = message(MessageId, Timestamp, Headers, TagSet, Body, Replies).
+
+parse_message_for_recall(JSON, Message) :-
     (
         JSON/"id" = unesc_string(Id),
         MessageId = message_id(Id),
@@ -178,13 +187,10 @@ parse_message_details(JSON, Replies, Message) :-
         JSON/"headers" = map(HeaderMap),
         map.foldl(parse_header, HeaderMap, init_headers, Headers),
         JSON/"tags" = list(TagsList),
-        list.map(parse_tag, TagsList, Tags),
-        JSON/"body" = list(BodyList),
-        IsDecrypted = no,
-        list.map(parse_part(MessageId, IsDecrypted), BodyList, Body)
+        list.map(parse_tag, TagsList, Tags)
     ->
         TagSet = set.from_list(Tags),
-        Message = message(MessageId, Timestamp, Headers, TagSet, Body, Replies)
+        Message = message_for_recall(MessageId, Timestamp, Headers, TagSet)
     ;
         notmuch_json_error
     ).
@@ -216,6 +222,16 @@ parse_header(Key, unesc_string(Value), !Headers) :-
         Rest0 = !.Headers ^ h_rest,
         map.insert(Key, header_value(Value), Rest0, Rest),
         !Headers ^ h_rest := Rest
+    ).
+
+:- pred parse_body(json::in, message_id::in, list(part)::out) is det.
+
+parse_body(JSON, MessageId, Body) :-
+    ( JSON/"body" = list(BodyList) ->
+        IsDecrypted = no,
+        list.map(parse_part(MessageId, IsDecrypted), BodyList, Body)
+    ;
+        notmuch_json_error
     ).
 
 parse_part(MessageId, IsDecrypted0, JSON, Part) :-

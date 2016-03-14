@@ -43,6 +43,14 @@
 :- inst message
     --->    message(ground, ground, ground, ground, ground, ground).
 
+:- type message_for_recall
+    --->    message_for_recall(
+                mr_id           :: message_id,
+                mr_timestamp    :: int,
+                mr_headers      :: headers,
+                mr_tags         :: set(tag)
+            ).
+
 :- type message_id
     --->    message_id(string).
 

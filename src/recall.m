@@ -46,7 +46,7 @@
 
 :- type recall_line
     --->    recall_line(
-                r_message       :: message,
+                r_message       :: message_for_recall,
                 r_reldate       :: string,
                 r_to            :: header_value,
                 r_subject       :: header_value,
@@ -86,24 +86,19 @@ select_recall(Config, Screen, MaybeThreadId, Transition, !IO) :-
 
 make_recall_line(Config, Nowish, MessageId, MaybeLine, !IO) :-
     run_notmuch(Config, [
-        "show", "--format=json", "--part=0", "--",
+        "show", "--format=json", "--part=0", "--body=false", "--",
         message_id_to_search_term(MessageId)
-    ], parse_top_message, Result, !IO),
+    ], parse_message_for_recall, Result, !IO),
     (
         Result = ok(Message),
-        (
-            Message = message(_Id, Timestamp, Headers, Tags, _Body, _Replies),
-            To = Headers ^ h_to,
-            Subject = Headers ^ h_subject,
-            timestamp_to_tm(Timestamp, TM),
-            Shorter = no,
-            make_reldate(Nowish, TM, Shorter, RelDate),
-            Line = recall_line(Message, RelDate, To, Subject, Tags),
-            MaybeLine = yes(Line)
-        ;
-            Message = excluded_message(_Replies),
-            MaybeLine = no
-        )
+        Message = message_for_recall(_Id, Timestamp, Headers, Tags),
+        To = Headers ^ h_to,
+        Subject = Headers ^ h_subject,
+        timestamp_to_tm(Timestamp, TM),
+        Shorter = no,
+        make_reldate(Nowish, TM, Shorter, RelDate),
+        Line = recall_line(Message, RelDate, To, Subject, Tags),
+        MaybeLine = yes(Line)
     ;
         Result = error(Error),
         unexpected($module, $pred, Error)
@@ -141,7 +136,7 @@ recall_screen_loop(Screen, MaybeSelected, !Info, !IO) :-
     ;
         KeyCode = char('\r')
     ->
-        enter(!.Info, MaybeSelected)
+        enter(!.Info, MaybeSelected, !IO)
     ;
         KeyCode = char('d')
     ->
@@ -182,13 +177,33 @@ move_cursor(Screen, Delta, !Info, !IO) :-
     ),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred enter(recall_info::in, maybe(message)::out) is det.
+:- pred enter(recall_info::in, maybe(message)::out, io::di, io::uo) is det.
 
-enter(Info, MaybeSelected) :-
+enter(Info, MaybeSelected, !IO) :-
     Scrollable = Info ^ r_scrollable,
-    ( get_cursor_line(Scrollable, _, CursorLine) ->
-        Message = CursorLine ^ r_message,
-        MaybeSelected = yes(Message)
+    (
+        get_cursor_line(Scrollable, _, CursorLine),
+        Message0 = CursorLine ^ r_message,
+        Message0 = message_for_recall(MessageId, _, _, _)
+    ->
+        Info = recall_info(Config, _Scrollable0),
+        run_notmuch(Config, [
+            "show", "--format=json", "--part=0", "--",
+            message_id_to_search_term(MessageId)
+        ], parse_top_message, Result, !IO),
+        (
+            Result = ok(Message),
+            (
+                Message = message(_, _, _, _, _, _),
+                MaybeSelected = yes(Message)
+            ;
+                Message = excluded_message(_Replies),
+                MaybeSelected = no
+            )
+        ;
+            Result = error(Error),
+            unexpected($module, $pred, Error)
+        )
     ;
         MaybeSelected = no
     ).
@@ -200,9 +215,10 @@ delete_draft(Screen, !Info, !IO) :-
     !.Info = recall_info(Config, Scrollable0),
     (
         get_cursor_line(Scrollable0, _, CursorLine0),
-        delete_cursor_line(Scrollable0, Scrollable),
-        MessageId = CursorLine0 ^ r_message ^ m_id
+        delete_cursor_line(Scrollable0, Scrollable)
     ->
+        Message = CursorLine0 ^ r_message,
+        Message = message_for_recall(MessageId, _, _, _),
         tag_messages(Config, [tag_delta("+deleted")], [MessageId], Res, !IO),
         (
             Res = ok,
