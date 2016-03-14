@@ -28,8 +28,13 @@
 :- pred maintain_sign_keys(parsed_headers::in,
     crypto_info::in, crypto_info::out, io::di, io::uo) is det.
 
+:- type encrypt_for_whom
+    --->    from_only
+    ;       from_and_recipients.
+
 :- pred get_encrypt_keys(crypto_info::in, parsed_headers::in,
-    list(gpgme.key)::out, list(addr_spec)::out) is det.
+    encrypt_for_whom::in, list(gpgme.key)::out, list(addr_spec)::out)
+    is det.
 
 :- pred get_sign_keys(crypto_info::in, parsed_headers::in,
     list(gpgme.key)::out) is det.
@@ -229,10 +234,17 @@ suitable_user_id(Email, UserId) :-
 
 %-----------------------------------------------------------------------------%
 
-get_encrypt_keys(CryptoInfo, ParsedHeaders, SelectedKeys, Missing) :-
+get_encrypt_keys(CryptoInfo, ParsedHeaders, EncryptForWhom, SelectedKeys,
+        Missing) :-
     EncryptKeys = CryptoInfo ^ ci_encrypt_keys,
     ParsedHeaders = parsed_headers(From, To, Cc, Bcc, _ReplyTo),
-    Addresses = From ++ To ++ Cc ++ Bcc,
+    (
+        EncryptForWhom = from_only,
+        Addresses = From
+    ;
+        EncryptForWhom = from_and_recipients,
+        Addresses = From ++ To ++ Cc ++ Bcc
+    ),
     solutions(addr_specs(Addresses), AddrSpecs),
     list.foldl2(get_key(EncryptKeys), AddrSpecs,
         [], RevSelectedKeys, [], RevMissing),

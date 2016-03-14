@@ -188,8 +188,8 @@ enter(Info, MaybeSelected, !IO) :-
     ->
         Info = recall_info(Config, _Scrollable0),
         run_notmuch(Config, [
-            "show", "--format=json", "--part=0", "--",
-            message_id_to_search_term(MessageId)
+            "show", "--format=json", "--part=0", "--decrypt",
+            "--", message_id_to_search_term(MessageId)
         ], parse_top_message, Result, !IO),
         (
             Result = ok(Message),

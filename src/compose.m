@@ -66,6 +66,7 @@
 :- import_module random.
 :- import_module require.
 :- import_module set.
+:- import_module std_util.
 :- import_module string.
 :- import_module time.
 
@@ -466,8 +467,19 @@ first_text_part([Part | Parts], Text, AttachmentParts) :-
         PartContent = text(Text),
         AttachmentParts = Parts
     ;
-        PartContent = subparts(_Encryption, _Signatures, SubParts),
-        first_text_part(SubParts, Text, AttachmentParts)
+        PartContent = subparts(Encryption, _Signatures, SubParts),
+        (
+            ( Encryption = not_encrypted
+            ; Encryption = encrypted
+            ; Encryption = decryption_bad
+            ),
+            first_text_part(SubParts, Text, AttachmentParts)
+        ;
+            Encryption = decryption_good,
+            filter(isnt(is_appplication_pgp_encrypted),
+                SubParts, OtherSubParts),
+            first_text_part(OtherSubParts, Text, AttachmentParts)
+        )
     ;
         ( PartContent = encapsulated_messages(_)
         ; PartContent = unsupported
@@ -1665,23 +1677,6 @@ draw_staging_bar(Attrs, Screen, StagingInfo, !IO) :-
 
 postpone(Config, Screen, Headers, ParsedHeaders, Text, Attachments, CryptoInfo,
         Res, MessageUpdate, !IO) :-
-    CryptoInfo = crypto_info(_, Encrypt, _, _Sign, _),
-    (
-        Encrypt = yes,
-        Res = no,
-        MessageUpdate = set_warning("Cannot postpone message with encryption.")
-    ;
-        Encrypt = no,
-        postpone_2(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
-            CryptoInfo, Res, MessageUpdate, !IO)
-    ).
-
-:- pred postpone_2(prog_config::in, screen::in, headers::in, parsed_headers::in,
-    string::in, list(attachment)::in, crypto_info::in, bool::out,
-    message_update::out, io::di, io::uo) is det.
-
-postpone_2(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
-        CryptoInfo, Res, MessageUpdate, !IO) :-
     create_temp_message_file(Config, prepare_postpone, Headers, ParsedHeaders,
         Text, Attachments, CryptoInfo, ResFilename, Warnings, !IO),
     (
@@ -1909,12 +1904,14 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
     ;
         (
             Prepare = prepare_send,
+            Sign = CryptoInfo ^ ci_sign,
             Encrypt = CryptoInfo ^ ci_encrypt,
-            Sign = CryptoInfo ^ ci_sign
+            EncryptForWhom = from_and_recipients
         ;
             Prepare = prepare_postpone,
-            Encrypt = no,
-            Sign = no
+            Sign = no,
+            Encrypt = CryptoInfo ^ ci_encrypt,
+            EncryptForWhom = from_only
         ),
         (
             Encrypt = no,
@@ -1940,7 +1937,8 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
                 % canonicalization rules as multipart/signed objects."
                 TextCTE = cte_base64
             ),
-            get_encrypt_keys(CryptoInfo, ParsedHeaders, EncryptKeys, Missing),
+            get_encrypt_keys(CryptoInfo, ParsedHeaders, EncryptForWhom,
+                EncryptKeys, Missing),
             ( MaybeSigners = yes([]) ->
                 Res = error("No signing keys available."),
                 Warnings = []
