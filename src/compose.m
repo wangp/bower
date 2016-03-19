@@ -1747,16 +1747,9 @@ send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text, Attachments,
         Text, Attachments, CryptoInfo, ResFilename, Warnings, !IO),
     (
         ResFilename = ok(Filename),
+        prompt_confirm_warnings(Screen, Warnings, ConfirmAll, !IO),
         (
-            Warnings = [],
-            Confirmation = yes
-        ;
-            Warnings = [_ | _],
-            Prompt = string.join_list(" ", Warnings) ++ " Continue? (Y/n)",
-            prompt_confirm(Screen, Prompt, Confirmation, !IO)
-        ),
-        (
-            Confirmation = yes,
+            ConfirmAll = yes,
             update_message_immed(Screen, set_info("Sending message..."), !IO),
             call_send_mail(Config, Account, Filename, SendRes, !IO),
             (
@@ -1769,7 +1762,7 @@ send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text, Attachments,
                 Res = not_sent
             )
         ;
-            Confirmation = no,
+            ConfirmAll = no,
             MessageUpdate = set_info("Message not sent."),
             Res = not_sent
         ),
@@ -1778,6 +1771,26 @@ send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text, Attachments,
         ResFilename = error(Error),
         MessageUpdate = set_warning(Error),
         Res = not_sent
+    ).
+
+:- pred prompt_confirm_warnings(screen::in, list(string)::in, bool::out,
+    io::di, io::uo) is det.
+
+prompt_confirm_warnings(Screen, Warnings, Res, !IO) :-
+    (
+        Warnings = [],
+        Res = yes
+    ;
+        Warnings = [Warning | MoreWarnings],
+        Prompt = Warning ++ " Continue? (Y/n)",
+        prompt_confirm(Screen, Prompt, Res0, !IO),
+        (
+            Res0 = yes,
+            prompt_confirm_warnings(Screen, MoreWarnings, Res, !IO)
+        ;
+            Res0 = no,
+            Res = no
+        )
     ).
 
 :- pred prompt_confirm(screen::in, string::in, bool::out, io::di, io::uo)
@@ -1938,7 +1951,7 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
                 TextCTE = cte_base64
             ),
             get_encrypt_keys(CryptoInfo, ParsedHeaders, EncryptForWhom,
-                EncryptKeys, Missing),
+                EncryptKeys, Missing, LeakedBccs),
             ( MaybeSigners = yes([]) ->
                 Res = error("No signing keys available."),
                 Warnings = []
@@ -1949,18 +1962,19 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
             ;
                 EncryptKeys = [_ | _],
                 missing_keys_warning(Missing, WarningsA),
+                leaked_bccs_warning(LeakedBccs, WarningsB),
                 generate_mime_part(TextCTE, Text, Attachments, PartToEncrypt,
                     RS0, RS1),
                 % XXX encrypt could return Cipher as a data buffer instead of
                 % returning it as a string
                 encrypt(CryptoInfo, MaybeSigners, EncryptKeys, Config,
-                    PartToEncrypt, ResCipher, WarningsB, !IO),
+                    PartToEncrypt, ResCipher, WarningsC, !IO),
                 (
                     ResCipher = ok(Cipher),
                     generate_multipart_encrypted(Cipher, MimePart, RS1, _RS),
                     Spec = message_spec(WriteHeaders, mime_v1(MimePart)),
                     write_temp_message_file(Config, Prepare, Spec, Res, !IO),
-                    Warnings = WarningsA ++ WarningsB
+                    Warnings = WarningsA ++ WarningsB ++ WarningsC
                 ;
                     ResCipher = error(Error),
                     Res = error("Encryption failed: " ++ Error),
@@ -2233,6 +2247,22 @@ missing_keys_warning(Missing, Warnings) :-
         Missing = [_, _ | _],
         Num = length(Missing),
         Warnings = [format("Missing keys for %d addresses.", [i(Num)])]
+    ).
+
+:- pred leaked_bccs_warning(list(addr_spec)::in, list(string)::out) is det.
+
+leaked_bccs_warning(LeakedBccs, Warnings) :-
+    (
+        LeakedBccs = [],
+        Warnings = []
+    ;
+        LeakedBccs = [AddrSpec],
+        addr_spec_to_string(AddrSpec, AddrString, _Valid),
+        Warnings = ["Encryption may expose Bcc to <" ++ AddrString ++ ">."]
+    ;
+        LeakedBccs = [_, _ | _],
+        Num = length(LeakedBccs),
+        Warnings = [format("Encryption may expose %d Bcc identities.", [i(Num)])]
     ).
 
 %-----------------------------------------------------------------------------%

@@ -33,8 +33,8 @@
     ;       from_and_recipients.
 
 :- pred get_encrypt_keys(crypto_info::in, parsed_headers::in,
-    encrypt_for_whom::in, list(gpgme.key)::out, list(addr_spec)::out)
-    is det.
+    encrypt_for_whom::in, list(gpgme.key)::out, list(addr_spec)::out,
+    list(addr_spec)::out) is det.
 
 :- pred get_sign_keys(crypto_info::in, parsed_headers::in,
     list(gpgme.key)::out) is det.
@@ -235,7 +235,7 @@ suitable_user_id(Email, UserId) :-
 %-----------------------------------------------------------------------------%
 
 get_encrypt_keys(CryptoInfo, ParsedHeaders, EncryptForWhom, SelectedKeys,
-        Missing) :-
+        Missing, LeakedBccs) :-
     EncryptKeys = CryptoInfo ^ ci_encrypt_keys,
     ParsedHeaders = parsed_headers(From, To, Cc, Bcc, _ReplyTo),
     (
@@ -250,7 +250,16 @@ get_encrypt_keys(CryptoInfo, ParsedHeaders, EncryptForWhom, SelectedKeys,
         [], RevSelectedKeys, [], RevMissing),
     % deduplicate SelectedKeys?
     list.reverse(RevSelectedKeys, SelectedKeys),
-    list.reverse(RevMissing, Missing).
+    list.reverse(RevMissing, Missing),
+    (
+        EncryptForWhom = from_only,
+        LeakedBccs = []
+    ;
+        EncryptForWhom = from_and_recipients,
+        solutions(addr_specs(Bcc), BccAddrSpecs),
+        filter(key_selected(EncryptKeys, SelectedKeys),
+            BccAddrSpecs, LeakedBccs)
+    ).
 
 get_sign_keys(CryptoInfo, ParsedHeaders, SelectedKeys) :-
     SignKeys = CryptoInfo ^ ci_sign_keys,
@@ -271,6 +280,13 @@ get_key(KeyMap, AddrSpec, !Keys, !Missing) :-
     ;
         cons(AddrSpec, !Missing)
     ).
+
+:- pred key_selected(map(addr_spec, key_userid)::in, list(gpgme.key)::in,
+    addr_spec::in) is semidet.
+
+key_selected(KeyMap, SelectedKeys, AddrSpec) :-
+    map.search(KeyMap, AddrSpec, key_userid(Key, _UserId)),
+    list.contains(SelectedKeys, Key).
 
 %-----------------------------------------------------------------------------%
 
