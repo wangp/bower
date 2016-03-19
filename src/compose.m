@@ -1568,15 +1568,15 @@ draw_crypto_line(Attrs, Panel, CryptoInfo, !IO) :-
     (
         Encrypt = yes,
         Sign = yes,
-        Body = "encrypt & sign"
+        Body = "encrypt & sign message body"
     ;
         Encrypt = yes,
         Sign = no,
-        Body = "encrypt"
+        Body = "encrypt message body"
     ;
         Encrypt = no,
         Sign = yes,
-        Body = "sign"
+        Body = "sign message body"
     ;
         Encrypt = no,
         Sign = no,
