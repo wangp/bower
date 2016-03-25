@@ -106,7 +106,6 @@
 
 :- import_module callout.       % XXX cyclic
 :- import_module config.
-:- import_module quote_arg.
 :- import_module rfc5322.parser.
 :- import_module rfc5322.writer.
 :- import_module xdg.

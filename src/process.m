@@ -45,7 +45,6 @@
 
 :- import_module bool.
 :- import_module int.
-:- import_module maybe.
 
 :- import_module byte_array.
 :- import_module make_utf8.

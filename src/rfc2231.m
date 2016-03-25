@@ -20,7 +20,6 @@
 :- import_module require.
 :- import_module string.
 
-:- import_module rfc2045.
 :- import_module rfc5234.
 :- import_module rfc5322.
 :- import_module string_util.

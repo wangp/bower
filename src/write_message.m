@@ -128,7 +128,6 @@
 
 :- import_module pair.
 :- import_module require.
-:- import_module stream.
 :- import_module string.
 :- import_module string.builder.
 

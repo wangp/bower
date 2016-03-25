@@ -28,7 +28,6 @@
 
 :- import_module addressbook.
 :- import_module compose.
-:- import_module prog_config.
 :- import_module quote_arg.
 :- import_module rfc5322.
 :- import_module rfc5322.parser.

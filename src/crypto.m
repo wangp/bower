@@ -22,10 +22,6 @@
 
 :- implementation.
 
-:- import_module gpgme.
-
-%-----------------------------------------------------------------------------%
-
 init_crypto(Res, !IO) :-
     gpgme_init(!IO),
     gpgme_engine_check_version(openpgp, ResGpgme, !IO),

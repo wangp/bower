@@ -80,13 +80,11 @@
 :- implementation.
 
 :- import_module int.
-:- import_module list.
 :- import_module maybe.
 :- import_module queue.
 :- import_module require.
 
 :- import_module process.
-:- import_module quote_arg.
 
 %-----------------------------------------------------------------------------%
 

@@ -38,7 +38,6 @@
 :- import_module string.
 
 :- import_module callout.
-:- import_module prog_config.
 :- import_module quote_arg.
 
 %-----------------------------------------------------------------------------%

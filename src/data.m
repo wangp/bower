@@ -171,7 +171,6 @@
 
 :- implementation.
 
-:- import_module map.
 :- import_module string.
 
 :- import_module string_util.

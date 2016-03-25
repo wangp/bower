@@ -62,15 +62,12 @@
 :- import_module char.
 :- import_module dir.
 :- import_module int.
-:- import_module list.
 :- import_module require.
 :- import_module string.
 
 :- import_module curs.
 :- import_module curs.panel.
-:- import_module path_expand.
 :- import_module call_system.
-:- import_module prog_config.
 :- import_module quote_arg.
 :- import_module string_util.
 

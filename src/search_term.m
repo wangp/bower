@@ -33,7 +33,6 @@
 
 :- import_module char.
 :- import_module int.
-:- import_module list.
 :- import_module parsing_utils.
 :- import_module require.
 :- import_module set.

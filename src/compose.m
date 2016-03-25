@@ -83,7 +83,6 @@
 :- import_module mime_type.
 :- import_module pager.
 :- import_module path_expand.
-:- import_module prog_config.
 :- import_module quote_arg.
 :- import_module rfc2045.
 :- import_module rfc2047.

@@ -50,7 +50,6 @@
 :- implementation.
 
 :- import_module int.
-:- import_module char.
 :- import_module require.
 :- import_module std_util.
 :- import_module string.

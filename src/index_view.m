@@ -21,14 +21,13 @@
 
 :- implementation.
 
-:- import_module char.
 :- import_module bool.
+:- import_module char.
 :- import_module cord.
+:- import_module int.
 :- import_module list.
 :- import_module map.
 :- import_module maybe.
-:- import_module int.
-:- import_module list.
 :- import_module require.
 :- import_module set.
 :- import_module string.
@@ -42,7 +41,6 @@
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module data.
-:- import_module prog_config.
 :- import_module quote_arg.
 :- import_module recall.
 :- import_module scrollable.
