@@ -6,6 +6,8 @@ I wrote it for me, but you might like it, too.
 
 bower is written in [Mercury].
 
+See some [screen shots](screenshots).
+
 [Notmuch]: http://notmuchmail.org/
 [Mercury]: http://mercurylang.org/
 
