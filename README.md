@@ -20,6 +20,7 @@ At compile time:
 
 * Mercury compiler (11.07 or later, including release-of-the-day);
   currently available at <http://dl.mercurylang.org/index.html>
+* gpgme (GnuPG Made Easy)
 
 At run time:
 
@@ -282,6 +283,15 @@ server, then there is an inefficiency because a single message would need
 to be transferred to the remote server twice.  You could combine the two
 steps into a single script run at the `sendmail` step, and disable the
 `post_sendmail` step.
+
+
+Encryption and signing (beta)
+=============================
+
+Bower can produce encrypted and/or signed PGP/MIME messages through GnuPG.
+Message decryption and signature verification are performed by notmuch.
+It is up to the user to configure GnuPG on the machines running bower
+or notmuch.
 
 
 Author

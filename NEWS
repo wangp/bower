@@ -1,7 +1,7 @@
-Bower 0.7-unreleased (as of 2016-02-28)
+Bower 0.7-unreleased (as of 2016-03-25)
 =======================================
-This release requires notmuch 0.16 or above, notmuch 0.19+ is recommended.
-Consider updating your bower.conf to make use of multiple accounts.
+This release requires notmuch 0.16 or above (notmuch 0.19+ is recommended)
+and gpgme. Consider updating your bower.conf to make use of multiple accounts.
 
 * Use notmuch insert command instead of notmuch-deliver.
 * Make use of notmuch search --exclude=all option.
@@ -17,6 +17,7 @@ Consider updating your bower.conf to make use of multiple accounts.
 * Link with libpanelw, not libpanel.
 * Add '~' key to initiate limit prompt populated with "~".
 * Support for multiple accounts.
+* PGP/MIME support.
 * Compatibility with newer Mercury compilers.
 * Bug fixes and minor improvements.
 
