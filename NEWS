@@ -1,25 +1,24 @@
-Bower 0.7-unreleased (as of 2016-03-25)
-=======================================
+Bower 0.7 (2016-03-28)
+======================
 This release requires notmuch 0.16 or above (notmuch 0.19+ is recommended)
 and gpgme. Consider updating your bower.conf to make use of multiple accounts.
 
+* Support for multiple accounts.
+* PGP/MIME support.
 * Use notmuch insert command instead of notmuch-deliver.
 * Make use of notmuch search --exclude=all option.
 * Make use of notmuch show --entire-thread=false option.
 * Represent excluded messages (with replies) in thread view.
 * Fix ambiguity between ~dDATE and search alias beginning with ~d.
 * Do not hide the 'inbox' tag.
-* Make \ quote only meta chars in interactively-entered address lists.
 * Run poll_notify command when polling finds new messages.
 * Accept mailto URI at To: prompt.
 * Add 'E' edit current message as template for new message.
-* Wrap long header lines.
-* Link with libpanelw, not libpanel.
 * Add '~' key to initiate limit prompt populated with "~".
-* Support for multiple accounts.
-* PGP/MIME support.
-* Compatibility with newer Mercury compilers.
+* Wrap long header lines in pager.
+* Link with libpanelw, not libpanel.
 * Bug fixes and minor improvements.
+* Compatibility with newer Mercury compilers.
 
 Bower 0.6 (2014-05-01)
 ======================
