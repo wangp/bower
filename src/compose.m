@@ -157,7 +157,7 @@
 start_compose(Config, Crypto, Screen, Transition, !ToHistory, !SubjectHistory,
         !IO) :-
     text_entry_initial(Screen, "To: ", !.ToHistory, "",
-        complete_config_key(Config, addressbook_section), MaybeInput, !IO),
+        complete_address(Config), MaybeInput, !IO),
     (
         MaybeInput = yes(Input),
         add_history_nodup(Input, !ToHistory),
@@ -632,13 +632,12 @@ parse_and_expand_headers(Config, Headers0, Headers, Parsed, !IO) :-
         References, InReplyTo, Rest),
 
     % [RFC 6854] allows group syntax in From - saves us work.
-    Opt = backslash_quote_all,
-    parse_and_expand_addresses(Config, Opt, From0, From, ParsedFrom, !IO),
-    parse_and_expand_addresses(Config, Opt, To0, To, ParsedTo, !IO),
-    parse_and_expand_addresses(Config, Opt, Cc0, Cc, ParsedCc, !IO),
-    parse_and_expand_addresses(Config, Opt, Bcc0, Bcc, ParsedBcc, !IO),
-    parse_and_expand_addresses(Config, Opt, ReplyTo0, ReplyTo, ParsedReplyTo,
-        !IO),
+    Expand = parse_and_expand_addresses(Config, backslash_quote_all),
+    Expand(From0, From, ParsedFrom, !IO),
+    Expand(To0, To, ParsedTo, !IO),
+    Expand(Cc0, Cc, ParsedCc, !IO),
+    Expand(Bcc0, Bcc, ParsedBcc, !IO),
+    Expand(ReplyTo0, ReplyTo, ParsedReplyTo, !IO),
 
     Headers = headers(Date, From, To, Cc, Bcc, Subject, ReplyTo,
         References, InReplyTo, Rest),
@@ -685,11 +684,18 @@ maybe_expand_mailbox(Config, Opt, Mailbox0, Mailbox, !IO) :-
         Mailbox = Mailbox0
     ;
         Mailbox0 = bad_mailbox(PotentialAlias),
-        search_addressbook(Config, PotentialAlias, MaybeFound, !IO),
+        search_addressbook(Config, PotentialAlias, MaybeFound0, !IO),
+        (
+            MaybeFound0 = no,
+            search_notmuch_address_top(Config, PotentialAlias, MaybeFound, !IO)
+        ;
+            MaybeFound0 = yes(_),
+            MaybeFound = MaybeFound0
+        ),
         (
             MaybeFound = yes(Expansion),
-            parse_address(Opt, Expansion, mailbox(Mailbox1))
             % Can't expand to a group or multiple mailboxes yet.
+            parse_address(Opt, Expansion, mailbox(Mailbox1))
         ->
             Mailbox = Mailbox1
         ;
@@ -892,26 +898,24 @@ resize_staging_screen(Screen0, Screen, StagingInfo, PagerInfo0, PagerInfo,
 edit_header(Screen, HeaderType, !StagingInfo, !CryptoInfo, !IO) :-
     Config = !.StagingInfo ^ si_config,
     Headers0 = !.StagingInfo ^ si_headers,
-    get_header(HeaderType, Headers0, Prompt, Initial, CompleteAddressbook),
+    get_header(HeaderType, Headers0, Prompt, Initial),
     InitialString = header_value_string(Initial),
     (
-        CompleteAddressbook = yes,
-        Completion = complete_config_key(Config, addressbook_section)
-    ;
-        CompleteAddressbook = no,
-        Completion = complete_none
-    ),
-    (
         HeaderType = from,
-        make_from_history(!.StagingInfo ^ si_config, InitialString, History0)
+        make_from_history(!.StagingInfo ^ si_config, InitialString, History0),
+        Completion = complete_address(Config)
     ;
         ( HeaderType = to
         ; HeaderType = cc
         ; HeaderType = bcc
-        ; HeaderType = subject
         ; HeaderType = replyto
         ),
-        History0 = init_history
+        History0 = init_history,
+        Completion = complete_address(Config)
+    ;
+        HeaderType = subject,
+        History0 = init_history,
+        Completion = complete_none
     ),
     text_entry_full(Screen, Prompt, History0, InitialString,
         Completion, no, Return, !IO),
@@ -950,14 +954,14 @@ make_from_history(Config, Initial, History) :-
     ).
 
 :- pred get_header(header_type::in, headers::in, string::out,
-    header_value::out, bool::out) is det.
+    header_value::out) is det.
 
-get_header(from,    H, "From: ",     H ^ h_from,    yes).
-get_header(to,      H, "To: ",       H ^ h_to,      yes).
-get_header(cc,      H, "Cc: ",       H ^ h_cc,      yes).
-get_header(bcc,     H, "Bcc: ",      H ^ h_bcc,     yes).
-get_header(subject, H, "Subject: ",  H ^ h_subject, no).
-get_header(replyto, H, "Reply-To: ", H ^ h_replyto, yes).
+get_header(from,    H, "From: ",     H ^ h_from).
+get_header(to,      H, "To: ",       H ^ h_to).
+get_header(cc,      H, "Cc: ",       H ^ h_cc).
+get_header(bcc,     H, "Bcc: ",      H ^ h_bcc).
+get_header(subject, H, "Subject: ",  H ^ h_subject).
+get_header(replyto, H, "Reply-To: ", H ^ h_replyto).
 
 :- pred update_header(prog_config::in, quote_opt::in,
     header_type::in, header_value::in, headers::in, headers::out,

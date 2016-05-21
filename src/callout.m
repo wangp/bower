@@ -8,6 +8,7 @@
 :- import_module io.
 :- import_module list.
 :- import_module maybe.
+:- import_module pair.
 
 :- import_module data.
 :- import_module json.
@@ -44,6 +45,9 @@
 :- pred parse_threads_list(json::in, list(thread)::out) is det.
 
 :- pred parse_message_id_list(json::in, list(message_id)::out) is det.
+
+:- pred parse_address_count_list(json::in, list(pair(int, string))::out)
+    is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -466,6 +470,27 @@ parse_message_id_list(JSON, MessageId) :-
 :- pred parse_message_id(json::in, message_id::out) is semidet.
 
 parse_message_id(unesc_string(Id), message_id(Id)).
+
+%-----------------------------------------------------------------------------%
+
+parse_address_count_list(Json, AddressCounts) :-
+    ( Json = list(List) ->
+        list.map(parse_address_count, List, AddressCounts)
+    ;
+        notmuch_json_error
+    ).
+
+:- pred parse_address_count(json::in, pair(int, string)::out) is det.
+
+parse_address_count(Json, Result) :-
+    (
+        Json/"count" = int(Count),
+        Json/"name-addr" = unesc_string(NameAddr)
+    ->
+        Result = Count - NameAddr
+    ;
+        notmuch_json_error
+    ).
 
 %-----------------------------------------------------------------------------%
 

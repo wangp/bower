@@ -250,10 +250,13 @@ if you run `bower` without command-line arguments.
 Simple addressbook
 ------------------
 
-When entering an email address, bower will try to expand any simple words
-containing only alphanumeric, underscore, '-', '+', '.' or non-ASCII
-characters.  The expansions should be added to the notmuch config file
-`~/.notmuch-config` in a section called `[bower:addressbook]`, e.g.
+Bower can look up addresses using the `notmuch address` command.  Only
+addresses that appear in the `From` header in the last year will be found.
+This is for better performance, and to avoid stale email addresses.
+
+Address aliases can also be kept in the notmuch config file
+`~/.notmuch-config` in a section called `[bower:addressbook]`.
+For example:
 
     [bower:addressbook]
     someone = Someone <someone@example.org>

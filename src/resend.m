@@ -26,7 +26,6 @@
 :- import_module maybe.
 :- import_module string.
 
-:- import_module addressbook.
 :- import_module compose.
 :- import_module quote_arg.
 :- import_module rfc5322.
@@ -87,14 +86,13 @@ handle_resend(Config, Screen, MessageId, Message, !ToHistory, !IO) :-
 prompt_from_account(Config, Screen, Res, !IO) :-
     make_from_history(Config, History0, Initial),
     text_entry_initial(Screen, "From: ", History0, Initial,
-        complete_config_key(Config, addressbook_section), MaybeFrom, !IO),
+        complete_address(Config), MaybeFrom, !IO),
     (
         MaybeFrom = yes(From0),
         From0 \= ""
     ->
-        parse_and_expand_addresses_string(Config,
-            backslash_quote_meta_chars, From0, From, FromAddresses,
-            FromValid, !IO),
+        parse_and_expand_addresses_string(Config, backslash_quote_meta_chars,
+            From0, From, FromAddresses, FromValid, !IO),
         (
             FromValid = yes,
             get_some_matching_account(Config, FromAddresses, MaybeAccount),
@@ -150,7 +148,7 @@ make_from_history(Config, History, Initial) :-
 
 prompt_to(Config, Screen, Res, !ToHistory, !IO) :-
     text_entry_initial(Screen, "Resend message to: ", !.ToHistory, "",
-        complete_config_key(Config, addressbook_section), MaybeTo, !IO),
+        complete_address(Config), MaybeTo, !IO),
     (
         MaybeTo = yes(To0),
         To0 \= ""

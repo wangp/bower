@@ -33,7 +33,12 @@
                 % At least one selected message has these tags.
                 or_tags     :: set(string)
             )
-    ;       complete_config_key(prog_config, string). % config section name
+    ;       complete_config_key(
+                prog_config,
+                % Name of config section.
+                string
+            )
+    ;       complete_address(prog_config).
 
 :- func init_history = history.
 
@@ -65,9 +70,10 @@
 :- import_module require.
 :- import_module string.
 
+:- import_module addressbook.
+:- import_module call_system.
 :- import_module curs.
 :- import_module curs.panel.
-:- import_module call_system.
 :- import_module quote_arg.
 :- import_module string_util.
 
@@ -564,6 +570,10 @@ forward_for_completion(Type, Before0, Before, After0, After) :-
         ),
         list.takewhile(non_whitespace, After0, Take, After),
         Before = list.reverse(Take) ++ Before0
+    ;
+        Type = complete_address(_),
+        list.takewhile(not_comma, After0, Take, After),
+        Before = list.reverse(Take) ++ Before0
     ).
 
 :- pred do_completion(list(char)::in, list(char)::out, list(char)::in,
@@ -633,6 +643,20 @@ generate_choices(Type, Orig, After, Choices, CompletionPoint, !IO) :-
         string.from_rev_char_list(Word, WordString),
         generate_config_key_choices(Config, SectionName, WordString, Choices,
             !IO)
+    ;
+        Type = complete_address(Config),
+        list.takewhile(not_comma, Orig, RevWord0, Prefix),
+        list.takewhile(is_whitespace, reverse(RevWord0), LeadWhiteSpace, Word),
+        CompletionPoint = length(Prefix) + length(LeadWhiteSpace),
+        WordString = rstrip(from_char_list(Word)),
+        generate_config_key_choices(Config, addressbook_section,
+            WordString, AliasChoices, !IO),
+        ( WordString = "" ->
+            Choices = AliasChoices
+        ;
+            generate_address_choices(Config, WordString, AddressChoices, !IO),
+            Choices = AddressChoices ++ AliasChoices
+        )
     ).
 
 :- pred choose_expansion(bool::in, list(string)::in(non_empty_list),
@@ -909,10 +933,30 @@ find_first_char(S, FindChar, I0, I) :-
 
 %-----------------------------------------------------------------------------%
 
+:- pred generate_address_choices(prog_config::in, string::in,
+    list(string)::out, io::di, io::uo) is det.
+
+generate_address_choices(Config, OrigString, Choices, !IO) :-
+    search_addressbook(Config, OrigString, MaybeFound, !IO),
+    (
+        MaybeFound = yes(Choice),
+        Choices = [Choice]
+    ;
+        MaybeFound = no,
+        search_notmuch_address(Config, OrigString, Choices, !IO)
+    ).
+
+%-----------------------------------------------------------------------------%
+
 :- pred non_whitespace(char::in) is semidet.
 
 non_whitespace(C) :-
     not char.is_whitespace(C).
+
+:- pred not_comma(char::in) is semidet.
+
+not_comma(C) :-
+    C \= (',').
 
     % Note: Mercury 14.01 list.m also defines this.
     %

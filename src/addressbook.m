@@ -5,6 +5,7 @@
 :- interface.
 
 :- import_module io.
+:- import_module list.
 :- import_module maybe.
 
 :- import_module prog_config.
@@ -17,6 +18,12 @@
 :- pred search_addressbook(prog_config::in, string::in, maybe(string)::out,
     io::di, io::uo) is det.
 
+:- pred search_notmuch_address(prog_config::in, string::in, list(string)::out,
+    io::di, io::uo) is det.
+
+:- pred search_notmuch_address_top(prog_config::in, string::in,
+    maybe(string)::out, io::di, io::uo) is det.
+
 :- pred prompt_addressbook_add(prog_config::in, screen::in, string::in,
     io::di, io::uo) is det.
 
@@ -27,12 +34,12 @@
 
 :- import_module char.
 :- import_module int.
-:- import_module list.
+:- import_module pair.
 :- import_module string.
 
 :- import_module callout.
 :- import_module quote_arg.
-:- import_module text_entry.
+:- import_module text_entry.    % XXX cyclic
 
 %-----------------------------------------------------------------------------%
 
@@ -70,6 +77,37 @@ search_addressbook(Config, Alias, MaybeFound, !IO) :-
     ;
         MaybeFound = no
     ).
+
+%-----------------------------------------------------------------------------%
+
+search_notmuch_address(Config, SearchString, NameAddrs, !IO) :-
+    run_notmuch(Config, [
+        "address", "--format=json", "--output=sender", "--output=count",
+        "--deduplicate=address", "date:1y..now", "from:" ++ SearchString
+    ], parse_address_count_list, Res, !IO),
+    (
+        Res = ok(Pairs0),
+        sort(descending, Pairs0, Pairs),
+        map(snd, Pairs, NameAddrs)
+    ;
+        Res = error(_),
+        NameAddrs = []
+    ).
+
+search_notmuch_address_top(Config, SearchString, MaybeFound, !IO) :-
+    search_notmuch_address(Config, SearchString, NameAddrs, !IO),
+    (
+        NameAddrs = [Top | _],
+        MaybeFound = yes(Top)
+    ;
+        NameAddrs = [],
+        MaybeFound = no
+    ).
+
+:- pred descending(T::in, T::in, comparison_result::out) is det.
+
+descending(A, B, R) :-
+    compare(R, B, A).
 
 %-----------------------------------------------------------------------------%
 
