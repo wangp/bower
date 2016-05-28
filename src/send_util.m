@@ -9,8 +9,8 @@
 :- import_module stream.
 
 :- import_module data.
-:- import_module random.
 :- import_module rfc5322.
+:- import_module splitmix64.
 
 :- pred generate_date_msg_id(header_value::out, header_value::out,
     io::di, io::uo) is det.
@@ -31,8 +31,7 @@
     string::in, header_value::in, State::di, State::uo) is det
     <= stream.writer(Stream, string, State).
 
-:- pred generate_boundary(string::out, random.supply::mdi, random.supply::muo)
-    is det.
+:- pred generate_boundary(string::out, splitmix64::in, splitmix64::out) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -270,10 +269,11 @@ generate_boundary(Boundary, !RS) :-
     string.from_char_list(Chars, Boundary).
 
 :- pred generate_boundary_char(int::in, char::out,
-    random.supply::mdi, random.supply::muo) is det.
+    splitmix64::in, splitmix64::out) is det.
 
 generate_boundary_char(_, Char, !RS) :-
-    random.random(0, 64, Index, !RS),
+    next(I, !RS),
+    Index = I /\ 0x3f,
     string.unsafe_index(base64_chars, Index, Char).
 
 :- func base64_chars = string.

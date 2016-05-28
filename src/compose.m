@@ -63,7 +63,6 @@
 :- import_module map.
 :- import_module maybe.
 :- import_module pair.
-:- import_module random.
 :- import_module require.
 :- import_module set.
 :- import_module std_util.
@@ -90,6 +89,7 @@
 :- import_module rfc6068.
 :- import_module scrollable.
 :- import_module send_util.
+:- import_module splitmix64.
 :- import_module string_util.
 :- import_module tags.
 :- import_module time_util.
@@ -1905,9 +1905,9 @@ tag_replied_message(Config, Headers, Res, !IO) :-
 
 create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
         Attachments, CryptoInfo, Res, Warnings, !IO) :-
-    current_timestamp(timestamp(Seed0), !IO),
-    Seed = truncate_to_int(Seed0),
-    random.init(Seed, RS0),
+    % We only use this to generate MIME boundaries.
+    current_timestamp(timestamp(Seed), !IO),
+    splitmix64.init(truncate_to_int(Seed), RS0),
     generate_date_msg_id(Date, MessageId, !IO),
     generate_headers(Prepare, Headers, ParsedHeaders, Date, MessageId,
         WriteHeaders),
@@ -2109,8 +2109,8 @@ maybe_cons_unstructured(SkipEmpty, Options, FieldName, Value, !Acc) :-
 %-----------------------------------------------------------------------------%
 
 :- pred generate_mime_part(content_transfer_encoding::in, string::in,
-    list(attachment)::in, mime_part::out,
-    random.supply::mdi, random.supply::muo) is det.
+    list(attachment)::in, mime_part::out, splitmix64::in, splitmix64::out)
+    is det.
 
 generate_mime_part(TextCTE, Text, Attachments, MimePart, !RS) :-
     generate_text_mime_part(inline, TextCTE, Text, TextPart),
@@ -2181,7 +2181,7 @@ generate_attachment_mime_part(TextCTE, Attachment, MimePart) :-
 %-----------------------------------------------------------------------------%
 
 :- pred generate_multipart_encrypted(string::in, mime_part::out,
-    random.supply::mdi, random.supply::muo) is det.
+    splitmix64::in, splitmix64::out) is det.
 
 generate_multipart_encrypted(Cipher, MultiPart, !RS) :-
     % RFC 3156
@@ -2193,7 +2193,7 @@ generate_multipart_encrypted(Cipher, MultiPart, !RS) :-
     SubPartB = discrete(application_octet_stream, no, no, text(Cipher)).
 
 :- pred generate_multipart_signed(mime_part::in, string::in, micalg::in,
-    mime_part::out, random.supply::mdi, random.supply::muo) is det.
+    mime_part::out, splitmix64::in, splitmix64::out) is det.
 
 generate_multipart_signed(SignedPart, Sig, MicAlg, MultiPart, !RS) :-
     % RFC 3156
