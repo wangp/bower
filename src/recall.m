@@ -69,8 +69,8 @@ select_recall(Config, Screen, MaybeThreadId, Transition, !IO) :-
         Transition = screen_transition(MaybeSelected, set_warning(Message))
     ;
         Ids = [_ | _],
-        time(Time, !IO),
-        Nowish = localtime(Time),
+        current_timestamp(Time, !IO),
+        localtime(Time, Nowish, !IO),
         list.map_foldl(make_recall_line(Config, Nowish), Ids, MaybeLines, !IO),
         list.filter_map(maybe_is_yes, MaybeLines, Lines),
         Scrollable = scrollable.init_with_cursor(Lines),
@@ -93,7 +93,7 @@ make_recall_line(Config, Nowish, MessageId, MaybeLine, !IO) :-
         Message = message_for_recall(_Id, Timestamp, Headers, Tags),
         To = Headers ^ h_to,
         Subject = Headers ^ h_subject,
-        timestamp_to_tm(Timestamp, TM),
+        localtime(Timestamp, TM, !IO),
         Shorter = no,
         make_reldate(Nowish, TM, Shorter, RelDate),
         Line = recall_line(Message, RelDate, To, Subject, Tags),

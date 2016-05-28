@@ -59,8 +59,8 @@
 %-----------------------------------------------------------------------------%
 
 generate_date_msg_id(header_value(Date), header_value(MessageId), !IO) :-
-    time(Time, !IO),
-    TM = localtime(Time),
+    current_timestamp(Time, !IO),
+    localtime(Time, TM, GMTOffSecs, !IO),
     Year = 1900 + TM ^ tm_year,
     Month = 1 + TM ^ tm_mon,
     Day = TM ^ tm_mday,
@@ -77,10 +77,9 @@ generate_date_msg_id(header_value(Date), header_value(MessageId), !IO) :-
     ;
         unexpected($module, $pred, "bad weekday or month")
     ),
-    get_timezone(Time, Tz0),
-    Tz = Tz0 // 60,
-    TzHour = Tz // 60,
-    TzMin = abs(Tz) mod 60,
+    GMTOffMins = GMTOffSecs // 60,
+    TzHour = GMTOffMins // 60, % include sign
+    TzMin = abs(GMTOffMins) mod 60,
     Date = string.format("%s, %d %s %d %02d:%02d:%02d %+03d%02d",
         [s(WdayName), i(Day), s(MonthName), i(Year), i(Hour), i(Min), i(Sec),
         i(TzHour), i(TzMin)]),

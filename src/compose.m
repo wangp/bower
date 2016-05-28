@@ -68,7 +68,6 @@
 :- import_module set.
 :- import_module std_util.
 :- import_module string.
-:- import_module time.
 
 :- import_module addressbook.
 :- import_module call_system.
@@ -1906,8 +1905,8 @@ tag_replied_message(Config, Headers, Res, !IO) :-
 
 create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
         Attachments, CryptoInfo, Res, Warnings, !IO) :-
-    time(Time, !IO),
-    time_to_int(Time, Seed),
+    current_timestamp(timestamp(Seed0), !IO),
+    Seed = truncate_to_int(Seed0),
     random.init(Seed, RS0),
     generate_date_msg_id(Date, MessageId, !IO),
     generate_headers(Prepare, Headers, ParsedHeaders, Date, MessageId,

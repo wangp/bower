@@ -45,6 +45,7 @@
 :- import_module char.
 :- import_module cord.
 :- import_module dir.
+:- import_module float.
 :- import_module int.
 :- import_module parsing_utils.
 :- import_module require.
@@ -288,8 +289,8 @@ create_thread_pager(Config, Crypto, Screen, ThreadId, Ordering, MaybeCached,
         ParseResult = error(_),
         Messages = []
     ),
-    time(Time, !IO),
-    Nowish = localtime(Time),
+    current_timestamp(Time, !IO),
+    localtime(Time, Nowish, !IO),
     get_rows_cols(Screen, Rows, Cols),
     setup_thread_pager(Config, Crypto, ThreadId, Ordering, Nowish, Rows - 2,
         Cols, Messages, CommonHistory, Info, Count, !IO),
@@ -320,12 +321,12 @@ setup_thread_pager(Config, Crypto, ThreadId, Ordering, Nowish, Rows, Cols,
         Messages, CommonHistory, ThreadPagerInfo, NumThreadLines, !IO) :-
     (
         Ordering = ordering_threaded,
-        append_threaded_messages(Nowish, Messages, ThreadLines),
+        append_threaded_messages(Nowish, Messages, ThreadLines, !IO),
         setup_pager(Config, include_replies, Cols, Messages, PagerInfo0, !IO)
     ;
         Ordering = ordering_flat,
         append_flat_messages(Nowish, Messages, ThreadLines,
-            SortedFlatMessages),
+            SortedFlatMessages, !IO),
         setup_pager(Config, toplevel_only, Cols, SortedFlatMessages,
             PagerInfo0, !IO)
     ),
@@ -366,7 +367,7 @@ setup_thread_pager(Config, Crypto, ThreadId, Ordering, Nowish, Rows, Cols,
 get_latest_line(LineA, LineB, Line) :-
     TimestampA = get_timestamp_fallback(LineA ^ tp_message),
     TimestampB = get_timestamp_fallback(LineB ^ tp_message),
-    ( TimestampA >= TimestampB ->
+    ( TimestampA - TimestampB >= 0.0 ->
         Line = LineA
     ;
         Line = LineB
@@ -406,27 +407,27 @@ compute_num_rows(Rows, Scrollable, NumThreadRows, NumPagerRows) :-
 max_thread_lines = 8.
 
 :- pred append_threaded_messages(tm::in, list(message)::in,
-    list(thread_line)::out) is det.
+    list(thread_line)::out, io::di, io::uo) is det.
 
-append_threaded_messages(Nowish, Messages, ThreadLines) :-
+append_threaded_messages(Nowish, Messages, ThreadLines, !IO) :-
     PrevSubject = decoded_unstructured(""),
     append_threaded_messages(Nowish, [], [], no, Messages, PrevSubject,
-        cord.init, ThreadCord),
+        cord.init, ThreadCord, !IO),
     ThreadLines = list(ThreadCord).
 
 :- pred append_threaded_messages(tm::in, list(graphic)::in, list(graphic)::in,
     maybe(message_id)::in, list(message)::in, header_value::in,
-    cord(thread_line)::in, cord(thread_line)::out) is det.
+    cord(thread_line)::in, cord(thread_line)::out, io::di, io::uo) is det.
 
 append_threaded_messages(_Nowish, _Above, _Below, _MaybeParentId,
-        [], _PrevSubject, !Cord).
+        [], _PrevSubject, !Cord, !IO).
 append_threaded_messages(Nowish, Above0, Below0, MaybeParentId,
-        [Message | Messages], PrevSubject, !Cord) :-
+        [Message | Messages], PrevSubject, !Cord, !IO) :-
     (
         Messages = [],
         Graphics = Above0 ++ [ell],
         make_thread_line(Nowish, Message, MaybeParentId, yes(Graphics),
-            PrevSubject, Line),
+            PrevSubject, Line, !IO),
         snoc(Line, !Cord),
         MessagesCord = cord.empty,
         Below1 = Below0
@@ -434,11 +435,11 @@ append_threaded_messages(Nowish, Above0, Below0, MaybeParentId,
         Messages = [_ | _],
         Graphics = Above0 ++ [tee],
         make_thread_line(Nowish, Message, MaybeParentId, yes(Graphics),
-            PrevSubject, Line),
+            PrevSubject, Line, !IO),
         snoc(Line, !Cord),
         get_last_subject(Message, LastSubject),
         append_threaded_messages(Nowish, Above0, Below0, MaybeParentId,
-            Messages, LastSubject, cord.init, MessagesCord),
+            Messages, LastSubject, cord.init, MessagesCord, !IO),
         ( get_first(MessagesCord, FollowingLine) ->
             MaybeGraphics = FollowingLine ^ tp_graphics,
             (
@@ -460,7 +461,7 @@ append_threaded_messages(Nowish, Above0, Below0, MaybeParentId,
     Subject = get_subject_fallback(Message),
     Replies = get_replies(Message),
     append_threaded_messages(Nowish, Above1, Below1, MaybeMessageId, Replies,
-        Subject, !Cord),
+        Subject, !Cord, !IO),
     !:Cord = !.Cord ++ MessagesCord.
 
 :- pred get_last_subject(message::in, header_value::out) is det.
@@ -480,13 +481,13 @@ not_blank_at_column(Graphics, Col) :-
     Graphic \= blank.
 
 :- pred append_flat_messages(tm::in, list(message)::in,
-    list(thread_line)::out, list(message)::out) is det.
+    list(thread_line)::out, list(message)::out, io::di, io::uo) is det.
 
-append_flat_messages(Nowish, Messages, ThreadLines, SortedFlatMessages) :-
+append_flat_messages(Nowish, Messages, ThreadLines, SortedFlatMessages, !IO) :-
     flatten_messages(no, Messages, [], MessagesFlat0),
     list.sort(compare_by_timestamp, MessagesFlat0, MessagesFlat),
-    list.foldl2(append_flat_message(Nowish), MessagesFlat,
-        decoded_unstructured(""), _PrevSubject, [], RevThreadLines),
+    list.foldl3(append_flat_message(Nowish), MessagesFlat,
+        decoded_unstructured(""), _PrevSubject, [], RevThreadLines, !IO),
     list.reverse(RevThreadLines, ThreadLines),
     SortedFlatMessages = list.map(mf_message, MessagesFlat).
 
@@ -510,21 +511,24 @@ compare_by_timestamp(A, B, Rel) :-
     compare(Rel, TimestampA, TimestampB).
 
 :- pred append_flat_message(tm::in, message_flat::in, header_value::in,
-    header_value::out, list(thread_line)::in, list(thread_line)::out) is det.
+    header_value::out, list(thread_line)::in, list(thread_line)::out,
+    io::di, io::uo) is det.
 
-append_flat_message(Nowish, MessageFlat, PrevSubject, Subject, !RevAcc) :-
+append_flat_message(Nowish, MessageFlat, PrevSubject, Subject, !RevAcc, !IO) :-
     MessageFlat = message_flat(Message, MaybeParentId),
-    make_thread_line(Nowish, Message, MaybeParentId, no, PrevSubject, Line),
+    make_thread_line(Nowish, Message, MaybeParentId, no, PrevSubject, Line,
+        !IO),
     Subject = get_subject_fallback(Message),
     cons(Line, !RevAcc).
 
 :- func mf_message(message_flat) = message. % accessor
 
 :- pred make_thread_line(tm::in, message::in, maybe(message_id)::in,
-    maybe(list(graphic))::in, header_value::in, thread_line::out) is det.
+    maybe(list(graphic))::in, header_value::in, thread_line::out,
+    io::di, io::uo) is det.
 
 make_thread_line(Nowish, Message, MaybeParentId, MaybeGraphics, PrevSubject,
-        Line) :-
+        Line, !IO) :-
     (
         Message = message(_Id, Timestamp, Headers, Tags, _Body, _Replies),
         From = Headers ^ h_from,
@@ -538,7 +542,7 @@ make_thread_line(Nowish, Message, MaybeParentId, MaybeGraphics, PrevSubject,
         Tags = set.init
     ),
     get_standard_tags(Tags, StdTags, NonstdTagsWidth),
-    timestamp_to_tm(Timestamp, TM),
+    localtime(Timestamp, TM, !IO),
     make_reldate(Nowish, TM, no, RelDate),
     ( canonicalise_subject(Subject) = canonicalise_subject(PrevSubject) ->
         MaybeSubject = no

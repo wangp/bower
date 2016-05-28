@@ -1584,8 +1584,8 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
             ),
             % Not really tested; don't know when it occurs.
             (
-                MaybeExpires = yes(timestamp(Expires)),
-                timestamp_to_tm(Expires, TM),
+                MaybeExpires = yes(Expires),
+                localtime(Expires, TM, !IO),
                 draw(Panel, BodyAttr, "; expires ", !IO),
                 draw(Panel, BodyAttr, asctime(TM), !IO)
             ;

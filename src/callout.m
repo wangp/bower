@@ -54,6 +54,7 @@
 
 :- implementation.
 
+:- import_module float.
 :- import_module map.
 :- import_module parsing_utils.
 :- import_module require.
@@ -62,6 +63,7 @@
 
 :- import_module call_system.
 :- import_module string_util.
+:- import_module time_util.
 
 %-----------------------------------------------------------------------------%
 
@@ -187,12 +189,13 @@ parse_message_for_recall(JSON, Message) :-
     (
         JSON/"id" = unesc_string(Id),
         MessageId = message_id(Id),
-        JSON/"timestamp" = int(Timestamp),
+        JSON/"timestamp" = int(TimestampInt),   % Y2038
         JSON/"headers" = map(HeaderMap),
         map.foldl(parse_header, HeaderMap, init_headers, Headers),
         JSON/"tags" = list(TagsList),
         list.map(parse_tag, TagsList, Tags)
     ->
+        Timestamp = timestamp(float(TimestampInt)),
         TagSet = set.from_list(Tags),
         Message = message_for_recall(MessageId, Timestamp, Headers, TagSet)
     ;
@@ -364,13 +367,13 @@ parse_signature(JSON, Signature) :-
         ;
             MaybeFingerprint = no
         ),
-        ( JSON/"created" = int(Created) ->
-            MaybeCreated = yes(timestamp(Created))
+        ( JSON/"created" = int(Created) ->  % Y2038
+            MaybeCreated = yes(timestamp(float(Created)))
         ;
             MaybeCreated = no
         ),
-        ( JSON/"expires" = int(Expires) ->
-            MaybeExpires = yes(timestamp(Expires))
+        ( JSON/"expires" = int(Expires) ->  % Y2038
+            MaybeExpires = yes(timestamp(float(Expires)))
         ;
             MaybeExpires = no
         ),
@@ -435,7 +438,7 @@ parse_threads_list(Json, Threads) :-
 parse_thread(Json, Thread) :-
     (
         Json/"thread" = unesc_string(Id),
-        Json/"timestamp" = int(Timestamp),
+        Json/"timestamp" = int(Timestamp), % Y2038
         Json/"authors" = unesc_string(Authors),
         Json/"subject" = unesc_string(Subject),
         Json/"tags" = list(TagsList),
@@ -444,8 +447,8 @@ parse_thread(Json, Thread) :-
         list.map(parse_tag, TagsList, Tags)
     ->
         TagSet = set.from_list(Tags),
-        Thread = thread(thread_id(Id), Timestamp, Authors, Subject, TagSet,
-            Matched, Total)
+        Thread = thread(thread_id(Id), timestamp(float(Timestamp)), Authors,
+            Subject, TagSet, Matched, Total)
     ;
         notmuch_json_error
     ).

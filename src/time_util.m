@@ -5,15 +5,30 @@
 :- interface.
 
 :- import_module bool.
+:- import_module io.
 :- import_module time.
 
 %-----------------------------------------------------------------------------%
 
-:- pred timestamp_to_tm(int::in, tm::out) is det.
+    % Seconds since Unix epoch 1970-01-01 00:00:00 +0000 (UTC)
+    % The value should be an integer only.  Double-precision floats can
+    % represent a integral values up to 2^53 precisely, compared to 32-bit
+    % signed integers that will overflow some time in the year 2038.
+    % (Not that we expect to be running on 32-bit machines then.)
+    %
+:- type timestamp
+    --->    timestamp(float).
 
-:- pred time_to_int(time_t::in, int::out) is det.
+:- func timestamp + float = timestamp.
 
-:- pred get_timezone(time_t::in, int::out) is det.
+:- func timestamp - timestamp = float.
+
+:- func timestamp_to_int_string(timestamp) = string.
+
+:- pred current_timestamp(timestamp::out, io::di, io::uo) is det.
+
+:- pred localtime(timestamp::in, tm::out, io::di, io::uo) is det.
+:- pred localtime(timestamp::in, tm::out, int::out, io::di, io::uo) is det.
 
 :- pred month_short_name(int, string).
 :- mode month_short_name(in, out) is semidet.
@@ -30,6 +45,7 @@
 
 :- implementation.
 
+:- import_module float.
 :- import_module int.
 :- import_module list.
 :- import_module maybe.
@@ -43,8 +59,46 @@
 
 %-----------------------------------------------------------------------------%
 
-timestamp_to_tm(Timestamp, TM) :-
-    timestamp_tm_2(Timestamp, Y, Mth, Md, H, Min, S, Yd, Wd, IsDst),
+timestamp(T) + Secs = timestamp(T + Secs).
+
+timestamp(Ta) - timestamp(Tb) = Ta - Tb.
+
+%-----------------------------------------------------------------------------%
+
+timestamp_to_int_string(timestamp(Timestamp)) =
+    timestamp_to_int_string_2(Timestamp).
+
+:- func timestamp_to_int_string_2(float) = string.
+
+:- pragma foreign_proc("C",
+    timestamp_to_int_string_2(Timestamp::in) = (Str::out),
+    [will_not_call_mercury, promise_pure, thread_safe],
+"
+    Str = MR_make_string(MR_ALLOC_ID, ""%lld"", (long long) Timestamp);
+").
+
+%-----------------------------------------------------------------------------%
+
+current_timestamp(timestamp(Timestamp), !IO) :-
+    current_timestamp_2(Timestamp, !IO).
+
+:- pred current_timestamp_2(float::out, io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    current_timestamp_2(Timestamp::out, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
+"
+    Timestamp = time(0);
+").
+
+%-----------------------------------------------------------------------------%
+
+localtime(Timestamp, TM, !IO) :-
+    localtime(Timestamp, TM, _GMTOff, !IO).
+
+localtime(timestamp(Timestamp), TM, GMTOff, !IO) :-
+    localtime_2(Timestamp, Y, Mth, Md, H, Min, S, Yd, Wd, IsDst, GMTOff, !IO),
     ( IsDst = 0 ->
         MaybeDst = yes(standard_time)
     ; IsDst > 0 ->
@@ -54,13 +108,15 @@ timestamp_to_tm(Timestamp, TM) :-
     ),
     TM = tm(Y, Mth, Md, H, Min, S, Yd, Wd, MaybeDst).
 
-:- pred timestamp_tm_2(int::in, int::out, int::out, int::out, int::out, int::out,
-    int::out, int::out, int::out, int::out) is det.
+:- pred localtime_2(float::in, int::out, int::out, int::out, int::out, int::out,
+    int::out, int::out, int::out, int::out, int::out, io::di, io::uo) is det.
 
 :- pragma foreign_proc("C",
-    timestamp_tm_2(Timestamp::in, Y::out, Mth::out, Md::out,
-        H::out, Min::out, S::out, Yd::out, Wd::out, IsDst::out),
-    [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
+    localtime_2(Timestamp::in, Y::out, Mth::out, Md::out,
+        H::out, Min::out, S::out, Yd::out, Wd::out, IsDst::out, GMTOff::out,
+        _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
 "
     time_t t;
     struct tm tm;
@@ -76,27 +132,10 @@ timestamp_to_tm(Timestamp, TM) :-
     Yd  = tm.tm_yday;
     Wd  = tm.tm_wday;
     IsDst = tm.tm_isdst;
+    GMTOff = tm.tm_gmtoff; /* GNU extension */
 ").
 
-:- pragma foreign_proc("C",
-    time_to_int(Time::in, Int::out),
-    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io],
-"
-    Int = Time;
-").
-
-:- pragma foreign_proc("C",
-    get_timezone(Time::in, Offset::out),
-    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
-        may_not_duplicate],
-"
-    time_t t;
-    struct tm tm;
-
-    t = Time;
-    localtime_r(&t, &tm);
-    Offset = tm.tm_gmtoff; /* GNU extension */
-").
+%-----------------------------------------------------------------------------%
 
 month_short_name(1, "Jan").
 month_short_name(2, "Feb").
@@ -118,6 +157,8 @@ weekday_short_name(3, "Wed").
 weekday_short_name(4, "Thu").
 weekday_short_name(5, "Fri").
 weekday_short_name(6, "Sat").
+
+%-----------------------------------------------------------------------------%
 
 make_reldate(Nowish, TM, Shorter, String) :-
     NowYear = 1900 + Nowish ^ tm_year,

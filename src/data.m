@@ -11,12 +11,14 @@
 :- import_module maybe.
 :- import_module set.
 
+:- import_module time_util.
+
 %-----------------------------------------------------------------------------%
 
 :- type thread
     --->    thread(
                 t_id        :: thread_id,
-                t_timestamp :: int,
+                t_timestamp :: timestamp,
                 t_authors   :: string,
                 t_subject   :: string,
                 t_tags      :: set(tag),
@@ -30,7 +32,7 @@
 :- type message
     --->    message(
                 m_id        :: message_id,
-                m_timestamp :: int,
+                m_timestamp :: timestamp,
                 m_headers   :: headers,
                 m_tags      :: set(tag),
                 m_body      :: list(part),
@@ -46,7 +48,7 @@
 :- type message_for_recall
     --->    message_for_recall(
                 mr_id           :: message_id,
-                mr_timestamp    :: int,
+                mr_timestamp    :: timestamp,
                 mr_headers      :: headers,
                 mr_tags         :: set(tag)
             ).
@@ -129,9 +131,6 @@
     ;       error
     ;       unknown.
 
-:- type timestamp
-    --->    timestamp(int). % unix time
-
 :- type encapsulated_message
     --->    encapsulated_message(
                 em_headers      :: headers,
@@ -154,7 +153,7 @@
 
 :- func get_maybe_message_id(message) = maybe(message_id).
 
-:- func get_timestamp_fallback(message) = int.
+:- func get_timestamp_fallback(message) = timestamp.
 
 :- func get_subject_fallback(message) = header_value.
 
@@ -198,7 +197,7 @@ get_maybe_message_id(message(Id, _, _, _, _, _)) = yes(Id).
 get_maybe_message_id(excluded_message(_)) = no.
 
 get_timestamp_fallback(message(_, Timestamp, _, _, _, _)) = Timestamp.
-get_timestamp_fallback(excluded_message(_)) = 0.
+get_timestamp_fallback(excluded_message(_)) = timestamp(0.0).
 
 get_subject_fallback(message(_, _, Headers, _, _, _)) = Headers ^ h_subject.
 get_subject_fallback(excluded_message(_)) = header_value("(excluded message)").

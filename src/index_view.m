@@ -24,6 +24,7 @@
 :- import_module bool.
 :- import_module char.
 :- import_module cord.
+:- import_module float.
 :- import_module int.
 :- import_module list.
 :- import_module map.
@@ -62,8 +63,8 @@
                 i_scrollable        :: scrollable(index_line),
                 i_search_terms      :: string,
                 i_search_tokens     :: list(token),
-                i_search_time       :: time_t,
-                i_next_poll_time    :: maybe(int), % time_t
+                i_search_time       :: timestamp,
+                i_next_poll_time    :: maybe(timestamp),
                 i_poll_count        :: int,
                 i_internal_search   :: maybe(string),
                 i_internal_search_dir :: search_direction,
@@ -162,7 +163,7 @@
 %-----------------------------------------------------------------------------%
 
 open_index(Config, Crypto, Screen, SearchString, !.CommonHistory, !IO) :-
-    time(Time, !IO),
+    current_timestamp(Time, !IO),
     ( SearchString = "" ->
         SearchTokens = [],
         Threads = []
@@ -188,7 +189,7 @@ open_index(Config, Crypto, Screen, SearchString, !.CommonHistory, !IO) :-
         add_history_nodup(SearchString, LimitHistory0, LimitHistory),
         !CommonHistory ^ ch_limit_history := LimitHistory
     ),
-    setup_index_scrollable(Time, Threads, Scrollable),
+    setup_index_scrollable(Time, Threads, Scrollable, !IO),
     SearchTime = Time,
     NextPollTime = next_poll_time(Config, Time),
     PollCount = 0,
@@ -246,12 +247,12 @@ search_terms_quiet(Config, Tokens, MaybeThreads, MessageUpdate, !IO) :-
         MessageUpdate = set_warning(Message)
     ).
 
-:- pred setup_index_scrollable(time_t::in, list(thread)::in,
-    scrollable(index_line)::out) is det.
+:- pred setup_index_scrollable(timestamp::in, list(thread)::in,
+    scrollable(index_line)::out, io::di, io::uo) is det.
 
-setup_index_scrollable(Time, Threads, Scrollable) :-
-    Nowish = localtime(Time),
-    list.foldl(add_thread(Nowish), Threads, cord.init, LinesCord),
+setup_index_scrollable(Time, Threads, Scrollable, !IO) :-
+    localtime(Time, Nowish, !IO),
+    list.foldl2(add_thread(Nowish), Threads, cord.init, LinesCord, !IO),
     Lines = list(LinesCord),
     (
         Lines = [],
@@ -262,17 +263,18 @@ setup_index_scrollable(Time, Threads, Scrollable) :-
     ).
 
 :- pred add_thread(tm::in, thread::in,
-    cord(index_line)::in, cord(index_line)::out) is det.
+    cord(index_line)::in, cord(index_line)::out, io::di, io::uo) is det.
 
-add_thread(Nowish, Thread, !Lines) :-
-    thread_to_index_line(Nowish, Thread, Line),
+add_thread(Nowish, Thread, !Lines, !IO) :-
+    thread_to_index_line(Nowish, Thread, Line, !IO),
     snoc(Line, !Lines).
 
-:- pred thread_to_index_line(tm::in, thread::in, index_line::out) is det.
+:- pred thread_to_index_line(tm::in, thread::in, index_line::out,
+    io::di, io::uo) is det.
 
-thread_to_index_line(Nowish, Thread, Line) :-
+thread_to_index_line(Nowish, Thread, Line, !IO) :-
     Thread = thread(Id, Timestamp, Authors, Subject, Tags, Matched, Total),
-    timestamp_to_tm(Timestamp, TM),
+    localtime(Timestamp, TM, !IO),
     Shorter = yes,
     make_reldate(Nowish, TM, Shorter, Date),
     get_standard_tags(Tags, StdTags, DisplayTagsWidth),
@@ -350,7 +352,7 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
             Return = yes(LimitString),
             add_history_nodup(LimitString, History0, History),
             !IndexInfo ^ i_common_history ^ ch_limit_history := History,
-            time(Time, !IO),
+            current_timestamp(Time, !IO),
             predigest_search_string(Config, LimitString, ParseRes, !IO),
             (
                 ParseRes = ok(Tokens),
@@ -358,7 +360,7 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
                     MaybeThreads, !IO),
                 (
                     MaybeThreads = yes(Threads),
-                    setup_index_scrollable(Time, Threads, Scrollable),
+                    setup_index_scrollable(Time, Threads, Scrollable, !IO),
                     !IndexInfo ^ i_scrollable := Scrollable,
                     !IndexInfo ^ i_search_terms := LimitString,
                     !IndexInfo ^ i_search_tokens := Tokens,
@@ -485,13 +487,12 @@ index_get_keycode(Info, Code, !IO) :-
         MaybeNextPollTime = Info ^ i_next_poll_time,
         (
             MaybeNextPollTime = yes(NextPollTime),
-            time(Time, !IO),
-            time_to_int(Time, TimeInt),
-            DeltaSecs = NextPollTime - TimeInt,
-            ( DeltaSecs =< 0 ->
+            current_timestamp(Time, !IO),
+            DeltaSecs = NextPollTime - Time,
+            ( DeltaSecs =< 0.0 ->
                 Tenths = 10
             ;
-                Tenths = 10 * DeltaSecs + 1
+                Tenths = 10 * floor_to_int(DeltaSecs) + 1
             ),
             get_keycode_timeout(Tenths, Code, !IO)
         ;
@@ -1504,7 +1505,7 @@ async_tag_attempts = 3.
 
 refresh_all(Screen, Verbose, !Info, !IO) :-
     flush_async_with_progress(Screen, !IO),
-    time(Time, !IO),
+    current_timestamp(Time, !IO),
     % The user might have changed search aliases and is trying to force a
     % refresh, so expand the search terms from the beginning.
     Config = !.Info ^ i_config,
@@ -1532,14 +1533,14 @@ refresh_all(Screen, Verbose, !Info, !IO) :-
         update_message(Screen, set_warning(Error), !IO)
     ).
 
-:- pred refresh_all_2(screen::in, time_t::in, list(token)::in,
+:- pred refresh_all_2(screen::in, timestamp::in, list(token)::in,
     list(thread)::in, index_info::in, index_info::out, io::di, io::uo) is det.
 
 refresh_all_2(Screen, Time, Tokens, Threads, !Info, !IO) :-
     some [!Scrollable] (
         Scrollable0 = !.Info ^ i_scrollable,
         Top0 = get_top(Scrollable0),
-        setup_index_scrollable(Time, Threads, !:Scrollable),
+        setup_index_scrollable(Time, Threads, !:Scrollable, !IO),
         ( Top0 < get_num_lines(!.Scrollable) ->
             set_top(Top0, !Scrollable)
         ;
@@ -1584,9 +1585,9 @@ refresh_index_line(Screen, ThreadId, !IndexInfo, !IO) :-
     ], parse_threads_list, Result, !IO),
     (
         Result = ok([Thread]),
-        time(Time, !IO),
-        Nowish = localtime(Time),
-        replace_index_cursor_line(Nowish, Thread, !IndexInfo)
+        current_timestamp(Time, !IO),
+        localtime(Time, Nowish, !IO),
+        replace_index_cursor_line(Nowish, Thread, !IndexInfo, !IO)
     ;
         ( Result = ok([])
         ; Result = ok([_, _ | _])
@@ -1596,11 +1597,11 @@ refresh_index_line(Screen, ThreadId, !IndexInfo, !IO) :-
     ).
 
 :- pred replace_index_cursor_line(tm::in, thread::in,
-    index_info::in, index_info::out) is det.
+    index_info::in, index_info::out, io::di, io::uo) is det.
 
-replace_index_cursor_line(Nowish, Thread, !Info) :-
+replace_index_cursor_line(Nowish, Thread, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,
-    thread_to_index_line(Nowish, Thread, Line),
+    thread_to_index_line(Nowish, Thread, Line, !IO),
     set_cursor_line(Line, Scrollable0, Scrollable),
     !Info ^ i_scrollable := Scrollable.
 
@@ -1645,16 +1646,15 @@ maybe_sched_poll(!Info, !IO) :-
         MaybeNextPollTime = no
     ;
         MaybeNextPollTime = yes(NextPollTime),
-        time(Time, !IO),
-        time_to_int(Time, TimeInt),
-        ( TimeInt < NextPollTime ->
-            true
-        ;
+        current_timestamp(Time, !IO),
+        ( NextPollTime - Time >= 0.0 ->
             sched_poll(Time, !Info, !IO)
+        ;
+            true
         )
     ).
 
-:- pred sched_poll(time_t::in, index_info::in, index_info::out, io::di, io::uo)
+:- pred sched_poll(timestamp::in, index_info::in, index_info::out, io::di, io::uo)
     is det.
 
 sched_poll(Time, !Info, !IO) :-
@@ -1662,11 +1662,10 @@ sched_poll(Time, !Info, !IO) :-
     get_notmuch_command(Config, Notmuch),
     Tokens = !.Info ^ i_search_tokens,
     SearchTime = !.Info ^ i_search_time,
-    time_to_int(SearchTime, SearchTimeInt),
     tokens_to_search_terms(Tokens, Terms1, _ApplyCap, !IO),
     Args = [
         "count", "--",
-        "(", Terms1, ")", from_int(SearchTimeInt) ++ "..",
+        "(", Terms1, ")", timestamp_to_int_string(SearchTime) ++ "..",
         "AND", "tag:unread"
     ],
     Op = async_lowprio_command(Notmuch, Args),
@@ -1733,14 +1732,13 @@ maybe_poll_notify(Config, Message, MessageUpdate, !IO) :-
         MessageUpdate = no_change
     ).
 
-:- func next_poll_time(prog_config, time_t) = maybe(int).
+:- func next_poll_time(prog_config, timestamp) = maybe(timestamp).
 
 next_poll_time(Config, Time) = NextPollTime :-
     get_poll_period_secs(Config, Maybe),
     (
         Maybe = yes(PollPeriodSecs),
-        time_to_int(Time, TimeInt),
-        NextPollTime = yes(TimeInt + PollPeriodSecs)
+        NextPollTime = yes(Time + float(PollPeriodSecs))
     ;
         Maybe = no,
         NextPollTime = no
