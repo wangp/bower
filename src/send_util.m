@@ -12,7 +12,7 @@
 :- import_module rfc5322.
 :- import_module splitmix64.
 
-:- pred generate_date_msg_id(header_value::out, header_value::out,
+:- pred generate_date_msg_id(string::in, header_value::out, header_value::out,
     io::di, io::uo) is det.
 
 :- type write_header_options
@@ -57,7 +57,8 @@
 
 %-----------------------------------------------------------------------------%
 
-generate_date_msg_id(header_value(Date), header_value(MessageId), !IO) :-
+generate_date_msg_id(RightPart, header_value(Date), header_value(MessageId),
+        !IO) :-
     current_timestamp(Time, !IO),
     localtime(Time, TM, GMTOffSecs, !IO),
     Year = 1900 + TM ^ tm_year,
@@ -91,11 +92,9 @@ generate_date_msg_id(header_value(Date), header_value(MessageId), !IO) :-
     set_msgid_counter(Counter, !IO),
 
     get_pid(Pid, !IO),
-    get_hostname(HostName, !IO),
-    get_domainname(DomainName, !IO),
-    MessageId = string.format("<%04d%02d%02d%02d%02d%02d.G%c%d@%s.%s>",
+    MessageId = string.format("<%04d%02d%02d%02d%02d%02d.G%c%d@%s>",
         [i(Year), i(Month), i(Day), i(Hour), i(Min), i(Sec),
-        c(Char), i(Pid), s(HostName), s(DomainName)]).
+        c(Char), i(Pid), s(RightPart)]).
 
 %-----------------------------------------------------------------------------%
 

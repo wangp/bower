@@ -1908,7 +1908,8 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
     % We only use this to generate MIME boundaries.
     current_timestamp(timestamp(Seed), !IO),
     splitmix64.init(truncate_to_int(Seed), RS0),
-    generate_date_msg_id(Date, MessageId, !IO),
+    get_message_id_right_part(Config, MessageIdRight),
+    generate_date_msg_id(MessageIdRight, Date, MessageId, !IO),
     generate_headers(Prepare, Headers, ParsedHeaders, Date, MessageId,
         WriteHeaders),
     (

@@ -190,7 +190,7 @@ confirm_resend(Screen, From, To, Confirmation, !IO) :-
 
 create_temp_message_file_and_resend(Config, Screen, MessageId, Account,
         FromAddress, ToAddresses, MessageUpdate, !IO) :-
-    write_resent_headers(FromAddress, ToAddresses, ResWrite, !IO),
+    write_resent_headers(Config, FromAddress, ToAddresses, ResWrite, !IO),
     (
         ResWrite = ok(FileName),
         get_notmuch_command(Config, Notmuch),
@@ -221,10 +221,10 @@ create_temp_message_file_and_resend(Config, Screen, MessageId, Account,
         MessageUpdate = set_warning(Error)
     ).
 
-:- pred write_resent_headers(address_list::in, address_list::in,
-    maybe_error(string)::out, io::di, io::uo) is det.
+:- pred write_resent_headers(prog_config::in, address_list::in,
+    address_list::in, maybe_error(string)::out, io::di, io::uo) is det.
 
-write_resent_headers(FromAddress, ToAddresses, Res, !IO) :-
+write_resent_headers(Config, FromAddress, ToAddresses, Res, !IO) :-
     io.make_temp(FileName, !IO),
     io.open_output(FileName, ResOpen, !IO),
     (
@@ -232,7 +232,8 @@ write_resent_headers(FromAddress, ToAddresses, Res, !IO) :-
         promise_equivalent_solutions [Res, !:IO]
         (
           try [io(!IO)] (
-            generate_resent_headers(Stream, FromAddress, ToAddresses, !IO),
+            generate_resent_headers(Config, Stream, FromAddress, ToAddresses,
+                !IO),
             io.close_output(Stream, !IO)
           )
           then
@@ -247,11 +248,12 @@ write_resent_headers(FromAddress, ToAddresses, Res, !IO) :-
             io.error_message(Error))
     ).
 
-:- pred generate_resent_headers(io.output_stream::in, address_list::in,
-    address_list::in, io::di, io::uo) is det.
+:- pred generate_resent_headers(prog_config::in, io.output_stream::in,
+    address_list::in, address_list::in, io::di, io::uo) is det.
 
-generate_resent_headers(Stream, FromAddress, ToAddresses, !IO) :-
-    generate_date_msg_id(Date, ResentMessageId, !IO),
+generate_resent_headers(Config, Stream, FromAddress, ToAddresses, !IO) :-
+    get_message_id_right_part(Config, RightPart),
+    generate_date_msg_id(RightPart, Date, ResentMessageId, !IO),
 
     write_address_list_header(rfc2047_encoding, Stream,
         "Resent-From", FromAddress, ok, _FromError, !IO),
