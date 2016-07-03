@@ -160,7 +160,7 @@
 
 :- pred is_multipart_signed(part::in) is semidet.
 
-:- pred is_appplication_pgp_encrypted(part::in) is semidet.
+:- pred is_application_pgp_encrypted(part::in) is semidet.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -205,7 +205,7 @@ get_replies(excluded_message(Replies)) = Replies.
 is_multipart_signed(Part) :-
     strcase_equal(Part ^ pt_type, "multipart/signed").
 
-is_appplication_pgp_encrypted(Part) :-
+is_application_pgp_encrypted(Part) :-
     strcase_equal(Part ^ pt_type, "application/pgp-encrypted").
 
 %-----------------------------------------------------------------------------%

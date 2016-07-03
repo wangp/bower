@@ -474,7 +474,7 @@ first_text_part([Part | Parts], Text, AttachmentParts) :-
             first_text_part(SubParts, Text, AttachmentParts)
         ;
             Encryption = decryption_good,
-            filter(isnt(is_appplication_pgp_encrypted),
+            filter(isnt(is_application_pgp_encrypted),
                 SubParts, OtherSubParts),
             first_text_part(OtherSubParts, Text, AttachmentParts)
         )
