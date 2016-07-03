@@ -1941,7 +1941,7 @@ do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, MaybeNextKey,
     ->
         make_temp_suffix(Ext, FileName, !IO)
     ;
-        io.make_temp(FileName, !IO)
+        make_temp_suffix("", FileName, !IO)
     ),
     do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName, Res,
         !IO),

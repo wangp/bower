@@ -91,6 +91,7 @@
 :- import_module send_util.
 :- import_module splitmix64.
 :- import_module string_util.
+:- import_module sys_util.
 :- import_module tags.
 :- import_module time_util.
 :- import_module write_message.
@@ -2209,7 +2210,7 @@ generate_multipart_signed(SignedPart, Sig, MicAlg, MultiPart, !RS) :-
     message_spec::in, maybe_error(string)::out, io::di, io::uo) is det.
 
 write_temp_message_file(Config, Prepare, Spec, Res, !IO) :-
-    io.make_temp(Filename, !IO),
+    make_temp_suffix("", Filename, !IO),
     io.open_output(Filename, ResOpen, !IO),
     (
         ResOpen = ok(Stream),

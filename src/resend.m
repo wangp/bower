@@ -31,6 +31,7 @@
 :- import_module rfc5322.
 :- import_module rfc5322.parser.
 :- import_module send_util.
+:- import_module sys_util.
 
 :- type sent
     --->    sent
@@ -225,7 +226,7 @@ create_temp_message_file_and_resend(Config, Screen, MessageId, Account,
     address_list::in, maybe_error(string)::out, io::di, io::uo) is det.
 
 write_resent_headers(Config, FromAddress, ToAddresses, Res, !IO) :-
-    io.make_temp(FileName, !IO),
+    make_temp_suffix("", FileName, !IO),
     io.open_output(FileName, ResOpen, !IO),
     (
         ResOpen = ok(Stream),
