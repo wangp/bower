@@ -14,16 +14,15 @@ MCFLAGS-bower += --mercury-linkage static
 # General optimisation flags.
 MCFLAGS += --optimise-constructor-last-call
 
+# Don't specify to the C compiler that the ANSI dialect of C should be used.
+# --ansi-c practically does nothing after Mercury commit 61df175
+# so this only relaxes older Mercury compilers.
+MCFLAGS += --no-ansi-c
+
 # Module-specific options.
 MCFLAGS-json += --exec-trace-tail-rec
 MCFLAGS-make_utf8 += --exec-trace-tail-rec
 MCFLAGS-pager += --exec-trace-tail-rec
-MCFLAGS-make_temp += --no-ansi-c
-MCFLAGS-popen += --no-ansi-c
-MCFLAGS-process += --no-ansi-c
-MCFLAGS-sleep += --no-ansi-c
-MCFLAGS-string_util += --no-ansi-c
-MCFLAGS-sys_util += --no-ansi-c
 CFLAGS-async += -D_POSIX_SOURCE
 CFLAGS-curs += -D_XOPEN_SOURCE_EXTENDED
 CFLAGS-signal += -D_POSIX_SOURCE
