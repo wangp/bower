@@ -60,6 +60,7 @@
 :- import_module cord_util.
 :- import_module curs.
 :- import_module curs.panel.
+:- import_module make_temp.
 :- import_module pager.
 :- import_module path_expand.
 :- import_module quote_arg.
@@ -68,7 +69,6 @@
 :- import_module scrollable.
 :- import_module shell_word.
 :- import_module string_util.
-:- import_module sys_util.
 :- import_module text_entry.
 :- import_module time_util.
 
@@ -1939,35 +1939,44 @@ do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, MaybeNextKey,
         MaybePartFileName = yes(PartFilename),
         get_extension(PartFilename, Ext)
     ->
-        make_temp_suffix(Ext, FileName, !IO)
+        make_temp_suffix(Ext, Res0, !IO)
     ;
-        make_temp_suffix("", FileName, !IO)
+        make_temp_suffix("", Res0, !IO)
     ),
-    do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName, Res,
-        !IO),
     (
-        Res = ok,
-        call_open_command(Screen, CommandWords, FileName, MaybeError, !IO),
+        Res0 = ok(FileName),
+        do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName,
+            Res, !IO),
         (
-            MaybeError = ok,
-            ContMessage = set_info(
-                "Press any key to continue (deletes temporary file)"),
-            update_message_immed(Screen, ContMessage, !IO),
-            get_keycode_blocking(Key, !IO),
-            MaybeNextKey = yes(Key),
-            MessageUpdate = clear_message
+            Res = ok,
+            call_open_command(Screen, CommandWords, FileName, MaybeError, !IO),
+            (
+                MaybeError = ok,
+                ContMessage = set_info(
+                    "Press any key to continue (deletes temporary file)"),
+                update_message_immed(Screen, ContMessage, !IO),
+                get_keycode_blocking(Key, !IO),
+                MaybeNextKey = yes(Key),
+                MessageUpdate = clear_message
+            ;
+                MaybeError = error(Msg),
+                MessageUpdate = set_warning(Msg),
+                MaybeNextKey = no
+            )
         ;
-            MaybeError = error(Msg),
+            Res = error(Error),
+            string.format("Error saving to %s: %s", [s(FileName), s(Error)],
+                Msg),
             MessageUpdate = set_warning(Msg),
             MaybeNextKey = no
-        )
+        ),
+        io.remove_file(FileName, _, !IO)
     ;
-        Res = error(Error),
-        string.format("Error saving to %s: %s", [s(FileName), s(Error)], Msg),
+        Res0 = error(Error),
+        string.format("Error opening temporary file: %s", [s(Error)], Msg),
         MessageUpdate = set_warning(Msg),
         MaybeNextKey = no
-    ),
-    io.remove_file(FileName, _, !IO).
+    ).
 
 :- pred call_open_command(screen::in, list(word)::in(non_empty_list),
     string::in, maybe_error::out, io::di, io::uo) is det.

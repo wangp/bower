@@ -18,6 +18,7 @@ MCFLAGS += --optimise-constructor-last-call
 MCFLAGS-json += --exec-trace-tail-rec
 MCFLAGS-make_utf8 += --exec-trace-tail-rec
 MCFLAGS-pager += --exec-trace-tail-rec
+MCFLAGS-make_temp += --no-ansi-c
 MCFLAGS-popen += --no-ansi-c
 MCFLAGS-process += --no-ansi-c
 MCFLAGS-sleep += --no-ansi-c

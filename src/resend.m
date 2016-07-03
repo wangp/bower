@@ -27,11 +27,11 @@
 :- import_module string.
 
 :- import_module compose.
+:- import_module make_temp.
 :- import_module quote_arg.
 :- import_module rfc5322.
 :- import_module rfc5322.parser.
 :- import_module send_util.
-:- import_module sys_util.
 
 :- type sent
     --->    sent
@@ -226,27 +226,33 @@ create_temp_message_file_and_resend(Config, Screen, MessageId, Account,
     address_list::in, maybe_error(string)::out, io::di, io::uo) is det.
 
 write_resent_headers(Config, FromAddress, ToAddresses, Res, !IO) :-
-    make_temp_suffix("", FileName, !IO),
-    io.open_output(FileName, ResOpen, !IO),
+    make_temp_suffix("", ResTemp, !IO),
     (
-        ResOpen = ok(Stream),
-        promise_equivalent_solutions [Res, !:IO]
+        ResTemp = ok(FileName),
+        io.open_output(FileName, ResOpen, !IO),
         (
-          try [io(!IO)] (
-            generate_resent_headers(Config, Stream, FromAddress, ToAddresses,
-                !IO),
-            io.close_output(Stream, !IO)
-          )
-          then
-            Res = ok(FileName)
-          catch_any Excp ->
-            io.remove_file(FileName, _, !IO),
-            Res = error("exception occurred: " ++ string(Excp))
+            ResOpen = ok(Stream),
+            promise_equivalent_solutions [Res, !:IO]
+            (
+              try [io(!IO)] (
+                generate_resent_headers(Config, Stream, FromAddress, ToAddresses,
+                    !IO),
+                io.close_output(Stream, !IO)
+              )
+              then
+                Res = ok(FileName)
+              catch_any Excp ->
+                io.remove_file(FileName, _, !IO),
+                Res = error("exception occurred: " ++ string(Excp))
+            )
+        ;
+            ResOpen = error(Error),
+            Res = error("error opening " ++ FileName ++ ": " ++
+                io.error_message(Error))
         )
     ;
-        ResOpen = error(Error),
-        Res = error("error opening " ++ FileName ++ ": " ++
-            io.error_message(Error))
+        ResTemp = error(Error),
+        Res = error("error opening temporary file: " ++ Error)
     ).
 
 :- pred generate_resent_headers(prog_config::in, io.output_stream::in,
