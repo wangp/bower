@@ -57,6 +57,7 @@
 :- import_module callout.
 :- import_module color.
 :- import_module compose.
+:- import_module cord_util.
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module pager.
@@ -428,7 +429,7 @@ append_threaded_messages(Nowish, Above0, Below0, MaybeParentId,
         Graphics = Above0 ++ [ell],
         make_thread_line(Nowish, Message, MaybeParentId, yes(Graphics),
             PrevSubject, Line, !IO),
-        snoc(Line, !Cord),
+        cord_util.snoc(Line, !Cord),
         MessagesCord = cord.empty,
         Below1 = Below0
     ;
@@ -436,7 +437,7 @@ append_threaded_messages(Nowish, Above0, Below0, MaybeParentId,
         Graphics = Above0 ++ [tee],
         make_thread_line(Nowish, Message, MaybeParentId, yes(Graphics),
             PrevSubject, Line, !IO),
-        snoc(Line, !Cord),
+        cord_util.snoc(Line, !Cord),
         get_last_subject(Message, LastSubject),
         append_threaded_messages(Nowish, Above0, Below0, MaybeParentId,
             Messages, LastSubject, cord.init, MessagesCord, !IO),

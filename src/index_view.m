@@ -39,6 +39,7 @@
 :- import_module callout.
 :- import_module color.
 :- import_module compose.
+:- import_module cord_util.
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module data.
@@ -267,7 +268,7 @@ setup_index_scrollable(Time, Threads, Scrollable, !IO) :-
 
 add_thread(Nowish, Thread, !Lines, !IO) :-
     thread_to_index_line(Nowish, Thread, Line, !IO),
-    snoc(Line, !Lines).
+    cord_util.snoc(Line, !Lines).
 
 :- pred thread_to_index_line(tm::in, thread::in, index_line::out,
     io::di, io::uo) is det.
