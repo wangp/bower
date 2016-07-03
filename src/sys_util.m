@@ -19,7 +19,6 @@
 
 :- implementation.
 
-:- import_module bool.
 :- import_module dir.
 :- import_module exception.
 :- import_module string.
