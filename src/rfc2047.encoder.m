@@ -24,6 +24,7 @@
 :- import_module string.
 
 :- import_module base64.
+:- import_module list_util.
 :- import_module rfc5234.
 :- import_module string_util.
 
@@ -57,7 +58,7 @@ encode_phrase([], []).
 encode_phrase(Plain, Encoded) :-
     Plain = [PlainWord0 | PlainWords0],
     ( must_encode(PlainWord0) ->
-        list.takewhile(must_encode, Plain, PlainHead, PlainTail),
+        list_util.take_while(must_encode, Plain, PlainHead, PlainTail),
         make_encoded_words(PlainHead, EncodedHead),
         encode_phrase(PlainTail, EncodedTail),
         Encoded = EncodedHead ++ EncodedTail

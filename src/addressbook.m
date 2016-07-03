@@ -38,6 +38,7 @@
 :- import_module string.
 
 :- import_module callout.
+:- import_module list_util.
 :- import_module quote_arg.
 :- import_module text_entry.    % XXX cyclic
 
@@ -162,7 +163,7 @@ suggest_alias(Address) = Alias :-
     ;
         string.to_char_list(Address, Chars0)
     ),
-    list.takewhile(is_alias_char, Chars0, Chars, _),
+    list_util.take_while(is_alias_char, Chars0, Chars, _),
     string.from_char_list(Chars, Alias).
 
 :- pred do_addressbook_add(prog_config::in, string::in, string::in,

@@ -123,6 +123,7 @@
 
 :- import_module copious_output.
 :- import_module fold_lines.
+:- import_module list_util.
 :- import_module pager_text.
 :- import_module quote_arg.
 :- import_module string_util.
@@ -555,8 +556,8 @@ fold_quote_blocks(Lines0, Trees, !Counter) :-
         Trees = []
     ;
         Lines0 = [_ | _],
-        list.takewhile(is_not_quoted_text, Lines0, NonQuotedLines, Lines1),
-        list.takewhile(is_quoted_text, Lines1, QuotedLines, RestLines),
+        list_util.take_while(is_not_quoted_text, Lines0, NonQuotedLines, Lines1),
+        list_util.take_while(is_quoted_text, Lines1, QuotedLines, RestLines),
         list.length(QuotedLines, NumQuotedLines),
         (
             NumQuotedLines >= 2 * quoted_lines_threshold,

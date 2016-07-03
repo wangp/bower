@@ -74,6 +74,7 @@
 :- import_module call_system.
 :- import_module curs.
 :- import_module curs.panel.
+:- import_module list_util.
 :- import_module quote_arg.
 :- import_module string_util.
 
@@ -413,8 +414,8 @@ delete_char([_ | Cs], Cs).
 :- pred delete_word(list(char)::in, list(char)::out) is semidet.
 
 delete_word(Cs0, Cs) :-
-    list.takewhile(non_word_char, Cs0, _, Cs1),
-    list.takewhile(is_word_char, Cs1, _, Cs),
+    list_util.take_while(non_word_char, Cs0, _, Cs1),
+    list_util.take_while(is_word_char, Cs1, _, Cs),
     Cs \= Cs0.
 
 :- pred left_char(list(char)::in, list(char)::out,
@@ -433,16 +434,16 @@ right_char(!Xs, !Ys) :-
     list(char)::in, list(char)::out) is det.
 
 back_word(Before0, Before, After0, After) :-
-    list.takewhile(non_word_char, Before0, Take0, Before1),
-    list.takewhile(is_word_char, Before1, Take1, Before),
+    list_util.take_while(non_word_char, Before0, Take0, Before1),
+    list_util.take_while(is_word_char, Before1, Take1, Before),
     After = list.reverse(Take0 ++ Take1) ++ After0.
 
 :- pred forward_word(list(char)::in, list(char)::out,
     list(char)::in, list(char)::out) is det.
 
 forward_word(Before0, Before, After0, After) :-
-    list.takewhile(is_word_char, After0, Take0, After1),
-    list.takewhile(non_word_char, After1, Take1, After),
+    list_util.take_while(is_word_char, After0, Take0, After1),
+    list_util.take_while(non_word_char, After1, Take1, After),
     Before = list.reverse(Take0 ++ Take1) ++ Before0.
 
 :- pred bol(list(char)::in, list(char)::out, list(char)::in, list(char)::out)
@@ -568,11 +569,11 @@ forward_for_completion(Type, Before0, Before, After0, After) :-
         ; Type = complete_tags_smart(_, _, _)
         ; Type = complete_config_key(_, _)
         ),
-        list.takewhile(non_whitespace, After0, Take, After),
+        list_util.take_while(non_whitespace, After0, Take, After),
         Before = list.reverse(Take) ++ Before0
     ;
         Type = complete_address(_),
-        list.takewhile(not_comma, After0, Take, After),
+        list_util.take_while(not_comma, After0, Take, After),
         Before = list.reverse(Take) ++ Before0
     ).
 
@@ -623,14 +624,14 @@ generate_choices(Type, Orig, After, Choices, CompletionPoint, !IO) :-
     ;
         Type = complete_limit(Config, SearchAliasSection,
             TagCompletionTriggers),
-        list.takewhile(non_whitespace, Orig, Word, Untouched),
+        list_util.take_while(non_whitespace, Orig, Word, Untouched),
         list.length(Untouched, CompletionPoint),
         string.from_rev_char_list(Word, WordString),
         generate_limit_choices(Config, SearchAliasSection,
             TagCompletionTriggers, WordString, Choices, !IO)
     ;
         Type = complete_tags_smart(Config, AndTags, OrTags),
-        list.takewhile(non_whitespace, Orig, Word, Untouched),
+        list_util.take_while(non_whitespace, Orig, Word, Untouched),
         list.length(Untouched, CompletionPoint),
         get_entered_tags(Untouched, After, EnteredTags),
         string.from_rev_char_list(Word, WordString),
@@ -638,15 +639,15 @@ generate_choices(Type, Orig, After, Choices, CompletionPoint, !IO) :-
             WordString, Choices, !IO)
     ;
         Type = complete_config_key(Config, SectionName),
-        list.takewhile(non_whitespace, Orig, Word, Untouched),
+        list_util.take_while(non_whitespace, Orig, Word, Untouched),
         list.length(Untouched, CompletionPoint),
         string.from_rev_char_list(Word, WordString),
         generate_config_key_choices(Config, SectionName, WordString, Choices,
             !IO)
     ;
         Type = complete_address(Config),
-        list.takewhile(not_comma, Orig, RevWord0, Prefix),
-        list.takewhile(is_whitespace, reverse(RevWord0), LeadWhiteSpace, Word),
+        list_util.take_while(not_comma, Orig, RevWord0, Prefix),
+        list_util.take_while(is_whitespace, reverse(RevWord0), LeadWhiteSpace, Word),
         CompletionPoint = length(Prefix) + length(LeadWhiteSpace),
         WordString = rstrip(from_char_list(Word)),
         generate_config_key_choices(Config, addressbook_section,
