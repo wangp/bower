@@ -1648,7 +1648,8 @@ maybe_sched_poll(!Info, !IO) :-
     ;
         MaybeNextPollTime = yes(NextPollTime),
         current_timestamp(Time, !IO),
-        ( NextPollTime - Time >= 0.0 ->
+        DeltaSecs = NextPollTime - Time,
+        ( DeltaSecs =< 0.0 ->
             sched_poll(Time, !Info, !IO)
         ;
             true
