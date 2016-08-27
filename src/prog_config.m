@@ -518,13 +518,17 @@ fill_default_mailbox(Notmuch, Accounts0, Accounts, !Errors, !IO) :-
         member(SomeAccount, Accounts0),
         SomeAccount ^ from_address = no
     ->
-        get_notmuch_from_address(Notmuch, MaybeDefault, !IO),
+        get_notmuch_from_address(Notmuch, ResDefault, !IO),
         (
-            MaybeDefault = yes(Default)
+            ResDefault = ok(yes(Default))
         ;
-            MaybeDefault = no,
+            ResDefault = ok(no),
             cons("could not derive default from_address from .notmuch-config",
                 !Errors),
+            Default = bad_mailbox("") % dummy
+        ;
+            ResDefault = error(Error),
+            cons(Error, !Errors),
             Default = bad_mailbox("") % dummy
         )
     ;
@@ -532,10 +536,10 @@ fill_default_mailbox(Notmuch, Accounts0, Accounts, !Errors, !IO) :-
     ),
     map(set_default_from_address(Default), Accounts0, Accounts).
 
-:- pred get_notmuch_from_address(command_prefix::in, maybe(mailbox)::out,
-    io::di, io::uo) is det.
+:- pred get_notmuch_from_address(command_prefix::in,
+    maybe_error(maybe(mailbox))::out, io::di, io::uo) is det.
 
-get_notmuch_from_address(Notmuch, MaybeMailbox, !IO) :-
+get_notmuch_from_address(Notmuch, Res, !IO) :-
     get_notmuch_config0(Notmuch, "user.name", ResName, !IO),
     (
         ResName = ok(Name),
@@ -548,17 +552,17 @@ get_notmuch_from_address(Notmuch, MaybeMailbox, !IO) :-
                 Address = mailbox(Mailbox),
                 Mailbox = mailbox(_, _)
             ->
-                MaybeMailbox = yes(Mailbox)
+                Res = ok(yes(Mailbox))
             ;
-                MaybeMailbox = no
+                Res = ok(no)
             )
         ;
-            ResEmail = error(_),
-            MaybeMailbox = no
+            ResEmail = error(Error),
+            Res = error(Error)
         )
     ;
-        ResName = error(_),
-        MaybeMailbox = no
+        ResName = error(Error),
+        Res = error(Error)
     ).
 
 :- pred set_default_from_address(mailbox::in, account(maybe(mailbox))::in,

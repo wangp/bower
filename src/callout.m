@@ -17,14 +17,14 @@
 
 %-----------------------------------------------------------------------------%
 
-:- pred get_notmuch_config(prog_config::in, string::in, io.res(string)::out,
-    io::di, io::uo) is det.
+:- pred get_notmuch_config(prog_config::in, string::in,
+    maybe_error(string)::out, io::di, io::uo) is det.
 
 :- pred get_notmuch_config0(command_prefix::in, string::in,
-    io.res(string)::out, io::di, io::uo) is det.
+    maybe_error(string)::out, io::di, io::uo) is det.
 
 :- pred get_notmuch_config(prog_config::in, string::in, string::in,
-    io.res(string)::out, io::di, io::uo) is det.
+    maybe_error(string)::out, io::di, io::uo) is det.
 
 :- pred run_notmuch(prog_config::in, list(string)::in,
     pred(json, T)::in(pred(in, out) is det), maybe_error(T)::out,
@@ -81,8 +81,11 @@ get_notmuch_config0(Notmuch, Key, Res, !IO) :-
         Value = string.strip(Value0),
         Res = ok(Value)
     ;
-        Res0 = error(_),
-        Res = Res0
+        Res0 = error(Error),
+        Notmuch = command_prefix(shell_quoted(NotmuchString), _),
+        string.append_list(["Error running ", NotmuchString, ": ",
+            io.error_message(Error)], Message),
+        Res = error(Message)
     ).
 
 get_notmuch_config(Config, Section, Key, Res, !IO) :-
