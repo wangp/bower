@@ -97,7 +97,7 @@ posix_spawn_capture_stdout(Prog, Args, Res, !IO) :-
         may_not_duplicate],
 "
     pid_t pid;
-    char *argv[NumArgs + 1];    /* C99 stack allocation */
+    char *argv[1 + NumArgs + 1];    /* C99 stack allocation */
     int pipefd[2] = {-1, -1};
     int i;
     int rc;
