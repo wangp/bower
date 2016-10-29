@@ -47,7 +47,8 @@
 :- pred nodelay(bool::in, io::di, io::uo) is det.
 
     % halfdelay(Tenths, !IO)
-    % Enable halfdelay mode. The delay is in tenths of a second.
+    % Enable halfdelay mode. The delay is in tenths of a second
+    % between 1 and 255.
     %
 :- pred halfdelay(int::in, io::di, io::uo) is det.
 
