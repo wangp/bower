@@ -454,7 +454,9 @@ get_keycode_blocking(Code, !IO) :-
     get_keycode_2(Code, !IO).
 
 get_keycode_timeout(Tenths, Code, !IO) :-
-    curs.halfdelay(Tenths, !IO),
+    % halfdelay argument must be between 1 and 255.
+    HalfDelay = max(1, min(Tenths, 255)),
+    curs.halfdelay(HalfDelay, !IO),
     get_keycode_2(Code, !IO).
 
 :- pred get_keycode_2(keycode::out, io::di, io::uo) is det.
