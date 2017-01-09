@@ -500,7 +500,7 @@ to_old_attachment(Part, old_attachment(Part)).
 create_edit_stage(Config, Crypto, Screen, Headers0, Text0, Attachments,
         MaybeOldDraft, EncryptInit, SignInit, Transition, !IO) :-
     get_encrypt_by_default(Config, EncryptByDefault),
-    get_encrypt_by_default(Config, SignByDefault),
+    get_sign_by_default(Config, SignByDefault),
     CryptoInfo0 = init_crypto_info(Crypto,
         EncryptByDefault `or` EncryptInit,
         SignByDefault `or` SignInit),
