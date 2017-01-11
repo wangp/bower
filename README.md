@@ -116,6 +116,7 @@ The keys are:
     n               skip to next search result
     N               toggle unread tag on current thread
     F               toggle flagged tag on current thread
+    .               archive message (tag -unread -inbox)
     d               set deleted tag on current thread
     u               unset deleted tag on current thread
     +, -            add/remove arbitrary tags
@@ -305,4 +306,3 @@ Author
 Peter Wang <novalazy@gmail.com>
 
 Feel free to contact me with feedback or suggestions.
-
