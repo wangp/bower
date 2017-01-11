@@ -110,6 +110,7 @@
     ;       skip_to_internal_search
     ;       toggle_unread
     ;       toggle_flagged
+    ;       archive
     ;       set_deleted
     ;       unset_deleted
     ;       prompt_tag(string)
@@ -132,6 +133,7 @@
     ;       prompt_internal_search(search_direction)
     ;       toggle_unread
     ;       toggle_flagged
+    ;       archive
     ;       set_deleted
     ;       unset_deleted
     ;       prompt_tag(string)
@@ -444,6 +446,10 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         modify_tag_cursor_line(toggle_flagged, Screen, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
+        Action = archive,
+        modify_tag_cursor_line(archive, Screen, !IndexInfo, !IO),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
         Action = set_deleted,
         modify_tag_cursor_line(set_deleted, Screen, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
@@ -620,6 +626,10 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = toggle_flagged
         ;
+            Binding = archive,
+            MessageUpdate = no_change,
+            Action = archive
+        ;
             Binding = set_deleted,
             MessageUpdate = no_change,
             Action = set_deleted
@@ -704,6 +714,7 @@ key_binding_char('?', prompt_internal_search(dir_reverse)).
 key_binding_char('n', skip_to_internal_search).
 key_binding_char('N', toggle_unread).
 key_binding_char('F', toggle_flagged).
+key_binding_char('.', archive).
 key_binding_char('d', set_deleted).
 key_binding_char('u', unset_deleted).
 key_binding_char('+', prompt_tag("+")).
@@ -1078,6 +1089,7 @@ modify_tag_cursor_line(ModifyPred, Screen, !Info, !IO) :-
     ),
     update_message(Screen, MessageUpdate, !IO).
 
+
 :- pred toggle_unread(index_line::in, index_line::out, tag_delta::out) is det.
 
 toggle_unread(Line0, Line, TagDelta) :-
@@ -1123,6 +1135,13 @@ set_deleted(Line0, Line, TagDelta) :-
 unset_deleted(Line0, Line, TagDelta) :-
     Line = Line0 ^ i_std_tags ^ deleted := not_deleted,
     TagDelta = tag_delta("-deleted").
+
+:- pred archive(index_line::in, index_line::out, tag_delta::out) is det.
+
+archive(Line0, Line, TagDelta) :-
+    Line = Line0 ^ i_std_tags ^ deleted := not_deleted,
+    TagDelta = tag_delta("-inbox").
+
 
 %-----------------------------------------------------------------------------%
 
