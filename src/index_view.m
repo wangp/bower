@@ -1063,7 +1063,7 @@ line_matches_internal_search(Search, Line) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred modify_tag_cursor_line(pred(index_line, index_line, tag_delta),
+:- pred modify_tag_cursor_line(pred(index_line, index_line, list(tag_delta)),
     screen, index_info, index_info, io, io).
 :- mode modify_tag_cursor_line(in(pred(in, out, out) is det),
     in, in, out, di, uo) is det.
@@ -1074,9 +1074,9 @@ modify_tag_cursor_line(ModifyPred, Screen, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
         ThreadId = CursorLine0 ^ i_id,
-        ( ModifyPred(CursorLine0, CursorLine, TagDelta) ->
+        ( ModifyPred(CursorLine0, CursorLine, TagDeltas) ->
             Config = !.Info ^ i_config,
-            async_tag_threads(Config, [TagDelta], [ThreadId], !IO),
+            async_tag_threads(Config, TagDeltas, [ThreadId], !IO),
             set_cursor_line(CursorLine, Scrollable0, Scrollable),
             !Info ^ i_scrollable := Scrollable,
             move_cursor(Screen, 1, _MessageUpdate, !Info),
@@ -1090,33 +1090,33 @@ modify_tag_cursor_line(ModifyPred, Screen, !Info, !IO) :-
     update_message(Screen, MessageUpdate, !IO).
 
 
-:- pred toggle_unread(index_line::in, index_line::out, tag_delta::out) is det.
+:- pred toggle_unread(index_line::in, index_line::out, list(tag_delta)::out) is det.
 
-toggle_unread(Line0, Line, TagDelta) :-
+toggle_unread(Line0, Line, TagDeltas) :-
     Unread0 = Line0 ^ i_std_tags ^ unread,
     (
         Unread0 = unread,
-        TagDelta = tag_delta("-unread"),
+        TagDeltas = [tag_delta("-unread")],
         Unread = read
     ;
         Unread0 = read,
-        TagDelta = tag_delta("+unread"),
+        TagDeltas = [tag_delta("+unread")],
         Unread = unread
     ),
     Line = Line0 ^ i_std_tags ^ unread := Unread.
 
-:- pred toggle_flagged(index_line::in, index_line::out, tag_delta::out)
+:- pred toggle_flagged(index_line::in, index_line::out, list(tag_delta)::out)
     is semidet.
 
-toggle_flagged(Line0, Line, TagDelta) :-
+toggle_flagged(Line0, Line, TagDeltas) :-
     Flagged0 = Line0 ^ i_std_tags ^ flagged,
     (
         Flagged0 = flagged,
-        TagDelta = tag_delta("-flagged"),
+        TagDeltas = [tag_delta("-flagged")],
         Flagged = unflagged
     ;
         Flagged0 = unflagged,
-        TagDelta = tag_delta("+flagged"),
+        TagDeltas = [tag_delta("+flagged")],
         Flagged = flagged,
         % Refuse to flag multiple messages.
         NumMessages = Line0 ^ i_total,
@@ -1124,23 +1124,23 @@ toggle_flagged(Line0, Line, TagDelta) :-
     ),
     Line = Line0 ^ i_std_tags ^ flagged := Flagged.
 
-:- pred set_deleted(index_line::in, index_line::out, tag_delta::out) is det.
+:- pred set_deleted(index_line::in, index_line::out, list(tag_delta)::out) is det.
 
-set_deleted(Line0, Line, TagDelta) :-
+set_deleted(Line0, Line, TagDeltas) :-
     Line = Line0 ^ i_std_tags ^ deleted := deleted,
-    TagDelta = tag_delta("+deleted").
+    TagDeltas = [tag_delta("+deleted")].
 
-:- pred unset_deleted(index_line::in, index_line::out, tag_delta::out) is det.
+:- pred unset_deleted(index_line::in, index_line::out, list(tag_delta)::out) is det.
 
-unset_deleted(Line0, Line, TagDelta) :-
+unset_deleted(Line0, Line, TagDeltas) :-
     Line = Line0 ^ i_std_tags ^ deleted := not_deleted,
-    TagDelta = tag_delta("-deleted").
+    TagDeltas = [tag_delta("-deleted")].
 
-:- pred archive(index_line::in, index_line::out, tag_delta::out) is det.
+:- pred archive(index_line::in, index_line::out, list(tag_delta)::out) is det.
 
-archive(Line0, Line, TagDelta) :-
-    Line = Line0 ^ i_std_tags ^ deleted := not_deleted,
-    TagDelta = tag_delta("-inbox").
+archive(Line0, Line, TagDeltas) :-
+    Line = Line0 ^ i_tags := not_deleted,
+    TagDeltas = [tag_delta("-inbox"), tag_delta("-unread")].
 
 
 %-----------------------------------------------------------------------------%
