@@ -116,7 +116,7 @@ The keys are:
     n               skip to next search result
     N               toggle unread tag on current thread
     F               toggle flagged tag on current thread
-    .               archive message (tag -unread -inbox)
+    .               archive thread (tag -unread -inbox)
     d               set deleted tag on current thread
     u               unset deleted tag on current thread
     +, -            add/remove arbitrary tags
@@ -191,6 +191,7 @@ This view pages through an entire thread.  The keys are:
     N               toggle 'unread' tag on current message
     ^R              remove 'unread' tag on preceding messages
     F               toggle 'flagged' tag on current message
+    .               archive message (tag -unread -inbox)
     d               add 'deleted' tag on current message
     u               remove 'deleted' tag on current message
     +, -            add/remove arbitrary tags

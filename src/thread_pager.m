@@ -911,6 +911,12 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         next_message(MessageUpdate, !Info),
         Action = continue
     ;
+        Key = char('.')
+    ->
+        archive(!Info),
+        next_message(MessageUpdate, !Info),
+        Action = continue
+    ;
         Key = char('d')
     ->
         toggle_deleted(deleted, !Info),
@@ -1306,6 +1312,22 @@ toggle_unread(!Info) :-
     ;
         true
     ).
+
+:- pred archive(thread_pager_info::in, thread_pager_info::out) is det.
+
+archive(!Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
+        TagSet0 = Line0 ^ tp_curr_tags,
+        set.delete_list([tag("inbox"), tag("unread")], TagSet0, TagSet),
+        Line1 = Line0 ^ tp_curr_tags := TagSet,
+        Line = Line1 ^ tp_std_tags ^ unread := read,
+        set_cursor_line(Line, Scrollable0, Scrollable),
+        !Info ^ tp_scrollable := Scrollable
+    ;
+        true
+    ).
+
 
 :- pred toggle_flagged(thread_pager_info::in, thread_pager_info::out) is det.
 
