@@ -1136,13 +1136,12 @@ unset_deleted(Line0, Line, TagDeltas) :-
     Line = Line0 ^ i_std_tags ^ deleted := not_deleted,
     TagDeltas = [tag_delta("-deleted")].
 
-:- pred archive(index_line::in, index_line::out, list(tag_delta)::out) is semidet.
+:- pred archive(index_line::in, index_line::out, list(tag_delta)::out) is det.
 
 archive(Line0, Line, TagDeltas) :-
-    Line = Line0 ^ i_std_tags ^ unread := read,
     TagSet0 = Line0 ^ i_tags,
-    set.difference(TagSet0, set.make_singleton_set(tag("inbox")), TagSet),
-    TagSet \= TagSet0,
+    set.delete_list([tag("inbox"), tag("unread")], TagSet0, TagSet),
+    set_index_line_tags(TagSet, Line0, Line),
     TagDeltas = [tag_delta("-inbox"), tag_delta("-unread")].
 
 
