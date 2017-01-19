@@ -1045,6 +1045,13 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Action = leave,
         MessageUpdate = clear_message
     ;
+        Key = char('Q')
+    ->
+        archive_all(!Info),
+        Action = leave,
+        MessageUpdate = clear_message
+    ;
+
         Key = char('r')
     ->
         reply(!.Info, direct_reply, Action, MessageUpdate)
@@ -1283,6 +1290,21 @@ mark_all_read(!Info) :-
     Scrollable0 = !.Info ^ tp_scrollable,
     scrollable.map_lines(set_line_read, Scrollable0, Scrollable),
     !Info ^ tp_scrollable := Scrollable.
+
+:- pred archive_all(thread_pager_info::in, thread_pager_info::out) is det.
+
+archive_all(!Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    scrollable.map_lines(archive_line, Scrollable0, Scrollable),
+    !Info ^ tp_scrollable := Scrollable.
+
+:- pred archive_line(thread_line::in, thread_line::out) is det.
+
+archive_line(!Line) :-
+    Tags0 = !.Line ^ tp_curr_tags,
+    set.delete_list([tag("unread"), tag("inbox")], Tags0, Tags),
+    !Line ^ tp_curr_tags := Tags,
+    !Line ^ tp_std_tags ^ unread := read.
 
 :- pred set_line_read(thread_line::in, thread_line::out) is det.
 
