@@ -1,3 +1,9 @@
+Bower 0.8 (????-??-??)
+======================
+* Look up email addresses using notmuch address
+* Archive a thread/message with 'a' (undo with 'A')
+* Add to addressbook key changed to '@'
+
 Bower 0.7 (2016-03-28)
 ======================
 This release requires notmuch 0.16 or above (notmuch 0.19+ is recommended)

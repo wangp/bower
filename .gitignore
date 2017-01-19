@@ -4,3 +4,5 @@ Mercury/
 *.err
 *.mh
 tags
+bower
+src/bower
