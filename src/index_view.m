@@ -111,6 +111,7 @@
     ;       toggle_unread
     ;       toggle_flagged
     ;       archive
+    ;       unarchive
     ;       set_deleted
     ;       unset_deleted
     ;       prompt_tag(string)
@@ -134,6 +135,7 @@
     ;       toggle_unread
     ;       toggle_flagged
     ;       archive
+    ;       unarchive
     ;       set_deleted
     ;       unset_deleted
     ;       prompt_tag(string)
@@ -450,6 +452,10 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         modify_tag_cursor_line(archive, Screen, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
+        Action = unarchive,
+        modify_tag_cursor_line(unarchive, Screen, !IndexInfo, !IO),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
         Action = set_deleted,
         modify_tag_cursor_line(set_deleted, Screen, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
@@ -630,6 +636,10 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = archive
         ;
+            Binding = unarchive,
+            MessageUpdate = no_change,
+            Action = unarchive
+        ;
             Binding = set_deleted,
             MessageUpdate = no_change,
             Action = set_deleted
@@ -715,6 +725,7 @@ key_binding_char('n', skip_to_internal_search).
 key_binding_char('N', toggle_unread).
 key_binding_char('F', toggle_flagged).
 key_binding_char('a', archive).
+key_binding_char('A', unarchive).
 key_binding_char('d', set_deleted).
 key_binding_char('u', unset_deleted).
 key_binding_char('+', prompt_tag("+")).
@@ -1143,6 +1154,14 @@ archive(Line0, Line, TagDeltas) :-
     set.delete_list([tag("inbox"), tag("unread")], TagSet0, TagSet),
     set_index_line_tags(TagSet, Line0, Line),
     TagDeltas = [tag_delta("-inbox"), tag_delta("-unread")].
+
+:- pred unarchive(index_line::in, index_line::out, list(tag_delta)::out) is det.
+
+unarchive(Line0, Line, TagDeltas) :-
+    TagSet0 = Line0 ^ i_tags,
+    set.insert(tag("inbox"), TagSet0, TagSet),
+    set_index_line_tags(TagSet, Line0, Line),
+    TagDeltas = [tag_delta("+inbox")].
 
 
 %-----------------------------------------------------------------------------%
