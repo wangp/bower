@@ -911,7 +911,7 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         next_message(MessageUpdate, !Info),
         Action = continue
     ;
-        Key = char('.')
+        Key = char('a')
     ->
         archive(!Info),
         next_message(MessageUpdate, !Info),
