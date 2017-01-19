@@ -111,12 +111,13 @@ The keys are:
     e               reply to everyone
     L               reply to list
     R               recall postponed message
-    a               add to addressbook
+    @               add to addressbook
     /, ?            search for string within results
     n               skip to next search result
     N               toggle unread tag on current thread
     F               toggle flagged tag on current thread
-    .               archive thread (tag -unread -inbox)
+    a               archive thread (tag -unread -inbox)
+    A               un-archive thread (tag +inbox)
     d               set deleted tag on current thread
     u               unset deleted tag on current thread
     +, -            add/remove arbitrary tags
@@ -191,7 +192,8 @@ This view pages through an entire thread.  The keys are:
     N               toggle 'unread' tag on current message
     ^R              remove 'unread' tag on preceding messages
     F               toggle 'flagged' tag on current message
-    .               archive message (tag -unread -inbox)
+    a               archive message (tag -unread -inbox)
+    A               un-archive message (tag +inbox)
     d               add 'deleted' tag on current message
     u               remove 'deleted' tag on current message
     +, -            add/remove arbitrary tags
@@ -206,7 +208,7 @@ This view pages through an entire thread.  The keys are:
     B               resend message to another address ("bounce")
     E               use current message as a template for a new message
     R               recall postponed message
-    a               add to addressbook
+    @               add to addressbook
 
     v               highlight next visible attachment or URL or folded text
     V               highlight next visible attachment or top of message
@@ -219,6 +221,8 @@ This view pages through an entire thread.  The keys are:
 
     i, q            return to index
     I               return to index, removing 'unread' tag on all messages
+    Q               return to index, archiving all messages (-unread -inbox)
+
 
 Tag updates are only applied when returning to the index.
 

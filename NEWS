@@ -1,7 +1,8 @@
 Bower 0.8 (????-??-??)
 ======================
 * Look up email addresses using notmuch address
-* Archive a thread/message with '.' (mark read, remove "inbox" tag)
+* Archive a thread/message with 'a' (undo with 'A')
+* Add to addressbook key changed to '@'
 
 Bower 0.7 (2016-03-28)
 ======================
