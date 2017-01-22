@@ -80,7 +80,7 @@
                 i_authors   :: string,
                 i_subject   :: string,
                 i_tags      :: set(tag),
-                i_std_tags  :: standard_tags, % overrides i_tags
+                i_std_tags  :: standard_tags, % overrides i_tags, not a cache
                 i_nonstd_tags_width :: int,
                 i_matched   :: int,
                 i_total     :: int
@@ -111,6 +111,7 @@
     ;       prompt_internal_search(search_direction)
     ;       skip_to_internal_search
     ;       toggle_unread
+    ;       toggle_archive
     ;       toggle_flagged
     ;       set_deleted
     ;       unset_deleted
@@ -133,6 +134,7 @@
     ;       addressbook_add
     ;       prompt_internal_search(search_direction)
     ;       toggle_unread
+    ;       toggle_archive
     ;       toggle_flagged
     ;       set_deleted
     ;       unset_deleted
@@ -443,6 +445,10 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         modify_tag_cursor_line(toggle_unread, Screen, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
     ;
+        Action = toggle_archive,
+        modify_tag_cursor_line(toggle_archive, Screen, !IndexInfo, !IO),
+        index_loop(Screen, !.IndexInfo, !IO)
+    ;
         Action = toggle_flagged,
         modify_tag_cursor_line(toggle_flagged, Screen, !IndexInfo, !IO),
         index_loop(Screen, !.IndexInfo, !IO)
@@ -618,6 +624,10 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = toggle_unread
         ;
+            Binding = toggle_archive,
+            MessageUpdate = no_change,
+            Action = toggle_archive
+        ;
             Binding = toggle_flagged,
             MessageUpdate = no_change,
             Action = toggle_flagged
@@ -705,6 +715,7 @@ key_binding_char('/', prompt_internal_search(dir_forward)).
 key_binding_char('?', prompt_internal_search(dir_reverse)).
 key_binding_char('n', skip_to_internal_search).
 key_binding_char('N', toggle_unread).
+key_binding_char('a', toggle_archive).
 key_binding_char('F', toggle_flagged).
 key_binding_char('d', set_deleted).
 key_binding_char('u', unset_deleted).
@@ -1054,7 +1065,7 @@ line_matches_internal_search(Search, Line) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred modify_tag_cursor_line(pred(index_line, index_line, tag_delta),
+:- pred modify_tag_cursor_line(pred(index_line, index_line, list(tag_delta)),
     screen, index_info, index_info, io, io).
 :- mode modify_tag_cursor_line(in(pred(in, out, out) is det),
     in, in, out, di, uo) is det.
@@ -1065,9 +1076,9 @@ modify_tag_cursor_line(ModifyPred, Screen, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor0, CursorLine0) ->
         ThreadId = CursorLine0 ^ i_id,
-        ( ModifyPred(CursorLine0, CursorLine, TagDelta) ->
+        ( ModifyPred(CursorLine0, CursorLine, TagDeltas) ->
             Config = !.Info ^ i_config,
-            async_tag_threads(Config, [TagDelta], [ThreadId], !IO),
+            async_tag_threads(Config, TagDeltas, [ThreadId], !IO),
             set_cursor_line(CursorLine, Scrollable0, Scrollable),
             !Info ^ i_scrollable := Scrollable,
             move_cursor(Screen, 1, _MessageUpdate, !Info),
@@ -1080,9 +1091,10 @@ modify_tag_cursor_line(ModifyPred, Screen, !Info, !IO) :-
     ),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred toggle_unread(index_line::in, index_line::out, tag_delta::out) is det.
+:- pred toggle_unread(index_line::in, index_line::out, list(tag_delta)::out)
+    is det.
 
-toggle_unread(Line0, Line, TagDelta) :-
+toggle_unread(Line0, Line, [TagDelta]) :-
     Unread0 = Line0 ^ i_std_tags ^ unread,
     (
         Unread0 = unread,
@@ -1095,10 +1107,31 @@ toggle_unread(Line0, Line, TagDelta) :-
     ),
     Line = Line0 ^ i_std_tags ^ unread := Unread.
 
-:- pred toggle_flagged(index_line::in, index_line::out, tag_delta::out)
+:- pred toggle_archive(index_line::in, index_line::out, list(tag_delta)::out)
+    is det.
+
+toggle_archive(Line0, Line, TagDeltas) :-
+    TagSet0 = Line0 ^ i_tags,
+    StdTags0 = Line0 ^ i_std_tags,
+    % XXX should probably just make i_std_tags a cache of i_tags instead
+    apply_standard_tag_state(StdTags0, TagSet0, TagSet1),
+    (
+        ( set.contains(TagSet1, tag("inbox"))
+        ; set.contains(TagSet1, tag("unread"))
+        )
+    ->
+        set.delete_list([tag("inbox"), tag("unread")], TagSet1, TagSet),
+        TagDeltas = [tag_delta("-inbox"), tag_delta("-unread")]
+    ;
+        set.insert(tag("inbox"), TagSet1, TagSet),
+        TagDeltas = [tag_delta("+inbox")]
+    ),
+    set_index_line_tags(TagSet, Line0, Line).
+
+:- pred toggle_flagged(index_line::in, index_line::out, list(tag_delta)::out)
     is semidet.
 
-toggle_flagged(Line0, Line, TagDelta) :-
+toggle_flagged(Line0, Line, [TagDelta]) :-
     Flagged0 = Line0 ^ i_std_tags ^ flagged,
     (
         Flagged0 = flagged,
@@ -1114,15 +1147,17 @@ toggle_flagged(Line0, Line, TagDelta) :-
     ),
     Line = Line0 ^ i_std_tags ^ flagged := Flagged.
 
-:- pred set_deleted(index_line::in, index_line::out, tag_delta::out) is det.
+:- pred set_deleted(index_line::in, index_line::out, list(tag_delta)::out)
+    is det.
 
-set_deleted(Line0, Line, TagDelta) :-
+set_deleted(Line0, Line, [TagDelta]) :-
     Line = Line0 ^ i_std_tags ^ deleted := deleted,
     TagDelta = tag_delta("+deleted").
 
-:- pred unset_deleted(index_line::in, index_line::out, tag_delta::out) is det.
+:- pred unset_deleted(index_line::in, index_line::out, list(tag_delta)::out)
+    is det.
 
-unset_deleted(Line0, Line, TagDelta) :-
+unset_deleted(Line0, Line, [TagDelta]) :-
     Line = Line0 ^ i_std_tags ^ deleted := not_deleted,
     TagDelta = tag_delta("-deleted").
 
@@ -1403,6 +1438,7 @@ update_selected_line_for_tag_changes(AddTags, RemoveTags, Line0, Line,
         !ThreadIds) :-
     Line0 = index_line(ThreadId, Selected, Date, Authors, Subject,
         TagSet0, _StdTags0, _NonstdTagsWidth0, Matched, Total),
+    % XXX make i_std_tags cache i_tags, or else apply_standard_tag_state first
     (
         Selected = selected,
         % Notmuch performs tag removals before addition.
