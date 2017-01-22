@@ -916,6 +916,12 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         next_message(MessageUpdate, !Info),
         Action = continue
     ;
+        Key = char('a')
+    ->
+        toggle_archive(!Info),
+        next_message(MessageUpdate, !Info),
+        Action = continue
+    ;
         Key = char('d')
     ->
         toggle_deleted(deleted, !Info),
@@ -1035,6 +1041,12 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Key = char('I')
     ->
         mark_all_read(!Info),
+        Action = leave,
+        MessageUpdate = clear_message
+    ;
+        Key = char('A')
+    ->
+        mark_all_archived(!Info),
         Action = leave,
         MessageUpdate = clear_message
     ;
@@ -1311,6 +1323,54 @@ toggle_unread(!Info) :-
     ;
         true
     ).
+
+:- pred toggle_archive(thread_pager_info::in, thread_pager_info::out) is det.
+
+toggle_archive(!Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
+        Tags0 = Line0 ^ tp_curr_tags,
+        (
+            ( set.contains(Tags0, tag("inbox"))
+            ; set.contains(Tags0, tag("unread"))
+            )
+        ->
+            set_line_archived(Line0, Line)
+        ;
+            set_line_unarchived(Line0, Line)
+        ),
+        set_cursor_line(Line, Scrollable0, Scrollable),
+        !Info ^ tp_scrollable := Scrollable
+    ;
+        true
+    ).
+
+:- pred mark_all_archived(thread_pager_info::in, thread_pager_info::out) is det.
+
+mark_all_archived(!Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    scrollable.map_lines(set_line_archived, Scrollable0, Scrollable),
+    !Info ^ tp_scrollable := Scrollable.
+
+:- pred set_line_archived(thread_line::in, thread_line::out) is det.
+
+set_line_archived(!Line) :-
+    Tags0 = !.Line ^ tp_curr_tags,
+    set.delete_list([tag("inbox"), tag("unread")], Tags0, Tags),
+    get_standard_tags(Tags, StdTags, NonstdTagsWidth),
+    !Line ^ tp_curr_tags := Tags,
+    !Line ^ tp_std_tags := StdTags,
+    !Line ^ tp_nonstd_tags_width := NonstdTagsWidth.
+
+:- pred set_line_unarchived(thread_line::in, thread_line::out) is det.
+
+set_line_unarchived(!Line) :-
+    Tags0 = !.Line ^ tp_curr_tags,
+    set.insert(tag("inbox"), Tags0, Tags),
+    get_standard_tags(Tags, StdTags, NonstdTagsWidth),
+    !Line ^ tp_curr_tags := Tags,
+    !Line ^ tp_std_tags := StdTags,
+    !Line ^ tp_nonstd_tags_width := NonstdTagsWidth.
 
 :- pred toggle_flagged(thread_pager_info::in, thread_pager_info::out) is det.
 
