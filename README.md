@@ -111,7 +111,7 @@ The keys are:
     e               reply to everyone
     L               reply to list
     R               recall postponed message
-    a               add to addressbook
+    @               add to addressbook
     /, ?            search for string within results
     n               skip to next search result
     N               toggle unread tag on current thread
@@ -204,7 +204,7 @@ This view pages through an entire thread.  The keys are:
     B               resend message to another address ("bounce")
     E               use current message as a template for a new message
     R               recall postponed message
-    a               add to addressbook
+    @               add to addressbook
 
     v               highlight next visible attachment or URL or folded text
     V               highlight next visible attachment or top of message
@@ -262,7 +262,7 @@ For example:
     someone = Someone <someone@example.org>
     someoneelse = someoneelse@example.org
 
-You can add to the addressbook using 'a' in the index or thread views.
+You can add to the addressbook using '@' in the index or thread views.
 
 
 Sending mail

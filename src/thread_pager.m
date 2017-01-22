@@ -1063,7 +1063,7 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ->
         edit_as_template(!.Info, Action, MessageUpdate)
     ;
-        Key = char('a')
+        Key = char('@')
     ->
         Action = addressbook_add,
         MessageUpdate = no_change

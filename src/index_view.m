@@ -700,7 +700,7 @@ key_binding_char('r', start_reply(direct_reply)).
 key_binding_char('e', start_reply(group_reply)).
 key_binding_char('L', start_reply(list_reply)).
 key_binding_char('R', start_recall).
-key_binding_char('a', addressbook_add).
+key_binding_char('@', addressbook_add).
 key_binding_char('/', prompt_internal_search(dir_forward)).
 key_binding_char('?', prompt_internal_search(dir_reverse)).
 key_binding_char('n', skip_to_internal_search).
