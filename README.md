@@ -114,10 +114,11 @@ The keys are:
     @               add to addressbook
     /, ?            search for string within results
     n               skip to next search result
-    N               toggle unread tag on current thread
-    F               toggle flagged tag on current thread
-    d               set deleted tag on current thread
-    u               unset deleted tag on current thread
+    a               toggle 'inbox', 'unread' tags on current thread (archive)
+    N               toggle 'unread' tag on current thread
+    F               toggle 'flagged' tag on current thread
+    d               set 'deleted' tag on current thread
+    u               unset 'deleted' tag on current thread
     +, -            add/remove arbitrary tags
     t               select/unselect thread
     T               unselect all threads
@@ -190,6 +191,7 @@ This view pages through an entire thread.  The keys are:
     N               toggle 'unread' tag on current message
     ^R              remove 'unread' tag on preceding messages
     F               toggle 'flagged' tag on current message
+    a               toggle 'inbox', 'unread' tags on current message (archive)
     d               add 'deleted' tag on current message
     u               remove 'deleted' tag on current message
     +, -            add/remove arbitrary tags
@@ -217,6 +219,7 @@ This view pages through an entire thread.  The keys are:
 
     i, q            return to index
     I               return to index, removing 'unread' tag on all messages
+    A               return to index, removing 'inbox' and 'unread' on messages
 
 Tag updates are only applied when returning to the index.
 
