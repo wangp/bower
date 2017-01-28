@@ -1437,15 +1437,14 @@ bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate, !Info, !IO) :-
 update_selected_line_for_tag_changes(AddTags, RemoveTags, Line0, Line,
         !ThreadIds) :-
     Line0 = index_line(ThreadId, Selected, Date, Authors, Subject,
-        TagSet0, _StdTags0, _NonstdTagsWidth0, Matched, Total),
-    % XXX make i_std_tags cache i_tags, or else apply_standard_tag_state first
+        TagSet0, StdTags0, _NonstdTagsWidth0, Matched, Total),
     (
         Selected = selected,
+        apply_standard_tag_state(StdTags0, TagSet0, TagSet1),
         % Notmuch performs tag removals before addition.
-        TagSet0 = Line0 ^ i_tags,
-        set.difference(TagSet0, RemoveTags, TagSet1),
-        set.union(TagSet1, AddTags, TagSet),
-        TagSet \= TagSet0
+        set.difference(TagSet1, RemoveTags, TagSet2),
+        set.union(TagSet2, AddTags, TagSet),
+        TagSet \= TagSet1
     ->
         get_standard_tags(TagSet, StdTags, NonstdTagsWidth),
         Line = index_line(ThreadId, Selected, Date, Authors, Subject, TagSet,
