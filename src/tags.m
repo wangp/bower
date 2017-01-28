@@ -51,9 +51,6 @@
 
 :- pred get_standard_tags(set(tag)::in, standard_tags::out, int::out) is det.
 
-:- pred apply_standard_tag_state(standard_tags::in,
-    set(tag)::in, set(tag)::out) is det.
-
 :- pred validate_tag_deltas(list(string)::in, list(tag_delta)::out,
     set(tag)::out, set(tag)::out) is semidet.
 
@@ -117,39 +114,6 @@ get_standard_tags_2(Tag, !StdTags, !DisplayTagsWidth) :-
         !:DisplayTagsWidth = !.DisplayTagsWidth + string_wcwidth(TagName) + 1
     ;
         true
-    ).
-
-%-----------------------------------------------------------------------------%
-
-apply_standard_tag_state(standard_tags(Unread, Replied, Deleted, Flagged),
-        !TagSet) :-
-    (
-        Unread = unread,
-        set.insert(tag("unread"), !TagSet)
-    ;
-        Unread = read,
-        set.delete(tag("unread"), !TagSet)
-    ),
-    (
-        Replied = replied,
-        set.insert(tag("replied"), !TagSet)
-    ;
-        Replied = not_replied,
-        set.delete(tag("replied"), !TagSet)
-    ),
-    (
-        Deleted = deleted,
-        set.insert(tag("deleted"), !TagSet)
-    ;
-        Deleted = not_deleted,
-        set.delete(tag("deleted"), !TagSet)
-    ),
-    (
-        Flagged = flagged,
-        set.insert(tag("flagged"), !TagSet)
-    ;
-        Flagged = unflagged,
-        set.delete(tag("flagged"), !TagSet)
     ).
 
 %-----------------------------------------------------------------------------%

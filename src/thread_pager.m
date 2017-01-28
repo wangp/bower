@@ -102,8 +102,8 @@
                 tp_clean_from   :: string,
                 tp_prev_tags    :: set(tag),
                 tp_curr_tags    :: set(tag),
-                tp_std_tags     :: standard_tags,   % cached from tp_curr_tags
-                tp_nonstd_tags_width :: int,
+                tp_std_tags     :: standard_tags, % cached from tp_curr_tags
+                tp_nonstd_tags_width :: int,      % cached from tp_curr_tags
                 tp_selected     :: selected,
                 tp_graphics     :: maybe(list(graphic)),
                 tp_reldate      :: string,
@@ -1614,10 +1614,7 @@ gather_bulk_initial_tags(Line, MaybeAndTagSet0, MaybeAndTagSet, !OrTagSet) :-
     set(tag)::in, set(tag)::out) is det.
 
 gather_initial_tags(Line, MaybeAndTagSet0, AndTagSet, !OrTagSet) :-
-    Line = thread_line(_Message, _MaybeParentId, _From, _PrevTags, CurrTags0,
-        StdTags, _NonstdTagsWidth0, _Selected, _MaybeGraphics, _RelDate,
-        _MaybeSubject),
-    apply_standard_tag_state(StdTags, CurrTags0, TagSet),
+    TagSet = Line ^ tp_curr_tags,
     (
         MaybeAndTagSet0 = no,
         AndTagSet = TagSet
