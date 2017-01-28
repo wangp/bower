@@ -615,19 +615,15 @@ create_tag_delta_map(ThreadLine, !DeltaMap) :-
     thread_line::in, thread_line::out) is det.
 
 restore_tag_deltas(DeltaMap, ThreadLine0, ThreadLine) :-
-    ThreadLine0 = thread_line(Message, ParentId, From, PrevTags, CurrTags0,
-        _StdTags0, _NonstdTagsWidth0, Selected, ModeGraphics, RelDate,
-        MaybeSubject),
+    Message = ThreadLine0 ^ tp_message,
     (
         Message = message(MessageId, _, _, _, _, _),
         ( map.search(DeltaMap, MessageId, Deltas) ->
             Deltas = message_tag_deltas(AddTags, RemoveTags),
+            CurrTags0 = ThreadLine0 ^ tp_curr_tags,
             set.difference(CurrTags0, RemoveTags, CurrTags1),
             set.union(CurrTags1, AddTags, CurrTags),
-            get_standard_tags(CurrTags, StdTags, NonstdTagsWidth),
-            ThreadLine = thread_line(Message, ParentId, From, PrevTags, CurrTags,
-                StdTags, NonstdTagsWidth, Selected, ModeGraphics, RelDate,
-                MaybeSubject)
+            set_tags(CurrTags, ThreadLine0, ThreadLine)
         ;
             ThreadLine = ThreadLine0
         )
@@ -924,13 +920,13 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ;
         Key = char('d')
     ->
-        toggle_deleted(deleted, !Info),
+        change_deleted(deleted, !Info),
         next_message(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('u')
     ->
-        toggle_deleted(not_deleted, !Info),
+        change_deleted(not_deleted, !Info),
         Action = continue,
         MessageUpdate = clear_message
     ;
@@ -1292,18 +1288,12 @@ mark_all_read(!Info) :-
 :- pred set_line_read(thread_line::in, thread_line::out) is det.
 
 set_line_read(!Line) :-
-    Tags0 = !.Line ^ tp_curr_tags,
-    set.delete(tag("unread"), Tags0, Tags),
-    !Line ^ tp_curr_tags := Tags,
-    !Line ^ tp_std_tags ^ unread := read.
+    remove_tag(tag("unread"), !Line).
 
 :- pred set_line_unread(thread_line::in, thread_line::out) is det.
 
 set_line_unread(!Line) :-
-    Tags0 = !.Line ^ tp_curr_tags,
-    set.insert(tag("unread"), Tags0, Tags),
-    !Line ^ tp_curr_tags := Tags,
-    !Line ^ tp_std_tags ^ unread := unread.
+    add_tag(tag("unread"), !Line).
 
 :- pred toggle_unread(thread_pager_info::in, thread_pager_info::out) is det.
 
@@ -1357,66 +1347,75 @@ mark_all_archived(!Info) :-
 set_line_archived(!Line) :-
     Tags0 = !.Line ^ tp_curr_tags,
     set.delete_list([tag("inbox"), tag("unread")], Tags0, Tags),
-    get_standard_tags(Tags, StdTags, NonstdTagsWidth),
-    !Line ^ tp_curr_tags := Tags,
-    !Line ^ tp_std_tags := StdTags,
-    !Line ^ tp_nonstd_tags_width := NonstdTagsWidth.
+    set_tags(Tags, !Line).
 
 :- pred set_line_unarchived(thread_line::in, thread_line::out) is det.
 
 set_line_unarchived(!Line) :-
-    Tags0 = !.Line ^ tp_curr_tags,
-    set.insert(tag("inbox"), Tags0, Tags),
-    get_standard_tags(Tags, StdTags, NonstdTagsWidth),
-    !Line ^ tp_curr_tags := Tags,
-    !Line ^ tp_std_tags := StdTags,
-    !Line ^ tp_nonstd_tags_width := NonstdTagsWidth.
+    add_tag(tag("inbox"), !Line).
 
 :- pred toggle_flagged(thread_pager_info::in, thread_pager_info::out) is det.
 
 toggle_flagged(!Info) :-
     Scrollable0 = !.Info ^ tp_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
-        TagSet0 = Line0 ^ tp_curr_tags,
         Flagged0 = Line0 ^ tp_std_tags ^ flagged,
         (
             Flagged0 = flagged,
-            set.delete(tag("flagged"), TagSet0, TagSet),
-            Flagged = unflagged
+            remove_tag(tag("flagged"), Line0, Line)
         ;
             Flagged0 = unflagged,
-            set.insert(tag("flagged"), TagSet0, TagSet),
-            Flagged = flagged
+            add_tag(tag("flagged"), Line0, Line)
         ),
-        Line1 = Line0 ^ tp_curr_tags := TagSet,
-        Line = Line1 ^ tp_std_tags ^ flagged := Flagged,
         set_cursor_line(Line, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
     ;
         true
     ).
 
-:- pred toggle_deleted(deleted::in,
+:- pred change_deleted(deleted::in,
     thread_pager_info::in, thread_pager_info::out) is det.
 
-toggle_deleted(Deleted, !Info) :-
+change_deleted(Deleted, !Info) :-
     Scrollable0 = !.Info ^ tp_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
-        TagSet0 = Line0 ^ tp_curr_tags,
         (
             Deleted = not_deleted,
-            set.delete(tag("deleted"), TagSet0, TagSet)
+            remove_tag(tag("deleted"), Line0, Line)
         ;
             Deleted = deleted,
-            set.insert(tag("deleted"), TagSet0, TagSet)
+            add_tag(tag("deleted"), Line0, Line)
         ),
-        Line1 = Line0 ^ tp_curr_tags := TagSet,
-        Line = Line1 ^ tp_std_tags ^ deleted := Deleted,
         set_cursor_line(Line, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
     ;
         true
     ).
+
+:- pred add_tag(tag::in, thread_line::in, thread_line::out) is det.
+
+add_tag(Tag, !Line) :-
+    TagSet0 = !.Line ^ tp_curr_tags,
+    set.insert(Tag, TagSet0, TagSet),
+    set_tags(TagSet, !Line).
+
+:- pred remove_tag(tag::in, thread_line::in, thread_line::out) is det.
+
+remove_tag(Tag, !Line) :-
+    TagSet0 = !.Line ^ tp_curr_tags,
+    ( set.remove(Tag, TagSet0, TagSet) ->
+        set_tags(TagSet, !Line)
+    ;
+        true
+    ).
+
+:- pred set_tags(set(tag)::in, thread_line::in, thread_line::out) is det.
+
+set_tags(TagSet, !Line) :-
+    get_standard_tags(TagSet, StdTags, NonstdTagsWidth),
+    !Line ^ tp_curr_tags := TagSet,
+    !Line ^ tp_std_tags := StdTags,
+    !Line ^ tp_nonstd_tags_width := NonstdTagsWidth.
 
 :- pred prompt_tag(screen::in, string::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
@@ -1432,16 +1431,12 @@ prompt_tag(Screen, Initial, !Info, !IO) :-
             !Info, !IO),
         (
             TagChanges = yes(AddTags, RemoveTags),
-            CursorLine0 = thread_line(Message, ParentId, From,
-                PrevTags, CurrTags0, _StdTags0, _NonstdTagsWidth0,
-                Selected, ModeGraphics, RelDate, MaybeSubject),
             % Notmuch performs tag removals before addition.
+            CurrTags0 = CursorLine0 ^ tp_curr_tags,
             set.difference(CurrTags0, RemoveTags, CurrTags1),
             set.union(CurrTags1, AddTags, CurrTags),
-            get_standard_tags(CurrTags, StdTags, NonstdTagsWidth),
-            CursorLine = thread_line(Message, ParentId, From,
-                PrevTags, CurrTags, StdTags, NonstdTagsWidth,
-                Selected, ModeGraphics, RelDate, MaybeSubject),
+            set_tags(CurrTags, CursorLine0, CursorLine),
+
             set_cursor_line(CursorLine, Scrollable0, Scrollable),
             !Info ^ tp_scrollable := Scrollable
         ;
@@ -1667,23 +1662,18 @@ bulk_tag_changes(AddTags, RemoveTags, MessageUpdate, !Info, !IO) :-
 
 update_selected_line_for_tag_changes(AddTags, RemoveTags, Line0, Line,
         !MessageIds) :-
-    Line0 = thread_line(Message, MaybeParentId, From, PrevTags, CurrTags0,
-        _StdTags0, _NonstdTagsWidth0, Selected, MaybeGraphics, RelDate,
-        MaybeSubject),
+    Message = Line0 ^ tp_message,
+    TagSet0 = Line0 ^ tp_curr_tags,
+    Selected = Line0 ^ tp_selected,
     (
         MessageId = Message ^ m_id,
         Selected = selected,
         % Notmuch performs tag removals before addition.
-        TagSet0 = CurrTags0,
         set.difference(TagSet0, RemoveTags, TagSet1),
         set.union(TagSet1, AddTags, TagSet),
         TagSet \= TagSet0
     ->
-        CurrTags = TagSet,
-        get_standard_tags(CurrTags, StdTags, NonstdTagsWidth),
-        Line = thread_line(Message, MaybeParentId, From, PrevTags, CurrTags,
-            StdTags, NonstdTagsWidth, Selected, MaybeGraphics, RelDate,
-            MaybeSubject),
+        set_tags(TagSet, Line0, Line),
         list.cons(MessageId, !MessageIds)
     ;
         Line = Line0
