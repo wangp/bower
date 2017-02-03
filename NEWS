@@ -1,3 +1,12 @@
+Bower 0.8-unreleased (as of 2017-02-04)
+=======================================
+This release requires notmuch 0.21 or above.
+
+* Look up addresses using notmuch address.
+* Move add to addressbook to '@' key.
+* Add 'a' keys to apply '-inbox -unread' or else '+inbox'.
+* Add 'A' key to leave thread view and apply '-inbox -unread' to the thread.
+
 Bower 0.7 (2016-03-28)
 ======================
 This release requires notmuch 0.16 or above (notmuch 0.19+ is recommended)
