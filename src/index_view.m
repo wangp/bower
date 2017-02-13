@@ -1937,29 +1937,29 @@ draw_index_line(IAttrs, Panel, Line, _LineNr, IsCursor, !IO) :-
     (
         Unread = unread,
         Base = bold,
-        draw(Panel, "n", !IO)
+        draw(Panel, "📫 ", !IO)
     ;
         Unread = read,
         Base = normal,
-        draw(Panel, " ", !IO)
+        draw(Panel, "  ", !IO)
     ),
     (
         Replied = replied,
-        draw(Panel, "r", !IO)
+        draw(Panel, "🖌", !IO)
     ;
         Replied = not_replied,
         draw(Panel, " ", !IO)
     ),
     (
         Deleted = deleted,
-        draw(Panel, "d", !IO)
+        draw(Panel, "✗", !IO)
     ;
         Deleted = not_deleted,
         draw(Panel, " ", !IO)
     ),
     (
         Flagged = flagged,
-        mattr_draw(Panel, unless(IsCursor, Attrs ^ flagged), "! ", !IO)
+        mattr_draw(Panel, unless(IsCursor, Attrs ^ flagged), "⚐ ", !IO)
     ;
         Flagged = unflagged,
         draw(Panel, "  ", !IO)

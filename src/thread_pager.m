@@ -2706,28 +2706,28 @@ draw_thread_line(TAttrs, Panel, Line, _LineNr, IsCursor, !IO) :-
     StdTags = standard_tags(Unread, Replied, Deleted, Flagged),
     (
         Unread = unread,
-        draw(Panel, "n", !IO)
+        draw(Panel, "📫 ", !IO)
     ;
         Unread = read,
-        draw(Panel, " ", !IO)
+        draw(Panel, "  ", !IO)
     ),
     (
         Replied = replied,
-        draw(Panel, "r", !IO)
+        draw(Panel, "🖌", !IO)
     ;
         Replied = not_replied,
         draw(Panel, " ", !IO)
     ),
     (
         Deleted = deleted,
-        draw(Panel, "d", !IO)
+        draw(Panel, "✗", !IO)
     ;
         Deleted = not_deleted,
         draw(Panel, " ", !IO)
     ),
     (
         Flagged = flagged,
-        mattr_draw(Panel, unless(IsCursor, Attrs ^ flagged), "! ", !IO)
+        mattr_draw(Panel, unless(IsCursor, Attrs ^ flagged), "⚐ ", !IO)
     ;
         Flagged = unflagged,
         draw(Panel, "  ", !IO)
