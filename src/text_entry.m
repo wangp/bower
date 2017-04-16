@@ -656,7 +656,7 @@ generate_choices(Type, Orig, After, Choices, CompletionPoint, !IO) :-
             Choices = AliasChoices
         ;
             generate_address_choices(Config, WordString, AddressChoices, !IO),
-            Choices = AddressChoices ++ AliasChoices
+            Choices = AliasChoices ++ AddressChoices
         )
     ).
 
