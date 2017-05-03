@@ -1558,11 +1558,11 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
         BadAttr = GAttrs ^ bad_key,
         (
             Status = none,
-            draw(Panel, BadAttr, " ─• No signature ", !IO)
+            draw(Panel, BadAttr, " ─• 🔓No signature ", !IO)
         ;
             Status = good(MaybeFingerprint, _MaybeCreated, MaybeExpires,
                 MaybeUserId),
-            draw(Panel, GoodAttr, " ─• Good signature ", !IO),
+            draw(Panel, GoodAttr, " ─• 🔒 Good signature ", !IO),
             (
                 MaybeUserId = yes(UserId),
                 draw(Panel, BodyAttr, lstrip(UserId), !IO),
@@ -1596,13 +1596,13 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
             Status = not_good(BadStatus, MaybeKeyId),
             (
                 BadStatus = bad,
-                BadMessage = " ─• Bad signature "
+                BadMessage = " ─• 🔓 Bad signature "
             ;
                 BadStatus = error,
-                BadMessage = " ─• Error verifying signature "
+                BadMessage = " ─• 🔓 Error verifying signature "
             ;
                 BadStatus = unknown,
-                BadMessage = " ─• Problem verifying signature "
+                BadMessage = " ─• 🔓Problem verifying signature "
             ),
             draw(Panel, BadAttr, BadMessage, !IO),
             (
