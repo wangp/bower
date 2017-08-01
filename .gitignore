@@ -4,3 +4,5 @@ Mercury/
 *.err
 *.mh
 tags
+manpage.md
+bower.1.gz

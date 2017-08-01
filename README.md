@@ -23,6 +23,9 @@ At compile time:
 * Mercury compiler (11.07 or later, including release-of-the-day);
   currently available at <http://dl.mercurylang.org/index.html>
 * gpgme (GnuPG Made Easy)
+* [pandoc] universal document converter (to generate manpage)
+
+[pandoc]: https://github.com/jgm/pandoc
 
 At run time:
 
@@ -53,6 +56,13 @@ With Mercury installed and `mmc` in your PATH, run:
 
 You may want to edit `Mercury.options` to suit your system.
 If successful, you will get a binary named `bower`.
+
+To generate a manpage from README.md just run:
+
+    make manpage
+
+This will output the manpage as `bower.1.gz`, ready to be copied
+to `/usr/share/man/man1`.
 
 
 Configuration
