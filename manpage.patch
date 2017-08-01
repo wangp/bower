@@ -1,0 +1,68 @@
+--- README.md	2017-08-01 22:04:49.833210312 +0200
++++ manpage.md	2017-08-01 22:06:27.256541119 +0200
+@@ -6,65 +6,10 @@
+ 
+ bower is written in [Mercury].
+ 
+-See some [screen shots](screenshots).
+-
+ [Notmuch]: http://notmuchmail.org/
+ [Mercury]: http://mercurylang.org/
+ 
+ 
+-Requirements
+-============
+-
+-bower makes use of standard Linux utilities, so will likely
+-require some work to work on other systems.
+-
+-At compile time:
+-
+-* Mercury compiler (11.07 or later, including release-of-the-day);
+-  currently available at <http://dl.mercurylang.org/index.html>
+-* gpgme (GnuPG Made Easy)
+-* [pandoc] universal document converter (to generate manpage)
+-
+-[pandoc]: https://github.com/jgm/pandoc
+-
+-At run time:
+-
+-* notmuch
+-* ncurses with wide character support
+-* GNU coreutils: base64
+-* SMTP client to send messages (configurable)
+-* lynx to dump HTML emails (configurable)
+-* file(1) to detect MIME types when adding attachments
+-
+-
+-Compiling
+-=========
+-
+-Firstly, to install Mercury from source you can follow these steps:
+-
+-    tar xf mercury-srcdist-VERSION.tar.gz
+-    cd mercury-srcdist-VERSION
+-    ./configure --prefix=/path/to/mercury
+-    make install PARALLEL=-j6 LIBGRADES=
+-    export PATH=$PATH:/path/to/mercury/bin
+-
+-where PARALLEL=-j6 reflects the number of parallel jobs to use.
+-
+-With Mercury installed and `mmc` in your PATH, run:
+-
+-    make PARALLEL=-j6
+-
+-You may want to edit `Mercury.options` to suit your system.
+-If successful, you will get a binary named `bower`.
+-
+-To generate a manpage from README.md just run:
+-
+-    make manpage
+-
+-This will output the manpage as `bower.1.gz`, ready to be copied
+-to `/usr/share/man/man1`.
+-
+-
+ Configuration
+ =============
+ 
