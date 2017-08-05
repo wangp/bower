@@ -1,0 +1,21 @@
+#!/usr/bin/awk -f
+
+BEGIN {
+    output = 1;
+}
+
+/^See some.*screen shots/ {
+    next;
+}
+
+/^Requirements$/ {
+    output = 0;
+}
+
+/^Configuration$/ {
+    output = 1;
+}
+
+output {
+    print
+}

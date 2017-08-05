@@ -33,6 +33,13 @@ At run time:
 * lynx to dump HTML emails (configurable)
 * file(1) to detect MIME types when adding attachments
 
+To create a man page from this readme, you will need:
+
+* [pandoc] universal document converter
+* awk
+
+[pandoc]: https://github.com/jgm/pandoc
+
 
 Compiling
 =========
@@ -53,6 +60,12 @@ With Mercury installed and `mmc` in your PATH, run:
 
 You may want to edit `Mercury.options` to suit your system.
 If successful, you will get a binary named `bower`.
+
+To generate a man page, run:
+
+    make man
+
+This will produce `bower.1` for installation into your `man` search path.
 
 
 Configuration
