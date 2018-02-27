@@ -57,13 +57,24 @@
     %
 :- pred stop(io::di, io::uo) is det.
 
-:- pred def_prog_mode(io::di, io::uo) is det.
-
-:- pred reset_prog_mode(io::di, io::uo) is det.
-
     % A wrapper predicate that handles calling start and stop.
     %
 :- pred session(pred(io, io)::(pred(di, uo) is det), io::di, io::uo) is det.
+
+    % Save the current terminal mode as the "program" (in curses) state.
+    %
+:- pred def_prog_mode(io::di, io::uo) is det.
+
+    % Restore the terminal to "program" (in curses) state.
+    %
+:- pred reset_prog_mode(io::di, io::uo) is det.
+
+    % A wrapper predicate that saves the "program" state,
+    % temporarily leaves curses, runs the given predicate,
+    % restores the saved "program" state, then refreshes the display.
+    %
+:- pred suspend(pred(T, io, io), T, io, io).
+:- mode suspend(in(pred(out, di, uo) is det), out, di, uo) is det.
 
     % Number of rows and columns on the physical screen.
     %
@@ -338,6 +349,8 @@
 
 :- implementation.
 
+:- import_module exception.
+
     % Using the foreign type prevents problems with type ambiguity when
     % compiling with intermodule optimisation.
     %
@@ -518,6 +531,13 @@ init_pair(FG_BG(COLOR_WHITE, COLOR_WHITE),      COLOR_WHITE, COLOR_WHITE);
     IO = IO0;
 ").
 
+%-----------------------------------------------------------------------------%
+
+session(P, !IO) :-
+    start(!IO),
+    P(!IO),
+    stop(!IO).
+
 %----------------------------------------------------------------------------%
 
 :- pragma foreign_proc("C",
@@ -540,10 +560,21 @@ init_pair(FG_BG(COLOR_WHITE, COLOR_WHITE),      COLOR_WHITE, COLOR_WHITE);
 
 %-----------------------------------------------------------------------------%
 
-session(P, !IO) :-
-    start(!IO),
-    P(!IO),
-    stop(!IO).
+suspend(Pred, Res, !IO) :-
+    % ncurses programming HOWTO - Temporarily Leaving Curses mode.
+    def_prog_mode(!IO),
+    stop(!IO),
+    promise_equivalent_solutions [Res, !:IO]
+    ( try [io(!IO)]
+        Pred(Res, !IO)
+    then
+        reset_prog_mode(!IO),
+        refresh(!IO)
+    catch_any Excp ->
+        reset_prog_mode(!IO),
+        refresh(!IO),
+        throw(Excp)
+    ).
 
 %----------------------------------------------------------------------------%
 
