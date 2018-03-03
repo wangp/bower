@@ -26,13 +26,19 @@
 :- pred get_notmuch_config(prog_config::in, string::in, string::in,
     maybe_error(string)::out, io::di, io::uo) is det.
 
-:- pred run_notmuch(prog_config::in, list(string)::in,
-    pred(json, T)::in(pred(in, out) is det), maybe_error(T)::out,
-    io::di, io::uo) is det.
+:- type suspend_curses
+    --->    soft_suspend_curses
+    ;       no_suspend_curses.
 
-:- pred run_notmuch(prog_config::in, list(string)::in,
-    pred(json, T)::in(pred(in, out) is det), redirect_stderr::in,
-    maybe_error(T)::out, io::di, io::uo) is det.
+:- pred run_notmuch(prog_config, list(string), suspend_curses,
+    pred(json, T), maybe_error(T), io, io).
+:- mode run_notmuch(in, in, in,
+    in(pred(in, out) is det), out, di, uo) is det.
+
+:- pred run_notmuch(prog_config, list(string), redirect_stderr, suspend_curses,
+    pred(json, T), maybe_error(T), io, io).
+:- mode run_notmuch(in, in, in, in,
+    in(pred(in, out) is det), out, di, uo) is det.
 
 :- pred parse_messages_list(json::in, list(message)::out) is det.
 
@@ -61,6 +67,7 @@
 :- import_module set.
 :- import_module string.
 
+:- import_module curs.
 :- import_module call_system.
 :- import_module string_util.
 :- import_module time_util.
@@ -93,30 +100,38 @@ get_notmuch_config(Config, Section, Key, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-run_notmuch(Config, Args, P, Result, !IO) :-
-    RedirectStderr = no_redirect,
-    run_notmuch(Config, Args, P, RedirectStderr, Result, !IO).
+run_notmuch(Config, Args, SuspendCurs, Parser, Result, !IO) :-
+    run_notmuch(Config, Args, no_redirect, SuspendCurs, Parser, Result, !IO).
 
-run_notmuch(Config, Args, P, RedirectStderr, Result, !IO) :-
+run_notmuch(Config, Args, RedirectStderr, SuspendCurs, Parser, Result, !IO) :-
     get_notmuch_command(Config, Notmuch),
     make_quoted_command(Notmuch, Args,
         redirect_input("/dev/null"), no_redirect, RedirectStderr,
         run_in_foreground, Command),
     promise_equivalent_solutions [Result, !:IO] (
-        call_command_parse_json(Command, P, Result, !IO)
+        call_command_parse_json(Command, SuspendCurs, Parser, Result, !IO)
     ).
 
-:- pred call_command_parse_json(string::in, pred(json, T)::in(pred(in, out) is det),
-    maybe_error(T)::out, io::di, io::uo) is cc_multi.
+:- pred call_command_parse_json(string, suspend_curses,
+    pred(json, T), maybe_error(T), io, io).
+:- mode call_command_parse_json(in, in,
+    in(pred(in, out) is det), out, di, uo) is cc_multi.
 
-call_command_parse_json(Command, P, Result, !IO) :-
-    call_system_capture_stdout(Command, no, CommandResult, !IO),
+call_command_parse_json(Command, SuspendCurs, Parser, Result, !IO) :-
+    (
+        SuspendCurs = soft_suspend_curses,
+        curs.soft_suspend(
+            call_system_capture_stdout(Command, no), CommandResult, !IO)
+    ;
+        SuspendCurs = no_suspend_curses,
+        call_system_capture_stdout(Command, no, CommandResult, !IO)
+    ),
     (
         CommandResult = ok(String),
         parse_json(String, ParseResult),
         (
             ParseResult = ok(JSON),
-            P(JSON, T),
+            Parser(JSON, T),
             Result = ok(T)
         ;
             ParseResult = error(yes(Msg), Line, Column),

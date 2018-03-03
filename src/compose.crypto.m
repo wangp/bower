@@ -40,12 +40,12 @@
     list(gpgme.key)::out) is det.
 
 :- pred encrypt(crypto_info::in, maybe(list(gpgme.key))::in,
-    list(gpgme.key)::in, prog_config::in, mime_part::in,
+    list(gpgme.key)::in, prog_config::in, mime_part::in, i_paused_curses::in,
     maybe_error(string)::out, list(string)::out, io::di, io::uo) is det.
 
 :- pred sign_detached(crypto_info::in, list(gpgme.key)::in, prog_config::in,
-    mime_part::in, maybe_error(pair(string, micalg))::out, list(string)::out,
-    io::di, io::uo) is det.
+    mime_part::in, i_paused_curses::in, maybe_error(pair(string, micalg))::out,
+    list(string)::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -321,8 +321,8 @@ addr_specs_3(Mailbox, AddrSpec) :-
 
 %-----------------------------------------------------------------------------%
 
-encrypt(CryptoInfo, MaybeSignKeys, EncryptKeys, Config, PartToEncrypt, Res,
-        Warnings, !IO) :-
+encrypt(CryptoInfo, MaybeSignKeys, EncryptKeys, Config, PartToEncrypt,
+        PausedCurs, Res, Warnings, !IO) :-
     Ctx = CryptoInfo ^ ci_context,
     (
         MaybeSignKeys = yes(SignKeys),
@@ -336,8 +336,8 @@ encrypt(CryptoInfo, MaybeSignKeys, EncryptKeys, Config, PartToEncrypt, Res,
     ),
     (
         ResSigners = ok,
-        encrypt_1(Ctx, Op, EncryptKeys, Config, PartToEncrypt, Res, Warnings,
-            !IO)
+        encrypt_1(Ctx, Op, EncryptKeys, Config, PartToEncrypt, PausedCurs,
+            Res, Warnings, !IO)
     ;
         ResSigners = error(Error),
         Res = error(Error),
@@ -345,20 +345,23 @@ encrypt(CryptoInfo, MaybeSignKeys, EncryptKeys, Config, PartToEncrypt, Res,
     ).
 
 :- pred encrypt_1(crypto::in, encrypt_op::in, list(gpgme.key)::in,
-    prog_config::in, mime_part::in, maybe_error(string)::out,
-    list(string)::out, io::di, io::uo) is det.
+    prog_config::in, mime_part::in, i_paused_curses::in,
+    maybe_error(string)::out, list(string)::out, io::di, io::uo) is det.
 
-encrypt_1(Ctx, Op, Keys, Config, PartToEncrypt, Res, Warnings, !IO) :-
+encrypt_1(Ctx, Op, Keys, Config, PartToEncrypt, PausedCurs,
+        Res, Warnings, !IO) :-
     gpgme_data_new(ResPlainData, !IO),
     (
         ResPlainData = ok(PlainData),
-        write_mime_part(PlainData, Config, PartToEncrypt, ResPlain, !IO),
+        write_mime_part(PlainData, Config, PartToEncrypt, PausedCurs,
+            ResPlain, !IO),
         (
             ResPlain = ok,
             gpgme_data_rewind(PlainData, ResRewind, !IO),
             (
                 ResRewind = ok,
-                encrypt_2(Ctx, Op, Keys, PlainData, Res, Warnings, !IO)
+                encrypt_2(Ctx, Op, Keys, PlainData, PausedCurs,
+                    Res, Warnings, !IO)
             ;
                 ResRewind = error(Error),
                 Res = error(Error),
@@ -377,14 +380,15 @@ encrypt_1(Ctx, Op, Keys, Config, PartToEncrypt, Res, Warnings, !IO) :-
     ).
 
 :- pred encrypt_2(crypto::in, encrypt_op::in, list(gpgme.key)::in,
-    gpgme.data::in, maybe_error(string)::out, list(string)::out,
-    io::di, io::uo) is det.
+    gpgme.data::in, i_paused_curses::in,
+    maybe_error(string)::out, list(string)::out, io::di, io::uo) is det.
 
-encrypt_2(Ctx, Op, Keys, PlainData, Res, Warnings, !IO) :-
+encrypt_2(Ctx, Op, Keys, PlainData, PausedCurs, Res, Warnings, !IO) :-
     gpgme_data_new(ResCipherData, !IO),
     (
         ResCipherData = ok(CipherData),
-        encrypt_3(Ctx, Op, Keys, PlainData, CipherData, Res, Warnings, !IO),
+        encrypt_3(Ctx, Op, Keys, PlainData, CipherData, PausedCurs,
+            Res, Warnings, !IO),
         gpgme_data_release(CipherData, !IO)
     ;
         ResCipherData = error(Error),
@@ -393,10 +397,12 @@ encrypt_2(Ctx, Op, Keys, PlainData, Res, Warnings, !IO) :-
     ).
 
 :- pred encrypt_3(crypto::in, encrypt_op::in, list(gpgme.key)::in,
-    gpgme.data::in, gpgme.data::in, maybe_error(string)::out,
-    list(string)::out, io::di, io::uo) is det.
+    gpgme.data::in, gpgme.data::in, i_paused_curses::in,
+    maybe_error(string)::out, list(string)::out, io::di, io::uo) is det.
 
-encrypt_3(Ctx, Op, Keys, PlainData, CipherData, Res, Warnings, !IO) :-
+encrypt_3(Ctx, Op, Keys, PlainData, CipherData, PausedCurs,
+        Res, Warnings, !IO) :-
+    PausedCurs = i_paused_curses,
     % Not sure about always_trust.
     gpgme_op_encrypt(Op, Ctx, Keys, [always_trust, no_encrypt_to],
         PlainData, CipherData, ResEncrypt, !IO),
@@ -418,13 +424,15 @@ invalid_key_to_warning(invalid_key(Fingerprint, Reason), Warning) :-
 
 %-----------------------------------------------------------------------------%
 
-sign_detached(CryptoInfo, SignKeys, Config, SignedPart, Res, Warnings, !IO) :-
+sign_detached(CryptoInfo, SignKeys, Config, SignedPart, PausedCurs,
+        Res, Warnings, !IO) :-
     Ctx = CryptoInfo ^ ci_context,
     gpgme_signers_clear(Ctx, !IO),
     add_signers(Ctx, SignKeys, ResSigners, !IO),
     (
         ResSigners = ok,
-        sign_detached_2(Ctx, Config, SignedPart, Res, Warnings, !IO)
+        sign_detached_2(Ctx, Config, SignedPart, PausedCurs, Res, Warnings,
+            !IO)
     ;
         ResSigners = error(Error),
         Res = error(Error),
@@ -432,16 +440,16 @@ sign_detached(CryptoInfo, SignKeys, Config, SignedPart, Res, Warnings, !IO) :-
     ).
 
 :- pred sign_detached_2(crypto::in, prog_config::in, mime_part::in,
-    maybe_error(pair(string, micalg))::out, list(string)::out, io::di, io::uo)
-    is det.
+    i_paused_curses::in, maybe_error(pair(string, micalg))::out,
+    list(string)::out, io::di, io::uo) is det.
 
-sign_detached_2(Ctx, Config, SignedPart, Res, Warnings, !IO) :-
+sign_detached_2(Ctx, Config, SignedPart, PausedCurs, Res, Warnings, !IO) :-
     gpgme_data_new(ResPlainData, !IO),
     (
         ResPlainData = ok(PlainData),
         % Must use CR/LF line terminators when generating the signature.
-        write_mime_part(data_crlf(PlainData), Config, SignedPart, ResPlain,
-            !IO),
+        write_mime_part(data_crlf(PlainData), Config, SignedPart, PausedCurs,
+            ResPlain, !IO),
         (
             ResPlain = ok,
             gpgme_data_rewind(PlainData, ResRewind, !IO),
@@ -450,6 +458,7 @@ sign_detached_2(Ctx, Config, SignedPart, Res, Warnings, !IO) :-
                 gpgme_data_new(ResSigData, !IO),
                 (
                     ResSigData = ok(SigData),
+                    PausedCurs = i_paused_curses,
                     gpgme_op_sign_detached(Ctx, PlainData, SigData, ResSign,
                         !IO),
                     (

@@ -84,10 +84,13 @@ select_recall(Config, Screen, MaybeThreadId, Transition, !IO) :-
     maybe(recall_line)::out, io::di, io::uo) is det.
 
 make_recall_line(Config, Nowish, MessageId, MaybeLine, !IO) :-
-    run_notmuch(Config, [
-        "show", "--format=json", "--part=0", "--body=false", "--",
-        message_id_to_search_term(MessageId)
-    ], parse_message_for_recall, Result, !IO),
+    run_notmuch(Config,
+        [
+            "show", "--format=json", "--part=0", "--body=false", "--",
+            message_id_to_search_term(MessageId)
+        ],
+        no_suspend_curses,
+        parse_message_for_recall, Result, !IO),
     (
         Result = ok(Message),
         Message = message_for_recall(_Id, Timestamp, Headers, Tags),
@@ -186,10 +189,13 @@ enter(Info, MaybeSelected, !IO) :-
         Message0 = message_for_recall(MessageId, _, _, _)
     ->
         Info = recall_info(Config, _Scrollable0),
-        run_notmuch(Config, [
-            "show", "--format=json", "--part=0", "--decrypt",
-            "--", message_id_to_search_term(MessageId)
-        ], parse_top_message, Result, !IO),
+        run_notmuch(Config,
+            [
+                "show", "--format=json", "--part=0", "--decrypt",
+                "--", message_id_to_search_term(MessageId)
+            ],
+            soft_suspend_curses, % Decryption may invoke pinentry-curses.
+            parse_top_message, Result, !IO),
         (
             Result = ok(Message),
             (

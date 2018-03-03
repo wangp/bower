@@ -43,6 +43,8 @@ expand_part(ProgConfig, MessageId, PartId, MaybeFilterCommand, Res, !IO) :-
         Command = ShowCommand
     ),
     ErrorLimit = yes(100),
+    % If decryption is enabled then we should run curs.pause
+    % in case pinentry-curses is called.
     call_system_capture_stdout(Command, ErrorLimit, CallRes, !IO),
     (
         CallRes = ok(ContentString),

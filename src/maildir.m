@@ -110,10 +110,13 @@ find_drafts(Config, MaybeThreadId, MessageIds, !IO) :-
         MaybeThreadId = no,
         ThreadSearchTerm = []
     ),
-    run_notmuch(Config, [
-        "search", "--format=json", "--output=messages", "--exclude=all",
-        "--", "tag:draft", "-tag:deleted" | ThreadSearchTerm
-    ], parse_message_id_list, Result, !IO),
+    run_notmuch(Config,
+        [
+            "search", "--format=json", "--output=messages", "--exclude=all",
+            "--", "tag:draft", "-tag:deleted" | ThreadSearchTerm
+        ],
+        no_suspend_curses,
+        parse_message_id_list, Result, !IO),
     (
         Result = ok(MessageIds)
     ;

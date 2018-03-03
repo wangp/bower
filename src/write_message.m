@@ -112,14 +112,21 @@
 
 :- instance writer(io.output_stream).
 
+    % A reminder that the caller is responsible for suspending curses.
+:- type i_paused_curses
+    --->    i_paused_curses.
+
 :- pred write_message(Stream::in, prog_config::in, message_spec::in,
-    bool::in, maybe_error::out, io::di, io::uo) is det <= writer(Stream).
+    bool::in, i_paused_curses::in, maybe_error::out, io::di, io::uo) is det
+    <= writer(Stream).
 
 :- pred write_message_type(Stream::in, prog_config::in, message_type::in,
-    maybe_error::out, io::di, io::uo) is det <= writer(Stream).
+    i_paused_curses::in, maybe_error::out, io::di, io::uo) is det
+    <= writer(Stream).
 
 :- pred write_mime_part(Stream::in, prog_config::in, mime_part::in,
-    maybe_error::out, io::di, io::uo) is det <= writer(Stream).
+    i_paused_curses::in, maybe_error::out, io::di, io::uo) is det
+    <= writer(Stream).
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -163,11 +170,11 @@ is_empty_header_value(Value) :-
 
 %-----------------------------------------------------------------------------%
 
-write_message(Stream, Config, Spec, AllowHeaderError, Res, !IO) :-
+write_message(Stream, Config, Spec, AllowHeaderError, PausedCurs, Res, !IO) :-
     promise_equivalent_solutions [Res, !:IO]
     ( try [io(!IO)]
-        write_message_nocatch(Stream, Config, Spec, AllowHeaderError, Res0,
-            !IO)
+        write_message_nocatch(Stream, Config, Spec, AllowHeaderError,
+            PausedCurs, Res0, !IO)
       then
         Res = Res0
       catch_any Excp ->
@@ -175,10 +182,11 @@ write_message(Stream, Config, Spec, AllowHeaderError, Res, !IO) :-
     ).
 
 :- pred write_message_nocatch(Stream::in, prog_config::in,
-    message_spec::in, bool::in, maybe_error::out, io::di, io::uo) is det
-    <= writer(Stream).
+    message_spec::in, bool::in, i_paused_curses::in, maybe_error::out,
+    io::di, io::uo) is det <= writer(Stream).
 
-write_message_nocatch(Stream, Config, Spec, AllowHeaderError, Res, !IO) :-
+write_message_nocatch(Stream, Config, Spec, AllowHeaderError, PausedCurs, Res,
+        !IO) :-
     Spec = message_spec(Headers, MessageType),
     list.foldl2(build_header(string.builder.handle), Headers, ok, HeaderError,
         init, BuilderState),
@@ -192,7 +200,8 @@ write_message_nocatch(Stream, Config, Spec, AllowHeaderError, Res, !IO) :-
         put(Stream, HeaderString, !IO),
         % Do not write the blank line separating header and body yet.
         % MIME messages require more header fields.
-        write_message_type_nocatch(Stream, Config, MessageType, !IO),
+        write_message_type_nocatch(Stream, Config, MessageType, PausedCurs,
+            !IO),
         Res = ok
     ).
 
@@ -215,10 +224,11 @@ build_header(Stream, Header, !Error, !State) :-
 
 %-----------------------------------------------------------------------------%
 
-write_message_type(Stream, Config, MessageType, Res, !IO) :-
+write_message_type(Stream, Config, MessageType, PausedCurs, Res, !IO) :-
     promise_equivalent_solutions [Res, !:IO]
     ( try [io(!IO)]
-        write_message_type_nocatch(Stream, Config, MessageType, !IO)
+        write_message_type_nocatch(Stream, Config, MessageType, PausedCurs,
+            !IO)
       then
         Res = ok
       catch_any Excp ->
@@ -226,16 +236,17 @@ write_message_type(Stream, Config, MessageType, Res, !IO) :-
     ).
 
 :- pred write_message_type_nocatch(Stream::in, prog_config::in,
-    message_type::in, io::di, io::uo) is det <= writer(Stream).
+    message_type::in, i_paused_curses::in, io::di, io::uo) is det
+    <= writer(Stream).
 
-write_message_type_nocatch(Stream, Config, MessageType, !IO) :-
+write_message_type_nocatch(Stream, Config, MessageType, PausedCurs, !IO) :-
     (
         MessageType = plain(PlainBody),
         write_plain_body(Stream, PlainBody, !IO)
     ;
         MessageType = mime_v1(MimePart),
         write_mime_version_1(Stream, !IO),
-        write_mime_part_nocatch(Stream, Config, MimePart, !IO)
+        write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, !IO)
     ).
 
 %-----------------------------------------------------------------------------%
@@ -256,10 +267,10 @@ write_plain_body(Stream, plain_body(Text), !IO) :-
 write_mime_version_1(Stream, !IO) :-
     put(Stream, "MIME-Version: 1.0\n", !IO).
 
-write_mime_part(Stream, Config, MimePart, Res, !IO) :-
+write_mime_part(Stream, Config, MimePart, PausedCurs, Res, !IO) :-
     promise_equivalent_solutions [Res, !:IO]
     ( try [io(!IO)]
-        write_mime_part_nocatch(Stream, Config, MimePart, !IO)
+        write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, !IO)
       then
         Res = ok
       catch_any Excp ->
@@ -267,9 +278,9 @@ write_mime_part(Stream, Config, MimePart, Res, !IO) :-
     ).
 
 :- pred write_mime_part_nocatch(Stream::in, prog_config::in, mime_part::in,
-    io::di, io::uo) is det <= writer(Stream).
+    i_paused_curses::in, io::di, io::uo) is det <= writer(Stream).
 
-write_mime_part_nocatch(Stream, Config, MimePart, !IO) :-
+write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, !IO) :-
     (
         MimePart = discrete(ContentType, MaybeContentDisposition,
             MaybeTransferEncoding, Body),
@@ -286,7 +297,8 @@ write_mime_part_nocatch(Stream, Config, MimePart, !IO) :-
             MaybeTransferEncoding = no,
             TransferEncoding = cte_8bit
         ),
-        write_mime_part_body(Stream, Config, TransferEncoding, Body, !IO)
+        write_mime_part_body(Stream, Config, TransferEncoding, Body,
+            PausedCurs, !IO)
     ;
         MimePart = composite(ContentType, Boundary, MaybeContentDisposition,
             MaybeTransferEncoding, SubParts),
@@ -297,8 +309,8 @@ write_mime_part_nocatch(Stream, Config, MimePart, !IO) :-
             MaybeTransferEncoding, !IO),
         % Separate header and body.
         put(Stream, "\n", !IO),
-        list.foldl(write_mime_subpart(Stream, Config, Boundary), SubParts,
-            !IO),
+        list.foldl(write_mime_subpart(Stream, Config, Boundary, PausedCurs),
+            SubParts, !IO),
         write_mime_final_boundary(Stream, Boundary, !IO)
     ).
 
@@ -406,11 +418,12 @@ write_content_transfer_encoding(Stream, CTE, !IO) :-
     ).
 
 :- pred write_mime_subpart(Stream::in, prog_config::in, boundary::in,
-    mime_part::in, io::di, io::uo) is det <= writer(Stream).
+    i_paused_curses::in, mime_part::in, io::di, io::uo) is det
+    <= writer(Stream).
 
-write_mime_subpart(Stream, Config, Boundary, Part, !IO) :-
+write_mime_subpart(Stream, Config, Boundary, PausedCurs, Part, !IO) :-
     write_mime_part_boundary(Stream, Boundary, !IO),
-    write_mime_part_nocatch(Stream, Config, Part, !IO).
+    write_mime_part_nocatch(Stream, Config, Part, PausedCurs, !IO).
 
 :- pred write_mime_part_boundary(Stream::in, boundary::in, io::di, io::uo)
     is det <= writer(Stream).
@@ -429,10 +442,11 @@ write_mime_final_boundary(Stream, boundary(Boundary), !IO) :-
     put(Stream, "--\n", !IO).
 
 :- pred write_mime_part_body(Stream::in, prog_config::in,
-    content_transfer_encoding::in, mime_part_body::in, io::di, io::uo)
-    is det <= writer(Stream).
+    content_transfer_encoding::in, mime_part_body::in, i_paused_curses::in,
+    io::di, io::uo) is det <= writer(Stream).
 
-write_mime_part_body(Stream, Config, TransferEncoding, Body, !IO) :-
+write_mime_part_body(Stream, Config, TransferEncoding, Body, PausedCurs,
+        !IO) :-
     (
         TransferEncoding = cte_8bit,
         (
@@ -456,15 +470,16 @@ write_mime_part_body(Stream, Config, TransferEncoding, Body, !IO) :-
             put(Stream, EncodedBody, !IO)
         ;
             Body = external(Part),
-            get_external_part_base64(Config, Part, EncodedBody, !IO),
+            get_external_part_base64(Config, Part, EncodedBody,
+                PausedCurs, !IO),
             put(Stream, EncodedBody, !IO)
         )
     ).
 
 :- pred get_external_part_base64(prog_config::in, part::in, string::out,
-    io::di, io::uo) is det.
+    i_paused_curses::in, io::di, io::uo) is det.
 
-get_external_part_base64(Config, Part, Content, !IO) :-
+get_external_part_base64(Config, Part, Content, PausedCurs, !IO) :-
     Part = part(MessageId, MaybePartId, _, _, _, _, _, IsDecrypted),
     (
         MaybePartId = yes(PartId),
@@ -475,6 +490,8 @@ get_external_part_base64(Config, Part, Content, !IO) :-
             "--part=" ++ from_int(PartId),
             "--", message_id_to_search_term(MessageId)
         ], redirect_input("/dev/null"), no_redirect, Command),
+        % Decryption may invoke pinentry-curses.
+        PausedCurs = i_paused_curses,
         call_system_capture_stdout(Command ++ " |base64", no, CallRes, !IO)
     ;
         MaybePartId = no,

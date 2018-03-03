@@ -27,6 +27,7 @@
 :- import_module string.
 
 :- import_module compose.
+:- import_module curs.
 :- import_module make_temp.
 :- import_module quote_arg.
 :- import_module rfc5322.
@@ -297,7 +298,8 @@ call_send_mail(Account, Filename, Res, !IO) :-
     get_sendmail_command(Account, sendmail_read_recipients, Sendmail),
     make_quoted_command(Sendmail, [], redirect_input(Filename), no_redirect,
         Command),
-    io.call_system(Command, ResSend, !IO),
+    % e.g. msmtp 'passwordeval' option may invoke pinentry-curses.
+    curs.soft_suspend(io.call_system(Command), ResSend, !IO),
     (
         ResSend = ok(ExitStatus),
         ( ExitStatus = 0 ->

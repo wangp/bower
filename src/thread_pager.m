@@ -271,10 +271,12 @@ create_thread_pager(Config, Crypto, Screen, ThreadId, Ordering, MaybeCached,
         (
             DecryptByDefault = yes,
             % Avoid likely error messages about missing keys.
-            RedirectStderr = redirect_stderr("/dev/null")
+            RedirectStderr = redirect_stderr("/dev/null"),
+            SuspendCurs = soft_suspend_curses
         ;
             DecryptByDefault = no,
-            RedirectStderr = no_redirect
+            RedirectStderr = no_redirect,
+            SuspendCurs = no_suspend_curses
         ),
         run_notmuch(Config,
             [
@@ -282,7 +284,9 @@ create_thread_pager(Config, Crypto, Screen, ThreadId, Ordering, MaybeCached,
                 decrypt_arg(DecryptByDefault),
                 verify_arg(VerifyByDefault),
                 "--", thread_id_to_search_term(ThreadId)
-            ], parse_messages_list, RedirectStderr, ParseResult, !IO)
+            ],
+            RedirectStderr, SuspendCurs,
+            parse_messages_list, ParseResult, !IO)
     ),
     (
         ParseResult = ok(Messages)
@@ -1878,7 +1882,8 @@ do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName, Res, !IO)
             "--part=" ++ from_int(PartId),
             "--", message_id_to_search_term(MessageId)
         ], no_redirect, redirect_output(FileName), Command),
-        io.call_system(Command, CallRes, !IO)
+        % Decryption may invoke pinentry-curses.
+        curs.soft_suspend(io.call_system(Command), CallRes, !IO)
     ;
         MaybePartId = no,
         CallRes = error(io.make_io_error("no part id"))
@@ -2037,11 +2042,7 @@ call_open_command(Screen, CommandWords, Arg, MaybeError, !IO) :-
         io.call_system(CommandToRun, CallRes, !IO)
     ;
         Bg = run_in_foreground,
-        curs.def_prog_mode(!IO),
-        curs.stop(!IO),
-        io.call_system(CommandToRun, CallRes, !IO),
-        curs.reset_prog_mode(!IO),
-        curs.refresh(!IO)
+        curs.suspend(io.call_system(CommandToRun), CallRes, !IO)
     ),
     (
         CallRes = ok(ExitStatus),
@@ -2286,8 +2287,9 @@ do_decrypt_part(Screen, MessageId, PartId, MessageUpdate, !Info, !IO) :-
             "--part=" ++ from_int(PartId),
             "--", message_id_to_search_term(MessageId)
         ],
-        parse_part(MessageId, no), redirect_stderr("/dev/null"),
-        ParseResult, !IO),
+        redirect_stderr("/dev/null"),
+        soft_suspend_curses, % Decryption may invoke pinentry-curses.
+        parse_part(MessageId, no), ParseResult, !IO),
     (
         ParseResult = ok(Part),
         Content = Part ^ pt_content,
@@ -2364,8 +2366,9 @@ do_verify_part(Screen, Part0, MessageUpdate, !Info, !IO) :-
                 "--part=" ++ from_int(PartId),
                 "--", message_id_to_search_term(MessageId)
             ],
-            parse_part(MessageId, no), redirect_stderr("/dev/null"),
-            ParseResult, !IO),
+            redirect_stderr("/dev/null"),
+            soft_suspend_curses, % Decryption may invoke pinentry-curses.
+            parse_part(MessageId, no), ParseResult, !IO),
         (
             ParseResult = ok(Part1),
             (

@@ -227,6 +227,7 @@ search_terms_quiet(Config, Tokens, MaybeThreads, MessageUpdate, !IO) :-
     run_notmuch(Config,
         ["search", "--format=json", "--exclude=all" | LimitOption]
         ++ ["--", Terms],
+        no_suspend_curses,
         parse_threads_list, ResThreads, !IO),
     ignore_sigint(no, !IO),
     (
@@ -879,7 +880,8 @@ try_reply(!Screen, ThreadId, RequireUnread, ReplyKind, Res, !Info, !IO) :-
     ],
     Config = !.Info ^ i_config,
     Crypto = !.Info ^ i_crypto,
-    run_notmuch(Config, Args, parse_message_id_list, ListRes, !IO),
+    run_notmuch(Config, Args, no_suspend_curses,
+        parse_message_id_list, ListRes, !IO),
     (
         ListRes = ok(MessageIds),
         ( MessageIds = [MessageId] ->
@@ -937,12 +939,16 @@ addressbook_add(Screen, Info, !IO) :-
             "search", "--format=json", "--output=messages", "--exclude=all",
             "--", thread_id_to_search_term(ThreadId)
         ],
-        run_notmuch(Config, Args, parse_message_id_list, ListRes, !IO),
+        run_notmuch(Config, Args, no_suspend_curses,
+            parse_message_id_list, ListRes, !IO),
         ( ListRes = ok([MessageId | _]) ->
-            run_notmuch(Config, [
-                "show", "--format=json", "--part=0", "--",
-                message_id_to_search_term(MessageId)
-            ], parse_top_message, MessageRes, !IO),
+            run_notmuch(Config,
+                [
+                    "show", "--format=json", "--part=0", "--",
+                    message_id_to_search_term(MessageId)
+                ],
+                no_suspend_curses,
+                parse_top_message, MessageRes, !IO),
             (
                 MessageRes = ok(Message),
                 From = Message ^ m_headers ^ h_from
@@ -1620,9 +1626,10 @@ line_matches_thread_id(ThreadId, Line) :-
 refresh_index_line(Screen, ThreadId, !IndexInfo, !IO) :-
     Config = !.IndexInfo ^ i_config,
     Term = thread_id_to_search_term(ThreadId),
-    run_notmuch(Config, [
-        "search", "--format=json", "--exclude=all", "--", Term
-    ], parse_threads_list, Result, !IO),
+    run_notmuch(Config,
+        ["search", "--format=json", "--exclude=all", "--", Term],
+        no_suspend_curses,
+        parse_threads_list, Result, !IO),
     (
         Result = ok([Thread]),
         current_timestamp(Time, !IO),
