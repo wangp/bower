@@ -65,9 +65,17 @@
     %
 :- pred def_prog_mode(io::di, io::uo) is det.
 
+    % Save the current terminal mode as the "shell" (in curses) state.
+    %
+:- pred def_shell_mode(io::di, io::uo) is det.
+
     % Restore the terminal to "program" (in curses) state.
     %
 :- pred reset_prog_mode(io::di, io::uo) is det.
+
+    % Restore the terminal to "shell" (not in curses) state.
+    %
+:- pred reset_shell_mode(io::di, io::uo) is det.
 
     % A wrapper predicate that saves the "program" state,
     % temporarily leaves curses, runs the given predicate,
@@ -548,6 +556,16 @@ session(P, !IO) :-
     IO = IO0;
 ").
 
+%----------------------------------------------------------------------------%
+
+:- pragma foreign_proc("C",
+    def_shell_mode(IO0::di, IO::uo),
+    [will_not_call_mercury, promise_pure],
+"
+    def_shell_mode();
+    IO = IO0;
+").
+
 %-----------------------------------------------------------------------------%
 
 :- pragma foreign_proc("C",
@@ -555,6 +573,16 @@ session(P, !IO) :-
     [will_not_call_mercury, promise_pure],
 "
     reset_prog_mode();
+    IO = IO0;
+").
+
+%-----------------------------------------------------------------------------%
+
+:- pragma foreign_proc("C",
+    reset_shell_mode(IO0::di, IO::uo),
+    [will_not_call_mercury, promise_pure],
+"
+    reset_shell_mode();
     IO = IO0;
 ").
 
