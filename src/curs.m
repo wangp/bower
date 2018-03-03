@@ -84,6 +84,11 @@
 :- pred suspend(pred(T, io, io), T, io, io).
 :- mode suspend(in(pred(out, di, uo) is det), out, di, uo) is det.
 
+    % As above, without stopping curses (endwin).
+    %
+:- pred soft_suspend(pred(T, io, io), T, io, io).
+:- mode soft_suspend(in(pred(out, di, uo) is det), out, di, uo) is det.
+
     % Number of rows and columns on the physical screen.
     %
 :- pred rows_cols(int::out, int::out, io::di, io::uo) is det.
@@ -601,6 +606,30 @@ suspend(Pred, Res, !IO) :-
     catch_any Excp ->
         reset_prog_mode(!IO),
         refresh(!IO),
+        throw(Excp)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+soft_suspend(Pred, Res, !IO) :-
+    % Don't know how to do this properly; this is the best I could achieve
+    % through trial and error.
+    %
+    % We need to prepare for Pred to be able to draw to the screen itself.
+    % But if Pred produces no output in most cases, we don't want to see a
+    % brief flash as the terminal goes to non-alternate then back to alternate
+    % mode, which we would get if we used endwin() to leave curses.
+    def_prog_mode(!IO),
+    reset_shell_mode(!IO),      % not endwin
+    promise_equivalent_solutions [Res, !:IO]
+    ( try [io(!IO)]
+        Pred(Res, !IO)
+    then
+        reset_prog_mode(!IO),
+        redrawwin_stdscr(!IO)   % not refresh
+    catch_any Excp ->
+        reset_prog_mode(!IO),
+        redrawwin_stdscr(!IO),
         throw(Excp)
     ).
 
