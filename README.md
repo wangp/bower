@@ -177,7 +177,7 @@ Index view behaviour
 
 Tag modifications are performed (mostly) asynchronously to minimise stutter.
 Remember to quit properly using 'q' to flush all changes.  Tag updates will
-be retried a limited number of time on failure, e.g. because the notmuch
+be retried a limited number of times on failure, e.g. because the notmuch
 database is locked.
 
 By default, bower will call notmuch count every 60 seconds in the index
