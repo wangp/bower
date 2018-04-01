@@ -1,3 +1,9 @@
+Bower 0.8.1 (2018-04-01)
+========================
+
+* Save/restore curses mode for any command that might invoke pinentry-curses.
+* Add makefile target to produce man page (bower.1).
+
 Bower 0.8 (2017-07-30)
 ======================
 This release requires notmuch 0.21 or above.
