@@ -99,9 +99,6 @@
 :- pred toggle_content(toggle_type::in, int::in, int::in, message_update::out,
     pager_info::in, pager_info::out, io::di, io::uo) is det.
 
-:- pred draw_pager(pager_attrs::in, screen::in, pager_info::in, io::di, io::uo)
-    is det.
-
 :- pred draw_pager_lines(pager_attrs::in, list(panel)::in, pager_info::in,
     io::di, io::uo) is det.
 
@@ -1424,10 +1421,6 @@ toggle_folding(NumRows, NodeId, Line, Info0, Info) :-
     Info = pager_info(Config, Tree, Counter, Scrollable).
 
 %-----------------------------------------------------------------------------%
-
-draw_pager(Attrs, Screen, Info, !IO) :-
-    get_main_panels(Screen, MainPanels),
-    draw_pager_lines(Attrs, MainPanels, Info, !IO).
 
 draw_pager_lines(Attrs, Panels, Info, !IO) :-
     Scrollable = Info ^ p_scrollable,
