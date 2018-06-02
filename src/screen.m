@@ -100,7 +100,10 @@
 
 :- pred draw_status_bar(screen::in, io::di, io::uo) is det.
 
-:- pred draw_status_bar(screen::in, string::in, io::di, io::uo) is det.
+:- pred draw_status_bar_text(screen::in, string::in, io::di, io::uo) is det.
+
+:- pred draw_status_bar_progress(screen::in, string::in, io::di, io::uo)
+    is det.
 
 :- type keycode
     --->    char(char)
@@ -429,6 +432,12 @@ update_message_immed(Screen, MessageUpdate, !IO) :-
 %-----------------------------------------------------------------------------%
 
 draw_status_bar(Screen, !IO) :-
+    draw_status_bar_base(Screen, _Cols, _Panel, !IO).
+
+:- pred draw_status_bar_base(screen::in, int::out, panel::out, io::di, io::uo)
+    is det.
+
+draw_status_bar_base(Screen, Cols, Panel, !IO) :-
     get_status_attrs(Screen, Attrs),
     get_cols(Screen, Cols),
     get_bar_panel(Screen, Panel),
@@ -436,16 +445,25 @@ draw_status_bar(Screen, !IO) :-
     attr(Panel, Attrs ^ bar, !IO),
     hline(Panel, char.to_int('-'), Cols, !IO).
 
-draw_status_bar(Screen, Text, !IO) :-
-    get_status_attrs(Screen, Attrs),
-    get_cols(Screen, Cols),
-    get_bar_panel(Screen, Panel),
-    panel.erase(Panel, !IO),
-    attr(Panel, Attrs ^ bar, !IO),
-    draw(Panel, "--- ", !IO),
+draw_status_bar_text(Screen, Text, !IO) :-
+    draw_status_bar_base(Screen, _Cols, Panel, !IO),
+    move(Panel, 0, 4, !IO),
+    draw(Panel, " ", !IO),
     draw(Panel, Text, !IO),
-    draw(Panel, " -", !IO),
-    hline(Panel, char.to_int('-'), Cols, !IO).
+    draw(Panel, " ", !IO).
+
+draw_status_bar_progress(Screen, Text, !IO) :-
+    draw_status_bar_base(Screen, Cols, Panel, !IO),
+    % Just drop progress text if it won't fit.
+    TextCol = Cols - 4 - string_wcwidth(Text) - 1,
+    ( if TextCol >= 0 then
+        move(Panel, 0, TextCol, !IO),
+        draw(Panel, " ", !IO),
+        draw(Panel, Text, !IO),
+        draw(Panel, " ", !IO)
+    else
+        true
+    ).
 
 %-----------------------------------------------------------------------------%
 

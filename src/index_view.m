@@ -2022,7 +2022,7 @@ draw_index_bar(Screen, Info, !IO) :-
     ( Count = 0 ->
         draw_status_bar(Screen, !IO)
     ;
-        draw_status_bar(Screen, count_messages_since_refresh(Count), !IO)
+        draw_status_bar_text(Screen, count_messages_since_refresh(Count), !IO)
     ).
 
 :- func count_messages_since_refresh(int) = string.

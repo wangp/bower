@@ -363,8 +363,8 @@ setup_thread_pager(Config, Crypto, ThreadId, Ordering, Nowish, Rows, Cols,
     ),
     AddedMessages = 0,
     ThreadPagerInfo = thread_pager_info(Config, Crypto, ThreadId, Messages,
-        Ordering, Scrollable, NumThreadRows, PagerInfo, NumPagerRows, no,
-        dir_forward, CommonHistory, AddedMessages).
+        Ordering, Scrollable, NumThreadRows, PagerInfo, NumPagerRows,
+        no, dir_forward, CommonHistory, AddedMessages).
 
 :- pred get_latest_line(thread_line::in, thread_line::in, thread_line::out)
     is det.
@@ -662,7 +662,6 @@ handle_screen_transition(Screen0, Screen, Transition, T, !Info, !IO) :-
 
 thread_pager_loop(Screen, !Info, !IO) :-
     draw_thread_pager(Screen, !.Info, !IO),
-    draw_status_bar(Screen, !IO),
     panel.update_panels(!IO),
     get_keycode_blocking(Key, !IO),
     thread_pager_loop_2(Screen, Key, !Info, !IO).
@@ -2657,6 +2656,7 @@ addressbook_add(Screen, Info, !IO) :-
 draw_thread_pager(Screen, Info, !IO) :-
     Scrollable = Info ^ tp_scrollable,
     PagerInfo = Info ^ tp_pager,
+    NumPagerRows = Info ^ tp_num_pager_rows,
     Config = Info ^ tp_config,
     Attrs = thread_attrs(Config),
     PagerAttrs = pager_attrs(Config),
@@ -2665,7 +2665,19 @@ draw_thread_pager(Screen, Info, !IO) :-
     scrollable.draw(draw_thread_line(Attrs), ThreadPanels, Scrollable, !IO),
     get_cols(Screen, Cols),
     draw_sep(Attrs, Cols, SepPanel, !IO),
-    draw_pager_lines(PagerAttrs, PagerPanels, PagerInfo, !IO).
+    draw_pager_lines(PagerAttrs, PagerPanels, PagerInfo, !IO),
+
+    (
+        get_cursor_line(Scrollable, _Cursor, ThreadLine),
+        Message = ThreadLine ^ tp_message,
+        MessageId = Message ^ m_id,
+        get_percent_visible(PagerInfo, NumPagerRows, MessageId, Percent)
+    ->
+        PercentText = string.format("%3d%%", [i(Percent)]),
+        draw_status_bar_progress(Screen, PercentText, !IO)
+    ;
+        draw_status_bar(Screen, !IO)
+    ).
 
 :- pred draw_sep(thread_attrs::in, int::in, maybe(panel)::in, io::di, io::uo)
     is det.
