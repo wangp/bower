@@ -1015,11 +1015,6 @@ skip_quoted_text(MessageUpdate, !Info) :-
 :- pred is_quoted_text_or_message_start(id_pager_line::in) is semidet.
 
 is_quoted_text_or_message_start(_Id - Line) :-
-    is_quoted_text_or_message_start_2(Line).
-
-:- pred is_quoted_text_or_message_start_2(pager_line::in) is semidet.
-
-is_quoted_text_or_message_start_2(Line) :-
     require_complete_switch [Line]
     (
         Line = header(yes(_), _, _, _)
@@ -1049,36 +1044,34 @@ get_top_message(Info, Message) :-
     Top = get_top(Scrollable),
     Lines = get_lines(Scrollable),
     ( Top < version_array.size(Lines) ->
-        get_top_message_2(Lines, Top, _, Message)
+        scan_back_for_message_start(Lines, Top, _, Message)
     ;
         fail
     ).
-
-:- pred get_top_message_2(version_array(id_pager_line)::in, int::in, int::out,
-    message::out) is semidet.
-
-get_top_message_2(Lines, I, J, Message) :-
-    ( I >= 0 ->
-        version_array.lookup(Lines, I) = _Id - Line,
-        ( Line = header(yes(Message0), _, _, _) ->
-            J = I,
-            Message = Message0
-        ;
-            get_top_message_2(Lines, I - 1, J, Message)
-        )
-    ;
-        fail
-    ).
-
-%-----------------------------------------------------------------------------%
 
 get_top_offset(Info, Offset) :-
     Scrollable = Info ^ p_scrollable,
     Top = get_top(Scrollable),
     Lines = get_lines(Scrollable),
     ( Top < version_array.size(Lines) ->
-        get_top_message_2(Lines, Top, MessageLine, _Message),
+        scan_back_for_message_start(Lines, Top, MessageLine, _Message),
         Offset = Top - MessageLine
+    ;
+        fail
+    ).
+
+:- pred scan_back_for_message_start(version_array(id_pager_line)::in,
+    int::in, int::out, message::out) is semidet.
+
+scan_back_for_message_start(Lines, I, J, Message) :-
+    ( I >= 0 ->
+        version_array.lookup(Lines, I) = IdLine,
+        ( is_start_of_message(IdLine, Message0) ->
+            J = I,
+            Message = Message0
+        ;
+            scan_back_for_message_start(Lines, I - 1, J, Message)
+        )
     ;
         fail
     ).
@@ -1454,7 +1447,10 @@ make_extents_loop(Lines, LineNr0, !Extents) :-
         Lines = []
     ;
         Lines = [HeadLine | TailLines],
-        ( is_start_of_message(HeadLine, MessageId) ->
+        (
+            is_start_of_message(HeadLine, Message),
+            MessageId = Message ^ m_id
+        ->
             Start = LineNr0,
             skip_message_lines(TailLines, NextLines, Start + 1, EndExcl),
             map.set(MessageId, message_extents(Start, EndExcl), !Extents),
@@ -1482,14 +1478,13 @@ skip_message_lines(Lines0, Lines, LineNr0, LineNr) :-
         )
     ).
 
-:- pred is_start_of_message(id_pager_line::in, message_id::out) is semidet.
+:- pred is_start_of_message(id_pager_line::in, message::out) is semidet.
 
-is_start_of_message(_NodeId - Line, MessageId) :-
+is_start_of_message(_NodeId - Line, Message) :-
     require_complete_switch [Line]
     (
         Line = header(MaybeStartMessage, _Continue, _Name, _Value),
-        MaybeStartMessage = yes(Message),
-        MessageId = Message ^ m_id
+        MaybeStartMessage = yes(Message)
     ;
         ( Line = text(_)
         ; Line = part_head(_, _, _, _)
