@@ -260,8 +260,20 @@ make_id_pager_line(NodeId, Line) = NodeId - Line.
 
 :- pred is_blank_line(pager_line::in) is semidet.
 
-is_blank_line(text(pager_text(_, "", _, _))).
-is_blank_line(message_separator).
+is_blank_line(Line) :-
+    require_complete_switch [Line]
+    (
+        Line = text(pager_text(_, "", _, _))
+    ;
+        Line = message_separator
+    ;
+        ( Line = header(_, _, _, _)
+        ; Line = part_head(_, _, _, _)
+        ; Line = fold_marker(_, _)
+        ; Line = signature(_)
+        ),
+        fail
+    ).
 
 :- pred replace_node(node_id::in, tree::in, tree::in, tree::out) is det.
 
@@ -995,7 +1007,8 @@ goto_end(NumRows, !Info) :-
 
 :- pred is_message_start(id_pager_line::in) is semidet.
 
-is_message_start(_Id - header(yes(_), _, _, _)).
+is_message_start(IdLine) :-
+    is_start_of_message(IdLine, _Message).
 
 skip_quoted_text(MessageUpdate, !Info) :-
     Scrollable0 = !.Info ^ p_scrollable,
@@ -1235,19 +1248,36 @@ do_highlight(Highlightable, NumRows, !Info) :-
 :- pred is_highlightable_minor(id_pager_line::in) is semidet.
 
 is_highlightable_minor(_Id - Line) :-
+    require_complete_switch [Line]
     (
         Line = part_head(_, _, _, importance_normal)
     ;
         Line = text(pager_text(_, _, _, url(_, _)))
     ;
         Line = fold_marker(_, _)
+    ;
+        ( Line = header(_, _, _, _)
+        ; Line = signature(_)
+        ; Line = message_separator
+        ),
+        fail
     ).
 
 :- pred is_highlightable_major(id_pager_line::in) is semidet.
 
 is_highlightable_major(_Id - Line) :-
-    ( Line = header(yes(_), _, _, _)
-    ; Line = part_head(_, _, _, _)
+    require_complete_switch [Line]
+    (
+        Line = header(yes(_), _, _, _)
+    ;
+        Line = part_head(_, _, _, _)
+    ;
+        ( Line = text(_)
+        ; Line = fold_marker(_, _)
+        ; Line = signature(_)
+        ; Line = message_separator
+        ),
+        fail
     ).
 
 get_highlighted_thing(Info, Thing) :-
