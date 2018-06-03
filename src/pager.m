@@ -1832,21 +1832,21 @@ part_message(Part, HiddenParts, Expanded, Message) :-
         EncStatus = not_encrypted,
         (
             Expanded = part_expanded,
-            HiddenParts = [_],
-            Message = "  z for alternative"
-        ;
-            Expanded = part_expanded,
-            HiddenParts = [_, _ | _],
-            Message = "  z for alternatives"
+            (
+                HiddenParts = [],
+                Signatures = [],
+                is_multipart_signed(Part),
+                Message = "  y to verify"
+            ;
+                HiddenParts = [_],
+                Message = "  z for alternative"
+            ;
+                HiddenParts = [_, _ | _],
+                Message = "  z for alternatives"
+            )
         ;
             Expanded = part_not_expanded,
-            HiddenParts = [_ | _],
             Message = "  z to show"
-        ;
-            HiddenParts = [],
-            Signatures = [],
-            is_multipart_signed(Part),
-            Message = "  y to verify"
         )
     ).
 
