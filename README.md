@@ -114,23 +114,20 @@ Index view
 This view shows the notmuch search results for the current query.
 The keys are:
 
-    j,k,g,G, etc.   move around
+    j, k            next, previous thread
+    g, G            first, last thread
     [, ]            scroll half page up, down
     Tab, comma      go to next unread thread
+    Enter           open thread
     l, ~            change search terms ("limit")
     =               refresh search results
-    Enter           open thread
-    m               compose new message
-    r               reply to sender
-    e               reply to everyone
-    L               reply to list
-    R               recall postponed message
-    @               add to addressbook
+
     /, ?            search for string within results
     n               skip to next search result
-    a               toggle 'inbox', 'unread' tags on current thread (archive)
+
     N               toggle 'unread' tag on current thread
     F               toggle 'flagged' tag on current thread
+    a               toggle 'inbox', 'unread' tags on current thread (archive)
     d               set 'deleted' tag on current thread
     u               unset 'deleted' tag on current thread
     +, -            add/remove arbitrary tags
@@ -138,6 +135,14 @@ The keys are:
     T               unselect all threads
     '               bulk tag changes on selected threads
     "               same as ' but retain selections afterwards
+
+    m               compose new message
+    r               reply to sender
+    e               reply to everyone
+    L               reply to list
+    R               recall postponed message
+    @               add to addressbook
+
     q               quit
 
 Index view limit command
@@ -199,10 +204,14 @@ This view pages through an entire thread.  The keys are:
     Tab, comma      go to next unread message
     p               go to parent message
     S               skip quoted text
-    /, ?, n         search, next
-    O               change ordering of messages
+    O               toggle ordering of messages (threaded or flat)
     =               refresh search results
 
+    /, ?            search for string
+    n               skip to next search result
+
+    J               mark current message read and go to next message
+    K               mark current message read and go to previous message
     N               toggle 'unread' tag on current message
     ^R              remove 'unread' tag on preceding messages
     F               toggle 'flagged' tag on current message
