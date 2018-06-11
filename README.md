@@ -116,6 +116,7 @@ The keys are:
 
     j,k,g,G, etc.   move around
     [, ]            scroll half page up, down
+    Tab, comma      go to next unread thread
     l, ~            change search terms ("limit")
     =               refresh search results
     Enter           open thread
@@ -195,6 +196,7 @@ This view pages through an entire thread.  The keys are:
     b, space        previous, next page
     \, Enter        previous, next line
     [, ]            previous, next half page
+    Tab, comma      go to next unread message
     p               go to parent message
     S               skip quoted text
     /, ?, n         search, next

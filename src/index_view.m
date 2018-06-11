@@ -703,6 +703,7 @@ key_binding_char('G', end).
 key_binding_char('[', half_page_up).
 key_binding_char(']', half_page_down).
 key_binding_char('\t', skip_to_unread).
+key_binding_char(',', skip_to_unread).
 key_binding_char('\r', enter).
 key_binding_char('l', enter_limit).
 key_binding_char('~', enter_limit_tilde).

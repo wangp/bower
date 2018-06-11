@@ -898,7 +898,9 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         skip_quoted_text(MessageUpdate, !Info),
         Action = continue
     ;
-        Key = char('\t')
+        ( Key = char('\t')
+        ; Key = char(',')
+        )
     ->
         skip_to_unread(MessageUpdate, !Info),
         Action = continue
