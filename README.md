@@ -74,10 +74,12 @@ Configuration
 The bower configuration file is located at `~/.config/bower/bower.conf`.
 See `bower.conf.sample` for details.
 
-In particular, bower is designed such that it can be run locally,
-calling out to notmuch on a remote machine (that holds your mail) via ssh.
-The advantage is that you can start helper programs locally (e.g. web browser),
-and add or save attachments on the local filesystem.
+In particular, bower is designed such that it can be run on the local
+machine but call out to notmuch on a remote machine (that holds your
+mail) via ssh.  The advantage is that you can start helper programs on
+the local machine (e.g. a web browser or image viewer), and add or save
+attachments on the local filesystem, even if your mail archive is stored
+on a different machine.
 
 Bower also keeps some centralised information in the notmuch configuration
 file `~/.notmuch-config`.  You may wish to tell bower about your Maildir
@@ -181,14 +183,16 @@ expansions.  See below for "Search term aliases".
 Index view behaviour
 --------------------
 
-Tag modifications are performed (mostly) asynchronously to minimise stutter.
-Remember to quit properly using 'q' to flush all changes.  Tag updates will
+Tag modifications in the index view are (mostly) performed asynchronously
+to minimise stutter.  Remember to quit properly using 'q' to ensure all
+tag modifications are completed before exiting.  Tag modifications will
 be retried a limited number of times on failure, e.g. because the notmuch
-database is locked.
+database is locked (this was a problem with old notmuch versions).
 
-By default, bower will call notmuch count every 60 seconds in the index
-view, to notify you of new unread messages matching the current search
-terms.
+By default, bower will call `notmuch count` every 60 seconds in the
+index view in order to notify you of new unread messages matching
+the current search terms. You can change the polling frequency in the
+configuration file.
 
 
 Thread/pager view
@@ -245,7 +249,9 @@ This view pages through an entire thread.  The keys are:
     I               return to index, removing 'unread' tag on all messages
     A               return to index, removing 'inbox' and 'unread' on messages
 
-Tag updates are only applied when returning to the index.
+Unlike the index view, tag modifications in the thread/pager view will only
+applied upon returning to the index view. If bower is terminated before
+returning to the index view then all tag modifications will be lost.
 
 The 'o' command, which opens parts and URLs, takes a command using Unix shell
 quoting syntax.  If the command ends with an unquoted '&' character then the
@@ -273,13 +279,16 @@ in a section called `[bower:search_alias]`.  Expansions may make use of other
 As mentioned earlier, the `~default` alias sets the initial search query
 if you run `bower` without command-line arguments.
 
+You can tab complete search term aliases.
+
 
 Simple addressbook
 ------------------
 
-Bower can look up addresses using the `notmuch address` command.  Only
-addresses that appear in the `From` header in the last year will be found.
-This is for better performance, and to avoid stale email addresses.
+Bower can look up addresses using the `notmuch address` command.
+Only addresses that appear in the `From` header of messages from the
+last year will be found. This restriction is for better performance,
+and also avoids finding stale email addresses.
 
 Address aliases can also be kept in the notmuch config file
 `~/.notmuch-config` in a section called `[bower:addressbook]`.
@@ -291,6 +300,9 @@ For example:
 
 You can add to the addressbook using '@' in the index or thread views.
 
+Tab completion will prefer address aliases over addresses found by
+`notmuch address`.
+
 
 Sending mail
 ============
@@ -299,22 +311,28 @@ You can send mail through one or more accounts defined in `bower.conf`.
 An account is selected by matching the From address on the message to the
 address on the account.  Bower performs two steps when sending a message:
 
-1. Call the configured `sendmail` command with the message on standard
-   input.  This command should pass the message onto an SMTP server.
-   If the command fails (exits with non-zero status) then stop immediately.
+ 1. Run the configured `sendmail` command with the message on standard input.
+    The command should pass the message onto an SMTP server.
+    If the `sendmail` command fails (exits with non-zero status) then the
+    message is considered not sent, and the next step does not run.
 
-2. Call the configured `post_sendmail` command with the message on
-   standard input.  When no command is set, the default behaviour is to
-   use `notmuch insert` to add the sent message to the mail store, and
-   into the database with the `sent` tag and without the `unread` tag.
-   You may replace this with a custom command, or bypass the step by
-   setting the command to the empty string.
+ 2. Run the "post-sendmail" step.
 
-If the `sendmail` and `post_sendmail` commands both run on the same remote
-server, then there is an inefficiency because a single message would need
-to be transferred to the remote server twice.  You could combine the two
-steps into a single script run at the `sendmail` step, and disable the
-`post_sendmail` step.
+    The default behaviour (if `post_sendmail` is not set) is to use
+    `notmuch insert` to add the message to the mail store, and to the
+    database with the `sent` tag and without the `unread` tag.
+
+    Otherwise, if `post_sendmail` is set to a non-empty command
+    then the command is run with the message on standard input.
+
+    Otherwise, if `post_sendmail` is set to the empty string
+    then no command is run.
+
+If both the `sendmail` and `post_sendmail` commands will run on the same
+remote server then there is a slightly inefficiency because a single
+message would need to be transferred to the remote server two times.
+If that is a concern, you could combine the two steps into a single script
+to be run at the `sendmail` step, and disable the `post_sendmail` command.
 
 
 Encryption and signing (beta)
