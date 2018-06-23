@@ -116,8 +116,6 @@
 
 :- pred get_keycode_timeout(int::in, keycode::out, io::di, io::uo) is det.
 
-:- pred get_char_blocking(char::out, io::di, io::uo) is det.
-
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -520,19 +518,6 @@ get_keycode_2(Code, !IO) :-
                 get_keycode_2(Code, !IO)
             )
         )
-    ).
-
-get_char_blocking(Char, !IO) :-
-    get_keycode_blocking(Code, !IO),
-    (
-        Code = char(Char)
-    ;
-        ( Code = code(_)
-        ; Code = meta(_)
-        ; Code = metacode(_)
-        ; Code = timeout_or_error
-        ),
-        get_char_blocking(Char, !IO)
     ).
 
 %-----------------------------------------------------------------------------%
