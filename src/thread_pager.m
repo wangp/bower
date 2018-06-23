@@ -2677,7 +2677,7 @@ draw_thread_pager(Screen, Info, !IO) :-
         get_percent_visible(PagerInfo, NumPagerRows, MessageId, Percent)
     ->
         PercentText = string.format("%3d%%", [i(Percent)]),
-        draw_status_bar_progress(Screen, PercentText, !IO)
+        draw_status_bar(Screen, no, yes(PercentText), !IO)
     ;
         draw_status_bar(Screen, !IO)
     ).

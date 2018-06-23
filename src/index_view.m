@@ -1838,10 +1838,11 @@ draw_display_tag(Panel, Tag, !IO) :-
 draw_index_bar(Screen, Info, !IO) :-
     Count = Info ^ i_poll_count,
     ( Count = 0 ->
-        draw_status_bar(Screen, !IO)
+        MaybeText = no
     ;
-        draw_status_bar_text(Screen, count_messages_since_refresh(Count), !IO)
-    ).
+        MaybeText = yes(count_messages_since_refresh(Count))
+    ),
+    draw_status_bar(Screen, MaybeText, no, !IO).
 
 :- func count_messages_since_refresh(int) = string.
 

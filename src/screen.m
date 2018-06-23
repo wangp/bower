@@ -100,11 +100,8 @@
     is det.
 
 :- pred draw_status_bar(screen::in, io::di, io::uo) is det.
-
-:- pred draw_status_bar_text(screen::in, string::in, io::di, io::uo) is det.
-
-:- pred draw_status_bar_progress(screen::in, string::in, io::di, io::uo)
-    is det.
+:- pred draw_status_bar(screen::in, maybe(string)::in, maybe(string)::in,
+    io::di, io::uo) is det.
 
 :- type keycode
     --->    char(char)
@@ -434,37 +431,40 @@ update_message_immed(Screen, MessageUpdate, !IO) :-
 %-----------------------------------------------------------------------------%
 
 draw_status_bar(Screen, !IO) :-
-    draw_status_bar_base(Screen, _Cols, _Panel, !IO).
+    draw_status_bar(Screen, no, no, !IO).
 
-:- pred draw_status_bar_base(screen::in, int::out, panel::out, io::di, io::uo)
-    is det.
-
-draw_status_bar_base(Screen, Cols, Panel, !IO) :-
+draw_status_bar(Screen, MaybeText, MaybeProgress, !IO) :-
     get_status_attrs(Screen, Attrs),
     get_cols(Screen, Cols),
     get_bar_panel(Screen, Panel),
     panel.erase(Panel, !IO),
     attr(Panel, Attrs ^ bar, !IO),
-    hline(Panel, char.to_int('-'), Cols, !IO).
-
-draw_status_bar_text(Screen, Text, !IO) :-
-    draw_status_bar_base(Screen, _Cols, Panel, !IO),
-    move(Panel, 0, 4, !IO),
-    draw(Panel, " ", !IO),
-    draw(Panel, Text, !IO),
-    draw(Panel, " ", !IO).
-
-draw_status_bar_progress(Screen, Text, !IO) :-
-    draw_status_bar_base(Screen, Cols, Panel, !IO),
-    % Just drop progress text if it won't fit.
-    TextCol = Cols - 4 - string_wcwidth(Text) - 1,
-    ( if TextCol >= 0 then
-        move(Panel, 0, TextCol, !IO),
+    hline(Panel, char.to_int('-'), Cols, !IO),
+    (
+        MaybeText = yes(Text),
+        move(Panel, 0, 4, !IO),
         draw(Panel, " ", !IO),
         draw(Panel, Text, !IO),
-        draw(Panel, " ", !IO)
-    else
-        true
+        draw(Panel, " ", !IO),
+        getyx(Panel, _, MinX, !IO)
+    ;
+        MaybeText = no,
+        MinX = 0
+    ),
+    (
+        MaybeProgress = yes(ProgressText),
+        % Just drop progress text if it won't fit.
+        ProgressTextCol = Cols - 4 - string_wcwidth(ProgressText) - 1,
+        ( if ProgressTextCol >= MinX then
+            move(Panel, 0, ProgressTextCol, !IO),
+            draw(Panel, " ", !IO),
+            draw(Panel, ProgressText, !IO),
+            draw(Panel, " ", !IO)
+        else
+            true
+        )
+    ;
+        MaybeProgress = no
     ).
 
 %-----------------------------------------------------------------------------%
