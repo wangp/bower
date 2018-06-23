@@ -309,7 +309,7 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
     ),
 
     poll_async_with_progress(Screen, !IndexInfo, !IO),
-    index_get_keycode(!.IndexInfo, KeyCode, !IO),
+    get_keycode_async_aware(!.IndexInfo ^ i_next_poll_time, KeyCode, !IO),
     index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo),
     update_message(Screen, MessageUpdate, !IO),
 
@@ -484,51 +484,6 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
     ;
         Action = quit,
         flush_async_with_progress(Screen, !IO)
-    ).
-
-:- pred index_get_keycode(index_info::in, keycode::out, io::di, io::uo) is det.
-
-index_get_keycode(Info, Code, !IO) :-
-    async.have_child_process(HaveChild, !IO),
-    (
-        HaveChild = yes,
-        Tenths = 10,
-        get_keycode_child_process_loop(Tenths, Code, !IO)
-    ;
-        HaveChild = no,
-        MaybeNextPollTime = Info ^ i_next_poll_time,
-        (
-            MaybeNextPollTime = yes(NextPollTime),
-            current_timestamp(Time, !IO),
-            DeltaSecs = NextPollTime - Time,
-            ( DeltaSecs =< 0.0 ->
-                Tenths = 10
-            ;
-                Tenths = 10 * floor_to_int(DeltaSecs) + 1
-            ),
-            get_keycode_timeout(Tenths, Code, !IO)
-        ;
-            MaybeNextPollTime = no,
-            get_keycode_blocking(Code, !IO)
-        )
-    ).
-
-:- pred get_keycode_child_process_loop(int::in, keycode::out,
-    io::di, io::uo) is det.
-
-get_keycode_child_process_loop(Tenths, Code, !IO) :-
-    get_keycode_timeout(Tenths, Code0, !IO),
-    ( Code0 = timeout_or_error ->
-        async.received_sigchld_since_spawn(Sigchld, !IO),
-        (
-            Sigchld = yes,
-            Code = Code0
-        ;
-            Sigchld = no,
-            get_keycode_child_process_loop(Tenths, Code, !IO)
-        )
-    ;
-        Code = Code0
     ).
 
 %-----------------------------------------------------------------------------%

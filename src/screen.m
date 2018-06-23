@@ -12,6 +12,7 @@
 :- import_module color.
 :- import_module curs.
 :- import_module curs.panel.
+:- import_module time_util.
 
 %-----------------------------------------------------------------------------%
 
@@ -114,7 +115,8 @@
 
 :- pred get_keycode_blocking(keycode::out, io::di, io::uo) is det.
 
-:- pred get_keycode_timeout(int::in, keycode::out, io::di, io::uo) is det.
+:- pred get_keycode_async_aware(maybe(timestamp)::in, keycode::out,
+    io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -123,11 +125,13 @@
 
 :- import_module bool.
 :- import_module exception.
+:- import_module float.
 :- import_module int.
 :- import_module mutvar.
 :- import_module require.
 :- import_module string.
 
+:- import_module async.
 :- import_module signal.
 :- import_module string_util.
 
@@ -469,6 +473,8 @@ get_keycode_blocking(Code, !IO) :-
     curs.cbreak(!IO),
     get_keycode_2(Code, !IO).
 
+:- pred get_keycode_timeout(int::in, keycode::out, io::di, io::uo) is det.
+
 get_keycode_timeout(Tenths, Code, !IO) :-
     % halfdelay argument must be between 1 and 255.
     HalfDelay = max(1, min(Tenths, 255)),
@@ -518,6 +524,48 @@ get_keycode_2(Code, !IO) :-
                 get_keycode_2(Code, !IO)
             )
         )
+    ).
+
+get_keycode_async_aware(MaybeDeadline, Code, !IO) :-
+    async.have_child_process(HaveChild, !IO),
+    (
+        HaveChild = yes,
+        Tenths = 10,
+        get_keycode_child_process_loop(Tenths, Code, !IO)
+    ;
+        HaveChild = no,
+        (
+            MaybeDeadline = yes(Deadline),
+            current_timestamp(Time, !IO),
+            DeltaSecs = Deadline - Time,
+            ( DeltaSecs =< 0.0 ->
+                Tenths = 10
+            ;
+                Tenths = 10 * floor_to_int(DeltaSecs) + 1
+            ),
+            get_keycode_timeout(Tenths, Code, !IO)
+        ;
+            MaybeDeadline = no,
+            get_keycode_blocking(Code, !IO)
+        )
+    ).
+
+:- pred get_keycode_child_process_loop(int::in, keycode::out,
+    io::di, io::uo) is det.
+
+get_keycode_child_process_loop(Tenths, Code, !IO) :-
+    get_keycode_timeout(Tenths, Code0, !IO),
+    ( Code0 = timeout_or_error ->
+        async.received_sigchld_since_spawn(Sigchld, !IO),
+        (
+            Sigchld = yes,
+            Code = Code0
+        ;
+            Sigchld = no,
+            get_keycode_child_process_loop(Tenths, Code, !IO)
+        )
+    ;
+        Code = Code0
     ).
 
 %-----------------------------------------------------------------------------%
