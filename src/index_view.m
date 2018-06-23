@@ -43,6 +43,7 @@
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module data.
+:- import_module poll_notify.
 :- import_module quote_arg.
 :- import_module recall.
 :- import_module scrollable.
@@ -1707,37 +1708,6 @@ handle_poll_result(Screen, CountOutput, !Info, !IO) :-
     ;
         update_message(Screen,
             set_warning("notmuch count return unexpected result"), !IO)
-    ).
-
-:- pred maybe_poll_notify(prog_config::in, string::in, message_update::out,
-    io::di, io::uo) is det.
-
-maybe_poll_notify(Config, Message, MessageUpdate, !IO) :-
-    get_poll_notify_command(Config, MaybeCommandPrefix),
-    (
-        MaybeCommandPrefix = yes(CommandPrefix),
-        make_quoted_command(CommandPrefix, [Message],
-            redirect_input("/dev/null"), redirect_output("/dev/null"),
-            Command),
-        io.call_system(Command, CallRes, !IO),
-        (
-            CallRes = ok(ExitStatus),
-            ( ExitStatus = 0 ->
-                MessageUpdate = no_change
-            ;
-                string.format("poll_notify command returned exit status %d",
-                    [i(ExitStatus)], Warning),
-                MessageUpdate = set_warning(Warning)
-            )
-        ;
-            CallRes = error(Error),
-            Warning = "Error running poll_notify command: " ++
-                io.error_message(Error),
-            MessageUpdate = set_warning(Warning)
-        )
-    ;
-        MaybeCommandPrefix = no,
-        MessageUpdate = no_change
     ).
 
 :- func next_poll_time(prog_config, timestamp) = maybe(timestamp).
