@@ -54,6 +54,7 @@
 :- import_module version_array.
 
 :- import_module addressbook.
+:- import_module async.
 :- import_module callout.
 :- import_module color.
 :- import_module compose.
@@ -63,6 +64,7 @@
 :- import_module make_temp.
 :- import_module pager.
 :- import_module path_expand.
+:- import_module poll_notify.
 :- import_module quote_arg.
 :- import_module recall.
 :- import_module resend.
@@ -71,6 +73,7 @@
 :- import_module string_util.
 :- import_module text_entry.
 :- import_module time_util.
+:- import_module view_async.
 
 %-----------------------------------------------------------------------------%
 
@@ -85,6 +88,9 @@
                 tp_num_thread_rows  :: int,
                 tp_pager            :: pager_info,
                 tp_num_pager_rows   :: int,
+                tp_refresh_time     :: timestamp,
+                tp_next_poll_time   :: maybe(timestamp),
+                tp_poll_count       :: int,
                 tp_search           :: maybe(string),
                 tp_search_dir       :: search_direction,
                 tp_common_history   :: common_history,
@@ -128,6 +134,7 @@
 
 :- type thread_pager_action
     --->    continue
+    ;       continue_no_draw
     ;       resize
     ;       start_reply(message, reply_kind)
     ;       prompt_resend(message_id)
@@ -181,6 +188,7 @@ open_thread_pager(Config, Crypto, Screen, ThreadId, MaybeSearch, Transition,
     ),
     update_message(Screen, MessageUpdate, !IO),
     thread_pager_loop(Screen, redraw, Info1, Info, !IO),
+    flush_async_with_progress(Screen, !IO),
     get_effects(Info, Effects),
     Transition = screen_transition(Effects, no_change),
     CommonHistory = Info ^ tp_common_history.
@@ -199,7 +207,8 @@ reopen_thread_pager(Screen, KeepCached, !Info, !IO) :-
 reopen_thread_pager_with_ordering(Screen, KeepCached, Ordering, Info0, Info,
         !IO) :-
     Info0 = thread_pager_info(Config0, Crypto0, ThreadId0, Cached0, _Ordering0,
-        Scrollable0, _NumThreadRows, Pager0, _NumPagerRows,
+        Scrollable0, _NumThreadRows0, Pager0, _NumPagerRows0,
+        RefreshTime0, MaybeNextPollTime0, PollCount0,
         Search, SearchDir, CommonHistory, AddedMessages),
     (
         KeepCached = yes,
@@ -222,6 +231,7 @@ reopen_thread_pager_with_ordering(Screen, KeepCached, Ordering, Info0, Info,
 
     Info1 = thread_pager_info(Config, Crypto, ThreadId, Cached, _Ordering,
         Scrollable1, NumThreadRows, Pager1, NumPagerRows,
+        RefreshTime1, MaybeNextPollTime1, PollCount1,
         _Search1, _SearchDir1, _CommonHistory1, _AddedMessages1),
 
     % Reapply tag changes from previous state.
@@ -248,8 +258,21 @@ reopen_thread_pager_with_ordering(Screen, KeepCached, Ordering, Info0, Info,
         Pager = Pager1
     ),
 
+    (
+        MaybeCached = yes(_),
+        RefreshTime = RefreshTime0,
+        MaybeNextPollTime = MaybeNextPollTime0,
+        PollCount = PollCount0
+    ;
+        MaybeCached = no,
+        RefreshTime = RefreshTime1,
+        MaybeNextPollTime = MaybeNextPollTime1,
+        PollCount = PollCount1
+    ),
+
     Info2 = thread_pager_info(Config, Crypto, ThreadId, Cached, Ordering,
         Scrollable, NumThreadRows, Pager, NumPagerRows,
+        RefreshTime, MaybeNextPollTime, PollCount,
         Search, SearchDir, CommonHistory, AddedMessages),
     sync_thread_to_pager(Info2, Info),
 
@@ -294,11 +317,9 @@ create_thread_pager(Config, Crypto, Screen, ThreadId, Ordering, MaybeCached,
         ParseResult = error(_),
         Messages = []
     ),
-    current_timestamp(Time, !IO),
-    localtime(Time, Nowish, !IO),
     get_rows_cols(Screen, Rows, Cols),
-    setup_thread_pager(Config, Crypto, ThreadId, Ordering, Nowish, Rows - 2,
-        Cols, Messages, CommonHistory, Info, Count, !IO),
+    setup_thread_pager(Config, Crypto, ThreadId, Ordering, Rows - 2, Cols,
+        Messages, CommonHistory, Info, Count, !IO),
     (
         ParseResult = ok(_),
         ResCount = ok(Count)
@@ -318,12 +339,14 @@ verify_arg(yes) = "--verify".
 verify_arg(no) = "--verify=false".
 
 :- pred setup_thread_pager(prog_config::in, crypto::in, thread_id::in,
-    ordering::in, tm::in, int::in, int::in, list(message)::in,
+    ordering::in, int::in, int::in, list(message)::in,
     common_history::in, thread_pager_info::out, int::out, io::di, io::uo)
     is det.
 
-setup_thread_pager(Config, Crypto, ThreadId, Ordering, Nowish, Rows, Cols,
-        Messages, CommonHistory, ThreadPagerInfo, NumThreadLines, !IO) :-
+setup_thread_pager(Config, Crypto, ThreadId, Ordering, Rows, Cols, Messages,
+        CommonHistory, ThreadPagerInfo, NumThreadLines, !IO) :-
+    current_timestamp(NowTime, !IO),
+    localtime(NowTime, Nowish, !IO),
     (
         Ordering = ordering_threaded,
         append_threaded_messages(Nowish, Messages, ThreadLines, !IO),
@@ -361,10 +384,20 @@ setup_thread_pager(Config, Crypto, ThreadId, Ordering, Nowish, Rows, Cols,
             PagerInfo = PagerInfo0
         )
     ),
+
+    % The caller should override all of these values as appropriate
+    % (we should just factor out parts of the thread_pager_info
+    % if we don't want to pass more arguments into setup_thread_pager).
+    RefreshTime = NowTime,
+    MaybeNextPollTime = next_poll_time(Config, NowTime),
+    PollCount = 0,
+    MaybeSearchString = no,
     AddedMessages = 0,
+
     ThreadPagerInfo = thread_pager_info(Config, Crypto, ThreadId, Messages,
         Ordering, Scrollable, NumThreadRows, PagerInfo, NumPagerRows,
-        no, dir_forward, CommonHistory, AddedMessages).
+        RefreshTime, MaybeNextPollTime, PollCount,
+        MaybeSearchString, dir_forward, CommonHistory, AddedMessages).
 
 :- pred get_latest_line(thread_line::in, thread_line::in, thread_line::out)
     is det.
@@ -657,7 +690,8 @@ handle_screen_transition(Screen0, Screen, Transition, T, !Info, !IO) :-
 
 :- type on_entry
     --->    redraw
-    ;       no_draw(keycode).
+    ;       no_draw
+    ;       no_draw_have_key(keycode).
 
 :- pred thread_pager_loop(screen::in, on_entry::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
@@ -666,16 +700,33 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
     (
         OnEntry = redraw,
         draw_thread_pager(Screen, !.Info, !IO),
-        panel.update_panels(!IO),
-        get_keycode_blocking(Key, !IO)
+        panel.update_panels(!IO)
     ;
-        OnEntry = no_draw(Key)
+        OnEntry = no_draw
+    ;
+        OnEntry = no_draw_have_key(_)
+    ),
+
+    (
+        ( OnEntry = redraw
+        ; OnEntry = no_draw
+        ),
+        poll_async_with_progress(Screen, handle_poll_result, !Info, !IO),
+        get_keycode_async_aware(!.Info ^ tp_next_poll_time, Key, !IO)
+    ;
+        OnEntry = no_draw_have_key(Key)
     ),
     thread_pager_input(Key, Action, MessageUpdate, !Info),
     update_message(Screen, MessageUpdate, !IO),
+
     (
         Action = continue,
+        maybe_sched_poll(!Info, !IO),
         thread_pager_loop(Screen, redraw, !Info, !IO)
+    ;
+        Action = continue_no_draw,
+        maybe_sched_poll(!Info, !IO),
+        thread_pager_loop(Screen, no_draw, !Info, !IO)
     ;
         Action = resize,
         replace_screen_for_resize(Screen, NewScreen, !IO),
@@ -685,6 +736,7 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
         Action = start_reply(Message, ReplyKind),
         (
             Message = message(_, _, _, _, _, _),
+            flush_async_with_progress(Screen, !IO),
             Config = !.Info ^ tp_config,
             Crypto = !.Info ^ tp_crypto,
             start_reply(Config, Crypto, Screen, Message, ReplyKind, Transition,
@@ -707,10 +759,12 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
         )
     ;
         Action = prompt_resend(MessageId),
+        flush_async_with_progress(Screen, !IO),
         handle_resend(Screen, MessageId, !Info, !IO),
         thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = start_recall,
+        flush_async_with_progress(Screen, !IO),
         ThreadId = !.Info ^ tp_thread_id,
         handle_recall(Screen, NewScreen, ThreadId, Sent, !Info, !IO),
         (
@@ -724,6 +778,7 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
         thread_pager_loop(NewScreen, redraw, !Info, !IO)
     ;
         Action = edit_as_template(Message),
+        flush_async_with_progress(Screen, !IO),
         handle_edit_as_template(Screen, NewScreen, Message, Sent, !Info, !IO),
         (
             Sent = sent,
@@ -759,7 +814,7 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
         prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO),
         (
             MaybeNextKey = yes(NextKey),
-            thread_pager_loop(Screen, no_draw(NextKey), !Info, !IO)
+            thread_pager_loop(Screen, no_draw_have_key(NextKey), !Info, !IO)
         ;
             MaybeNextKey = no,
             thread_pager_loop(Screen, redraw, !Info, !IO)
@@ -795,6 +850,7 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
         thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = refresh_results,
+        flush_async_with_progress(Screen, !IO),
         reopen_thread_pager(Screen, no, !Info, !IO),
         thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
@@ -1082,14 +1138,17 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Action = addressbook_add,
         MessageUpdate = no_change
     ;
-        Key = code(key_resize)
-    ->
-        Action = resize,
-        MessageUpdate = no_change
-    ;
-        Action = continue,
+        ( Key = code(key_resize) ->
+            Action = resize
+        ; Key = timeout_or_error ->
+            Action = continue_no_draw
+        ;
+            Action = continue
+        ),
         MessageUpdate = no_change
     ).
+
+%-----------------------------------------------------------------------------%
 
 :- pred next_message(message_update::out,
     thread_pager_info::in, thread_pager_info::out) is det.
@@ -2653,13 +2712,90 @@ addressbook_add(Screen, Info, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
+:- pred maybe_sched_poll(thread_pager_info::in, thread_pager_info::out,
+    io::di, io::uo) is det.
+
+maybe_sched_poll(!Info, !IO) :-
+    MaybeNextPollTime = !.Info ^ tp_next_poll_time,
+    (
+        MaybeNextPollTime = no
+    ;
+        MaybeNextPollTime = yes(NextPollTime),
+        current_timestamp(Time, !IO),
+        DeltaSecs = NextPollTime - Time,
+        ( DeltaSecs =< 0.0 ->
+            sched_poll(Time, !Info, !IO)
+        ;
+            true
+        )
+    ).
+
+:- pred sched_poll(timestamp::in,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+
+sched_poll(Time, !Info, !IO) :-
+    Config = !.Info ^ tp_config,
+    get_notmuch_command(Config, Notmuch),
+    ThreadId = !.Info ^ tp_thread_id,
+    RefreshTime = !.Info ^ tp_refresh_time,
+    Args = [
+        "count", "--",
+        thread_id_to_search_term(ThreadId),
+        timestamp_to_int_string(RefreshTime) ++ ".."
+    ],
+    Op = async_lowprio_command(Notmuch, Args),
+    push_lowprio_async(Op, _Pushed, !IO),
+    !Info ^ tp_next_poll_time := next_poll_time(Config, Time).
+
+:- pred handle_poll_result(screen::in, string::in,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+
+handle_poll_result(Screen, CountOutput, !Info, !IO) :-
+    ( string.to_int(rstrip(CountOutput), Count) ->
+        Count0 = !.Info ^ tp_poll_count,
+        ( Count0 = Count ->
+            true
+        ;
+            !Info ^ tp_poll_count := Count,
+            % Redraw the bar immediately.
+            draw_thread_pager_bar(Screen, !.Info, !IO),
+            panel.update_panels(!IO),
+
+            % Run notify command if any.
+            ( Count > 0 ->
+                Config = !.Info ^ tp_config,
+                maybe_poll_notify(Config, count_messages_since_refresh(Count),
+                    MessageUpdate, !IO),
+                update_message(Screen, MessageUpdate, !IO)
+            ;
+                true
+            )
+        )
+    ;
+        update_message(Screen,
+            set_warning("notmuch count return unexpected result"), !IO)
+    ).
+
+:- func next_poll_time(prog_config, timestamp) = maybe(timestamp).
+
+next_poll_time(Config, Time) = NextPollTime :-
+    get_thread_poll_period_secs(Config, Maybe),
+    (
+        Maybe = yes(PollSecs),
+        NextPollTime = yes(Time + float(PollSecs))
+    ;
+        Maybe = no,
+        NextPollTime = no
+    ).
+
+%-----------------------------------------------------------------------------%
+
 :- pred draw_thread_pager(screen::in, thread_pager_info::in, io::di, io::uo)
     is det.
 
 draw_thread_pager(Screen, Info, !IO) :-
     Scrollable = Info ^ tp_scrollable,
     PagerInfo = Info ^ tp_pager,
-    NumPagerRows = Info ^ tp_num_pager_rows,
     Config = Info ^ tp_config,
     Attrs = thread_attrs(Config),
     PagerAttrs = pager_attrs(Config),
@@ -2669,18 +2805,7 @@ draw_thread_pager(Screen, Info, !IO) :-
     get_cols(Screen, Cols),
     draw_sep(Attrs, Cols, SepPanel, !IO),
     draw_pager_lines(PagerAttrs, PagerPanels, PagerInfo, !IO),
-
-    (
-        get_cursor_line(Scrollable, _Cursor, ThreadLine),
-        Message = ThreadLine ^ tp_message,
-        MessageId = Message ^ m_id,
-        get_percent_visible(PagerInfo, NumPagerRows, MessageId, Percent)
-    ->
-        PercentText = string.format("%3d%%", [i(Percent)]),
-        draw_status_bar(Screen, no, yes(PercentText), !IO)
-    ;
-        draw_status_bar(Screen, !IO)
-    ).
+    draw_thread_pager_bar(Screen, Info, !IO).
 
 :- pred draw_sep(thread_attrs::in, int::in, maybe(panel)::in, io::di, io::uo)
     is det.
@@ -2830,6 +2955,38 @@ graphic_to_char(ell) = "└".
 
 unless(no, X) = yes(X).
 unless(yes, _) = no.
+
+:- pred draw_thread_pager_bar(screen::in, thread_pager_info::in,
+    io::di, io::uo) is det.
+
+draw_thread_pager_bar(Screen, Info, !IO) :-
+    Count = Info ^ tp_poll_count,
+    ( Count = 0 ->
+        MaybeText = no
+    ;
+        MaybeText = yes(count_messages_since_refresh(Count))
+    ),
+
+    Scrollable = Info ^ tp_scrollable,
+    PagerInfo = Info ^ tp_pager,
+    NumPagerRows = Info ^ tp_num_pager_rows,
+    (
+        get_cursor_line(Scrollable, _Cursor, ThreadLine),
+        Message = ThreadLine ^ tp_message,
+        MessageId = Message ^ m_id,
+        get_percent_visible(PagerInfo, NumPagerRows, MessageId, Percent)
+    ->
+        MaybeProgress = yes(string.format("%3d%%", [i(Percent)]))
+    ;
+        MaybeProgress = no
+    ),
+
+    draw_status_bar(Screen, MaybeText, MaybeProgress, !IO).
+
+:- func count_messages_since_refresh(int) = string.
+
+count_messages_since_refresh(Count) =
+    string.format("%+d thread messages since refresh", [i(Count)]).
 
 :- pred split_panels(screen::in, thread_pager_info::in,
     list(panel)::out, maybe(panel)::out, list(panel)::out) is det.

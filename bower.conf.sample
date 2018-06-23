@@ -23,7 +23,7 @@
     # I run bower locally but keep my mail and notmuch on a remote machine,
     # accessed via ssh.  For that, you may like to enable the OpenSSH
     # ControlMaster option, and also set ControlPersist to greater than 60
-    # seconds (the polling period in the index view).
+    # seconds (or your selected polling period).
     #
   ; notmuch = ssh user@host /remote/notmuch
 
@@ -102,6 +102,15 @@
 
     # How often to check for new unread messages matching the current search
     # terms in the index view. Disable with "off".
+    #
+  ; poll_period_secs = 60
+
+#-----------------------------------------------------------------------------#
+
+[thread]
+
+    # How often to check for new messages in the current thread.
+    # Disable with "off".
     #
   ; poll_period_secs = 60
 
