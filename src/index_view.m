@@ -200,7 +200,7 @@ open_index(Config, Crypto, Screen, SearchString, !.CommonHistory, !IO) :-
     IndexInfo = index_info(Config, Crypto, Scrollable, SearchString,
         SearchTokens, SearchTime, NextPollTime, PollCount, MaybeSearch,
         dir_forward, !.CommonHistory),
-    index_loop(Screen, IndexInfo, !IO).
+    index_loop(Screen, redraw, IndexInfo, !IO).
 
 :- pred search_terms_with_progress(prog_config::in, screen::in,
     list(token)::in, maybe(list(thread))::out, io::di, io::uo) is det.
@@ -291,19 +291,23 @@ default_max_threads = 300.
 
 %-----------------------------------------------------------------------------%
 
-:- pred index_loop(screen::in, index_info::in, io::di, io::uo) is det.
+:- type on_entry
+    --->    redraw
+    ;       no_draw.
 
-index_loop(Screen, IndexInfo, !IO) :-
-    draw_index_view(Screen, IndexInfo, !IO),
-    draw_index_bar(Screen, IndexInfo, !IO),
-    panel.update_panels(!IO),
-    index_loop_no_draw(Screen, IndexInfo, !IO).
-
-:- pred index_loop_no_draw(screen::in, index_info::in, io::di, io::uo)
+:- pred index_loop(screen::in, on_entry::in, index_info::in, io::di, io::uo)
     is det.
-:- pragma inline(index_loop_no_draw/4).
 
-index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
+index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
+    (
+        OnEntry = redraw,
+        draw_index_view(Screen, !.IndexInfo, !IO),
+        draw_index_bar(Screen, !.IndexInfo, !IO),
+        panel.update_panels(!IO)
+    ;
+        OnEntry = no_draw
+    ),
+
     poll_async_with_progress(Screen, !IndexInfo, !IO),
     index_get_keycode(!.IndexInfo, KeyCode, !IO),
     index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo),
@@ -312,16 +316,16 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
     (
         Action = continue,
         maybe_sched_poll(!IndexInfo, !IO),
-        index_loop(Screen, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
         Action = continue_no_draw,
         maybe_sched_poll(!IndexInfo, !IO),
-        index_loop_no_draw(Screen, !.IndexInfo, !IO)
+        index_loop(Screen, no_draw, !.IndexInfo, !IO)
     ;
         Action = resize,
         replace_screen_for_resize(Screen, NewScreen, !IO),
         recreate_screen(NewScreen, !IndexInfo),
-        index_loop(NewScreen, !.IndexInfo, !IO)
+        index_loop(NewScreen, redraw, !.IndexInfo, !IO)
     ;
         Action = open_pager(ThreadId),
         flush_async_with_progress(Screen, !IO),
@@ -335,7 +339,7 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
             TagUpdates, !IndexInfo, !IO),
         effect_thread_pager_changes(TagUpdates, !IndexInfo, !IO),
         !IndexInfo ^ i_common_history := CommonHistory,
-        index_loop(NewScreen, !.IndexInfo, !IO)
+        index_loop(NewScreen, redraw, !.IndexInfo, !IO)
     ;
         Action = enter_limit(MaybeInitial),
         Config = !.IndexInfo ^ i_config,
@@ -383,11 +387,11 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
             Return = no,
             update_message(Screen, clear_message, !IO)
         ),
-        index_loop(Screen, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
         Action = refresh_all,
         refresh_all(Screen, verbose, !IndexInfo, !IO),
-        index_loop(Screen, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
         Action = start_compose,
         flush_async_with_progress(Screen, !IO),
@@ -409,7 +413,7 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         ;
             Sent = not_sent
         ),
-        index_loop(NewScreen, !.IndexInfo, !IO)
+        index_loop(NewScreen, redraw, !.IndexInfo, !IO)
     ;
         Action = start_reply(ReplyKind),
         flush_async_with_progress(Screen, !IO),
@@ -421,7 +425,7 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         ;
             MaybeRefresh = no
         ),
-        index_loop(NewScreen, !.IndexInfo, !IO)
+        index_loop(NewScreen, redraw, !.IndexInfo, !IO)
     ;
         Action = start_recall,
         flush_async_with_progress(Screen, !IO),
@@ -432,39 +436,39 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         ;
             Sent = not_sent
         ),
-        index_loop(NewScreen, !.IndexInfo, !IO)
+        index_loop(NewScreen, redraw, !.IndexInfo, !IO)
     ;
         Action = addressbook_add,
         addressbook_add(Screen, !.IndexInfo, !IO),
-        index_loop(Screen, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
         Action = prompt_internal_search(SearchDir),
         prompt_internal_search(Screen, SearchDir, !IndexInfo, !IO),
-        index_loop(Screen, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
         Action = toggle_unread,
         modify_tag_cursor_line(toggle_unread, Screen, !IndexInfo, !IO),
-        index_loop(Screen, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
         Action = toggle_archive,
         modify_tag_cursor_line(toggle_archive, Screen, !IndexInfo, !IO),
-        index_loop(Screen, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
         Action = toggle_flagged,
         modify_tag_cursor_line(toggle_flagged, Screen, !IndexInfo, !IO),
-        index_loop(Screen, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
         Action = set_deleted,
         modify_tag_cursor_line(set_deleted, Screen, !IndexInfo, !IO),
-        index_loop(Screen, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
         Action = unset_deleted,
         modify_tag_cursor_line(unset_deleted, Screen, !IndexInfo, !IO),
-        index_loop(Screen, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
         Action = prompt_tag(Initial),
         prompt_tag(Screen, Initial, !IndexInfo, !IO),
-        index_loop(Screen, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
         Action = bulk_tag(KeepSelection),
         bulk_tag(Screen, Done, !IndexInfo, !IO),
@@ -476,7 +480,7 @@ index_loop_no_draw(Screen, !.IndexInfo, !IO) :-
         ;
             true
         ),
-        index_loop(Screen, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
         Action = quit,
         flush_async_with_progress(Screen, !IO)

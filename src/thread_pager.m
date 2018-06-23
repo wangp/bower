@@ -180,7 +180,7 @@ open_thread_pager(Config, Crypto, Screen, ThreadId, MaybeSearch, Transition,
         MessageUpdate = set_warning(Error)
     ),
     update_message(Screen, MessageUpdate, !IO),
-    thread_pager_loop(Screen, Info1, Info, !IO),
+    thread_pager_loop(Screen, redraw, Info1, Info, !IO),
     get_effects(Info, Effects),
     Transition = screen_transition(Effects, no_change),
     CommonHistory = Info ^ tp_common_history.
@@ -655,31 +655,32 @@ handle_screen_transition(Screen0, Screen, Transition, T, !Info, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred thread_pager_loop(screen::in,
+:- type on_entry
+    --->    redraw
+    ;       no_draw(keycode).
+
+:- pred thread_pager_loop(screen::in, on_entry::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
-:- pragma inline(thread_pager_loop/5). % force direct tail recursion
-
-thread_pager_loop(Screen, !Info, !IO) :-
-    draw_thread_pager(Screen, !.Info, !IO),
-    panel.update_panels(!IO),
-    get_keycode_blocking(Key, !IO),
-    thread_pager_loop_2(Screen, Key, !Info, !IO).
-
-:- pred thread_pager_loop_2(screen::in, keycode::in,
-    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
-
-thread_pager_loop_2(Screen, Key, !Info, !IO) :-
+thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
+    (
+        OnEntry = redraw,
+        draw_thread_pager(Screen, !.Info, !IO),
+        panel.update_panels(!IO),
+        get_keycode_blocking(Key, !IO)
+    ;
+        OnEntry = no_draw(Key)
+    ),
     thread_pager_input(Key, Action, MessageUpdate, !Info),
     update_message(Screen, MessageUpdate, !IO),
     (
         Action = continue,
-        thread_pager_loop(Screen, !Info, !IO)
+        thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = resize,
         replace_screen_for_resize(Screen, NewScreen, !IO),
         resize_thread_pager(NewScreen, !Info),
-        thread_pager_loop(NewScreen, !Info, !IO)
+        thread_pager_loop(NewScreen, redraw, !Info, !IO)
     ;
         Action = start_reply(Message, ReplyKind),
         (
@@ -699,15 +700,15 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
             ;
                 Sent = not_sent
             ),
-            thread_pager_loop(NewScreen, !Info, !IO)
+            thread_pager_loop(NewScreen, redraw, !Info, !IO)
         ;
             Message = excluded_message(_),
-            thread_pager_loop(Screen, !Info, !IO)
+            thread_pager_loop(Screen, redraw, !Info, !IO)
         )
     ;
         Action = prompt_resend(MessageId),
         handle_resend(Screen, MessageId, !Info, !IO),
-        thread_pager_loop(Screen, !Info, !IO)
+        thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = start_recall,
         ThreadId = !.Info ^ tp_thread_id,
@@ -720,7 +721,7 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         ;
             Sent = not_sent
         ),
-        thread_pager_loop(NewScreen, !Info, !IO)
+        thread_pager_loop(NewScreen, redraw, !Info, !IO)
     ;
         Action = edit_as_template(Message),
         handle_edit_as_template(Screen, NewScreen, Message, Sent, !Info, !IO),
@@ -732,11 +733,11 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         ;
             Sent = not_sent
         ),
-        thread_pager_loop(NewScreen, !Info, !IO)
+        thread_pager_loop(NewScreen, redraw, !Info, !IO)
     ;
         Action = prompt_tag(Initial),
         prompt_tag(Screen, Initial, !Info, !IO),
-        thread_pager_loop(Screen, !Info, !IO)
+        thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = bulk_tag(KeepSelection),
         bulk_tag(Screen, Done, !Info, !IO),
@@ -748,54 +749,54 @@ thread_pager_loop_2(Screen, Key, !Info, !IO) :-
         ;
             true
         ),
-        thread_pager_loop(Screen, !Info, !IO)
+        thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = prompt_save_part(Part, MaybeSubject),
         prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO),
-        thread_pager_loop(Screen, !Info, !IO)
+        thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = prompt_open_part(Part),
         prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO),
         (
             MaybeNextKey = yes(NextKey),
-            thread_pager_loop_2(Screen, NextKey, !Info, !IO)
+            thread_pager_loop(Screen, no_draw(NextKey), !Info, !IO)
         ;
             MaybeNextKey = no,
-            thread_pager_loop(Screen, !Info, !IO)
+            thread_pager_loop(Screen, redraw, !Info, !IO)
         )
     ;
         Action = prompt_open_url(Url),
         prompt_open_url(Screen, Url, !Info, !IO),
-        thread_pager_loop(Screen, !Info, !IO)
+        thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = prompt_search(SearchDir),
         prompt_search(Screen, SearchDir, !Info, !IO),
-        thread_pager_loop(Screen, !Info, !IO)
+        thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = decrypt_part,
         decrypt_part(Screen, !Info, !IO),
-        thread_pager_loop(Screen, !Info, !IO)
+        thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = verify_part,
         verify_part(Screen, !Info, !IO),
-        thread_pager_loop(Screen, !Info, !IO)
+        thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = toggle_content(ToggleType),
         toggle_content(Screen, ToggleType, !Info, !IO),
-        thread_pager_loop(Screen, !Info, !IO)
+        thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = toggle_ordering,
         toggle_ordering(!.Info, Ordering),
         reopen_thread_pager_with_ordering(Screen, yes, Ordering, !Info, !IO),
-        thread_pager_loop(Screen, !Info, !IO)
+        thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = addressbook_add,
         addressbook_add(Screen, !.Info, !IO),
-        thread_pager_loop(Screen, !Info, !IO)
+        thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = refresh_results,
         reopen_thread_pager(Screen, no, !Info, !IO),
-        thread_pager_loop(Screen, !Info, !IO)
+        thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = leave
     ).
