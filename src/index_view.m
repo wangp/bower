@@ -48,12 +48,12 @@
 :- import_module scrollable.
 :- import_module search_term.
 :- import_module signal.
-:- import_module sleep.
 :- import_module string_util.
 :- import_module tags.
 :- import_module text_entry.
 :- import_module thread_pager.
 :- import_module time_util.
+:- import_module view_async.
 
 %-----------------------------------------------------------------------------%
 
@@ -308,7 +308,7 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         OnEntry = no_draw
     ),
 
-    poll_async_with_progress(Screen, !IndexInfo, !IO),
+    poll_async_with_progress(Screen, handle_poll_result, !IndexInfo, !IO),
     get_keycode_async_aware(!.IndexInfo ^ i_next_poll_time, KeyCode, !IO),
     index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo),
     update_message(Screen, MessageUpdate, !IO),
@@ -1751,118 +1751,6 @@ next_poll_time(Config, Time) = NextPollTime :-
         Maybe = no,
         NextPollTime = no
     ).
-
-%-----------------------------------------------------------------------------%
-
-:- pred poll_async_with_progress(screen::in, index_info::in, index_info::out,
-    io::di, io::uo) is det.
-
-poll_async_with_progress(Screen, !Info, !IO) :-
-    poll_async_nonblocking(Return, !IO),
-    (
-        Return = none
-    ;
-        Return = child_succeeded,
-        poll_async_with_progress(Screen, !Info, !IO)
-    ;
-        Return = child_lowprio_output(Output),
-        handle_poll_result(Screen, Output, !Info, !IO),
-        poll_async_with_progress(Screen, !Info, !IO)
-    ;
-        Return = child_failed(Op, Failure),
-        handle_async_failure(Screen, Op, Failure, !IO),
-        poll_async_with_progress(Screen, !Info, !IO)
-    ).
-
-:- pred flush_async_with_progress(screen::in, io::di, io::uo) is det.
-
-flush_async_with_progress(Screen, !IO) :-
-    clear_lowprio_async(!IO),
-    async_count(Count, !IO),
-    ( Count = 0 ->
-        true
-    ;
-        flush_async_with_progress_loop(Screen, yes, !IO)
-    ).
-
-:- pred flush_async_with_progress_loop(screen::in, bool::in, io::di, io::uo)
-    is det.
-
-flush_async_with_progress_loop(Screen, Display, !IO) :-
-    async_count(Count, !IO),
-    ( Count = 0 ->
-        update_message(Screen, clear_message, !IO)
-    ;
-        (
-            Display = yes,
-            string.format("Flushing %d asynchronous operations.",
-                [i(Count)], Message),
-            update_message_immed(Screen, set_info(Message), !IO)
-        ;
-            Display = no
-        ),
-        poll_async_blocking(Return, !IO),
-        (
-            Return = none,
-            % Don't busy wait.
-            usleep(100000, !IO),
-            flush_async_with_progress_loop(Screen, no, !IO)
-        ;
-            Return = child_succeeded,
-            flush_async_with_progress_loop(Screen, yes, !IO)
-        ;
-            Return = child_lowprio_output(_),
-            flush_async_with_progress_loop(Screen, yes, !IO)
-        ;
-            Return = child_failed(Op, Failure),
-            handle_async_failure(Screen, Op, Failure, !IO),
-            flush_async_with_progress_loop(Screen, no, !IO)
-        )
-    ).
-
-:- pred handle_async_failure(screen::in, async_op::in, async_failure::in,
-    io::di, io::uo) is det.
-
-handle_async_failure(Screen, Op, Failure, !IO) :-
-    Op = async_shell_command(Prefix, Args, RemainingAttempts0),
-    Prefix = command_prefix(shell_quoted(PrefixString), _),
-    FullCommand = string.join_list(" ", [PrefixString | Args]),
-    ( string.count_codepoints(FullCommand) > 40 ->
-        ShortCommand = "..." ++ string.right(FullCommand, 37)
-    ;
-        ShortCommand = FullCommand
-    ),
-    (
-        Failure = failure_nonzero_exit(Status),
-        ( RemainingAttempts0 = 0 ->
-            string.format("'%s' returned exit status %d; not retrying.",
-                [s(ShortCommand), i(Status)], Message)
-        ;
-            Delay = 5,
-            string.format("'%s' returned exit status %d; retrying in %d secs.",
-                [s(ShortCommand), i(Status), i(Delay)], Message),
-            RemainingAttempts = RemainingAttempts0 - 1,
-            RetryOp = async_shell_command(Prefix, Args, RemainingAttempts),
-            retry_async(Delay, RetryOp, !IO)
-        )
-    ;
-        Failure = failure_signal(Signal),
-        string.format("'%s' received signal %d; not retrying.",
-            [s(ShortCommand), i(Signal)], Message)
-    ;
-        Failure = failure_abnormal_exit,
-        string.format("'%s' exited abnormally; not retrying.",
-            [s(ShortCommand)], Message)
-    ;
-        Failure = failure_error(Error),
-        string.format("'%s': %s; not retrying.",
-            [s(ShortCommand), s(io.error_message(Error))], Message)
-    ),
-    update_message_immed(Screen, set_warning(Message), !IO),
-    sleep(1, !IO).
-handle_async_failure(_Screen, Op, _Failure, !IO) :-
-    % Ignore poll command failures.
-    Op = async_lowprio_command(_, _).
 
 %-----------------------------------------------------------------------------%
 
