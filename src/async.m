@@ -234,7 +234,7 @@ do_poll_in_progress(Child, Blocking, Return, !Info, !IO) :-
                 ;
                     MaybePipe = yes(PipeRead),
                     drain_pipe(PipeRead, no, DrainRes, !IO),
-                    close_pipe(PipeRead, !IO),
+                    close_pipe_read(PipeRead, !IO),
                     (
                         DrainRes = ok(String),
                         Return = child_lowprio_output(String)
@@ -268,7 +268,7 @@ do_poll_in_progress(Child, Blocking, Return, !Info, !IO) :-
 
 maybe_close_pipe(no, !IO).
 maybe_close_pipe(yes(PipeRead), !IO) :-
-    close_pipe(PipeRead, !IO).
+    close_pipe_read(PipeRead, !IO).
 
 %-----------------------------------------------------------------------------%
 
@@ -338,7 +338,7 @@ spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO) :-
 spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO) :-
     Op = async_lowprio_command(CommandPrefix, UnquotedArgs),
     shell_and_args(CommandPrefix, UnquotedArgs, Shell, ShellArgs),
-    posix_spawn_capture_stdout(Shell, ShellArgs, SpawnRes, !IO),
+    posix_spawn_get_stdout(Shell, ShellArgs, SpawnRes, !IO),
     (
         SpawnRes = ok({Pid, PipeRead}),
         Child = current_child(Op, Pid, yes(PipeRead), PreSigchldCount),

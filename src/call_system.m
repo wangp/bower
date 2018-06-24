@@ -25,11 +25,11 @@
 %-----------------------------------------------------------------------------%
 
 call_system_capture_stdout(Command, ErrorLimit, Res, !IO) :-
-    posix_spawn_capture_stdout("/bin/sh", ["-c", Command], SpawnRes, !IO),
+    posix_spawn_get_stdout("/bin/sh", ["-c", Command], SpawnRes, !IO),
     (
         SpawnRes = ok({Pid, PipeRead}),
         drain_pipe(PipeRead, ErrorLimit, DrainRes, !IO),
-        close_pipe(PipeRead, !IO),
+        close_pipe_read(PipeRead, !IO),
         wait_pid(Pid, blocking, WaitRes, !IO),
         (
             WaitRes = no_hang,
