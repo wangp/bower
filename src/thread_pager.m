@@ -2738,12 +2738,13 @@ sched_poll(Time, !Info, !IO) :-
     get_notmuch_command(Config, Notmuch),
     ThreadId = !.Info ^ tp_thread_id,
     RefreshTime = !.Info ^ tp_refresh_time,
-    Args = [
-        "count", "--",
-        thread_id_to_search_term(ThreadId),
-        timestamp_to_int_string(RefreshTime) ++ ".."
-    ],
-    Op = async_lowprio_command(Notmuch, Args, no),
+    StdinContents = string.append_list([
+        thread_id_to_search_term(ThreadId), " ",
+        timestamp_to_int_string(RefreshTime), "..",
+        "\n"
+    ]),
+    Op = async_lowprio_command(Notmuch, ["count", "--batch"],
+        yes(StdinContents)),
     push_lowprio_async(Op, _Pushed, !IO),
     !Info ^ tp_next_poll_time := next_poll_time(Config, Time).
 
