@@ -189,11 +189,6 @@ tag modifications are completed before exiting.  Tag modifications will
 be retried a limited number of times on failure, e.g. because the notmuch
 database is locked (this was a problem with old notmuch versions).
 
-By default, bower will call `notmuch count` every 60 seconds in the
-index view in order to notify you of new unread messages matching
-the current search terms. You can change the polling frequency in the
-configuration file.
-
 
 Thread/pager view
 -----------------
@@ -256,6 +251,19 @@ returning to the index view then all tag modifications will be lost.
 The 'o' command, which opens parts and URLs, takes a command using Unix shell
 quoting syntax.  If the command ends with an unquoted '&' character then the
 command will be run in the background.
+
+
+Polling for new messages
+------------------------
+
+By default, bower will call `notmuch count` every 60 seconds in both the index
+and thread views in order to notify you of new unread messages matching the
+search terms in the index, or new messages in the current thread. You can
+change the polling frequency or disable it with the configuration option
+`ui.poll_period_secs`.
+
+You can also configure a command to run when new messages are found
+using the `command.poll_notify` option.
 
 
 Search term aliases

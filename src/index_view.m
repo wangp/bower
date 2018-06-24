@@ -63,6 +63,7 @@
                 i_config            :: prog_config,
                 i_crypto            :: crypto,
                 i_scrollable        :: scrollable(index_line),
+                % XXX clarify "notmuch search" vs search string
                 i_search_terms      :: string,
                 i_search_tokens     :: list(token),
                 i_search_time       :: timestamp,
@@ -332,10 +333,12 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         flush_async_with_progress(Screen, !IO),
         Config = !.IndexInfo ^ i_config,
         Crypto = !.IndexInfo ^ i_crypto,
+        Tokens = !.IndexInfo ^ i_search_tokens,
+        index_poll_terms(Tokens, IndexPollTerms, !IO),
         MaybeSearch = !.IndexInfo ^ i_internal_search,
         CommonHistory0 = !.IndexInfo ^ i_common_history,
-        open_thread_pager(Config, Crypto, Screen, ThreadId, MaybeSearch,
-            Transition, CommonHistory0, CommonHistory, !IO),
+        open_thread_pager(Config, Crypto, Screen, ThreadId, IndexPollTerms,
+            MaybeSearch, Transition, CommonHistory0, CommonHistory, !IO),
         handle_screen_transition(Screen, NewScreen, Transition,
             TagUpdates, !IndexInfo, !IO),
         effect_thread_pager_changes(TagUpdates, !IndexInfo, !IO),
@@ -1671,16 +1674,22 @@ sched_poll(Time, !Info, !IO) :-
     get_notmuch_command(Config, Notmuch),
     Tokens = !.Info ^ i_search_tokens,
     SearchTime = !.Info ^ i_search_time,
-    tokens_to_search_terms(Tokens, Terms1, _ApplyCap, !IO),
+    index_poll_terms(Tokens, IndexPollTerms, !IO),
     % Could use notmuch count --batch
-    Args = [
-        "count", "--",
-        "(", Terms1, ")", timestamp_to_int_string(SearchTime) ++ "..",
-        "AND", "tag:unread"
-    ],
+    Args =
+        ["count", "--"] ++
+        IndexPollTerms ++
+        ["AND", timestamp_to_int_string(SearchTime) ++ ".."],
     Op = async_lowprio_command(Notmuch, Args, no),
     push_lowprio_async(Op, _Pushed, !IO),
     !Info ^ i_next_poll_time := next_poll_time(Config, Time).
+
+:- pred index_poll_terms(list(token), list(string), io, io).
+:- mode index_poll_terms(in, out, di, uo) is det.
+
+index_poll_terms(Tokens, IndexPollTerms, !IO) :-
+    tokens_to_search_terms(Tokens, SearchTerms, _ApplyCap, !IO),
+    IndexPollTerms = ["(", SearchTerms, ")", "AND", "tag:unread"].
 
 :- pred handle_poll_result(screen::in, string::in,
     index_info::in, index_info::out, io::di, io::uo) is det.
@@ -1707,8 +1716,8 @@ handle_poll_result(Screen, CountOutput, !Info, !IO) :-
             )
         )
     ;
-        update_message(Screen,
-            set_warning("notmuch count return unexpected result"), !IO)
+        update_message_immed(Screen,
+            set_warning("notmuch count returned unexpected result"), !IO)
     ).
 
 :- func next_poll_time(prog_config, timestamp) = maybe(timestamp).
