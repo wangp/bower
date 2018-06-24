@@ -2743,7 +2743,7 @@ sched_poll(Time, !Info, !IO) :-
         thread_id_to_search_term(ThreadId),
         timestamp_to_int_string(RefreshTime) ++ ".."
     ],
-    Op = async_lowprio_command(Notmuch, Args),
+    Op = async_lowprio_command(Notmuch, Args, no),
     push_lowprio_async(Op, _Pushed, !IO),
     !Info ^ tp_next_poll_time := next_poll_time(Config, Time).
 

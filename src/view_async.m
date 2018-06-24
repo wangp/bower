@@ -138,7 +138,7 @@ handle_async_failure(Screen, Op, Failure, !IO) :-
     sleep(1, !IO).
 handle_async_failure(_Screen, Op, _Failure, !IO) :-
     % Ignore poll command failures.
-    Op = async_lowprio_command(_, _).
+    Op = async_lowprio_command(_, _, _).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

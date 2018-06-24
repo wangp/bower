@@ -1672,12 +1672,13 @@ sched_poll(Time, !Info, !IO) :-
     Tokens = !.Info ^ i_search_tokens,
     SearchTime = !.Info ^ i_search_time,
     tokens_to_search_terms(Tokens, Terms1, _ApplyCap, !IO),
+    % Could use notmuch count --batch
     Args = [
         "count", "--",
         "(", Terms1, ")", timestamp_to_int_string(SearchTime) ++ "..",
         "AND", "tag:unread"
     ],
-    Op = async_lowprio_command(Notmuch, Args),
+    Op = async_lowprio_command(Notmuch, Args, no),
     push_lowprio_async(Op, _Pushed, !IO),
     !Info ^ i_next_poll_time := next_poll_time(Config, Time).
 

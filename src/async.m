@@ -7,6 +7,7 @@
 :- import_module bool.
 :- import_module io.
 :- import_module list.
+:- import_module maybe.
 
 :- import_module quote_arg.
 
@@ -23,14 +24,15 @@
                 % They are for polling status only, and won't be retried on
                 % failure.
                 lowprio_command_prefix  :: command_prefix,
-                lowprio_args            :: list(string) % will be quoted
+                lowprio_args            :: list(string), % will be quoted
+                lowprio_stdin_contents  :: maybe(string)
             ).
 
 :- inst async_shell_command
     --->    async_shell_command(ground, ground, ground).
 
 :- inst async_lowprio_command
-    --->    async_lowprio_command(ground, ground).
+    --->    async_lowprio_command(ground, ground, ground).
 
 :- type async_return
     --->    none
@@ -80,7 +82,6 @@
 :- implementation.
 
 :- import_module int.
-:- import_module maybe.
 :- import_module queue.
 :- import_module require.
 
@@ -111,7 +112,7 @@
     --->    current_child(
                 cc_op               :: async_op,
                 cc_pid              :: pid,
-                cc_maybe_pipe       :: maybe(pipe_read),
+                cc_stdout_pipe      :: maybe(pipe_read),
                 % The SIGCHLD count before the last async process was started.
                 cc_sigchld_count    :: int
             ).
@@ -218,7 +219,7 @@ do_poll(Blocking, Return, !Info, !IO) :-
     async_return::out, async_info::in, async_info::out, io::di, io::uo) is det.
 
 do_poll_in_progress(Child, Blocking, Return, !Info, !IO) :-
-    Child = current_child(Op, Pid, MaybePipe, _SigchldCount),
+    Child = current_child(Op, Pid, StdoutPipe, _SigchldCount),
     wait_pid(Pid, Blocking, WaitRes, !IO),
     (
         WaitRes = no_hang,
@@ -229,10 +230,10 @@ do_poll_in_progress(Child, Blocking, Return, !Info, !IO) :-
             WaitRes = child_exit(Status),
             ( Status = 0 ->
                 (
-                    MaybePipe = no,
+                    StdoutPipe = no,
                     Return = child_succeeded
                 ;
-                    MaybePipe = yes(PipeRead),
+                    StdoutPipe = yes(PipeRead),
                     drain_pipe(PipeRead, no, DrainRes, !IO),
                     close_pipe_read(PipeRead, !IO),
                     (
@@ -245,20 +246,20 @@ do_poll_in_progress(Child, Blocking, Return, !Info, !IO) :-
                     )
                 )
             ;
-                maybe_close_pipe(MaybePipe, !IO),
+                maybe_close_pipe(StdoutPipe, !IO),
                 Return = child_failed(Op, failure_nonzero_exit(Status))
             )
         ;
             WaitRes = child_signalled(Signal),
-            maybe_close_pipe(MaybePipe, !IO),
+            maybe_close_pipe(StdoutPipe, !IO),
             Return = child_failed(Op, failure_signal(Signal))
         ;
             WaitRes = child_abnormal_exit,
-            maybe_close_pipe(MaybePipe, !IO),
+            maybe_close_pipe(StdoutPipe, !IO),
             Return = child_failed(Op, failure_abnormal_exit)
         ;
             WaitRes = error(Error),
-            maybe_close_pipe(MaybePipe, !IO),
+            maybe_close_pipe(StdoutPipe, !IO),
             Return = child_failed(Op, failure_error(Error))
         ),
         !Info ^ ai_maybe_child := no
@@ -325,7 +326,8 @@ start_op(Op, Return, !Info, !IO) :-
 
 spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO) :-
     Op = async_shell_command(CommandPrefix, UnquotedArgs, _RemainingAttempts),
-    shell_and_args(CommandPrefix, UnquotedArgs, Shell, ShellArgs),
+    shell_and_args(CommandPrefix, UnquotedArgs, redirect_input("/dev/null"),
+        Shell, ShellArgs),
     posix_spawn(Shell, ShellArgs, SpawnRes, !IO),
     (
         SpawnRes = ok(Pid),
@@ -336,24 +338,62 @@ spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO) :-
         Res = error(Error)
     ).
 spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO) :-
-    Op = async_lowprio_command(CommandPrefix, UnquotedArgs),
-    shell_and_args(CommandPrefix, UnquotedArgs, Shell, ShellArgs),
-    posix_spawn_get_stdout(Shell, ShellArgs, SpawnRes, !IO),
+    Op = async_lowprio_command(CommandPrefix, UnquotedArgs,
+        MaybeStdinContents),
     (
-        SpawnRes = ok({Pid, PipeRead}),
-        Child = current_child(Op, Pid, yes(PipeRead), PreSigchldCount),
-        Res = ok(Child)
+        MaybeStdinContents = no,
+        shell_and_args(CommandPrefix, UnquotedArgs,
+            redirect_input("/dev/null"), Shell, ShellArgs),
+        posix_spawn_get_stdout(Shell, ShellArgs, SpawnRes, !IO),
+        (
+            SpawnRes = ok({Pid, StdoutPipe}),
+            Child = current_child(Op, Pid, yes(StdoutPipe), PreSigchldCount),
+            Res = ok(Child)
+        ;
+            SpawnRes = error(Error),
+            Res = error(Error)
+        )
     ;
-        SpawnRes = error(Error),
-        Res = error(Error)
+        MaybeStdinContents = yes(Contents),
+        shell_and_args(CommandPrefix, UnquotedArgs, no_redirect,
+            Shell, ShellArgs),
+        posix_spawn_get_stdin_stdout(Shell, ShellArgs, SpawnRes, !IO),
+        (
+            SpawnRes = ok({Pid, StdinPipe, StdoutPipe}),
+            write_string_to_pipe(StdinPipe, Contents, WriteRes, !IO),
+            close_pipe_write(StdinPipe, !IO),
+            (
+                WriteRes = ok,
+                Child = current_child(Op, Pid, yes(StdoutPipe),
+                    PreSigchldCount),
+                Res = ok(Child)
+            ;
+                WriteRes = error(WriteError),
+                close_pipe_read(StdoutPipe, !IO),
+                kill_with_sigterm(Pid, KillRes, !IO),
+                (
+                    KillRes = ok,
+                    wait_pid(Pid, blocking, _WaitResult, !IO)
+                    % What can we do if waitpid fails?
+                ;
+                    KillRes = error(_KillError)
+                    % What can we do if kill fails?
+                ),
+                Res = error(WriteError)
+            )
+        ;
+            SpawnRes = error(Error),
+            Res = error(Error)
+        )
     ).
 
 :- pred shell_and_args(command_prefix::in, list(string)::in,
-    string::out, list(string)::out) is det.
+    redirect_input::in, string::out, list(string)::out) is det.
 
-shell_and_args(CommandPrefix, UnquotedArgs, Shell, ShellArgs) :-
+shell_and_args(CommandPrefix, UnquotedArgs, RedirectInput, Shell, ShellArgs)
+        :-
     make_quoted_command(CommandPrefix, UnquotedArgs,
-        redirect_input("/dev/null"), no_redirect, ShellCommand),
+        RedirectInput, no_redirect, ShellCommand),
     Shell = "/bin/sh",
     ShellArgs = ["-c", ShellCommand].
 
