@@ -1713,7 +1713,7 @@ handle_poll_result(Screen, CountOutput, !Info, !IO) :-
 :- func next_poll_time(prog_config, timestamp) = maybe(timestamp).
 
 next_poll_time(Config, Time) = NextPollTime :-
-    get_index_poll_period_secs(Config, Maybe),
+    get_poll_period_secs(Config, Maybe),
     (
         Maybe = yes(PollPeriodSecs),
         NextPollTime = yes(Time + float(PollPeriodSecs))

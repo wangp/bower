@@ -4,6 +4,7 @@ Bower 0.9-unreleased
 * Add ',' key to go to next unread thread/message (synonym for Tab).
 * thread/pager: Show pager progress as percentage of current message.
 * thread/pager: Periodically poll for new messages in current thread.
+* config: Replace index.poll_period_secs with ui.poll_period_secs.
 
 Bower 0.8.1 (2018-04-01)
 ========================

@@ -98,19 +98,11 @@
 
 #-----------------------------------------------------------------------------#
 
-[index]
+[ui]
 
-    # How often to check for new unread messages matching the current search
-    # terms in the index view. Disable with "off".
-    #
-  ; poll_period_secs = 60
-
-#-----------------------------------------------------------------------------#
-
-[thread]
-
-    # How often to check for new messages in the current thread.
-    # Disable with "off".
+    # How often to check for new messages matching the current search
+    # terms in the index view, or new messages in the current thread
+    # in the thread view. Disable with "off".
     #
   ; poll_period_secs = 60
 

@@ -51,9 +51,7 @@
 :- pred get_poll_notify_command(prog_config::in, maybe(command_prefix)::out)
     is det.
 
-:- pred get_index_poll_period_secs(prog_config::in, maybe(int)::out) is det.
-
-:- pred get_thread_poll_period_secs(prog_config::in, maybe(int)::out) is det.
+:- pred get_poll_period_secs(prog_config::in, maybe(int)::out) is det.
 
 :- pred get_encrypt_by_default(prog_config::in, bool::out) is det.
 
@@ -123,8 +121,7 @@
                 open_part       :: string, % not shell-quoted
                 open_url        :: string, % not shell-quoted
                 poll_notify     :: maybe(command_prefix),
-                index_poll_period_secs :: maybe(int),
-                thread_poll_period_secs :: maybe(int),
+                poll_period_secs :: maybe(int),
                 encrypt_by_default :: bool,
                 sign_by_default :: bool,
                 decrypt_by_default :: bool,
@@ -246,16 +243,13 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
         PollNotify = no
     ),
 
-    ( search_config(Config, "index", "poll_period_secs", IndexPollSecs0) ->
-        check_poll_period_secs(IndexPollSecs0, IndexPollSecs, !Errors)
+    ( search_config(Config, "ui", "poll_period_secs", PollSecs0) ->
+        check_poll_period_secs(PollSecs0, PollSecs, !Errors)
+    ; search_config(Config, "index", "poll_period_secs", PollSecs0) ->
+        % For backwards compatibility.
+        check_poll_period_secs(PollSecs0, PollSecs, !Errors)
     ;
-        IndexPollSecs = default_poll_period_secs
-    ),
-
-    ( search_config(Config, "thread", "poll_period_secs", ThreadPollSecs0) ->
-        check_poll_period_secs(ThreadPollSecs0, ThreadPollSecs, !Errors)
-    ;
-        ThreadPollSecs = default_poll_period_secs
+        PollSecs = default_poll_period_secs
     ),
 
     ( search_config(Config, "crypto", "encrypt_by_default", Encrypt0) ->
@@ -339,8 +333,7 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
     ProgConfig ^ open_part = OpenPart,
     ProgConfig ^ open_url = OpenUrl,
     ProgConfig ^ poll_notify = PollNotify,
-    ProgConfig ^ index_poll_period_secs = IndexPollSecs,
-    ProgConfig ^ thread_poll_period_secs = ThreadPollSecs,
+    ProgConfig ^ poll_period_secs = PollSecs,
     ProgConfig ^ encrypt_by_default = EncryptByDefault,
     ProgConfig ^ sign_by_default = SignByDefault,
     ProgConfig ^ decrypt_by_default = DecryptByDefault,
@@ -655,11 +648,8 @@ get_open_url_command(Config, Command) :-
 get_poll_notify_command(Config, Command) :-
     Command = Config ^ poll_notify.
 
-get_index_poll_period_secs(Config, PollPeriodSecs) :-
-    PollPeriodSecs = Config ^ index_poll_period_secs.
-
-get_thread_poll_period_secs(Config, PollPeriodSecs) :-
-    PollPeriodSecs = Config ^ thread_poll_period_secs.
+get_poll_period_secs(Config, PollPeriodSecs) :-
+    PollPeriodSecs = Config ^ poll_period_secs.
 
 get_encrypt_by_default(Config, EncryptByDefault) :-
     EncryptByDefault = Config ^ encrypt_by_default.
