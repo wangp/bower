@@ -48,6 +48,8 @@
 :- pred close_pipe_read(pipe_read::in, io::di, io::uo) is det.
 :- pred close_pipe_write(pipe_write::in, io::di, io::uo) is det.
 
+:- pred kill_with_sigterm(pid::in, io.res::out, io::di, io::uo) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -419,6 +421,36 @@ close_pipe_write(pipe_write(Fd), !IO) :-
         may_not_duplicate],
 "
     do_close(Fd);
+").
+
+%-----------------------------------------------------------------------------%
+
+kill_with_sigterm(pid(Pid), Res, !IO) :-
+    kill_with_sigterm_2(Pid, Ok, Error, !IO),
+    (
+        Ok = yes,
+        Res = ok
+    ;
+        Ok = no,
+        Res = error(io.make_io_error(Error))
+    ).
+
+:- pred kill_with_sigterm_2(int::in, bool::out, string::out,
+    io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    kill_with_sigterm_2(Pid::in, Ok::out, Error::out, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, not_thread_safe /* stderr */,
+        tabled_for_io, may_not_duplicate],
+"
+    int rc = kill(Pid, SIGTERM);
+    if (rc < 0) {
+        Ok = MR_NO;
+        Error = MR_make_string(MR_ALLOC_ID, ""%s"", strerror(errno));
+    } else {
+        Ok = MR_YES;
+        Error = MR_make_string_const("""");
+    }
 ").
 
 %-----------------------------------------------------------------------------%
