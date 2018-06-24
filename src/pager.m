@@ -31,7 +31,7 @@
 :- pred setup_pager(prog_config::in, setup_mode::in, int::in,
     list(message)::in, pager_info::out, io::di, io::uo) is det.
 
-:- pred setup_pager_for_staging(prog_config::in, int::in, string::in,
+:- pred setup_pager_for_staging(int::in, string::in,
     retain_pager_pos::in, pager_info::out) is det.
 
 :- type pager_action
@@ -89,15 +89,16 @@
 :- pred get_highlighted_thing(pager_info::in, highlighted_thing::out)
     is semidet.
 
-:- pred replace_node_under_cursor(int::in, int::in, part::in,
+:- pred replace_node_under_cursor(prog_config::in, int::in, int::in, part::in,
     pager_info::in, pager_info::out, io::di, io::uo) is det.
 
 :- type toggle_type
     --->    cycle_alternatives
     ;       toggle_expanded.
 
-:- pred toggle_content(toggle_type::in, int::in, int::in, message_update::out,
-    pager_info::in, pager_info::out, io::di, io::uo) is det.
+:- pred toggle_content(prog_config::in, toggle_type::in, int::in, int::in,
+    message_update::out, pager_info::in, pager_info::out, io::di, io::uo)
+    is det.
 
 :- pred get_percent_visible(pager_info::in, int::in, message_id::in, int::out)
     is semidet.
@@ -134,7 +135,6 @@
 
 :- type pager_info
     --->    pager_info(
-                p_config        :: prog_config,
                 p_tree          :: tree,
                 p_id_counter    :: counter,
                 p_scrollable    :: scrollable(id_pager_line),
@@ -302,7 +302,7 @@ setup_pager(Config, Mode, Cols, Messages, Info, !IO) :-
     Flattened = flatten(Tree),
     Scrollable = scrollable.init(Flattened),
     make_extents(Flattened, Extents),
-    Info = pager_info(Config, Tree, Counter, Scrollable, Extents).
+    Info = pager_info(Tree, Counter, Scrollable, Extents).
 
 :- pred make_message_tree(prog_config::in, setup_mode::in, int::in,
     message::in, tree::out, counter::in, counter::out, io::di, io::uo) is det.
@@ -759,7 +759,7 @@ wrap_text(Text) = text(Text).
 
 %-----------------------------------------------------------------------------%
 
-setup_pager_for_staging(Config, Cols, Text, RetainPagerPos, Info) :-
+setup_pager_for_staging(Cols, Text, RetainPagerPos, Info) :-
     make_text_lines(Cols, Text, Lines0),
     Lines = wrap_texts(Lines0) ++ [
         message_separator,
@@ -772,7 +772,7 @@ setup_pager_for_staging(Config, Cols, Text, RetainPagerPos, Info) :-
     Flattened = flatten(Tree),
     Scrollable0 = scrollable.init(Flattened),
     make_extents(Flattened, Extents0),
-    Info0 = pager_info(Config, Tree, Counter, Scrollable0, Extents0),
+    Info0 = pager_info(Tree, Counter, Scrollable0, Extents0),
     (
         RetainPagerPos = new_pager,
         Info = Info0
@@ -1317,8 +1317,8 @@ get_highlighted_thing(Info, Thing) :-
 
 %-----------------------------------------------------------------------------%
 
-replace_node_under_cursor(NumRows, Cols, Part, Info0, Info, !IO) :-
-    Info0 = pager_info(Config, Tree0, Counter0, Scrollable0, _Extents0),
+replace_node_under_cursor(Config, NumRows, Cols, Part, Info0, Info, !IO) :-
+    Info0 = pager_info(Tree0, Counter0, Scrollable0, _Extents0),
     ( get_cursor_line(Scrollable0, _, NodeId - _Line) ->
         make_part_tree(Config, Cols, Part, NewNode, no, _ElideInitialHeadLine,
             Counter0, Counter, !IO),
@@ -1326,32 +1326,32 @@ replace_node_under_cursor(NumRows, Cols, Part, Info0, Info, !IO) :-
         Flattened = flatten(Tree),
         scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
         make_extents(Flattened, Extents),
-        Info = pager_info(Config, Tree, Counter, Scrollable, Extents)
+        Info = pager_info(Tree, Counter, Scrollable, Extents)
     ;
         Info = Info0
     ).
 
 %-----------------------------------------------------------------------------%
 
-toggle_content(ToggleType, NumRows, Cols, MessageUpdate, !Info, !IO) :-
+toggle_content(Config, ToggleType, NumRows, Cols, MessageUpdate, !Info, !IO) :-
     Scrollable0 = !.Info ^ p_scrollable,
     ( get_cursor_line(Scrollable0, _Cursor, IdLine) ->
-        toggle_line(ToggleType, NumRows, Cols, IdLine, MessageUpdate,
+        toggle_line(Config, ToggleType, NumRows, Cols, IdLine, MessageUpdate,
             !Info, !IO)
     ;
         MessageUpdate = clear_message
     ).
 
-:- pred toggle_line(toggle_type::in, int::in, int::in, id_pager_line::in,
-    message_update::out, pager_info::in, pager_info::out, io::di, io::uo)
-    is det.
+:- pred toggle_line(prog_config::in, toggle_type::in, int::in, int::in,
+    id_pager_line::in, message_update::out, pager_info::in, pager_info::out,
+    io::di, io::uo) is det.
 
-toggle_line(ToggleType, NumRows, Cols, NodeId - Line, MessageUpdate,
+toggle_line(Config, ToggleType, NumRows, Cols, NodeId - Line, MessageUpdate,
         !Info, !IO) :-
     (
         Line = part_head(_, _, _, _),
-        toggle_part(ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
-            !Info, !IO)
+        toggle_part(Config, ToggleType, NumRows, Cols, NodeId, Line,
+            MessageUpdate, !Info, !IO)
     ;
         Line = fold_marker(_, _),
         toggle_folding(NumRows, NodeId, Line, !Info),
@@ -1368,11 +1368,11 @@ toggle_line(ToggleType, NumRows, Cols, NodeId - Line, MessageUpdate,
 :- inst part_head
     --->    part_head(ground, ground, ground, ground).
 
-:- pred toggle_part(toggle_type::in, int::in, int::in, node_id::in,
-    pager_line::in(part_head), message_update::out,
+:- pred toggle_part(prog_config::in, toggle_type::in, int::in, int::in,
+    node_id::in, pager_line::in(part_head), message_update::out,
     pager_info::in, pager_info::out, io::di, io::uo) is det.
 
-toggle_part(ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
+toggle_part(Config, ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
         Info0, Info, !IO) :-
     Line = part_head(Part0, HiddenParts0, Expanded0, _Importance0),
     (
@@ -1381,7 +1381,7 @@ toggle_part(ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
         HiddenParts0 = [Part | HiddenParts1]
     ->
         HiddenParts = HiddenParts1 ++ [Part0],
-        Info0 = pager_info(Config, Tree0, Counter0, Scrollable0, _Extents0),
+        Info0 = pager_info(Tree0, Counter0, Scrollable0, _Extents0),
         make_part_tree_with_alts(Config, Cols, HiddenParts, Part,
             force(Expanded0), NewNode, no, _ElideInitialHeadLine,
             Counter0, Counter, !IO),
@@ -1389,21 +1389,21 @@ toggle_part(ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
         Flattened = flatten(Tree),
         scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
         make_extents(Flattened, Extents),
-        Info = pager_info(Config, Tree, Counter, Scrollable, Extents),
+        Info = pager_info(Tree, Counter, Scrollable, Extents),
         Type = Part ^ pt_type,
         MessageUpdate = set_info("Showing " ++ Type ++ " alternative.")
     ;
         % Fallback.
-        toggle_part_expanded(NumRows, Cols, NodeId, Line, MessageUpdate,
-            Info0, Info, !IO)
+        toggle_part_expanded(Config, NumRows, Cols, NodeId, Line,
+            MessageUpdate, Info0, Info, !IO)
     ).
 
-:- pred toggle_part_expanded(int::in, int::in, node_id::in,
+:- pred toggle_part_expanded(prog_config::in, int::in, int::in, node_id::in,
     pager_line::in(part_head), message_update::out,
     pager_info::in, pager_info::out, io::di, io::uo) is det.
 
-toggle_part_expanded(NumRows, Cols, NodeId, Line0, MessageUpdate, Info0, Info,
-        !IO) :-
+toggle_part_expanded(Config, NumRows, Cols, NodeId, Line0, MessageUpdate,
+        Info0, Info, !IO) :-
     Line0 = part_head(Part, HiddenParts, Expanded0, Importance),
     (
         Expanded0 = part_expanded,
@@ -1415,7 +1415,7 @@ toggle_part_expanded(NumRows, Cols, NodeId, Line0, MessageUpdate, Info0, Info,
         MessageUpdate = set_info("Showing part.")
     ),
 
-    Info0 = pager_info(Config, Tree0, Counter0, Scrollable0, _Extents0),
+    Info0 = pager_info(Tree0, Counter0, Scrollable0, _Extents0),
     (
         Expanded = part_expanded,
         make_part_tree_with_alts(Config, Cols, HiddenParts, Part,
@@ -1432,7 +1432,7 @@ toggle_part_expanded(NumRows, Cols, NodeId, Line0, MessageUpdate, Info0, Info,
     Flattened = flatten(Tree),
     scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
     make_extents(Flattened, Extents),
-    Info = pager_info(Config, Tree, Counter, Scrollable, Extents).
+    Info = pager_info(Tree, Counter, Scrollable, Extents).
 
 :- inst fold_marker
     --->    fold_marker(ground, ground).
@@ -1453,12 +1453,12 @@ toggle_folding(NumRows, NodeId, Line, Info0, Info) :-
     ),
     NewNode = node(NodeId, [SubTree], no),
 
-    Info0 = pager_info(Config, Tree0, Counter, Scrollable0, _Extents0),
+    Info0 = pager_info(Tree0, Counter, Scrollable0, _Extents0),
     replace_node(NodeId, NewNode, Tree0, Tree),
     Flattened = flatten(Tree),
     scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
     make_extents(Flattened, Extents),
-    Info = pager_info(Config, Tree, Counter, Scrollable, Extents).
+    Info = pager_info(Tree, Counter, Scrollable, Extents).
 
 %-----------------------------------------------------------------------------%
 

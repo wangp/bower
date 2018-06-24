@@ -2376,7 +2376,8 @@ do_decrypt_part(Screen, MessageId, PartId, MessageUpdate, !Info, !IO) :-
         Pager0 = !.Info ^ tp_pager,
         NumRows = !.Info ^ tp_num_pager_rows,
         get_cols(Screen, Cols),
-        replace_node_under_cursor(NumRows, Cols, Part, Pager0, Pager, !IO),
+        replace_node_under_cursor(Config, NumRows, Cols, Part, Pager0, Pager,
+            !IO),
         !Info ^ tp_pager := Pager
     ;
         ParseResult = error(Error),
@@ -2439,8 +2440,8 @@ do_verify_part(Screen, Part0, MessageUpdate, !Info, !IO) :-
                 NumRows = !.Info ^ tp_num_pager_rows,
                 get_cols(Screen, Cols),
                 % Regenerating the part tree is overkill...
-                replace_node_under_cursor(NumRows, Cols, Part, Pager0, Pager,
-                    !IO),
+                replace_node_under_cursor(Config, NumRows, Cols, Part,
+                    Pager0, Pager, !IO),
                 !Info ^ tp_pager := Pager,
 
                 post_verify_message_update(Content, MessageUpdate)
@@ -2506,10 +2507,11 @@ good_signature(Signature) :-
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 toggle_content(Screen, ToggleType, !Info, !IO) :-
+    Config = !.Info ^ tp_config,
     NumRows = !.Info ^ tp_num_pager_rows,
     get_cols(Screen, Cols),
     Pager0 = !.Info ^ tp_pager,
-    pager.toggle_content(ToggleType, NumRows, Cols, MessageUpdate,
+    pager.toggle_content(Config, ToggleType, NumRows, Cols, MessageUpdate,
         Pager0, Pager, !IO),
     !Info ^ tp_pager := Pager,
     sync_thread_to_pager(!Info),
