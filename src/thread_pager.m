@@ -84,15 +84,18 @@
                 tp_thread_id        :: thread_id,
                 tp_messages         :: list(message),
                 tp_ordering         :: ordering,
+
                 tp_scrollable       :: scrollable(thread_line),
                 tp_num_thread_rows  :: int,
                 tp_pager            :: pager_info,
                 tp_num_pager_rows   :: int,
+
                 tp_refresh_time     :: timestamp,
                 tp_next_poll_time   :: maybe(timestamp),
                 tp_thread_poll_count:: int,
                 tp_index_poll_string :: string,
                 tp_index_poll_count :: int,
+
                 tp_search           :: maybe(string),
                 tp_search_dir       :: search_direction,
                 tp_common_history   :: common_history,
@@ -177,73 +180,73 @@
 
 open_thread_pager(Config, Crypto, Screen, ThreadId, IndexPollTerms,
         MaybeSearch, Transition, CommonHistory0, CommonHistory, !IO) :-
-    some [!Info] (
-        create_thread_pager(Config, Crypto, Screen, ThreadId,
-            ordering_threaded, no, CommonHistory0, !:Info, ResCount, !IO),
-        % XXX ugly
-        Time = !.Info ^ tp_refresh_time,
-        IndexPollString = join_list(" ", IndexPollTerms ++
-            ["AND", timestamp_to_int_string(Time) ++ ".."]),
-        !Info ^ tp_index_poll_string := IndexPollString,
-        !Info ^ tp_search := MaybeSearch,
-        (
-            ResCount = ok(Count),
-            string.format("Showing %d messages.", [i(Count)], Msg),
-            MessageUpdate = set_info(Msg)
-        ;
-            ResCount = error(Error),
-            MessageUpdate = set_warning(Error)
-        ),
-        update_message(Screen, MessageUpdate, !IO),
-        thread_pager_loop(Screen, redraw, !Info, !IO),
-        flush_async_with_progress(Screen, !IO),
-        get_effects(!.Info, Effects),
-        Transition = screen_transition(Effects, no_change),
-        CommonHistory = !.Info ^ tp_common_history
-    ).
+    current_timestamp(RefreshTime, !IO),
+    get_thread_messages(Config, ThreadId, ParseResult, Messages, !IO),
+
+    Ordering = ordering_threaded,
+    create_pager_and_thread_lines(Config, Screen, Messages, Ordering,
+        Scrollable, NumThreadRows, PagerInfo, NumPagerRows, !IO),
+    NumMessages = get_num_lines(Scrollable),
+
+    NextPollTime = next_poll_time(Config, RefreshTime),
+    ThreadPollCount = 0,
+    IndexPollString = join_list(" ", IndexPollTerms ++
+        ["AND", timestamp_to_int_string(RefreshTime) ++ ".."]),
+    IndexPollCount = 0,
+    AddedMessages0 = 0,
+
+    Info0 = thread_pager_info(Config, Crypto, ThreadId, Messages,
+        Ordering, Scrollable, NumThreadRows, PagerInfo, NumPagerRows,
+        RefreshTime, NextPollTime, ThreadPollCount,
+        IndexPollString, IndexPollCount,
+        MaybeSearch, dir_forward, CommonHistory0, AddedMessages0),
+
+    (
+        ParseResult = ok,
+        MessageUpdate = set_info(showing_num_messages(NumMessages))
+    ;
+        ParseResult = error(Error),
+        MessageUpdate = set_warning(Error)
+    ),
+    update_message(Screen, MessageUpdate, !IO),
+
+    thread_pager_loop(Screen, redraw, Info0, Info, !IO),
+    flush_async_with_progress(Screen, !IO),
+
+    get_effects(Info, Effects),
+    Transition = screen_transition(Effects, no_change),
+    CommonHistory = Info ^ tp_common_history.
 
 :- pred reopen_thread_pager(screen::in, bool::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 reopen_thread_pager(Screen, KeepCached, !Info, !IO) :-
-    Ordering = !.Info ^ tp_ordering,
-    reopen_thread_pager_with_ordering(Screen, KeepCached, Ordering,
-        !Info, !IO).
-
-:- pred reopen_thread_pager_with_ordering(screen::in, bool::in, ordering::in,
-    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
-
-reopen_thread_pager_with_ordering(Screen, KeepCached, Ordering, Info0, Info,
-        !IO) :-
-    Info0 = thread_pager_info(Config0, Crypto0, ThreadId0, Cached0, _Ordering0,
+    !.Info = thread_pager_info(Config, _Crypto, ThreadId, Messages0, Ordering,
         Scrollable0, _NumThreadRows0, Pager0, _NumPagerRows0,
-        RefreshTime0, MaybeNextPollTime0, ThreadPollCount0,
-        IndexPollTerms, IndexPollCount,
-        Search, SearchDir, CommonHistory, AddedMessages),
+        _RefreshTime0, _NextPollTime0, _ThreadPollCount0,
+        _IndexPollString, _IndexPollCount,
+        _Search, _SearchDir, _CommonHistory, _AddedMessages),
+
     (
         KeepCached = yes,
-        Cached0 = [_ | _]
+        Messages0 = [_ | _]
     ->
-        MaybeCached = yes(Cached0)
+        Messages = Messages0,
+        ParseResult = ok,
+        ShowMessageUpdate = bool.no
     ;
-        MaybeCached = no
-    ),
-    create_thread_pager(Config0, Crypto0, Screen, ThreadId0, Ordering,
-        MaybeCached, CommonHistory, Info1, ResCount, !IO),
-    (
-        ResCount = ok(Count),
-        string.format("Showing %d messages.", [i(Count)], Msg),
-        MessageUpdate = set_info(Msg)
-    ;
-        ResCount = error(Error),
-        MessageUpdate = set_warning(Error)
+        current_timestamp(RefreshTime, !IO),
+        get_thread_messages(Config, ThreadId, ParseResult, Messages, !IO),
+        ShowMessageUpdate = bool.yes,
+        !Info ^ tp_refresh_time := RefreshTime,
+        !Info ^ tp_next_poll_time := next_poll_time(Config, RefreshTime),
+        !Info ^ tp_thread_poll_count := 0
+        % Do not reset tp_index_poll_count as it does not depend on
+        % RefreshTime.
     ),
 
-    Info1 = thread_pager_info(Config, Crypto, ThreadId, Cached, _Ordering,
-        Scrollable1, NumThreadRows, Pager1, NumPagerRows,
-        RefreshTime1, MaybeNextPollTime1, ThreadPollCount1,
-        _DummyIndexPollTerms, _DummyIndexPollCount,
-        _DummySearch, _DummySearchDir, _CommonHistory1, _DummyAddedMessages),
+    create_pager_and_thread_lines(Config, Screen, Messages, Ordering,
+        Scrollable1, NumThreadRows, Pager1, NumPagerRows, !IO),
 
     % Reapply tag changes from previous state.
     ThreadLines0 = get_lines_list(Scrollable0),
@@ -251,6 +254,7 @@ reopen_thread_pager_with_ordering(Screen, KeepCached, Ordering, Info0, Info,
     list.foldl(create_tag_delta_map, ThreadLines0, map.init, DeltaMap),
     list.map(restore_tag_deltas(DeltaMap), ThreadLines1, ThreadLines),
     Scrollable = scrollable.init(ThreadLines),
+    NumMessages = get_num_lines(Scrollable),
 
     % Restore cursor and pager position.
     (
@@ -269,77 +273,61 @@ reopen_thread_pager_with_ordering(Screen, KeepCached, Ordering, Info0, Info,
         Pager = Pager1
     ),
 
-    % Use the original values if cached (ugly).
+    !Info ^ tp_scrollable := Scrollable,
+    !Info ^ tp_num_thread_rows := NumThreadRows,
+    !Info ^ tp_pager := Pager,
+    !Info ^ tp_num_pager_rows := NumPagerRows,
+
+    sync_thread_to_pager(!Info),
+
     (
-        MaybeCached = yes(_),
-        RefreshTime = RefreshTime0,
-        MaybeNextPollTime = MaybeNextPollTime0,
-        ThreadPollCount = ThreadPollCount0
-    ;
-        MaybeCached = no,
-        RefreshTime = RefreshTime1,
-        MaybeNextPollTime = MaybeNextPollTime1,
-        ThreadPollCount = ThreadPollCount1
-    ),
-
-    Info2 = thread_pager_info(Config, Crypto, ThreadId, Cached, Ordering,
-        Scrollable, NumThreadRows, Pager, NumPagerRows,
-        RefreshTime, MaybeNextPollTime, ThreadPollCount,
-        IndexPollTerms, IndexPollCount,
-        Search, SearchDir, CommonHistory, AddedMessages),
-    sync_thread_to_pager(Info2, Info),
-
-    update_message(Screen, MessageUpdate, !IO).
-
-:- pred create_thread_pager(prog_config::in, crypto::in, screen::in,
-    thread_id::in, ordering::in, maybe(list(message))::in,
-    common_history::in, thread_pager_info::out, maybe_error(int)::out,
-    io::di, io::uo) is det.
-
-create_thread_pager(Config, Crypto, Screen, ThreadId, Ordering, MaybeCached,
-        CommonHistory, Info, ResCount, !IO) :-
-    (
-        MaybeCached = yes(MessagesCached),
-        ParseResult = ok(MessagesCached)
-    ;
-        MaybeCached = no,
-        get_decrypt_by_default(Config, DecryptByDefault),
-        get_verify_by_default(Config, VerifyByDefault),
+        ShowMessageUpdate = yes,
         (
-            DecryptByDefault = yes,
-            % Avoid likely error messages about missing keys.
-            RedirectStderr = redirect_stderr("/dev/null"),
-            SuspendCurs = soft_suspend_curses
+            ParseResult = ok,
+            MessageUpdate = set_info(showing_num_messages(NumMessages))
         ;
-            DecryptByDefault = no,
-            RedirectStderr = no_redirect,
-            SuspendCurs = no_suspend_curses
+            ParseResult = error(Error),
+            MessageUpdate = set_warning(Error)
         ),
-        run_notmuch(Config,
-            [
-                "show", "--format=json", "--entire-thread=false",
-                decrypt_arg(DecryptByDefault),
-                verify_arg(VerifyByDefault),
-                "--", thread_id_to_search_term(ThreadId)
-            ],
-            RedirectStderr, SuspendCurs,
-            parse_messages_list, ParseResult, !IO)
-    ),
-    (
-        ParseResult = ok(Messages)
+        update_message(Screen, MessageUpdate, !IO)
     ;
-        ParseResult = error(_),
-        Messages = []
-    ),
-    get_rows_cols(Screen, Rows, Cols),
-    setup_thread_pager(Config, Crypto, ThreadId, Ordering, Rows - 2, Cols,
-        Messages, CommonHistory, Info, Count, !IO),
+        ShowMessageUpdate = no
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred get_thread_messages(prog_config::in, thread_id::in,
+    maybe_error::out, list(message)::out, io::di, io::uo) is det.
+
+get_thread_messages(Config, ThreadId, Res, Messages, !IO) :-
+    get_decrypt_by_default(Config, DecryptByDefault),
+    get_verify_by_default(Config, VerifyByDefault),
     (
-        ParseResult = ok(_),
-        ResCount = ok(Count)
+        DecryptByDefault = yes,
+        % Avoid likely error messages about missing keys.
+        RedirectStderr = redirect_stderr("/dev/null"),
+        SuspendCurs = soft_suspend_curses
+    ;
+        DecryptByDefault = no,
+        RedirectStderr = no_redirect,
+        SuspendCurs = no_suspend_curses
+    ),
+    run_notmuch(Config,
+        [
+            "show", "--format=json", "--entire-thread=false",
+            decrypt_arg(DecryptByDefault),
+            verify_arg(VerifyByDefault),
+            "--", thread_id_to_search_term(ThreadId)
+        ],
+        RedirectStderr, SuspendCurs,
+        parse_messages_list, ParseResult, !IO),
+    (
+        ParseResult = ok(Messages),
+        Res = ok
     ;
         ParseResult = error(Error),
-        ResCount = error("Error parsing notmuch response: " ++ Error)
+        Res = error("Error parsing notmuch response: " ++ Error),
+        Messages = []
     ).
 
 :- func decrypt_arg(bool) = string.
@@ -352,12 +340,22 @@ decrypt_arg(no) = "--decrypt=false".
 verify_arg(yes) = "--verify".
 verify_arg(no) = "--verify=false".
 
-:- pred setup_thread_pager(prog_config::in, crypto::in, thread_id::in,
-    ordering::in, int::in, int::in, list(message)::in,
-    common_history::in, thread_pager_info::out, int::out, io::di, io::uo) is det.
+:- func showing_num_messages(int) = string.
 
-setup_thread_pager(Config, Crypto, ThreadId, Ordering, Rows, Cols, Messages,
-        CommonHistory, ThreadPagerInfo, NumThreadLines, !IO) :-
+showing_num_messages(Count) =
+    string.format("Showing %d messages.", [i(Count)]).
+
+%-----------------------------------------------------------------------------%
+
+:- pred create_pager_and_thread_lines(prog_config::in, screen::in,
+    list(message)::in, ordering::in,
+    scrollable(thread_line)::out, int::out, pager_info::out, int::out,
+    io::di, io::uo) is det.
+
+create_pager_and_thread_lines(Config, Screen, Messages, Ordering,
+        Scrollable, NumThreadRows, PagerInfo, NumPagerRows, !IO) :-
+    get_rows_cols(Screen, Rows0, Cols),
+    Rows = Rows0 - 2,
     current_timestamp(NowTime, !IO),
     localtime(NowTime, Nowish, !IO),
     (
@@ -372,7 +370,6 @@ setup_thread_pager(Config, Crypto, ThreadId, Ordering, Rows, Cols, Messages,
             PagerInfo0, !IO)
     ),
     Scrollable0 = scrollable.init_with_cursor(ThreadLines),
-    NumThreadLines = get_num_lines(Scrollable0),
     compute_num_rows(Rows, Scrollable0, NumThreadRows, NumPagerRows),
     (
         ThreadLines = [],
@@ -396,24 +393,7 @@ setup_thread_pager(Config, Crypto, ThreadId, Ordering, Rows, Cols, Messages,
             Scrollable = Scrollable0,
             PagerInfo = PagerInfo0
         )
-    ),
-
-    % The caller should override all of these values as appropriate
-    % (we should just factor out parts of the thread_pager_info
-    % if we don't want to pass more arguments into setup_thread_pager).
-    RefreshTime = NowTime,
-    MaybeNextPollTime = next_poll_time(Config, NowTime),
-    ThreadPollCount = 0,
-    IndexPollTerms = "id:dummy",
-    IndexPollCount = 0,
-    MaybeSearchString = no,
-    AddedMessages = 0,
-
-    ThreadPagerInfo = thread_pager_info(Config, Crypto, ThreadId, Messages,
-        Ordering, Scrollable, NumThreadRows, PagerInfo, NumPagerRows,
-        RefreshTime, MaybeNextPollTime, ThreadPollCount,
-        IndexPollTerms, IndexPollCount,
-        MaybeSearchString, dir_forward, CommonHistory, AddedMessages).
+    ).
 
 :- pred get_latest_line(thread_line::in, thread_line::in, thread_line::out)
     is det.
@@ -857,8 +837,8 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
         thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = toggle_ordering,
-        toggle_ordering(!.Info, Ordering),
-        reopen_thread_pager_with_ordering(Screen, yes, Ordering, !Info, !IO),
+        toggle_ordering(!Info),
+        reopen_thread_pager(Screen, yes, !Info, !IO),
         thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = addressbook_add,
@@ -1218,8 +1198,8 @@ goto_first_message(!Info) :-
 
 goto_end(!Info) :-
     PagerInfo0 = !.Info ^ tp_pager,
-    NumRows = !.Info ^ tp_num_pager_rows,
-    pager.goto_end(NumRows, PagerInfo0, PagerInfo),
+    NumPagerRows = !.Info ^ tp_num_pager_rows,
+    pager.goto_end(NumPagerRows, PagerInfo0, PagerInfo),
     !Info ^ tp_pager := PagerInfo,
     sync_thread_to_pager(!Info).
 
@@ -2537,17 +2517,18 @@ toggle_content(Screen, ToggleType, !Info, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred toggle_ordering(thread_pager_info::in, ordering::out) is det.
+:- pred toggle_ordering(thread_pager_info::in, thread_pager_info::out) is det.
 
-toggle_ordering(Info, Ordering) :-
-    Ordering0 = Info ^ tp_ordering,
+toggle_ordering(!Info) :-
+    Ordering0 = !.Info ^ tp_ordering,
     (
         Ordering0 = ordering_flat,
         Ordering = ordering_threaded
     ;
         Ordering0 = ordering_threaded,
         Ordering = ordering_flat
-    ).
+    ),
+    !Info ^ tp_ordering := Ordering.
 
 %-----------------------------------------------------------------------------%
 
