@@ -74,12 +74,12 @@
 :- import_module color.
 :- import_module curs.
 :- import_module curs.panel.
+:- import_module detect_mime_type.
 :- import_module gpgme.
 :- import_module gpgme.key.
 :- import_module maildir.
 :- import_module make_temp.
 :- import_module message_file.
-:- import_module mime_type.
 :- import_module pager.
 :- import_module path_expand.
 :- import_module quote_arg.
@@ -1102,7 +1102,7 @@ do_attach_file(FileName, NumRows, MessageUpdate, !AttachInfo, !IO) :-
     attach_info::in, attach_info::out, io::di, io::uo) is det.
 
 do_attach_file_2(FileName, NumRows, MessageUpdate, !AttachInfo, !IO) :-
-    lookup_mime_type(FileName, ResMimeType, !IO),
+    detect_mime_type(FileName, ResMimeType, !IO),
     (
         ResMimeType = ok(MimeType),
         ( dir.basename(FileName, BaseName0) ->

@@ -1,7 +1,7 @@
 % Bower - a frontend for the Notmuch email system
 % Copyright (C) 2011 Peter Wang
 
-:- module mime_type.
+:- module detect_mime_type.
 :- interface.
 
 :- import_module io.
@@ -12,7 +12,7 @@
                 mt_charset  :: string   % e.g. us-ascii, utf-8, binary
             ).
 
-:- pred lookup_mime_type(string::in, io.res(mime_type)::out, io::di, io::uo)
+:- pred detect_mime_type(string::in, io.res(mime_type)::out, io::di, io::uo)
     is det.
 
 %-----------------------------------------------------------------------------%
@@ -29,7 +29,7 @@
 
 %-----------------------------------------------------------------------------%
 
-lookup_mime_type(FileName, Res, !IO) :-
+detect_mime_type(FileName, Res, !IO) :-
     make_quoted_command(file_command, ["--brief", "--mime", FileName],
         redirect_input("/dev/null"), no_redirect, Command),
     call_system_capture_stdout(Command, no, CallRes, !IO),
