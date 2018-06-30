@@ -126,6 +126,7 @@
 :- import_module copious_output.
 :- import_module fold_lines.
 :- import_module list_util.
+:- import_module mime_type.
 :- import_module pager_text.
 :- import_module quote_arg.
 :- import_module string_util.
@@ -410,7 +411,7 @@ make_part_tree(Config, Cols, Part, Tree, !ElideInitialHeadLine, !Counter, !IO)
 
 make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
         !ElideInitialHeadLine, !Counter, !IO) :-
-    Part = part(_MessageId, _PartId, Type, Content, _MaybeFilename,
+    Part = part(_MessageId, _PartId, PartType, Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength, _IsDecrypted),
     allocate_node_id(PartNodeId, !Counter),
     (
@@ -433,14 +434,15 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
     ;
         Content = subparts(Encryption, Signatures, SubParts),
         (
-            strcase_equal(Type, "multipart/alternative"),
+            PartType = mime_type.multipart_alternative,
             select_alternative(SubParts, [FirstSubPart | RestSubParts])
         ->
             % Assuming Signatures = []
             make_part_tree_with_alts(Config, Cols, RestSubParts, FirstSubPart,
                 default, Tree, no, _ElideInitialHeadLine, !Counter, !IO)
         ;
-            get_importance(Type, AltParts, Encryption, Signatures, Importance),
+            get_importance(PartType, AltParts, Encryption, Signatures,
+                Importance),
             map(make_signature_line, Signatures, SignatureLines),
             (
                 (
@@ -451,7 +453,7 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
                 (
                     AltParts = [],
                     SignatureLines = [],
-                    hide_multipart_head_line(Type)
+                    hide_multipart_head_line(PartType)
                 ->
                     list.map_foldl3(make_part_tree(Config, Cols), SubParts,
                         SubPartsTrees, !ElideInitialHeadLine, !Counter, !IO),
@@ -491,7 +493,7 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
         Content = unsupported,
         (
             AltParts = [],
-            hide_unsupported_part(Type)
+            hide_unsupported_part(PartType)
         ->
             Tree = leaf([])
         ;
@@ -515,10 +517,10 @@ select_alternative([X | Xs], Parts) :-
         Parts = [X | Xs]
     ).
 
-:- pred get_importance(string::in, list(part)::in, encryption::in,
+:- pred get_importance(mime_type::in, list(part)::in, encryption::in,
     list(signature)::in, part_importance::out) is det.
 
-get_importance(Type, AltParts, Encryption, Signatures, Importance) :-
+get_importance(PartType, AltParts, Encryption, Signatures, Importance) :-
     (
         AltParts = [_ | _],
         Importance = importance_normal
@@ -535,7 +537,7 @@ get_importance(Type, AltParts, Encryption, Signatures, Importance) :-
         ;
             Encryption = not_encrypted,
             (
-                strcase_equal(Type, "multipart/signed"),
+                PartType = mime_type.multipart_signed,
                 Signatures = [_ | _]
             ->
                 Importance = importance_low     % already verified
@@ -549,22 +551,22 @@ get_importance(Type, AltParts, Encryption, Signatures, Importance) :-
 
 make_signature_line(Signature, signature(Signature)).
 
-:- pred hide_multipart_head_line(string::in) is semidet.
+:- pred hide_multipart_head_line(mime_type::in) is semidet.
 
 hide_multipart_head_line(PartType) :-
     (
-        strcase_equal(PartType, "multipart/mixed")
+        PartType = mime_type.multipart_mixed
     ;
-        strcase_equal(PartType, "multipart/related")
+        PartType = mime_type.multipart_related
     ).
 
-:- pred hide_unsupported_part(string::in) is semidet.
+:- pred hide_unsupported_part(mime_type::in) is semidet.
 
 hide_unsupported_part(PartType) :-
     (
-        strcase_equal(PartType, "application/pgp-encrypted")
+        PartType = mime_type.application_pgp_encrypted
     ;
-        strcase_equal(PartType, "application/pgp-signature")
+        PartType = mime_type.application_pgp_signature
     ).
 
 %-----------------------------------------------------------------------------%
@@ -686,10 +688,10 @@ add_encapsulated_header(Header, Value, RevLines0, RevLines) :-
 
 make_unsupported_part_tree(Config, Cols, PartNodeId, Part, ExpandUnsupported,
         AltParts, Tree, !IO) :-
-    Part = part(MessageId, MaybePartId, Type, _Content, _MaybeFilename,
+    Part = part(MessageId, MaybePartId, PartType, _Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength, _IsDecrypted),
     % XXX we should use mailcap, though we don't want to show everything
-    IsHtml = ( strcase_equal(Type, "text/html") -> yes ; no ),
+    IsHtml = ( PartType = mime_type.text_html -> yes ; no ),
     (
         ExpandUnsupported = default,
         Expanded = expand_unsupported_default(IsHtml)
@@ -1187,8 +1189,8 @@ line_matches_search(Search, Line) :-
     ;
         Line = part_head(Part, _, _, _),
         (
-            Part ^ pt_type = Type,
-            strcase_str(Type, Search)
+            Part ^ pt_type = PartType,
+            strcase_str(to_string(PartType), Search)
         ;
             Part ^ pt_filename = yes(FileName),
             strcase_str(FileName, Search)
@@ -1289,8 +1291,8 @@ get_highlighted_thing(Info, Thing) :-
         MessageId = Message ^ m_id,
         Subject = Message ^ m_headers ^ h_subject,
         PartId = 0,
-        Part = part(MessageId, yes(PartId), "text/plain", unsupported, no, no,
-            no, no),
+        Part = part(MessageId, yes(PartId), mime_type.text_plain, unsupported,
+            no, no, no, no),
         MaybeSubject = yes(Subject),
         Thing = highlighted_part(Part, MaybeSubject)
     ;
@@ -1390,7 +1392,7 @@ toggle_part(Config, ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
         scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
         make_extents(Flattened, Extents),
         Info = pager_info(Tree, Counter, Scrollable, Extents),
-        Type = Part ^ pt_type,
+        Type = mime_type.to_string(Part ^ pt_type),
         MessageUpdate = set_info("Showing " ++ Type ++ " alternative.")
     ;
         % Fallback.
@@ -1656,7 +1658,7 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
             Attr = Attr0
         ),
         draw(Panel, Attr, "[-- ", !IO),
-        draw(Panel, ContentType, !IO),
+        draw(Panel, mime_type.to_string(ContentType), !IO),
         (
             MaybeFilename = yes(Filename),
             draw(Panel, "; ", !IO),
@@ -1835,7 +1837,7 @@ part_message(Part, HiddenParts, Expanded, Message) :-
             (
                 HiddenParts = [],
                 Signatures = [],
-                is_multipart_signed(Part),
+                Part ^ pt_type = mime_type.multipart_signed,
                 Message = "  y to verify"
             ;
                 HiddenParts = [_],

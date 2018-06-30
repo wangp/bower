@@ -67,9 +67,9 @@
 :- import_module set.
 :- import_module string.
 
-:- import_module curs.
 :- import_module call_system.
-:- import_module string_util.
+:- import_module curs.
+:- import_module mime_type.
 :- import_module time_util.
 
 %-----------------------------------------------------------------------------%
@@ -262,12 +262,12 @@ parse_body(JSON, MessageId, Body) :-
 parse_part(MessageId, IsDecrypted0, JSON, Part) :-
     (
         JSON/"id" = int(PartId),
-        JSON/"content-type" = unesc_string(ContentType)
+        JSON/"content-type" = unesc_string(ContentTypeString)
     ->
-        % NOTE: ContentType must be compared case-insensitively.
-        ( strcase_prefix(ContentType, "multipart/") ->
+        ContentType = make_mime_type(ContentTypeString),
+        ( mime_type.is_multipart(ContentType) ->
             ( JSON/"content" = list(SubParts0) ->
-                ( strcase_equal(ContentType, "multipart/encrypted") ->
+                ( ContentType = mime_type.multipart_encrypted ->
                     ( JSON/"encstatus" = EncStatus ->
                         ( parse_encstatus(EncStatus, Encryption0) ->
                             Encryption = Encryption0
@@ -308,7 +308,7 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
             ;
                 notmuch_json_error
             )
-        ; strcase_equal(ContentType, "message/rfc822") ->
+        ; ContentType = mime_type.message_rfc822 ->
             ( JSON/"content" = list(List) ->
                 list.map(parse_encapsulated_message(MessageId, IsDecrypted0),
                     List, EncapMessages),

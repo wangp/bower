@@ -62,6 +62,7 @@
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module make_temp.
+:- import_module mime_type.
 :- import_module pager.
 :- import_module path_expand.
 :- import_module poll_notify.
@@ -2395,7 +2396,7 @@ verify_part(Screen, !Info, !IO) :-
         get_highlighted_thing(Pager, Thing),
         Thing = highlighted_part(Part, _)
     ->
-        ( is_multipart_signed(Part) ->
+        ( Part ^ pt_type = mime_type.multipart_signed ->
             do_verify_part(Screen, Part, MessageUpdate, !Info, !IO)
         ;
             MessageUpdate =

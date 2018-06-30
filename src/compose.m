@@ -80,10 +80,10 @@
 :- import_module maildir.
 :- import_module make_temp.
 :- import_module message_file.
+:- import_module mime_type.
 :- import_module pager.
 :- import_module path_expand.
 :- import_module quote_arg.
-:- import_module rfc2045.
 :- import_module rfc2047.
 :- import_module rfc2047.decoder.
 :- import_module rfc5322.writer.
@@ -132,7 +132,7 @@
 :- type attachment
     --->    old_attachment(part)
     ;       new_attachment(
-                att_type        :: string,
+                att_type        :: mime_type,
                 att_content     :: attachment_content,
                 att_filename    :: string,
                 att_size        :: int
@@ -481,7 +481,7 @@ first_text_part([Part | Parts], Text, AttachmentParts) :-
             first_text_part(SubParts, Text, AttachmentParts)
         ;
             Encryption = decryption_good,
-            filter(isnt(is_application_pgp_encrypted),
+            filter(isnt(part_is_application_pgp_encrypted),
                 SubParts, OtherSubParts),
             first_text_part(OtherSubParts, Text, AttachmentParts)
         )
@@ -492,6 +492,11 @@ first_text_part([Part | Parts], Text, AttachmentParts) :-
         first_text_part(Parts, Text, AttachmentParts0),
         AttachmentParts = [Part | AttachmentParts0]
     ).
+
+:- pred part_is_application_pgp_encrypted(part::in) is semidet.
+
+part_is_application_pgp_encrypted(Part) :-
+    Part ^ pt_type = mime_type.application_pgp_encrypted.
 
 :- pred to_old_attachment(part::in, attachment::out) is det.
 
@@ -1102,15 +1107,14 @@ do_attach_file(FileName, NumRows, MessageUpdate, !AttachInfo, !IO) :-
     attach_info::in, attach_info::out, io::di, io::uo) is det.
 
 do_attach_file_2(FileName, NumRows, MessageUpdate, !AttachInfo, !IO) :-
-    detect_mime_type(FileName, ResMimeType, !IO),
+    detect_mime_type(FileName, ResDetect, !IO),
     (
-        ResMimeType = ok(MimeType),
+        ResDetect = ok(mime_type_with_charset(Type, Charset)),
         ( dir.basename(FileName, BaseName0) ->
             BaseName = BaseName0
         ;
             BaseName = FileName
         ),
-        MimeType = mime_type(Type, Charset),
         ( Charset = "binary" ->
             do_attach_binary_file(FileName, BaseName, Type, NumRows,
                 MessageUpdate, !AttachInfo, !IO)
@@ -1122,7 +1126,7 @@ do_attach_file_2(FileName, NumRows, MessageUpdate, !AttachInfo, !IO) :-
                 "Only ASCII and UTF-8 text files supported yet.")
         )
     ;
-        ResMimeType = error(Error),
+        ResDetect = error(Error),
         Msg = io.error_message(Error),
         MessageUpdate = set_warning(Msg)
     ).
@@ -1134,7 +1138,7 @@ acceptable_charset(Charset) :-
     ; strcase_equal(Charset, "utf-8")
     ).
 
-:- pred do_attach_text_file(string::in, string::in, string::in, int::in,
+:- pred do_attach_text_file(string::in, string::in, mime_type::in, int::in,
     message_update::out, attach_info::in, attach_info::out, io::di, io::uo)
     is det.
 
@@ -1165,7 +1169,7 @@ do_attach_text_file(FileName, BaseName, Type, NumRows, MessageUpdate,
         MessageUpdate = set_warning(Msg)
     ).
 
-:- pred do_attach_binary_file(string::in, string::in, string::in, int::in,
+:- pred do_attach_binary_file(string::in, string::in, mime_type::in, int::in,
     message_update::out, attach_info::in, attach_info::out, io::di, io::uo)
     is det.
 
@@ -1222,18 +1226,19 @@ edit_attachment_type(Screen, !AttachInfo, !IO) :-
             History0 = init_history,
             add_history_nodup("application/octet-stream", History0, History1),
             add_history_nodup("text/plain", History1, History),
-            text_entry_full(Screen, "Media type: ", History, Type0,
+            TypeString0 = mime_type.to_string(Type0),
+            text_entry_full(Screen, "Media type: ", History, TypeString0,
                 complete_none, no, Return, !IO),
             (
-                Return = yes(Type),
-                Type \= ""
+                Return = yes(TypeString),
+                TypeString \= ""
             ->
-                ( accept_media_type(Type) ->
+                ( accept_media_type(TypeString, Type) ->
                     Attachment = new_attachment(Type, Content, FileName, Size),
                     scrollable.set_cursor_line(Attachment, !AttachInfo),
                     MessageUpdate = clear_message
                 ;
-                    Msg = "Refusing to set media type: " ++ Type,
+                    Msg = "Refusing to set media type: " ++ TypeString,
                     MessageUpdate = set_warning(Msg)
                 )
             ;
@@ -1249,22 +1254,19 @@ edit_attachment_type(Screen, !AttachInfo, !IO) :-
     ),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred accept_media_type(string::in) is semidet.
+:- pred accept_media_type(string::in, mime_type::out) is semidet.
 
-accept_media_type(String) :-
-    [Type, SubType] = string.split_at_char('/', String),
-    string.to_lower(Type, LowerType),
-    ( LowerType = "application"
-    ; LowerType = "audio"
-    ; LowerType = "image"
-   %; LowerType = "message"
-    ; LowerType = "model"
-   %; LowerType = "multipart"
-    ; LowerType = "text"
-    ; LowerType = "video"
-    ),
-    SubType \= "",
-    string.all_match(token_char, SubType).
+accept_media_type(String, MimeType) :-
+    parse_mime_type(String, MimeType, Type, _SubType),
+    ( Type = "application"
+    ; Type = "audio"
+    ; Type = "image"
+   %; Type = "message"
+    ; Type = "model"
+   %; Type = "multipart"
+    ; Type = "text"
+    ; Type = "video"
+    ).
 
 %-----------------------------------------------------------------------------%
 
@@ -1620,7 +1622,7 @@ draw_attachment_line(Attrs, Panel, Attachment, LineNr, IsCursor, !IO) :-
         FilenameAttr = Attr
     ),
     draw(Panel, FilenameAttr, Filename, !IO),
-    draw(Panel, Attr, " (" ++ Type ++ ")", !IO),
+    draw(Panel, Attr, " (" ++ mime_type.to_string(Type) ++ ")", !IO),
     ( Size >= 1024 * 1024 ->
         SizeM = float(Size) / (1024.0 * 1024.0),
         draw(Panel, format(" %.1f MiB", [f(SizeM)]), !IO)
@@ -2134,7 +2136,7 @@ make_text_mime_part(Disposition, TextCTE, Text, MimePart) :-
 make_attachment_mime_part(TextCTE, Attachment, MimePart) :-
     (
         Attachment = old_attachment(OldPart),
-        OldType = OldPart ^ pt_type,
+        OldType = mime_type.to_string(OldPart ^ pt_type),
         OldContent = OldPart ^ pt_content,
         MaybeFileName = OldPart ^ pt_filename,
         (
@@ -2167,7 +2169,8 @@ make_attachment_mime_part(TextCTE, Attachment, MimePart) :-
             make_text_mime_part(Disposition, TextCTE, Text, MimePart)
         ;
             Content = binary_base64(Base64),
-            MimePart = discrete(content_type(Type), yes(Disposition),
+            TypeString = mime_type.to_string(Type),
+            MimePart = discrete(content_type(TypeString), yes(Disposition),
                 yes(cte_base64), base64(Base64))
         )
     ).

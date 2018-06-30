@@ -10,6 +10,7 @@
 :- import_module maybe.
 :- import_module set.
 
+:- import_module mime_type.
 :- import_module time_util.
 
 %-----------------------------------------------------------------------------%
@@ -86,7 +87,7 @@
     --->    part(
                 pt_msgid        :: message_id,
                 pt_part         :: maybe(int),
-                pt_type         :: string,
+                pt_type         :: mime_type,
                 pt_content      :: part_content,
                 pt_filename     :: maybe(string),
                 pt_encoding     :: maybe(string),
@@ -158,18 +159,12 @@
 
 :- func get_replies(message) = list(message).
 
-:- pred is_multipart_signed(part::in) is semidet.
-
-:- pred is_application_pgp_encrypted(part::in) is semidet.
-
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
 :- import_module string.
-
-:- import_module string_util.
 
 %-----------------------------------------------------------------------------%
 
@@ -201,12 +196,6 @@ get_subject_fallback(excluded_message(_)) = header_value("(excluded message)").
 
 get_replies(message(_, _, _, _, _, Replies)) = Replies.
 get_replies(excluded_message(Replies)) = Replies.
-
-is_multipart_signed(Part) :-
-    strcase_equal(Part ^ pt_type, "multipart/signed").
-
-is_application_pgp_encrypted(Part) :-
-    strcase_equal(Part ^ pt_type, "application/pgp-encrypted").
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

@@ -6,14 +6,16 @@
 
 :- import_module io.
 
-:- type mime_type
-    --->    mime_type(
-                mt_type     :: string,  % e.g. text/plain
-                mt_charset  :: string   % e.g. us-ascii, utf-8, binary
+:- import_module mime_type.
+
+:- type mime_type_with_charset
+    --->    mime_type_with_charset(
+                mtc_type    :: mime_type,   % e.g. text/plain
+                mtc_charset :: string       % e.g. us-ascii, utf-8, binary
             ).
 
-:- pred detect_mime_type(string::in, io.res(mime_type)::out, io::di, io::uo)
-    is det.
+:- pred detect_mime_type(string::in, io.res(mime_type_with_charset)::out,
+    io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -36,9 +38,9 @@ detect_mime_type(FileName, Res, !IO) :-
     (
         CallRes = ok(String0),
         String = string.chomp(String0),
-        ( string.split_at_string("; charset=", String) = [Type, Charset] ->
-            MimeType = mime_type(Type, Charset),
-            Res = ok(MimeType)
+        ( string.split_at_string("; charset=", String) = [TypeStr, Charset] ->
+            Type = make_mime_type(TypeStr),
+            Res = ok(mime_type_with_charset(Type, Charset))
         ;
             Res = error(io.make_io_error("could not parse mime type"))
         )
