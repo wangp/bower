@@ -108,6 +108,7 @@
 
 :- import_module callout.       % XXX cyclic
 :- import_module config.
+:- import_module mime_type.
 :- import_module rfc5322.parser.
 :- import_module rfc5322.writer.
 :- import_module sys_util.
@@ -117,7 +118,7 @@
     --->    prog_config(
                 notmuch         :: command_prefix,
                 editor          :: command_prefix,
-                html_dump       :: maybe(command_prefix),
+                text_filters    :: map(mime_type, command_prefix),
                 open_part       :: string, % not shell-quoted
                 open_url        :: string, % not shell-quoted
                 poll_notify     :: maybe(command_prefix),
@@ -210,17 +211,6 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
         )
     ),
 
-    ( search_config(Config, "command", "html_dump", HtmlDump0) ->
-        ( HtmlDump0 = "" ->
-            MaybeHtmlDump = no
-        ;
-            parse_command(HtmlDump0, HtmlDump1, !Errors),
-            MaybeHtmlDump = yes(HtmlDump1)
-        )
-    ;
-        MaybeHtmlDump = yes(default_html_dump_command)
-    ),
-
     ( search_config(Config, "command", "open_part", OpenPart0) ->
         OpenPart = OpenPart0
     ;
@@ -250,6 +240,27 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
         check_poll_period_secs(PollSecs0, PollSecs, !Errors)
     ;
         PollSecs = default_poll_period_secs
+    ),
+
+    some [!Filters] (
+        !:Filters = map.singleton(text_html, default_html_dump_command),
+        % For backwards compatibility.
+        ( search_config(Config, "command", "html_dump", HtmlDump0) ->
+            ( HtmlDump0 = "" ->
+                map.delete(text_html, !Filters)
+            ;
+                parse_command(HtmlDump0, HtmlDump, !Errors),
+                set(text_html, HtmlDump, !Filters)
+            )
+        ;
+            true
+        ),
+        ( search(Config, "filter", FilterSection) ->
+            parse_filters(FilterSection, !Filters, !Errors)
+        ;
+            true
+        ),
+        Filters = !.Filters
     ),
 
     ( search_config(Config, "crypto", "encrypt_by_default", Encrypt0) ->
@@ -329,11 +340,11 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
 
     ProgConfig ^ notmuch = Notmuch,
     ProgConfig ^ editor = Editor,
-    ProgConfig ^ html_dump = MaybeHtmlDump,
     ProgConfig ^ open_part = OpenPart,
     ProgConfig ^ open_url = OpenUrl,
     ProgConfig ^ poll_notify = PollNotify,
     ProgConfig ^ poll_period_secs = PollSecs,
+    ProgConfig ^ text_filters = Filters,
     ProgConfig ^ encrypt_by_default = EncryptByDefault,
     ProgConfig ^ sign_by_default = SignByDefault,
     ProgConfig ^ decrypt_by_default = DecryptByDefault,
@@ -343,16 +354,32 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
     ProgConfig ^ default_account = DefaultAccount,
     ProgConfig ^ colors = Colors.
 
+%-----------------------------------------------------------------------------%
+
 :- pred parse_command(string::in, command_prefix::out,
     list(string)::in, list(string)::out) is cc_multi.
 
-parse_command(S0, command_prefix(shell_quoted(S), QuoteTimes), !Errors) :-
+parse_command(String, CommandPrefix, !Errors) :-
+    do_parse_command(String, Res),
+    (
+        Res = ok(CommandPrefix)
+    ;
+        Res = error(Error),
+        cons(Error, !Errors),
+        % dummy
+        CommandPrefix = command_prefix(shell_quoted("false"), quote_once)
+    ).
+
+:- pred do_parse_command(string::in, maybe_error(command_prefix)::out) is cc_multi.
+
+do_parse_command(S0, Res) :-
     shell_word.split(S0, ParseResult),
     (
         ParseResult = ok(Words),
         Args = list.map(word_string, Words),
         S = string.join_list(" ", list.map(quote_arg, Args)),
-        QuoteTimes = ( detect_ssh(Words) -> quote_twice ; quote_once )
+        QuoteTimes = ( detect_ssh(Words) -> quote_twice ; quote_once ),
+        Res = ok(command_prefix(shell_quoted(S), QuoteTimes))
     ;
         (
             ParseResult = error(yes(Message), _Line, _Column)
@@ -361,15 +388,49 @@ parse_command(S0, command_prefix(shell_quoted(S), QuoteTimes), !Errors) :-
             Message = "parse error"
         ),
         Error = string.format("%s in value: %s", [s(Message), s(S0)]),
-        cons(Error, !Errors),
-        S = "false", % dummy
-        QuoteTimes = quote_once
+        Res = error(Error)
     ).
 
 detect_ssh([FirstWord | _]) :-
     FirstWord = word(Segments),
     list.member(unquoted(String), Segments),
     string.sub_string_search(String, "ssh", _).
+
+%-----------------------------------------------------------------------------%
+
+:- pred parse_filters(map(string, string)::in,
+    map(mime_type, command_prefix)::in, map(mime_type, command_prefix)::out,
+    list(string)::in, list(string)::out) is cc_multi.
+
+parse_filters(Section, !Filters, !Errors) :-
+    map.foldl2(parse_filter, Section, !Filters, !Errors).
+
+:- pred parse_filter(string::in, string::in,
+    map(mime_type, command_prefix)::in, map(mime_type, command_prefix)::out,
+    list(string)::in, list(string)::out) is cc_multi.
+
+parse_filter(Name, Value, !Filters, !Errors) :-
+    ( parse_mime_type(Name, MimeType, _Type, _SubType) ->
+        ( Value = "" ->
+            % This is mainly to delete the default command for text/html.
+            map.delete(MimeType, !Filters)
+        ;
+            do_parse_command(Value, ResParse),
+            (
+                ResParse = ok(CommandPrefix),
+                set(MimeType, CommandPrefix, !Filters)
+            ;
+                ResParse = error(Error),
+                cons(Error, !Errors)
+            )
+        )
+    ;
+        Errors = "invalid media type to filter: " ++ Name,
+        cons(Errors, !Errors)
+    ).
+
+%-----------------------------------------------------------------------------%
+
 
 :- pred check_poll_period_secs(string::in, maybe(int)::out,
     list(string)::in, list(string)::out) is det.
@@ -610,6 +671,8 @@ pick_default_account(Accounts, DefaultAccount, !Errors) :-
 is_default_account(Account) :-
     Account ^ default = yes.
 
+%-----------------------------------------------------------------------------%
+
 :- pred to_bool(string::in, bool::out) is semidet.
 
 to_bool(String, Bool) :-
@@ -637,7 +700,12 @@ get_editor_command(Config, Editor) :-
     Editor = Config ^ editor.
 
 get_maybe_html_dump_command(Config, MaybeCommand) :-
-    MaybeCommand = Config ^ html_dump.
+    Filters = Config ^ text_filters,
+    ( search(Filters, mime_type.text_html, Command) ->
+        MaybeCommand = yes(Command)
+    ;
+        MaybeCommand = no
+    ).
 
 get_open_part_command(Config, Command) :-
     Command = Config ^ open_part.

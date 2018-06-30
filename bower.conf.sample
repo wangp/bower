@@ -32,11 +32,6 @@
     #
   ; editor = vim '+set ft=mail'
 
-    # How to format HTML on stdin to plain text.
-    # The command should output UTF-8.
-    #
-  ; html_dump = lynx -dump -force-html -stdin -display-charset=utf-8
-
     # Default command to open a part.
     # An unquoted & suffix causes the command to run in the background.
     #
@@ -57,6 +52,18 @@
     #
   ; sendmail =
   ; post_sendmail =
+
+#-----------------------------------------------------------------------------#
+
+# How to convert non-text parts to text using external commands.
+# Each command should take input on standard input and output UTF-8.
+
+[filter]
+
+    # HTML is formatted using this command by default.
+    # Set the value to an empty string to disable.
+    #
+  ; text/html = lynx -dump -force-html -stdin -display-charset=utf-8
 
 #-----------------------------------------------------------------------------#
 
