@@ -690,18 +690,20 @@ make_unsupported_part_tree(Config, Cols, PartNodeId, Part, ExpandUnsupported,
         AltParts, Tree, !IO) :-
     Part = part(MessageId, MaybePartId, PartType, _Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength, _IsDecrypted),
-    % XXX we should use mailcap, though we don't want to show everything
-    IsHtml = ( PartType = mime_type.text_html -> yes ; no ),
     (
         ExpandUnsupported = default,
-        Expanded = expand_unsupported_default(IsHtml)
+        Expanded = expand_unsupported_default(PartType)
     ;
         ExpandUnsupported = force(Expanded)
     ),
     (
         Expanded = part_expanded,
         MaybePartId = yes(PartId),
-        MaybeFilterCommand = maybe_filter_command(Config, IsHtml),
+        ( get_text_filter_command(Config, PartType, FilterCommand) ->
+            MaybeFilterCommand = yes(FilterCommand)
+        ;
+            MaybeFilterCommand = no
+        ),
         expand_part(Config, MessageId, PartId, MaybeFilterCommand,
             MaybeText, !IO),
         (
@@ -723,26 +725,13 @@ make_unsupported_part_tree(Config, Cols, PartNodeId, Part, ExpandUnsupported,
     Lines = [HeadLine | wrap_texts(TextLines)],
     Tree = node(PartNodeId, [leaf(Lines)], yes).
 
-:- func expand_unsupported_default(bool) = part_expanded.
+:- func expand_unsupported_default(mime_type) = part_expanded.
 
-expand_unsupported_default(IsHtml) = Expanded :-
-    (
-        IsHtml = yes,
-        Expanded = part_expanded
+expand_unsupported_default(PartType) =
+    ( PartType = mime_type.text_html ->
+        part_expanded
     ;
-        IsHtml = no,
-        Expanded = part_not_expanded
-    ).
-
-:- func maybe_filter_command(prog_config, bool) = maybe(command_prefix).
-
-maybe_filter_command(Config, IsHtml) = MaybeFilterCommand :-
-    (
-        IsHtml = yes,
-        get_maybe_html_dump_command(Config, MaybeFilterCommand)
-    ;
-        IsHtml = no,
-        MaybeFilterCommand = no
+        part_not_expanded
     ).
 
 %-----------------------------------------------------------------------------%

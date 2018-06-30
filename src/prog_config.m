@@ -10,6 +10,7 @@
 :- import_module maybe.
 
 :- import_module color.
+:- import_module mime_type.
 :- import_module quote_arg.
 :- import_module rfc5322.
 :- import_module shell_word.
@@ -41,9 +42,6 @@
 
 :- pred get_editor_command(prog_config::in, command_prefix::out) is det.
 
-:- pred get_maybe_html_dump_command(prog_config::in,
-    maybe(command_prefix)::out) is det.
-
 :- pred get_open_part_command(prog_config::in, string::out) is det.
 
 :- pred get_open_url_command(prog_config::in, string::out) is det.
@@ -52,6 +50,9 @@
     is det.
 
 :- pred get_poll_period_secs(prog_config::in, maybe(int)::out) is det.
+
+:- pred get_text_filter_command(prog_config::in, mime_type::in,
+    command_prefix::out) is semidet.
 
 :- pred get_encrypt_by_default(prog_config::in, bool::out) is det.
 
@@ -108,7 +109,6 @@
 
 :- import_module callout.       % XXX cyclic
 :- import_module config.
-:- import_module mime_type.
 :- import_module rfc5322.parser.
 :- import_module rfc5322.writer.
 :- import_module sys_util.
@@ -699,14 +699,6 @@ get_notmuch_command(Config, Notmuch) :-
 get_editor_command(Config, Editor) :-
     Editor = Config ^ editor.
 
-get_maybe_html_dump_command(Config, MaybeCommand) :-
-    Filters = Config ^ text_filters,
-    ( search(Filters, mime_type.text_html, Command) ->
-        MaybeCommand = yes(Command)
-    ;
-        MaybeCommand = no
-    ).
-
 get_open_part_command(Config, Command) :-
     Command = Config ^ open_part.
 
@@ -718,6 +710,10 @@ get_poll_notify_command(Config, Command) :-
 
 get_poll_period_secs(Config, PollPeriodSecs) :-
     PollPeriodSecs = Config ^ poll_period_secs.
+
+get_text_filter_command(Config, MimeType, Command) :-
+    Filters = Config ^ text_filters,
+    search(Filters, MimeType, Command).
 
 get_encrypt_by_default(Config, EncryptByDefault) :-
     EncryptByDefault = Config ^ encrypt_by_default.

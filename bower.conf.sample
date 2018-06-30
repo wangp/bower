@@ -65,6 +65,11 @@
     #
   ; text/html = lynx -dump -force-html -stdin -display-charset=utf-8
 
+    # You can specify commands to filter other media types.
+    # The following examples are not enabled by default.
+    #
+  ; application/pdf = pdftotext - -
+
 #-----------------------------------------------------------------------------#
 
 # How to send mail for one or more email accounts.
