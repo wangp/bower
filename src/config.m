@@ -70,7 +70,11 @@ load_config_stream(Stream, Section0, !Config, !IO) :-
 
 parse_line(Line, !Section, !Config) :-
     string.unsafe_index(Line, 0, FirstChar),
-    ( FirstChar = ('#') ->
+    (
+        ( FirstChar = ('#')
+        ; FirstChar = (';')
+        )
+    ->
         % Comment line.
         true
     ; FirstChar = ('[') ->
