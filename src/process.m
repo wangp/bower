@@ -22,6 +22,12 @@
 :- pred posix_spawn_get_stdout(string::in, list(string)::in,
     io.res({pid, pipe_read})::out, io::di, io::uo) is det.
 
+    % Warning: remember to avoid deadlocks due to a full pipe buffer.
+    %
+    % The pipe connected to standard input of the child process has the flag
+    % O_NONBLOCK set so that write(2) will perform a partial write instead of
+    % blocking if the pipe is full.
+    %
 :- pred posix_spawn_get_stdin_stdout(string::in, list(string)::in,
     io.res({pid, pipe_write, pipe_read})::out, io::di, io::uo) is det.
 
@@ -149,6 +155,12 @@ posix_spawn_get_stdin_stdout(Prog, Args, Res, !IO) :-
 
     if (GetStdin) {
         rc = pipe(stdin_pipe);
+        if (rc == 0) {
+            rc = fcntl(stdin_pipe[0], F_SETFL, O_NONBLOCK);
+        }
+        if (rc == 0) {
+            rc = fcntl(stdin_pipe[1], F_SETFL, O_NONBLOCK);
+        }
     }
 
     if (rc == 0 && GetStdout) {
