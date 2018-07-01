@@ -368,7 +368,12 @@ spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO) :-
                     PreSigchldCount),
                 Res = ok(Child)
             ;
-                WriteRes = error(WriteError),
+                (
+                    WriteRes = error(WriteError)
+                ;
+                    WriteRes = partial_write(_),
+                    WriteError = io.make_io_error("write: partial write")
+                ),
                 close_pipe_read(StdoutPipe, !IO),
                 kill_with_sigterm(Pid, KillRes, !IO),
                 (

@@ -48,8 +48,13 @@
 :- pred drain_pipe(pipe_read::in, maybe(int)::in, io.res(string)::out,
     io::di, io::uo) is det.
 
-:- pred write_string_to_pipe(pipe_write::in, string::in, io.res::out,
-    io::di, io::uo) is det.
+:- type write_string_result
+    --->    ok
+    ;       partial_write(int)
+    ;       error(io.error).
+
+:- pred write_string_to_pipe(pipe_write::in, string::in,
+    write_string_result::out, io::di, io::uo) is det.
 
 :- pred close_pipe_read(pipe_read::in, io::di, io::uo) is det.
 :- pred close_pipe_write(pipe_write::in, io::di, io::uo) is det.
@@ -394,9 +399,9 @@ write_string_to_pipe(pipe_write(Fd), String, Res, !IO) :-
     string.count_code_units(String, Count),
     write(Fd, String, Count, N, Error, !IO),
     ( N < 0 ->
-        Res = io.error(io.make_io_error(Error))
+        Res = error(io.make_io_error(Error))
     ; N < Count ->
-        Res = io.error(io.make_io_error("write: partial write"))
+        Res = partial_write(N)
     ;
         Res = ok
     ).
