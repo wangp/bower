@@ -379,7 +379,7 @@ spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO) :-
                     WriteError = io.make_io_error("write: partial write")
                 ),
                 close_pipe_read(StdoutPipe, !IO),
-                kill_with_sigterm(Pid, KillRes, !IO),
+                kill(Pid, sigterm, KillRes, !IO),
                 (
                     KillRes = ok,
                     wait_pid(Pid, blocking, _WaitResult, !IO)

@@ -70,7 +70,9 @@
 :- pred close_pipe_read(pipe_read::in, io::di, io::uo) is det.
 :- pred close_pipe_write(pipe_write::in, io::di, io::uo) is det.
 
-:- pred kill_with_sigterm(pid::in, io.res::out, io::di, io::uo) is det.
+:- pred kill(pid::in, int::in, io.res::out, io::di, io::uo) is det.
+
+:- func sigterm = int.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -730,8 +732,8 @@ close_pipe_write(pipe_write(Fd), !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-kill_with_sigterm(pid(Pid), Res, !IO) :-
-    kill_with_sigterm_2(Pid, Ok, Error, !IO),
+kill(pid(Pid), Signal, Res, !IO) :-
+    kill_2(Pid, Signal, Ok, Error, !IO),
     (
         Ok = yes,
         Res = ok
@@ -740,15 +742,15 @@ kill_with_sigterm(pid(Pid), Res, !IO) :-
         Res = error(io.make_io_error(Error))
     ).
 
-:- pred kill_with_sigterm_2(int::in, bool::out, string::out,
-    io::di, io::uo) is det.
+:- pred kill_2(int::in, int::in, bool::out, string::out, io::di, io::uo)
+    is det.
 
 :- pragma foreign_proc("C",
-    kill_with_sigterm_2(Pid::in, Ok::out, Error::out, _IO0::di, _IO::uo),
+    kill_2(Pid::in, Signal::in, Ok::out, Error::out, _IO0::di, _IO::uo),
     [will_not_call_mercury, promise_pure, not_thread_safe /* stderr */,
         tabled_for_io, may_not_duplicate],
 "
-    int rc = kill(Pid, SIGTERM);
+    int rc = kill(Pid, Signal);
     if (rc < 0) {
         Ok = MR_NO;
         Error = MR_make_string(MR_ALLOC_ID, ""%s"", strerror(errno));
@@ -756,6 +758,13 @@ kill_with_sigterm(pid(Pid), Res, !IO) :-
         Ok = MR_YES;
         Error = MR_make_string_const("""");
     }
+").
+
+:- pragma foreign_proc("C",
+    sigterm = (Signal::out),
+    [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
+"
+    Signal = SIGTERM;
 ").
 
 %-----------------------------------------------------------------------------%
