@@ -360,6 +360,9 @@ spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO) :-
         posix_spawn_get_stdin_stdout(Shell, ShellArgs, SpawnRes, !IO),
         (
             SpawnRes = ok({Pid, StdinPipe, StdoutPipe}),
+            % This depends on Contents fitting within the pipe buffer all at
+            % once. In practice notmuch queries should not come anywhere near
+            % exceeding the pipe capacity.
             write_string_to_pipe(StdinPipe, Contents, WriteRes, !IO),
             close_pipe_write(StdinPipe, !IO),
             (
