@@ -5,6 +5,7 @@ Bower 0.9-unreleased
 * thread/pager: Show pager progress as percentage of current message.
 * thread/pager: Periodically poll for new messages.
 * config: Replace index.poll_period_secs with ui.poll_period_secs.
+* Support conversion of message parts to text using external filters.
 
 Bower 0.8.1 (2018-04-01)
 ========================
