@@ -58,6 +58,12 @@
 :- pred write_string_to_pipe(pipe_write::in, string::in,
     write_string_result::out, io::di, io::uo) is det.
 
+    % Warning: for consistency, both pipes will be closed after this call,
+    % do not close them again.
+    %
+:- pred write_and_read_concurrently_and_close_both(pipe_write::in, string::in,
+    pipe_read::in, io.res::out, buffers::uo, io::di, io::uo) is det.
+
 :- pred make_utf8_string(maybe(int)::in, buffers::di, string::out)
     is semidet.
 
@@ -85,6 +91,18 @@
     --->    pipe_write(write_fd :: int).
 
 :- type buffers == list(buffer).
+
+:- pragma foreign_decl("C", local, "
+    /* for posix_spawn */
+    #include <spawn.h>
+
+    /* for select -- POSIX.1-2001, POSIX.1-2008 */
+    #include <sys/select.h>
+    /* for select -- earlier standards */
+    #include <sys/time.h>
+    #include <sys/types.h>
+    #include <unistd.h>
+").
 
 :- pragma foreign_decl("C", local, "
 static int do_close(int fd)
@@ -335,56 +353,32 @@ wait_pid(pid(Pid), Blocking, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-drain_pipe(pipe_read(Fd), Res, Buffers, !IO) :-
-    drain(Fd, Res0, [], RevBuffers, !IO),
+drain_pipe(PipeRead, Res, Buffers, !IO) :-
+    drain_loop(PipeRead, Res, [], RevBuffers, !IO),
     (
-        Res0 = ok,
         Res = ok,
         uniq_reverse(RevBuffers, Buffers)
     ;
-        Res0 = error(Error),
-        Res = error(io.make_io_error(Error)),
+        Res = error(_Error),
         Buffers = []
     ).
 
-:- pred drain(int::in, maybe_error::out,
+:- pred drain_loop(pipe_read::in, io.res::out,
     list(byte_array)::di, list(byte_array)::uo, io::di, io::uo) is det.
 
-drain(Fd, Result, !RevBuffers, !IO) :-
-    Capacity = 16384,
-    MaxRead = Capacity - make_utf8.buffer_margin,
-    byte_array.allocate(Capacity, Buffer0),
-    read(Fd, MaxRead, N, Error, Buffer0, Buffer, !IO),
-    ( N < 0 ->
-        Result = error(Error)
-    ; N = 0 ->
-        Result = ok
-    ;
+drain_loop(PipeRead, Res, !RevBuffers, !IO) :-
+    read_some(PipeRead, Res0, Buffer, !IO),
+    (
+        Res0 = ok,
         !:RevBuffers = [Buffer | !.RevBuffers],
-        drain(Fd, Result, !RevBuffers, !IO)
+        drain_loop(PipeRead, Res, !RevBuffers, !IO)
+    ;
+        Res0 = eof,
+        Res = ok
+    ;
+        Res0 = error(Error),
+        Res = error(Error)
     ).
-
-:- pred read(int::in, int::in, int::out, string::out,
-    byte_array::di, byte_array::uo, io::di, io::uo) is det.
-
-:- pragma foreign_proc("C",
-    read(Fd::in, MaxRead::in, N::out, Error::out, Buffer0::di, Buffer::uo,
-        _IO0::di, _IO::uo),
-    [will_not_call_mercury, promise_pure, not_thread_safe /* strerror */,
-        tabled_for_io, may_not_duplicate],
-"
-    Buffer = Buffer0;
-    assert(Buffer->len == 0);
-    do {
-        N = read(Fd, Buffer->data, MaxRead);
-    } while (N == -1 && errno == EINTR);
-    if (N < 0) {
-        Error = MR_make_string(MR_ALLOC_ID, ""%s"", strerror(errno));
-    } else {
-        Buffer->len = N;
-        Error = MR_make_string_const("""");
-    }
-").
 
 :- pred uniq_reverse(list(T)::di, list(T)::uo) is det.
 
@@ -400,26 +394,281 @@ uniq_reverse([X | Xs], Acc0, Acc) :-
 
 %-----------------------------------------------------------------------------%
 
-write_string_to_pipe(pipe_write(Fd), String, Res, !IO) :-
-    string.count_code_units(String, Count),
-    write(Fd, String, Count, N, Error, !IO),
+write_string_to_pipe(PipeWrite, String, Res, !IO) :-
+    Count = string.count_code_units(String),
+    unsafe_write_substring(PipeWrite, String, 0, Count, Res0, !IO),
+    (
+        Res0 = bytes_written(NumBytes),
+        ( NumBytes < Count ->
+            Res = partial_write(NumBytes)
+        ;
+            Res = ok
+        )
+    ;
+        Res0 = write_error(Error),
+        Res = error(Error)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+write_and_read_concurrently_and_close_both(PipeWrite, WriteString,
+        PipeRead, Res, Buffers, !IO) :-
+    WriteCount = string.count_code_units(WriteString),
+    write_and_read_until_written(PipeWrite, WriteString, 0, WriteCount,
+        PipeRead, WriteAllRes, [], RevBuffers0, no, SeenEOF, !IO),
+    (
+        WriteAllRes = ok,
+        % Close PipeWrite so the child process knows there is no more input.
+        close_pipe_write(PipeWrite, !IO),
+        (
+            SeenEOF = no,
+            drain_loop(PipeRead, DrainRes, RevBuffers0, RevBuffers, !IO)
+        ;
+            SeenEOF = yes,
+            DrainRes = ok,
+            RevBuffers = RevBuffers0
+        ),
+        (
+            DrainRes = ok,
+            Res = ok,
+            uniq_reverse(RevBuffers, Buffers)
+        ;
+            DrainRes = error(Error),
+            Res = error(Error),
+            Buffers = []
+        )
+    ;
+        WriteAllRes = error(Error),
+        Res = error(Error),
+        Buffers = [],
+        % Close PipeWrite in this branch as well.
+        close_pipe_write(PipeWrite, !IO)
+    ),
+    % For consistency, close PipeRead as well.
+    close_pipe_read(PipeRead, !IO).
+
+:- pred write_and_read_until_written(pipe_write::in,
+    string::in, int::in, int::in, pipe_read::in, io.res::out,
+    list(byte_array)::di, list(byte_array)::uo, bool::in, bool::out,
+    io::di, io::uo) is det.
+
+write_and_read_until_written(PipeWrite, WriteString, !.WritePos, WriteEnd,
+        PipeRead, Res, !RevBuffers, !SeenEOF, !IO) :-
+    ( if !.WritePos >= WriteEnd then
+        Res = ok
+    else
+        (
+            !.SeenEOF = no,
+            ReadFds = yes(PipeRead)
+        ;
+            !.SeenEOF = yes,
+            ReadFds = no
+        ),
+        select(ReadFds, yes(PipeWrite), SelectRes, !IO),
+        some [!Res]
+        (
+            SelectRes = select_ok(CanRead, CanWrite),
+            !:Res = ok : io.res,
+            (
+                CanWrite = yes,
+                unsafe_write_substring(PipeWrite, WriteString, !.WritePos,
+                    WriteEnd, WriteRes, !IO),
+                (
+                    WriteRes = bytes_written(NumBytes),
+                    !:WritePos = !.WritePos + NumBytes
+                ;
+                    WriteRes = write_error(WriteError),
+                    !:Res = error(WriteError)
+                )
+            ;
+                CanWrite = no
+            ),
+            ( if !.Res = ok, CanRead = yes then
+                read_some(PipeRead, ReadRes, Buffer, !IO),
+                (
+                    ReadRes = ok,
+                    !:RevBuffers = [Buffer | !.RevBuffers]
+                ;
+                    ReadRes = eof,
+                    !:SeenEOF = yes
+                ;
+                    ReadRes = error(ReadError),
+                    !:Res = error(ReadError)
+                )
+            else
+                true
+            ),
+            (
+                !.Res = ok,
+                write_and_read_until_written(PipeWrite,
+                    WriteString, !.WritePos, WriteEnd,
+                    PipeRead, Res, !RevBuffers, !SeenEOF, !IO)
+            ;
+                !.Res = error(Error),
+                Res = error(Error)
+            )
+        ;
+            SelectRes = select_error(Error),
+            Res = error(Error)
+        )
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- type select_result
+    --->    select_ok(bool, bool)
+    ;       select_error(io.error).
+
+:- pred select(maybe(pipe_read)::in, maybe(pipe_write)::in, select_result::out,
+    io::di, io::uo) is det.
+
+select(ReadFds, WriteFds, Res, !IO) :-
+    (
+        ReadFds = yes(pipe_read(MaybeReadFd))
+    ;
+        ReadFds = no,
+        MaybeReadFd = -1
+    ),
+    (
+        WriteFds = yes(pipe_write(MaybeWriteFd))
+    ;
+        WriteFds = no,
+        MaybeWriteFd = -1
+    ),
+    select_2(MaybeReadFd, MaybeWriteFd, Ok, CanRead, CanWrite, Error, !IO),
+    (
+        Ok = yes,
+        Res = select_ok(CanRead, CanWrite)
+    ;
+        Ok = no,
+        Res = select_error(io.make_io_error(Error))
+    ).
+
+:- pred select_2(int::in, int::in, bool::out,
+    bool::out, bool::out, string::out, io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    select_2(MaybeReadFd::in, MaybeWriteFd::in, Ok::out,
+        CanRead::out, CanWrite::out, Error::out, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, not_thread_safe /* strerror */,
+        tabled_for_io, may_not_duplicate],
+"
+    fd_set readfds;
+    fd_set writefds;
+    int nfds;
+    int rc;
+
+    Ok = MR_NO;
+    Error = MR_make_string_const("""");
+    CanRead = MR_NO;
+    CanWrite = MR_NO;
+
+    if (MaybeReadFd >= FD_SETSIZE || MaybeWriteFd >= FD_SETSIZE) {
+        Error = MR_make_string_const(""fd too big for select()"");
+    } else {
+        FD_ZERO(&readfds);
+        FD_ZERO(&writefds);
+        nfds = 0;
+
+        if (MaybeReadFd >= 0) {
+            FD_SET(MaybeReadFd, &readfds);
+            nfds = MaybeReadFd + 1;
+        }
+
+        if (MaybeWriteFd >= 0) {
+            FD_SET(MaybeWriteFd, &writefds);
+            if (nfds <= MaybeWriteFd) {
+                nfds = MaybeWriteFd + 1;
+            }
+        }
+
+        rc = select(nfds, &readfds, &writefds, NULL, NULL);
+
+        if (rc < 0) {
+            Error = MR_make_string(MR_ALLOC_ID, ""%s"", strerror(errno));
+        } else {
+            Ok = MR_YES;
+            if (MaybeReadFd >= 0 && FD_ISSET(MaybeReadFd, &readfds)) {
+                CanRead = MR_YES;
+            }
+            if (MaybeWriteFd >= 0 && FD_ISSET(MaybeWriteFd, &writefds)) {
+                CanWrite = MR_YES;
+            }
+        }
+    }
+").
+
+%-----------------------------------------------------------------------------%
+
+:- pred read_some(pipe_read::in, io.result::out, buffer::uo, io::di, io::uo)
+    is det.
+
+read_some(pipe_read(Fd), Res, Buffer, !IO) :-
+    % TODO Determine how many bytes are available to read using
+    % ioctl(fd, FIONREAD, &nbytes);
+    Capacity = 16384,
+    MaxRead = Capacity - make_utf8.buffer_margin,
+    byte_array.allocate(Capacity, Buffer0),
+    read_into_buffer(Fd, MaxRead, N, Error, Buffer0, Buffer, !IO),
     ( N < 0 ->
         Res = error(io.make_io_error(Error))
-    ; N < Count ->
-        Res = partial_write(N)
+    ; N = 0 ->
+        Res = eof
     ;
         Res = ok
     ).
 
-:- pred write(int::in, string::in, int::in, int::out, string::out,
-    io::di, io::uo) is det.
+:- pred read_into_buffer(int::in, int::in, int::out, string::out,
+    byte_array::di, byte_array::uo, io::di, io::uo) is det.
 
 :- pragma foreign_proc("C",
-    write(Fd::in, Buf::in, Count::in, N::out, Error::out, _IO0::di, _IO::uo),
+    read_into_buffer(Fd::in, MaxRead::in, N::out, Error::out,
+        Buffer0::di, Buffer::uo, _IO0::di, _IO::uo),
     [will_not_call_mercury, promise_pure, not_thread_safe /* strerror */,
         tabled_for_io, may_not_duplicate],
 "
-    N = write(Fd, Buf, Count);
+    Buffer = Buffer0;
+    assert(Buffer->len == 0);
+    assert(MaxRead > 0);
+    assert(MaxRead <= Buffer->cap);
+    do {
+        N = read(Fd, Buffer->data, MaxRead);
+    } while (N == -1 && errno == EINTR);
+    if (N < 0) {
+        Error = MR_make_string(MR_ALLOC_ID, ""%s"", strerror(errno));
+    } else {
+        Buffer->len = N;
+        Error = MR_make_string_const("""");
+    }
+").
+
+%-----------------------------------------------------------------------------%
+
+:- type write_result
+    --->    bytes_written(int)
+    ;       write_error(io.error).
+
+:- pred unsafe_write_substring(pipe_write::in, string::in, int::in, int::in,
+    write_result::out, io::di, io::uo) is det.
+
+unsafe_write_substring(pipe_write(Fd), String, Start, End, Res, !IO) :-
+    unsafe_write_substring_2(Fd, String, Start, End, N, Error, !IO),
+    ( N < 0 ->
+        Res = write_error(io.make_io_error(Error))
+    ;
+        Res = bytes_written(N)
+    ).
+
+:- pred unsafe_write_substring_2(int::in, string::in, int::in, int::in,
+    int::out, string::out, io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    unsafe_write_substring_2(Fd::in, Buf::in, Start::in, End::in,
+        N::out, Error::out, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, not_thread_safe /* strerror */,
+        tabled_for_io, may_not_duplicate],
+"
+    N = write(Fd, Buf + Start, End - Start);
     if (N < 0) {
         Error = MR_make_string(MR_ALLOC_ID, ""%s"", strerror(errno));
     } else {
