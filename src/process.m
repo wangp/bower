@@ -147,6 +147,7 @@ posix_spawn_get_stdin_stdout(Prog, Args, Res, !IO) :-
     int stdout_pipe[2] = {-1, -1};
     int i;
     int rc;
+    int flags;
 
     argv[0] = Prog;
     for (i = 1; i <= NumArgs; i++) {
@@ -160,12 +161,6 @@ posix_spawn_get_stdin_stdout(Prog, Args, Res, !IO) :-
 
     if (GetStdin) {
         rc = pipe(stdin_pipe);
-        if (rc == 0) {
-            rc = fcntl(stdin_pipe[0], F_SETFL, O_NONBLOCK);
-        }
-        if (rc == 0) {
-            rc = fcntl(stdin_pipe[1], F_SETFL, O_NONBLOCK);
-        }
     }
 
     if (rc == 0 && GetStdout) {
@@ -178,10 +173,16 @@ posix_spawn_get_stdin_stdout(Prog, Args, Res, !IO) :-
 
     if (rc == 0) {
         Pid = pid;
-        StdinFd = stdin_pipe[1];
+        StdinFd = stdin_pipe[1];    /* keep write end of stdin_pipe */
         do_close(stdin_pipe[0]);    /* close read end of stdin_pipe */
-        StdoutFd = stdout_pipe[0];
+        StdoutFd = stdout_pipe[0];  /* keep read end of stdout_pipe */
         do_close(stdout_pipe[1]);   /* close write end of stdout_pipe */
+        /*
+        ** Make writing to the standard input pipe non-blocking (and hope that
+        ** it doesn't fail, otherwise cleanup would be messy).
+        */
+        flags = fcntl(StdinFd, F_GETFL);
+        fcntl(StdinFd, F_SETFL, flags | O_NONBLOCK);
     } else {
         Pid = -1;
         do_close(stdin_pipe[0]);
