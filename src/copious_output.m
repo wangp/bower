@@ -15,6 +15,9 @@
     maybe(command_prefix)::in, maybe_error(string)::out, io::di, io::uo)
     is det.
 
+:- pred filter_text_part(command_prefix::in, string::in,
+    maybe_error(string)::out, io::di, io::uo) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -47,8 +50,23 @@ expand_part(ProgConfig, MessageId, PartId, MaybeFilterCommand, Res, !IO) :-
     % in case pinentry-curses is called.
     call_system_capture_stdout(Command, ErrorLimit, CallRes, !IO),
     (
-        CallRes = ok(ContentString),
-        Res = ok(ContentString)
+        CallRes = ok(Output),
+        Res = ok(Output)
+    ;
+        CallRes = error(Error),
+        Res = error(io.error_message(Error))
+    ).
+
+%-----------------------------------------------------------------------------%
+
+filter_text_part(CommandPrefix, Input, Res, !IO) :-
+    % We don't really need to invoke the shell but this is easier for now.
+    make_quoted_command(CommandPrefix, [], no_redirect, no_redirect, Command),
+    ErrorLimit = yes(100),
+    call_system_filter(Command, Input, ErrorLimit, CallRes, !IO),
+    (
+        CallRes = ok(Output),
+        Res = ok(Output)
     ;
         CallRes = error(Error),
         Res = error(io.error_message(Error))

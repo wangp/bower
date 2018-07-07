@@ -415,13 +415,27 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
         _MaybeEncoding, _MaybeLength, _IsDecrypted),
     allocate_node_id(PartNodeId, !Counter),
     (
-        Content = text(Text),
+        Content = text(InlineText),
+        ( get_text_filter_command(Config, PartType, FilterCommand) ->
+            HaveFilter = bool.yes,
+            filter_text_part(FilterCommand, InlineText, FilterRes, !IO),
+            (
+                FilterRes = ok(Text)
+            ;
+                FilterRes = error(Error),
+                Text = "(filter error: " ++ Error ++ ")\n" ++ InlineText
+            )
+        ;
+            HaveFilter = no,
+            Text = InlineText
+        ),
         make_text_lines(Cols, Text, Lines0),
         list.map(wrap_text, Lines0) = Lines,
         fold_quote_blocks(Lines, TextTrees, !Counter),
         (
             !.ElideInitialHeadLine = yes,
-            AltParts = []
+            AltParts = [],
+            HaveFilter = no
         ->
             SubTrees = TextTrees
         ;
