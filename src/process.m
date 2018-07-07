@@ -102,6 +102,9 @@
     #include <sys/time.h>
     #include <sys/types.h>
     #include <unistd.h>
+
+    /* for ioctl */
+    #include <sys/ioctl.h>
 ").
 
 :- pragma foreign_decl("C", local, "
@@ -604,10 +607,18 @@ select(ReadFds, WriteFds, Res, !IO) :-
     is det.
 
 read_some(pipe_read(Fd), Res, Buffer, !IO) :-
-    % TODO Determine how many bytes are available to read using
-    % ioctl(fd, FIONREAD, &nbytes);
-    Capacity = 16384,
-    MaxRead = Capacity - make_utf8.buffer_margin,
+    get_readable_bytes(Fd, NumBytesOrError, !IO),
+    ( NumBytesOrError > 0 ->
+        MaxRead = NumBytesOrError,
+        Capacity = MaxRead + make_utf8.buffer_margin
+    ;
+        ( NumBytesOrError = 0 ->
+            Capacity = 64       % reasonable?
+        ;
+            Capacity = 16384    % FIONREAD not supported?
+        ),
+        MaxRead = Capacity - make_utf8.buffer_margin
+    ),
     byte_array.allocate(Capacity, Buffer0),
     read_into_buffer(Fd, MaxRead, N, Error, Buffer0, Buffer, !IO),
     ( N < 0 ->
@@ -640,6 +651,24 @@ read_some(pipe_read(Fd), Res, Buffer, !IO) :-
         Buffer->len = N;
         Error = MR_make_string_const("""");
     }
+").
+
+:- pred get_readable_bytes(int::in, int::out, io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    get_readable_bytes(Fd::in, NumBytesOrError::out, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io],
+"
+    NumBytesOrError = -1;
+
+#ifdef FIONREAD
+{
+    int nbytes;
+    if (ioctl(Fd, FIONREAD, &nbytes) == 0) {
+        NumBytesOrError = nbytes;
+    }
+}
+#endif
 ").
 
 %-----------------------------------------------------------------------------%
