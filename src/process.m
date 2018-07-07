@@ -45,8 +45,10 @@
 :- pred wait_pid(pid::in, wait_pid_blocking::in, wait_pid_result::out,
     io::di, io::uo) is det.
 
-:- pred drain_pipe(pipe_read::in, maybe(int)::in, io.res(string)::out,
-    io::di, io::uo) is det.
+:- type buffers.
+
+:- pred drain_pipe(pipe_read::in, io.res::out, buffers::uo, io::di, io::uo)
+    is det.
 
 :- type write_string_result
     --->    ok
@@ -55,6 +57,9 @@
 
 :- pred write_string_to_pipe(pipe_write::in, string::in,
     write_string_result::out, io::di, io::uo) is det.
+
+:- pred make_utf8_string(maybe(int)::in, buffers::di, string::out)
+    is semidet.
 
 :- pred close_pipe_read(pipe_read::in, io::di, io::uo) is det.
 :- pred close_pipe_write(pipe_write::in, io::di, io::uo) is det.
@@ -78,6 +83,8 @@
 
 :- type pipe_write
     --->    pipe_write(write_fd :: int).
+
+:- type buffers == list(buffer).
 
 :- pragma foreign_decl("C", local, "
 static int do_close(int fd)
@@ -328,19 +335,16 @@ wait_pid(pid(Pid), Blocking, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-drain_pipe(pipe_read(Fd), ErrorLimit, Res, !IO) :-
-    drain(Fd, Result, [], RevBuffers, !IO),
+drain_pipe(pipe_read(Fd), Res, Buffers, !IO) :-
+    drain(Fd, Res0, [], RevBuffers, !IO),
     (
-        Result = ok,
-        uniq_reverse(RevBuffers, Buffers),
-        ( make_utf8_string(ErrorLimit, Buffers, String) ->
-            Res = ok(String)
-        ;
-            Res = error(io.make_io_error("not UTF-8 text"))
-        )
+        Res0 = ok,
+        Res = ok,
+        uniq_reverse(RevBuffers, Buffers)
     ;
-        Result = error(Error),
-        Res = error(io.make_io_error(Error))
+        Res0 = error(Error),
+        Res = error(io.make_io_error(Error)),
+        Buffers = []
     ).
 
 :- pred drain(int::in, maybe_error::out,
@@ -422,6 +426,11 @@ write_string_to_pipe(pipe_write(Fd), String, Res, !IO) :-
         Error = MR_make_string_const("""");
     }
 ").
+
+%-----------------------------------------------------------------------------%
+
+make_utf8_string(ErrorLimit, Buffers, String) :-
+    make_utf8.make_utf8_string(ErrorLimit, Buffers, String).
 
 %-----------------------------------------------------------------------------%
 

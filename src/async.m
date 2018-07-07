@@ -234,13 +234,14 @@ do_poll_in_progress(Child, Blocking, Return, !Info, !IO) :-
                     Return = child_succeeded
                 ;
                     StdoutPipe = yes(PipeRead),
-                    drain_pipe(PipeRead, no, DrainRes, !IO),
+                    drain_pipe(PipeRead, DrainRes, Buffers, !IO),
                     close_pipe_read(PipeRead, !IO),
                     (
-                        DrainRes = ok(String),
+                        DrainRes = ok,
+                        make_utf8_string(no, Buffers, String)
+                    ->
                         Return = child_lowprio_output(String)
                     ;
-                        DrainRes = error(_Error),
                         % XXX what else can we do?
                         Return = child_lowprio_output("")
                     )

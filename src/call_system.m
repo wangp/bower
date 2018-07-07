@@ -28,7 +28,7 @@ call_system_capture_stdout(Command, ErrorLimit, Res, !IO) :-
     posix_spawn_get_stdout("/bin/sh", ["-c", Command], SpawnRes, !IO),
     (
         SpawnRes = ok({Pid, PipeRead}),
-        drain_pipe(PipeRead, ErrorLimit, DrainRes, !IO),
+        drain_pipe(PipeRead, DrainRes, Buffers, !IO),
         close_pipe_read(PipeRead, !IO),
         wait_pid(Pid, blocking, WaitRes, !IO),
         (
@@ -38,7 +38,17 @@ call_system_capture_stdout(Command, ErrorLimit, Res, !IO) :-
         ;
             WaitRes = child_exit(ExitStatus),
             ( ExitStatus = 0 ->
-                Res = DrainRes
+                (
+                    DrainRes = ok,
+                    ( make_utf8_string(ErrorLimit, Buffers, String) ->
+                        Res = ok(String)
+                    ;
+                        Res = error(io.make_io_error("not UTF-8 text"))
+                    )
+                ;
+                    DrainRes = error(Error),
+                    Res = error(Error)
+                )
             ;
                 Msg = "process returned with exit code " ++
                     string.from_int(ExitStatus),
