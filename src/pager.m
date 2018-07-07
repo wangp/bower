@@ -168,7 +168,7 @@
                 part            :: part,
                 % Hidden alternatives for multipart/alternative.
                 alternatives    :: list(part),
-                part_expanded   :: part_expanded,
+                ph_expanded     :: part_expanded,
                 importance      :: part_importance
             )
     ;       fold_marker(
@@ -181,8 +181,12 @@
     ;       message_separator.
 
 :- type part_expanded
-    --->    part_expanded
+    --->    part_expanded(part_filtered)
     ;       part_not_expanded.
+
+:- type part_filtered
+    --->    part_filtered
+    ;       part_not_filtered.
 
 :- type part_importance
     --->    importance_normal
@@ -406,10 +410,10 @@ make_part_tree(Config, Cols, Part, Tree, !ElideInitialHeadLine, !Counter, !IO)
         !ElideInitialHeadLine, !Counter, !IO).
 
 :- pred make_part_tree_with_alts(prog_config::in, int::in, list(part)::in,
-    part::in, expand_unsupported::in, tree::out, bool::in, bool::out,
+    part::in, handle_unsupported::in, tree::out, bool::in, bool::out,
     counter::in, counter::out, io::di, io::uo) is det.
 
-make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
+make_part_tree_with_alts(Config, Cols, AltParts, Part, HandleUnsupported, Tree,
         !ElideInitialHeadLine, !Counter, !IO) :-
     Part = part(_MessageId, _PartId, PartType, Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength, _IsDecrypted),
@@ -417,17 +421,17 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
     (
         Content = text(InlineText),
         ( get_text_filter_command(Config, PartType, FilterCommand) ->
-            HaveFilter = bool.yes,
             filter_text_part(FilterCommand, InlineText, FilterRes, !IO),
             (
                 FilterRes = ok(Text)
             ;
                 FilterRes = error(Error),
                 Text = "(filter error: " ++ Error ++ ")\n" ++ InlineText
-            )
+            ),
+            Filtered = part_filtered
         ;
-            HaveFilter = no,
-            Text = InlineText
+            Text = InlineText,
+            Filtered = part_not_filtered
         ),
         make_text_lines(Cols, Text, Lines0),
         list.map(wrap_text, Lines0) = Lines,
@@ -435,11 +439,11 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
         (
             !.ElideInitialHeadLine = yes,
             AltParts = [],
-            HaveFilter = no
+            Filtered = part_not_filtered
         ->
             SubTrees = TextTrees
         ;
-            HeadLine = part_head(Part, AltParts, part_expanded,
+            HeadLine = part_head(Part, AltParts, part_expanded(Filtered),
                 importance_normal),
             SubTrees = [leaf([HeadLine]) | TextTrees]
         ),
@@ -475,8 +479,8 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
                 ;
                     list.map_foldl3(make_part_tree(Config, Cols), SubParts,
                         SubPartsTrees, yes, _ElideInitialHeadLine, !Counter, !IO),
-                    HeadLine = part_head(Part, AltParts, part_expanded,
-                        Importance),
+                    HeadLine = part_head(Part, AltParts,
+                        part_expanded(part_not_filtered), Importance),
                     SubTrees = [leaf([HeadLine | SignatureLines])
                         | SubPartsTrees],
                     Tree = node(PartNodeId, SubTrees, yes),
@@ -499,7 +503,8 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
         Content = encapsulated_messages(EncapMessages),
         list.map_foldl2(make_encapsulated_message_tree(Config, Cols),
             EncapMessages, SubTrees0, !Counter, !IO),
-        HeadLine = part_head(Part, AltParts, part_expanded, importance_normal),
+        HeadLine = part_head(Part, AltParts,
+            part_expanded(part_not_filtered), importance_normal),
         SubTrees = [leaf([HeadLine]) | SubTrees0],
         Tree = node(PartNodeId, SubTrees, yes),
         !:ElideInitialHeadLine = no
@@ -512,7 +517,7 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, ExpandUnsupported, Tree,
             Tree = leaf([])
         ;
             make_unsupported_part_tree(Config, Cols, PartNodeId, Part,
-                ExpandUnsupported, AltParts, Tree, !IO)
+                HandleUnsupported, AltParts, Tree, !IO)
         ),
         !:ElideInitialHeadLine = no
     ).
@@ -692,31 +697,38 @@ add_encapsulated_header(Header, Value, RevLines0, RevLines) :-
 
 %-----------------------------------------------------------------------------%
 
-:- type expand_unsupported
+:- type handle_unsupported
     --->    default
-    ;       force(part_expanded).
+    ;       expand_unsupported
+    ;       hide_unsupported.
 
 :- pred make_unsupported_part_tree(prog_config::in, int::in, node_id::in,
-    part::in, expand_unsupported::in, list(part)::in, tree::out,
+    part::in, handle_unsupported::in, list(part)::in, tree::out,
     io::di, io::uo) is det.
 
-make_unsupported_part_tree(Config, Cols, PartNodeId, Part, ExpandUnsupported,
+make_unsupported_part_tree(Config, Cols, PartNodeId, Part, HandleUnsupported,
         AltParts, Tree, !IO) :-
     Part = part(MessageId, MaybePartId, PartType, _Content, _MaybeFilename,
         _MaybeEncoding, _MaybeLength, _IsDecrypted),
     (
-        ExpandUnsupported = default,
-        Expanded = expand_unsupported_default(PartType)
+        HandleUnsupported = default,
+        DoExpand = ( if PartType = mime_type.text_html then yes else no )
     ;
-        ExpandUnsupported = force(Expanded)
+        HandleUnsupported = expand_unsupported,
+        DoExpand = yes
+    ;
+        HandleUnsupported = hide_unsupported,
+        DoExpand = no
     ),
     (
-        Expanded = part_expanded,
+        DoExpand = bool.yes,
         MaybePartId = yes(PartId),
         ( get_text_filter_command(Config, PartType, FilterCommand) ->
-            MaybeFilterCommand = yes(FilterCommand)
+            MaybeFilterCommand = yes(FilterCommand),
+            Filtered = part_filtered
         ;
-            MaybeFilterCommand = no
+            MaybeFilterCommand = no,
+            Filtered = part_not_filtered
         ),
         expand_part(Config, MessageId, PartId, MaybeFilterCommand,
             MaybeText, !IO),
@@ -726,27 +738,21 @@ make_unsupported_part_tree(Config, Cols, PartNodeId, Part, ExpandUnsupported,
         ;
             MaybeText = error(Error),
             make_text_lines(Cols, "(" ++ Error ++ ")", TextLines)
-        )
+        ),
+        Expanded = part_expanded(Filtered)
     ;
-        Expanded = part_expanded,
+        DoExpand = bool.yes,
         MaybePartId = no,
-        make_text_lines(Cols, "(no part id)", TextLines)
+        make_text_lines(Cols, "(no part id)", TextLines),
+        Expanded = part_expanded(part_not_filtered)
     ;
+        DoExpand = bool.no,
         Expanded = part_not_expanded,
         TextLines = []
     ),
     HeadLine = part_head(Part, AltParts, Expanded, importance_normal),
     Lines = [HeadLine | wrap_texts(TextLines)],
     Tree = node(PartNodeId, [leaf(Lines)], yes).
-
-:- func expand_unsupported_default(mime_type) = part_expanded.
-
-expand_unsupported_default(PartType) =
-    ( PartType = mime_type.text_html ->
-        part_expanded
-    ;
-        part_not_expanded
-    ).
 
 %-----------------------------------------------------------------------------%
 
@@ -1382,13 +1388,13 @@ toggle_part(Config, ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
     Line = part_head(Part0, HiddenParts0, Expanded0, _Importance0),
     (
         ToggleType = cycle_alternatives,
-        Expanded0 = part_expanded,
+        Expanded0 = part_expanded(_),
         HiddenParts0 = [Part | HiddenParts1]
     ->
         HiddenParts = HiddenParts1 ++ [Part0],
         Info0 = pager_info(Tree0, Counter0, Scrollable0, _Extents0),
         make_part_tree_with_alts(Config, Cols, HiddenParts, Part,
-            force(Expanded0), NewNode, no, _ElideInitialHeadLine,
+            expand_unsupported, NewNode, no, _ElideInitialHeadLine,
             Counter0, Counter, !IO),
         replace_node(NodeId, NewNode, Tree0, Tree),
         Flattened = flatten(Tree),
@@ -1409,26 +1415,18 @@ toggle_part(Config, ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
 
 toggle_part_expanded(Config, NumRows, Cols, NodeId, Line0, MessageUpdate,
         Info0, Info, !IO) :-
-    Line0 = part_head(Part, HiddenParts, Expanded0, Importance),
-    (
-        Expanded0 = part_expanded,
-        Expanded = part_not_expanded,
-        MessageUpdate = set_info("Part hidden.")
-    ;
-        Expanded0 = part_not_expanded,
-        Expanded = part_expanded,
-        MessageUpdate = set_info("Showing part.")
-    ),
-
+    Line0 = part_head(Part, HiddenParts, WasExpanded, Importance),
     Info0 = pager_info(Tree0, Counter0, Scrollable0, _Extents0),
     (
-        Expanded = part_expanded,
+        WasExpanded = part_not_expanded,
+        MessageUpdate = set_info("Showing part."),
         make_part_tree_with_alts(Config, Cols, HiddenParts, Part,
-            force(Expanded), NewNode, no, _ElideInitialHeadLine,
+            expand_unsupported, NewNode, no, _ElideInitialHeadLine,
             Counter0, Counter, !IO),
         replace_node(NodeId, NewNode, Tree0, Tree)
     ;
-        Expanded = part_not_expanded,
+        WasExpanded = part_expanded(_),
+        MessageUpdate = set_info("Part hidden."),
         Line = part_head(Part, HiddenParts, part_not_expanded, Importance),
         NewNode = node(NodeId, [leaf([Line])], yes),
         replace_node(NodeId, NewNode, Tree0, Tree),
@@ -1677,9 +1675,9 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
             MaybeLength = no
         ),
         draw(Panel, " --]", !IO),
-        ( part_message(Part, HiddenParts, Expanded, Message) ->
-            MsgAttr = Attrs ^ p_part_message,
-            draw(Panel, MsgAttr, Message, !IO)
+        ( make_part_message(Part, HiddenParts, Expanded, Message) ->
+            attr(Panel, Attrs ^ p_part_message, !IO),
+            draw2(Panel, "  ", Message, !IO)
         ;
             true
         )
@@ -1808,10 +1806,28 @@ format_length(Size) = String :-
         String = format(" (%.1f MB)", [f(Ms)])
     ).
 
-:- pred part_message(part::in, list(part)::in, part_expanded::in, string::out)
-    is semidet.
+:- pred make_part_message(part::in, list(part)::in, part_expanded::in,
+    string::out) is semidet.
 
-part_message(Part, HiddenParts, Expanded, Message) :-
+make_part_message(Part, HiddenParts, Expanded, Message) :-
+    ( if make_part_message_2(Part, HiddenParts, Expanded, MessageB) then
+        ( if Expanded = part_expanded(part_filtered) then
+            Message = "filtered, " ++ MessageB
+        else
+            Message = MessageB
+        )
+    else
+        ( if Expanded = part_expanded(part_filtered) then
+            Message = "filtered"
+        else
+            fail
+        )
+    ).
+
+:- pred make_part_message_2(part::in, list(part)::in, part_expanded::in,
+    string::out) is semidet.
+
+make_part_message_2(Part, HiddenParts, Expanded, Message) :-
     Content = Part ^ pt_content,
     require_complete_switch [Content]
     (
@@ -1829,29 +1845,29 @@ part_message(Part, HiddenParts, Expanded, Message) :-
         ( EncStatus = encrypted
         ; EncStatus = decryption_bad
         ),
-        Message = "  z to decrypt"
+        Message = "z to decrypt"
     ;
         EncStatus = decryption_good,
-        Message = "  decrypted"
+        Message = "decrypted"
     ;
         EncStatus = not_encrypted,
         (
-            Expanded = part_expanded,
+            Expanded = part_expanded(_Filtered),
             (
                 HiddenParts = [],
                 Signatures = [],
                 Part ^ pt_type = mime_type.multipart_signed,
-                Message = "  y to verify"
+                Message = "y to verify"
             ;
                 HiddenParts = [_],
-                Message = "  z for alternative"
+                Message = "z for alternative"
             ;
                 HiddenParts = [_, _ | _],
-                Message = "  z for alternatives"
+                Message = "z for alternatives"
             )
         ;
             Expanded = part_not_expanded,
-            Message = "  z to show"
+            Message = "z to show"
         )
     ).
 
