@@ -438,6 +438,7 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, HandleUnsupported, Tree,
         fold_quote_blocks(Lines, TextTrees, !Counter),
         (
             !.ElideInitialHeadLine = yes,
+            PartType = mime_type.text_plain,
             AltParts = [],
             Filtered = part_not_filtered
         ->
