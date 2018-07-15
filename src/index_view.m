@@ -335,8 +335,15 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         Crypto = !.IndexInfo ^ i_crypto,
         Tokens = !.IndexInfo ^ i_search_tokens,
         index_poll_terms(Tokens, IndexPollTerms, !IO),
-        MaybeSearch = !.IndexInfo ^ i_internal_search,
         CommonHistory0 = !.IndexInfo ^ i_common_history,
+        % Use the last search string that was entered in any view, not
+        % necessarily the active search string in the index view.
+        SearchHistory = CommonHistory0 ^ ch_internal_search_history,
+        ( history_latest(SearchHistory, LastSearchString) ->
+            MaybeSearch = yes(LastSearchString)
+        ;
+            MaybeSearch = no
+        ),
         open_thread_pager(Config, Crypto, Screen, ThreadId, IndexPollTerms,
             MaybeSearch, Transition, CommonHistory0, CommonHistory, !IO),
         handle_screen_transition(Screen, NewScreen, Transition,
