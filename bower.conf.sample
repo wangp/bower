@@ -1,4 +1,9 @@
-# This configuration file belongs in ~/.config/bower/bower.conf
+# Bower configuration file.
+#
+# This file belongs in ~/.config/bower/bower.conf or
+# $XDG_CONFIG_DIRS/bower/bower.conf, where $XDG_CONFIG_DIRS
+# is defined by the XDG Base Directory Specification.
+#
 # The lines beginning with '#' or ';' are treated as comment lines.
 
 # Values representing shell commands use shell-style quoting rules:

@@ -71,10 +71,24 @@ This will produce `bower.1` for installation into your `man` search path.
 Configuration
 =============
 
-The bower configuration file is located at `~/.config/bower/bower.conf`.
-See `bower.conf.sample` for details.
+You can configure bower by creating a file in one of the following locations,
+in order of priority:
 
-In particular, bower is designed such that it can be run on the local
+  - the path specified in the environment variable `BOWER_CONFIG` (if set)
+
+  - the path `$XDG_CONFIG_HOME/bower/bower.conf`
+    (if the environment variable `XDG_CONFIG_HOME` is set and non-empty)
+
+  - the path `$HOME/.config/bower/bower.conf`
+    (if the environment variable `HOME` is set)
+
+  - a path `$basedir/bower/bower.conf` where `$basedir` is an element of the
+    colon-separated list given in the environment variable `XDG_CONFIG_DIRS`
+    (defaults to `/etc/xdg`)
+
+The details of the configuration file are given in `bower.conf.sample`.
+
+Bower is designed such that it can be run on the local
 machine but call out to notmuch on a remote machine (that holds your
 mail) via ssh.  The advantage is that you can start helper programs on
 the local machine (e.g. a web browser or image viewer), and add or save

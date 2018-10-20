@@ -1,3 +1,9 @@
+Bower 0.10-unreleased
+=====================
+
+* Support BOWER_CONFIG environment variable.
+* Document support for XDG Base Directory Specification.
+
 Bower 0.9 (2018-10-07)
 ======================
 
