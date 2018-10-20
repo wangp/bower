@@ -21,44 +21,56 @@
 
 %-----------------------------------------------------------------------------%
 
-search_config_file(FileName, MaybeFound, !IO) :-
-    get_config_home(ConfigHome, !IO),
-    get_config_dirs(SearchDirs0, !IO),
-    SearchDirs = [ConfigHome | SearchDirs0],
-    search_config_file_2(SearchDirs, FileName, MaybeFound, !IO).
-
-:- pred search_config_file_2(list(string)::in, string::in, maybe(string)::out,
-    io::di, io::uo) is det.
-
-search_config_file_2([], _, no, !IO).
-search_config_file_2([Dir | Dirs], FileName, MaybeFound, !IO) :-
-    io.check_file_accessibility(Dir / FileName, [read], Res, !IO),
+search_config_file(FileName, Res, !IO) :-
+    get_config_home(MaybeConfigHome, !IO),
     (
-        Res = ok,
-        MaybeFound = yes(Dir / FileName)
+        MaybeConfigHome = yes(ConfigHome),
+        search_config_file_loop([ConfigHome], FileName, Res0, !IO)
     ;
-        Res = error(_),
-        search_config_file_2(Dirs, FileName, MaybeFound, !IO)
+        MaybeConfigHome = no,
+        Res0 = no
+    ),
+    (
+        Res0 = yes(_),
+        Res = Res0
+    ;
+        Res0 = no,
+        get_config_dirs(ConfigDirs, !IO),
+        search_config_file_loop(ConfigDirs, FileName, Res, !IO)
     ).
 
-:- pred get_config_home(string::out, io::di, io::uo) is det.
+:- pred search_config_file_loop(list(string)::in, string::in,
+    maybe(string)::out, io::di, io::uo) is det.
+
+search_config_file_loop([], _, no, !IO).
+search_config_file_loop([Dir | Dirs], FileName, Res, !IO) :-
+    io.check_file_accessibility(Dir / FileName, [read], Res0, !IO),
+    (
+        Res0 = ok,
+        Res = yes(Dir / FileName)
+    ;
+        Res0 = error(_),
+        search_config_file_loop(Dirs, FileName, Res, !IO)
+    ).
+
+:- pred get_config_home(maybe(string)::out, io::di, io::uo) is det.
 
 get_config_home(ConfigHome, !IO) :-
     get_environment_var("XDG_CONFIG_HOME", MaybeEnv, !IO),
     (
-        MaybeEnv = yes(Env),
-        Env \= ""
+        MaybeEnv = yes(EnvValue),
+        EnvValue \= ""
     ->
-        ConfigHome = Env
+        ConfigHome = yes(EnvValue)
     ;
         get_environment_var("HOME", MaybeHome, !IO),
         (
             MaybeHome = yes(Home),
-            ConfigHome = Home / ".config"
+            ConfigHome = yes(Home / ".config")
         ;
             MaybeHome = no,
-            % XXX what can you do?
-            ConfigHome = ""
+            % XXX could try getpwuid?
+            ConfigHome = no
         )
     ).
 
@@ -67,10 +79,10 @@ get_config_home(ConfigHome, !IO) :-
 get_config_dirs(ConfigDirs, !IO) :-
     get_environment_var("XDG_CONFIG_DIRS", MaybeEnv, !IO),
     (
-        MaybeEnv = yes(Env),
-        Env \= ""
+        MaybeEnv = yes(EnvValue),
+        EnvValue \= ""
     ->
-        ConfigDirs = string.split_at_char(':', Env)
+        ConfigDirs = string.split_at_char(':', EnvValue)
     ;
         ConfigDirs = ["/etc/xdg"]
     ).
