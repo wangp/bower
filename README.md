@@ -96,9 +96,8 @@ attachments on the local filesystem, even if your mail archive is stored
 on a different machine.
 
 Bower also keeps some centralised information in the notmuch configuration
-file `~/.notmuch-config`.  You may wish to tell bower about your Maildir
-hierarchy, namely where to place draft and sent messages.
-The defaults are given here:
+file.  You may wish to tell bower about your Maildir hierarchy, namely
+where to place draft and sent messages.  The defaults are given here:
 
     [bower:maildir]
     drafts_folder = Drafts
@@ -284,8 +283,8 @@ Search term aliases
 -------------------
 
 Bower will try to expand search terms written with the syntax `~WORD`.
-The expansions should be added to the notmuch config file `~/.notmuch-config`
-in a section called `[bower:search_alias]`.  Expansions may make use of other
+The expansions should be added to the notmuch config file in a section
+called `[bower:search_alias]`. Expansions may make use of other
 (non-recursive) expansions.  For example:
 
     [bower:search_alias]
@@ -312,9 +311,8 @@ Only addresses that appear in the `From` header of messages from the
 last year will be found. This restriction is for better performance,
 and also avoids finding stale email addresses.
 
-Address aliases can also be kept in the notmuch config file
-`~/.notmuch-config` in a section called `[bower:addressbook]`.
-For example:
+Address aliases can also be kept in the notmuch config file in a section
+called `[bower:addressbook]`.  For example:
 
     [bower:addressbook]
     someone = Someone <someone@example.org>
