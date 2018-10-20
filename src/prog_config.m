@@ -152,7 +152,14 @@
 %-----------------------------------------------------------------------------%
 
 load_prog_config(Res, !IO) :-
-    search_config_file(config_filename, MaybeConfigFile, !IO),
+    get_environment_var("BOWER_CONFIG", MaybeEnv, !IO),
+    (
+        MaybeEnv = yes(EnvValue),
+        MaybeConfigFile = yes(EnvValue)
+    ;
+        MaybeEnv = no,
+        search_config_file(config_filename, MaybeConfigFile, !IO)
+    ),
     (
         MaybeConfigFile = yes(ConfigFile),
         load_config_file(ConfigFile, LoadRes, !IO),
