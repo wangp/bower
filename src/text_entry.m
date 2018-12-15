@@ -22,9 +22,7 @@
     ;       complete_limit(
                 prog_config,
                 % Name of search alias section.
-                string,
-                % Prefixes to trigger tag completion.
-                list(string)
+                string
             )
     ;       complete_tags_smart(
                 prog_config,
@@ -569,7 +567,7 @@ forward_for_completion(Type, Before0, Before, After0, After) :-
         Before = reverse(After0) ++ Before0,
         After = []
     ;
-        ( Type = complete_limit(_, _, _)
+        ( Type = complete_limit(_, _)
         ; Type = complete_tags_smart(_, _, _)
         ; Type = complete_config_key(_, _)
         ),
@@ -626,13 +624,12 @@ generate_choices(Type, Orig, After, Choices, CompletionPoint, !IO) :-
         generate_path_choices(Home, OrigString, Choices, !IO),
         CompletionPoint = 0
     ;
-        Type = complete_limit(Config, SearchAliasSection,
-            TagCompletionTriggers),
+        Type = complete_limit(Config, SearchAliasSection),
         list_util.take_while(non_whitespace, Orig, Word, Untouched),
         list.length(Untouched, CompletionPoint),
         string.from_rev_char_list(Word, WordString),
-        generate_limit_choices(Config, SearchAliasSection,
-            TagCompletionTriggers, WordString, Choices, !IO)
+        generate_limit_choices(Config, SearchAliasSection, WordString, Choices,
+            !IO)
     ;
         Type = complete_tags_smart(Config, AndTags, OrTags),
         list_util.take_while(non_whitespace, Orig, Word, Untouched),
@@ -782,17 +779,16 @@ is_directory(DirName, BaseName, FileType0, IsDir, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred generate_limit_choices(prog_config::in, string::in, list(string)::in,
-    string::in, list(string)::out, io::di, io::uo) is det.
+:- pred generate_limit_choices(prog_config::in, string::in, string::in,
+    list(string)::out, io::di, io::uo) is det.
 
-generate_limit_choices(Config, SearchAliasSection, TagCompletionTriggers,
-        OrigString, Choices, !IO) :-
+generate_limit_choices(Config, SearchAliasSection, OrigString, Choices, !IO) :-
     ( string.remove_prefix("~", OrigString, KeyPrefix) ->
         generate_search_alias_choices(Config, SearchAliasSection, KeyPrefix,
             Choices, !IO)
     ;
-        generate_tag_choices(Config, TagCompletionTriggers, OrigString,
-            Choices, !IO)
+        Triggers = ["tag:", "+tag:", "-tag:", "is:", "+is:", "-is:"],
+        generate_tag_choices(Config, Triggers, OrigString, Choices, !IO)
     ).
 
 :- pred generate_search_alias_choices(prog_config::in, string::in, string::in,
@@ -810,14 +806,14 @@ generate_search_alias_choices(Config, SearchAliasSection, KeyPrefix, Choices,
     list(string)::out, io::di, io::uo) is det.
 
 generate_tag_choices(_Config, [], _OrigString, [], !IO).
-generate_tag_choices(Config, CompletionTriggers, OrigString, Choices, !IO) :-
-    CompletionTriggers = [Trigger | Triggers],
+generate_tag_choices(Config, Triggers, OrigString, Choices, !IO) :-
+    Triggers = [Trigger | TriggersTail],
     ( string.remove_prefix(Trigger, OrigString, TagPrefix) ->
         get_notmuch_all_tags(Config, TagsList, !IO),
         list.filter_map(filter_tag_choice(Trigger, TagPrefix),
             TagsList, Choices)
     ;
-        generate_tag_choices(Config, Triggers, OrigString, Choices, !IO)
+        generate_tag_choices(Config, TriggersTail, OrigString, Choices, !IO)
     ).
 
 :- pred get_entered_tags(list(char)::in, list(char)::in, set(string)::out)

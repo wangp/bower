@@ -363,8 +363,7 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
             choose_text_initial(History0, "", Initial),
             FirstTime = yes
         ),
-        Completion = complete_limit(Config, search_alias_section,
-            ["tag:", "+tag:", "-tag:", "is:", "+is:", "-is:"]),
+        Completion = complete_limit(Config, search_alias_section),
         text_entry_full(Screen, "Limit to messages matching: ", History0,
             Initial, Completion, FirstTime, Return, !IO),
         (
