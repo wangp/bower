@@ -5,6 +5,7 @@
 :- interface.
 
 :- import_module io.
+:- import_module list.
 
 :- import_module prog_config.
 
@@ -20,12 +21,21 @@
 :- pred search(notmuch_config::in, string::in, string::in, string::out)
     is semidet.
 
+    % get_item_names_with_prefix(Config, SectionNames, NamePrefix,
+    %   MatchingNames):
+    %
+    % Return sorted list of item names with NamePrefix, from any of the given
+    % SectionNames.
+    %
+:- pred get_item_names_with_prefix(notmuch_config::in, list(string)::in,
+    string::in, list(string)::out) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
-:- import_module list.
+:- import_module int.
 :- import_module maybe.
 :- import_module string.
 
@@ -84,6 +94,37 @@ search_loop([Item | Items], Prefix, Value) :-
     else
         search_loop(Items, Prefix, Value)
     ).
+
+%-----------------------------------------------------------------------------%
+
+get_item_names_with_prefix(Items, SectionNames, ItemNamePrefix,
+        MatchingItemNames) :-
+    CandidatePrefixes = map(make_candidate_prefix(ItemNamePrefix), SectionNames),
+    list.filter_map(filter_item(CandidatePrefixes), Items, MatchingItemNames0),
+    list.sort(MatchingItemNames0, MatchingItemNames).
+
+:- func make_candidate_prefix(string, string) = string.
+
+make_candidate_prefix(ItemNamePrefix, SectionName) =
+    SectionName ++ "." ++ ItemNamePrefix.
+
+:- pred filter_item(list(string)::in, string::in, string::out) is semidet.
+
+filter_item(CandidatePrefixes, Item, ItemName) :-
+    CandidatePrefixes = [CandidatePrefix | CandidatePrefixesTail],
+    ( if filter_item0(CandidatePrefix, Item, ItemName0) then
+        ItemName = ItemName0
+    else
+        filter_item(CandidatePrefixesTail, Item, ItemName)
+    ).
+
+:- pred filter_item0(string::in, string::in, string::out) is semidet.
+
+filter_item0(CandidatePrefix, Item, ItemName) :-
+    string.prefix(Item, CandidatePrefix),
+    sub_string_search(Item, ".", DotIndex),
+    sub_string_search_start(Item, "=", DotIndex, EqualsIndex),
+    string.between(Item, DotIndex + 1, EqualsIndex, ItemName).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
