@@ -195,6 +195,9 @@ simple_alias("~A", do_not_apply_limit).
 
 %-----------------------------------------------------------------------------%
 
+% XXX A single call to notmuch config get (if any tokens require expansion)
+% would be more efficient than calling notmuch config for individual keys.
+
 :- pred expand_config_aliases(prog_config::in, set(string)::in,
     list(token)::in, maybe_error(list(token))::out, io::di, io::uo) is det.
 
@@ -254,9 +257,9 @@ expand_config_alias_macro(Config, Seen0, macro(MacroName), Res, !IO) :-
         string.remove_prefix("~", MacroName, Key),
         not set.contains(Seen0, Key)
     ->
-        get_notmuch_config(Config, search_alias_section, Key, ConfigRes, !IO),
+        get_notmuch_config(Config, search_alias_section, Key, AliasRes, !IO),
         (
-            ConfigRes = ok(Expansion),
+            AliasRes = ok(Expansion),
             set.insert(Key, Seen0, Seen),
             promise_equivalent_solutions [ParseResult] (
                 parsing_utils.parse(Expansion, tokens, ParseResult)
@@ -277,9 +280,16 @@ expand_config_alias_macro(Config, Seen0, macro(MacroName), Res, !IO) :-
                 Res = error("Error parsing expansion of " ++ MacroName ++ ".")
             )
         ;
-            ConfigRes = error(_Error),
-            % XXX Distinguish different types of errors.
-            Res = error("Could not expand " ++ MacroName ++ ".")
+            AliasRes = error(_Error),
+            get_notmuch_config(Config, "query", Key, QueryRes, !IO),
+            (
+                QueryRes = ok(_),
+                Res = found([literal("query:" ++ Key)])
+            ;
+                QueryRes = error(_ErrorQ),
+                % XXX Distinguish different types of errors.
+                Res = error("Could not expand " ++ MacroName ++ ".")
+            )
         )
     ;
         Res = error("Search alias " ++ MacroName ++ " is recursive.")
