@@ -72,20 +72,26 @@ search_addressbook(NotmuchConfig, Alias, Expansion) :-
 %-----------------------------------------------------------------------------%
 
 search_notmuch_address(Config, SearchString, NameAddrs, !IO) :-
-    run_notmuch(Config,
-        [
-            "address", "--format=json", "--output=sender", "--output=count",
-            "--deduplicate=address", "date:1y..now", "from:" ++ SearchString
-        ],
-        no_suspend_curses,
-        parse_address_count_list, Res, !IO),
-    (
-        Res = ok(Pairs0),
-        sort(descending, Pairs0, Pairs),
-        map(snd, Pairs, NameAddrs)
-    ;
-        Res = error(_),
+    ( string.prefix(SearchString, "/") ->
+        % Avoid notmuch-address interpreting the string as an incomplete regex.
         NameAddrs = []
+    ;
+        run_notmuch(Config,
+            [
+                "address", "--format=json", "--output=sender", "--output=count",
+                "--deduplicate=address", "date:1y..now",
+                "from:" ++ SearchString
+            ],
+            no_suspend_curses,
+            parse_address_count_list, Res, !IO),
+        (
+            Res = ok(Pairs0),
+            sort(descending, Pairs0, Pairs),
+            map(snd, Pairs, NameAddrs)
+        ;
+            Res = error(_),
+            NameAddrs = []
+        )
     ).
 
 search_notmuch_address_top(Config, SearchString, MaybeFound, !IO) :-
