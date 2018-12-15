@@ -252,9 +252,16 @@ Some examples:
 Search term aliases
 -------------------
 
-In addition to the built-in macros, bower will try to expand search term
-aliases written with the syntax `~WORD`.
-You can add your expansions to the notmuch config file in a section
+In addition to the built-in macros, bower will try to expand tokens of the
+form `~NAME` in two ways:
+
+  - if there is a search term alias called `NAME` then the token will
+    be replaced with its expansion
+
+  - if there is a notmuch named query called `NAME` then the token will
+    be replaced with `query:NAME`
+
+Search term aliases are defined in the notmuch config file in a section
 called `[bower:search_alias]`. Expansions may make use of other
 (non-recursive) expansions.  For example:
 
@@ -271,7 +278,15 @@ called `[bower:search_alias]`. Expansions may make use of other
 As mentioned earlier, the `~default` alias sets the initial search query
 if you run `bower` without command-line arguments.
 
-You can tab complete search term aliases.
+The differences between search term aliases and notmuch named queries are:
+
+  - search term aliases are specific to bower
+  - search term aliases may use bower-specific syntax, and refer to other
+    search term aliases
+  - named queries are stored in the notmuch database instead of the notmuch
+    config file
+
+You can tab complete search term aliases and notmuch named queries.
 
 
 Tag modification behaviour
