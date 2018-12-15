@@ -784,21 +784,16 @@ is_directory(DirName, BaseName, FileType0, IsDir, !IO) :-
 
 generate_limit_choices(Config, SearchAliasSection, OrigString, Choices, !IO) :-
     ( string.remove_prefix("~", OrigString, KeyPrefix) ->
-        generate_search_alias_choices(Config, SearchAliasSection, KeyPrefix,
-            Choices, !IO)
+        generate_config_key_choices(Config, SearchAliasSection, KeyPrefix,
+            Choices0, !IO),
+        list.map(append("~"), Choices0) = Choices
+    ; string.remove_prefix("query:", OrigString, KeyPrefix) ->
+        generate_config_key_choices(Config, "query", KeyPrefix, Choices0, !IO),
+        list.map(append("query:"), Choices0) = Choices
     ;
         Triggers = ["tag:", "+tag:", "-tag:", "is:", "+is:", "-is:"],
         generate_tag_choices(Config, Triggers, OrigString, Choices, !IO)
     ).
-
-:- pred generate_search_alias_choices(prog_config::in, string::in, string::in,
-    list(string)::out, io::di, io::uo) is det.
-
-generate_search_alias_choices(Config, SearchAliasSection, KeyPrefix, Choices,
-        !IO) :-
-    generate_config_key_choices(Config, SearchAliasSection, KeyPrefix,
-        Choices0, !IO),
-    list.map(append("~"), Choices0) = Choices.
 
 %-----------------------------------------------------------------------------%
 
