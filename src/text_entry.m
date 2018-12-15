@@ -643,16 +643,18 @@ generate_choices(Type, Orig, After, Choices, CompletionPoint, !IO) :-
         list_util.take_while(non_whitespace, Orig, Word, Untouched),
         list.length(Untouched, CompletionPoint),
         string.from_rev_char_list(Word, WordString),
-        generate_config_key_choices(Config, SectionName, WordString, Choices,
-            !IO)
+        generate_config_key_choices(Config,
+            filter_config_key_choice(SectionName ++ ".", WordString),
+            Choices, !IO)
     ;
         Type = complete_address(Config),
         list_util.take_while(not_comma, Orig, RevWord0, Prefix),
         list_util.take_while(is_whitespace, reverse(RevWord0), LeadWhiteSpace, Word),
         CompletionPoint = length(Prefix) + length(LeadWhiteSpace),
         WordString = rstrip(from_char_list(Word)),
-        generate_config_key_choices(Config, addressbook_section,
-            WordString, AliasChoices, !IO),
+        generate_config_key_choices(Config,
+            filter_config_key_choice(addressbook_section ++ ".", WordString),
+            AliasChoices, !IO),
         ( WordString = "" ->
             Choices = AliasChoices
         ;
@@ -784,11 +786,15 @@ is_directory(DirName, BaseName, FileType0, IsDir, !IO) :-
 
 generate_limit_choices(Config, SearchAliasSection, OrigString, Choices, !IO) :-
     ( string.remove_prefix("~", OrigString, KeyPrefix) ->
-        generate_config_key_choices(Config, SearchAliasSection, KeyPrefix,
+        generate_config_key_choices(Config,
+            filter_config_key_choice2(SearchAliasSection ++ ".", "query.",
+                KeyPrefix),
             Choices0, !IO),
         list.map(append("~"), Choices0) = Choices
     ; string.remove_prefix("query:", OrigString, KeyPrefix) ->
-        generate_config_key_choices(Config, "query", KeyPrefix, Choices0, !IO),
+        generate_config_key_choices(Config,
+            filter_config_key_choice("query.", KeyPrefix),
+            Choices0, !IO),
         list.map(append("query:"), Choices0) = Choices
     ;
         Triggers = ["tag:", "+tag:", "-tag:", "is:", "+is:", "-is:"],
@@ -885,10 +891,11 @@ filter_tag_choice(Trigger, TagPrefix, Tag, Choice) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred generate_config_key_choices(prog_config::in, string::in, string::in,
-    list(string)::out, io::di, io::uo) is det.
+:- pred generate_config_key_choices(prog_config::in,
+    pred(string, string)::in(pred(in, out) is semidet), list(string)::out,
+    io::di, io::uo) is det.
 
-generate_config_key_choices(Config, SectionName, OrigString, Choices, !IO) :-
+generate_config_key_choices(Config, FilterPred, Choices, !IO) :-
     get_notmuch_command(Config, Notmuch),
     make_quoted_command(Notmuch, ["config", "list"],
         redirect_input("/dev/null"), no_redirect, Command),
@@ -897,9 +904,7 @@ generate_config_key_choices(Config, SectionName, OrigString, Choices, !IO) :-
         CallRes = ok(ItemsString),
         % The empty string following the final newline is not an item.
         ItemsList = string.words_separator(unify('\n'), ItemsString),
-        list.filter_map(
-            filter_config_key_choice(SectionName ++ ".", OrigString),
-            ItemsList, Choices0),
+        list.filter_map(FilterPred, ItemsList, Choices0),
         list.sort(Choices0, Choices)
     ;
         CallRes = error(_),
@@ -909,13 +914,23 @@ generate_config_key_choices(Config, SectionName, OrigString, Choices, !IO) :-
 :- pred filter_config_key_choice(string::in, string::in, string::in,
     string::out) is semidet.
 
-filter_config_key_choice(SectionNameDot, OrigString, Input, Key) :-
+filter_config_key_choice(SectionNameDot, KeyPrefix, Input, Key) :-
     string.remove_prefix(SectionNameDot, Input, InputSansSection),
-    string.prefix(InputSansSection, OrigString),
+    string.prefix(InputSansSection, KeyPrefix),
     KeyStart = 0,
     find_first_char(InputSansSection, '=', KeyStart, KeyEnd),
     KeyEnd > KeyStart,
     string.between(InputSansSection, KeyStart, KeyEnd, Key).
+
+:- pred filter_config_key_choice2(string::in, string::in, string::in,
+    string::in, string::out) is semidet.
+
+filter_config_key_choice2(SectionA, SectionB, KeyPrefix, Input, Key) :-
+    ( filter_config_key_choice(SectionA, KeyPrefix, Input, KeyA) ->
+        Key = KeyA
+    ;
+        filter_config_key_choice(SectionB, KeyPrefix, Input, Key)
+    ).
 
 :- pred find_first_char(string::in, char::in, int::in, int::out) is semidet.
 
