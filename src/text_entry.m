@@ -657,7 +657,8 @@ generate_choices(Type, Orig, After, Choices, CompletionPoint, !Info, !IO) :-
         ( WordString = "" ->
             Choices = AliasChoices
         ;
-            generate_address_choices(Config, WordString, AddressChoices, !IO),
+            generate_address_choices(Config, WordString, AddressChoices,
+                !Info, !IO),
             Choices = AliasChoices ++ AddressChoices
         )
     ).
@@ -894,6 +895,29 @@ filter_tag_choice(Trigger, TagPrefix, Tag, Choice) :-
 
 generate_config_key_choices(Config, SectionNames, ItemNamePrefix, Choices,
         !Info, !IO) :-
+    get_notmuch_config_cached(Config, NotmuchConfig, !Info, !IO),
+    get_item_names_with_prefix(NotmuchConfig, SectionNames, ItemNamePrefix,
+        Choices).
+
+%-----------------------------------------------------------------------------%
+
+:- pred generate_address_choices(prog_config::in, string::in,
+    list(string)::out, info::in, info::out, io::di, io::uo) is det.
+
+generate_address_choices(Config, OrigString, Choices, !Info, !IO) :-
+    get_notmuch_config_cached(Config, NotmuchConfig, !Info, !IO),
+    ( search_addressbook(NotmuchConfig, OrigString, Choice) ->
+        Choices = [Choice]
+    ;
+        search_notmuch_address(Config, OrigString, Choices, !IO)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred get_notmuch_config_cached(prog_config::in, notmuch_config::out,
+    info::in, info::out, io::di, io::uo) is det.
+
+get_notmuch_config_cached(Config, NotmuchConfig, !Info, !IO) :-
     Cache0 = !.Info ^ config_cache,
     (
         Cache0 = yes(NotmuchConfig)
@@ -907,23 +931,6 @@ generate_config_key_choices(Config, SectionNames, ItemNamePrefix, Choices,
             NotmuchConfig = empty_notmuch_config
         ),
         !Info ^ config_cache := yes(NotmuchConfig)
-    ),
-    get_item_names_with_prefix(NotmuchConfig, SectionNames, ItemNamePrefix,
-        Choices).
-
-%-----------------------------------------------------------------------------%
-
-:- pred generate_address_choices(prog_config::in, string::in,
-    list(string)::out, io::di, io::uo) is det.
-
-generate_address_choices(Config, OrigString, Choices, !IO) :-
-    search_addressbook(Config, OrigString, MaybeFound, !IO),
-    (
-        MaybeFound = yes(Choice),
-        Choices = [Choice]
-    ;
-        MaybeFound = no,
-        search_notmuch_address(Config, OrigString, Choices, !IO)
     ).
 
 %-----------------------------------------------------------------------------%

@@ -8,6 +8,7 @@
 :- import_module list.
 :- import_module maybe.
 
+:- import_module notmuch_config.
 :- import_module prog_config.
 :- import_module screen.
 
@@ -15,8 +16,8 @@
 
 :- func addressbook_section = string.
 
-:- pred search_addressbook(prog_config::in, string::in, maybe(string)::out,
-    io::di, io::uo) is det.
+:- pred search_addressbook(notmuch_config::in, string::in, string::out)
+    is semidet.
 
 :- pred search_notmuch_address(prog_config::in, string::in, list(string)::out,
     io::di, io::uo) is det.
@@ -64,20 +65,9 @@ is_alias_char(C) :-
 
 %-----------------------------------------------------------------------------%
 
-search_addressbook(Config, Alias, MaybeFound, !IO) :-
-    ( string.all_match(is_alias_char, Alias) ->
-        Key = addressbook_section ++ "." ++ Alias,
-        get_notmuch_config(Config, Key, Res, !IO),
-        (
-            Res = ok(Expansion),
-            MaybeFound = yes(Expansion)
-        ;
-            Res = error(_),
-            MaybeFound = no
-        )
-    ;
-        MaybeFound = no
-    ).
+search_addressbook(NotmuchConfig, Alias, Expansion) :-
+    string.all_match(is_alias_char, Alias),
+    search(NotmuchConfig, addressbook_section, Alias, Expansion).
 
 %-----------------------------------------------------------------------------%
 

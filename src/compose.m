@@ -81,6 +81,7 @@
 :- import_module make_temp.
 :- import_module message_file.
 :- import_module mime_type.
+:- import_module notmuch_config.
 :- import_module pager.
 :- import_module path_expand.
 :- import_module quote_arg.
@@ -663,41 +664,55 @@ parse_and_expand_addresses(Config, Opt, Input, header_value(Output), Addresses,
 parse_and_expand_addresses_string(Config, Opt, Input, Output, Addresses, Valid,
         !IO) :-
     parse_address_list(Opt, Input, Addresses0),
-    list.map_foldl(maybe_expand_address(Config, Opt), Addresses0, Addresses,
-        !IO),
+    list.map_foldl2(maybe_expand_address(Config, Opt), Addresses0, Addresses,
+        no, _Cache, !IO),
     address_list_to_string(no_encoding, Addresses, Output, Valid).
 
 :- pred maybe_expand_address(prog_config::in, quote_opt::in,
-    address::in, address::out, io::di, io::uo) is det.
+    address::in, address::out,
+    maybe(notmuch_config)::in, maybe(notmuch_config)::out, io::di, io::uo)
+    is det.
 
-maybe_expand_address(Config, Opt, Address0, Address, !IO) :-
+maybe_expand_address(Config, Opt, Address0, Address, !Cache, !IO) :-
     (
         Address0 = mailbox(Mailbox0),
-        maybe_expand_mailbox(Config, Opt, Mailbox0, Mailbox, !IO),
+        maybe_expand_mailbox(Config, Opt, Mailbox0, Mailbox, !Cache, !IO),
         Address = mailbox(Mailbox)
     ;
         Address0 = group(DisplayName, Mailboxes0),
-        list.map_foldl(maybe_expand_mailbox(Config, Opt),
-            Mailboxes0, Mailboxes, !IO),
+        list.map_foldl2(maybe_expand_mailbox(Config, Opt),
+            Mailboxes0, Mailboxes, !Cache, !IO),
         Address = group(DisplayName, Mailboxes)
     ).
 
 :- pred maybe_expand_mailbox(prog_config::in, quote_opt::in,
-    mailbox::in, mailbox::out, io::di, io::uo) is det.
+    mailbox::in, mailbox::out,
+    maybe(notmuch_config)::in, maybe(notmuch_config)::out, io::di, io::uo)
+    is det.
 
-maybe_expand_mailbox(Config, Opt, Mailbox0, Mailbox, !IO) :-
+maybe_expand_mailbox(Config, Opt, Mailbox0, Mailbox, !Cache, !IO) :-
     (
         Mailbox0 = mailbox(_, _),
         Mailbox = Mailbox0
     ;
         Mailbox0 = bad_mailbox(PotentialAlias),
-        search_addressbook(Config, PotentialAlias, MaybeFound0, !IO),
         (
-            MaybeFound0 = no,
-            search_notmuch_address_top(Config, PotentialAlias, MaybeFound, !IO)
+            !.Cache = yes(NotmuchConfig)
         ;
-            MaybeFound0 = yes(_),
-            MaybeFound = MaybeFound0
+            !.Cache = no,
+            get_notmuch_config(Config, ResConfig, !IO),
+            (
+                ResConfig = ok(NotmuchConfig)
+            ;
+                ResConfig = error(_Error),
+                NotmuchConfig = empty_notmuch_config
+            ),
+            !:Cache = yes(NotmuchConfig)
+        ),
+        ( search_addressbook(NotmuchConfig, PotentialAlias, Expansion0) ->
+            MaybeFound = yes(Expansion0)
+        ;
+            search_notmuch_address_top(Config, PotentialAlias, MaybeFound, !IO)
         ),
         (
             MaybeFound = yes(Expansion),
