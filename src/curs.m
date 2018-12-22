@@ -179,12 +179,13 @@
 :- func key_ins = int.
 :- func key_pageup = int.
 :- func key_pagedown = int.
+:- func key_enter = int.                % Key pad enter.
 :- func key_a1 = int.                   % Key pad upper left.
 :- func key_a3 = int.                   % Key pad upper right.
 :- func key_b2 = int.                   % Key pad middle centre.
 :- func key_c1 = int.                   % Key pad lower left.
 :- func key_c3 = int.                   % Key pad lower right.
-:- func key_enter = int.                % Key pad enter.
+:- func key_btab = int.                 % Back-tab.
 :- func key_end = int.
 :- func key_resize = int.               % Resize event.
 
@@ -873,6 +874,13 @@ soft_suspend(Pred, Res, !IO) :-
 ").
 
 :- pragma foreign_proc("C",
+    key_enter = (K::out),
+    [will_not_call_mercury, promise_pure],
+"
+    K = KEY_ENTER;
+").
+
+:- pragma foreign_proc("C",
     key_a1 = (K::out),
     [will_not_call_mercury, promise_pure],
 "
@@ -908,10 +916,10 @@ soft_suspend(Pred, Res, !IO) :-
 ").
 
 :- pragma foreign_proc("C",
-    key_enter = (K::out),
+    key_btab = (K::out),
     [will_not_call_mercury, promise_pure],
 "
-    K = KEY_ENTER;
+    K = KEY_BTAB;
 ").
 
 :- pragma foreign_proc("C",
