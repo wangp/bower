@@ -612,8 +612,8 @@ do_completion(CycleDir, Orig, MaybeReplacement, After, !Info, !IO) :-
     ),
     (
         !.Info ^ compl_state = yes(CompletionState0),
-        choose_expansion(CycleDir, IsNew, Expansion, CompletionState0,
-            CompletionState)
+        choose_expansion(CycleDir, IsNew, Orig, Expansion,
+            CompletionState0, CompletionState)
     ->
         !Info ^ compl_state := yes(CompletionState),
         det_take_tail(!.Info ^ compl_point, Orig, OrigKeep),
@@ -675,10 +675,10 @@ generate_choices(Type, Orig, After, Choices, CompletionPoint, !Info, !IO) :-
         )
     ).
 
-:- pred choose_expansion(cycle_dir::in, bool::in, list(char)::out,
-    completion_state::in, completion_state::out) is semidet.
+:- pred choose_expansion(cycle_dir::in, bool::in, list(char)::in,
+    list(char)::out, completion_state::in, completion_state::out) is semidet.
 
-choose_expansion(CycleDir, IsNew, Expansion,
+choose_expansion(CycleDir, IsNew, Orig, Expansion,
         CompletionState0, CompletionState) :-
     CompletionState0 = completion_state(Back0, Curr0, Forward0),
     (
@@ -693,7 +693,10 @@ choose_expansion(CycleDir, IsNew, Expansion,
         IsNew = yes,
         Curr0 = no,
         common_prefix_strings(Back ++ Forward, CurrChars, CommonPrefix),
-        CommonPrefix \= CurrChars
+        CommonPrefix \= CurrChars,
+        % Don't bother with the common prefix if that is the string being
+        % completed anyway.
+        CommonPrefix \= reverse(Orig)
     ->
         Expansion = CommonPrefix,
         CompletionState = CompletionState0
