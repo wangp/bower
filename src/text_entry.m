@@ -303,20 +303,15 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
         undo(!Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
-        (
-            Key = char(Char),
-            isprint(Char)
-        ->
-            insert(Char, !Info),
-            continue_text_entry(Screen, Return, !Info, !IO)
-        ;
-            Key = timeout_or_error
-        ->
-            % Don't clear first time flag on a timeout.
-            text_entry_loop(Screen, Return, !Info, !IO)
-        ;
-            continue_text_entry(Screen, Return, !Info, !IO)
-        )
+        Key = char(Char),
+        isprint(Char)
+    ->
+        insert(Char, !Info),
+        continue_text_entry(Screen, Return, !Info, !IO)
+    ;
+        % Don't clear first time flag or completion choices
+        % if no character entered.
+        text_entry_loop(Screen, Return, !Info, !IO)
     ).
 
 :- pred continue_text_entry(screen::in, maybe(string)::out,
