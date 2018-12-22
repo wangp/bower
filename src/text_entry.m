@@ -308,6 +308,7 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
             State = te_state(Before, After, Pre, Post),
             enter_state(State, yes, !Info),
             clear_first_time_flag(!Info),
+            special_clear_path_completion_choices(!Info),
             text_entry_loop(Screen, Return, !Info, !IO)
         ;
             MaybeBefore = no,
@@ -359,6 +360,23 @@ clear_completion_choices(!Info) :-
         !Info ^ compl_point := 0
     ;
         !.Info ^ compl_state = no
+    ).
+
+:- pred special_clear_path_completion_choices(info::in, info::out) is det.
+
+special_clear_path_completion_choices(!Info) :-
+    % Special case for paths: if we completed a directory name and it was the
+    % only available choice, then reset the completion state as if the user
+    % typed the directory name manually. Then the user can immediately press
+    % Tab to complete the names of files within that directory.
+    (
+        !.Info ^ compl_type = complete_path(_),
+        !.Info ^ compl_state = yes(completion_state([], yes(Curr), [])),
+        string.suffix(Curr, "/")
+    ->
+        clear_completion_choices(!Info)
+    ;
+        true
     ).
 
 :- func char_lists_to_string(list(char), list(char)) = string.
