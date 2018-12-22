@@ -87,7 +87,7 @@
                 first_time      :: bool,
                 left_offset     :: int,
                 compl_type      :: completion_type, % static
-                compl_choices   :: list(string),
+                compl_state     :: maybe(completion_state),
                 compl_point     :: int,
                 config_cache    :: maybe(notmuch_config)
             ).
@@ -104,6 +104,17 @@
                 pre_history     :: history,
                 post_history    :: history
             ).
+
+:- type completion_state
+    --->    completion_state(
+                compl_back      :: list(string), % reverse
+                compl_curr      :: maybe(string),
+                compl_forward   :: list(string)
+            ).
+
+:- type cycle_dir
+    --->    forward
+    ;       back.
 
 :- type history == list(string). % reverse
 
@@ -158,7 +169,7 @@ text_entry_full(Screen, Prompt, History, Initial, CompleteType, FirstTime,
     States = [],
     LeftOffset = 0,
     Info0 = info(Prompt, State, States, FirstTime, LeftOffset, CompleteType,
-        [], 0, no),
+        no, 0, no),
     text_entry_loop(Screen, Return, Info0, _Info, !IO),
     update_message(Screen, clear_message, !IO).
 
@@ -279,13 +290,19 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
         move_history(post, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
-        Key = char('\x09\') % Tab
+        (
+            Key = char('\x09\'), % Tab
+            CycleDir = forward
+        ;
+            Key = code(key_btab), % Shift-Tab
+            CycleDir = back
+        )
     ->
         !.Info ^ compl_type = Type,
         !.Info ^ state = State0,
         State0 = te_state(Before0, After0, Pre, Post),
         forward_for_completion(Type, Before0, Before1, After0, After),
-        do_completion(Before1, MaybeBefore, After, !Info, !IO),
+        do_completion(CycleDir, Before1, MaybeBefore, After, !Info, !IO),
         (
             MaybeBefore = yes(Before),
             State = te_state(Before, After, Pre, Post),
@@ -336,11 +353,12 @@ clear_first_time_flag(!Info) :-
 :- pred clear_completion_choices(info::in, info::out) is det.
 
 clear_completion_choices(!Info) :-
-    ( !.Info ^ compl_choices = [_ | _] ->
-        !Info ^ compl_choices := [],
+    (
+        !.Info ^ compl_state = yes(_),
+        !Info ^ compl_state := no,
         !Info ^ compl_point := 0
     ;
-        true
+        !.Info ^ compl_state = no
     ).
 
 :- func char_lists_to_string(list(char), list(char)) = string.
@@ -576,34 +594,33 @@ forward_for_completion(Type, Before0, Before, After0, After) :-
         Before = list.reverse(Take) ++ Before0
     ).
 
-:- pred do_completion(list(char)::in, maybe(list(char))::out, list(char)::in,
-    info::in, info::out, io::di, io::uo) is det.
+:- pred do_completion(cycle_dir::in, list(char)::in, maybe(list(char))::out,
+    list(char)::in, info::in, info::out, io::di, io::uo) is det.
 
-do_completion(Orig, MaybeReplacement, After, !Info, !IO) :-
-    Choices0 = !.Info ^ compl_choices,
+do_completion(CycleDir, Orig, MaybeReplacement, After, !Info, !IO) :-
     (
-        Choices0 = [],
+        !.Info ^ compl_state = no,
         Type = !.Info ^ compl_type,
-        generate_choices(Type, Orig, After, Choices, CompletionPoint,
+        generate_choices(Type, Orig, After, NewChoices, NewCompletionPoint,
             !Info, !IO),
+        !Info ^ compl_state := yes(completion_state([], no, NewChoices)),
+        !Info ^ compl_point := NewCompletionPoint,
         IsNew = yes
     ;
-        Choices0 = [_ | _],
-        Choices = Choices0,
-        CompletionPoint = !.Info ^ compl_point,
+        !.Info ^ compl_state = yes(_),
         IsNew = no
     ),
     (
-        Choices = [],
-        MaybeReplacement = no
-    ;
-        Choices = [_ | _],
-        choose_expansion(IsNew, Choices, Expansion, RotateChoices),
-        det_take_tail(CompletionPoint, Orig, OrigKeep),
+        !.Info ^ compl_state = yes(CompletionState0),
+        choose_expansion(CycleDir, IsNew, Expansion, CompletionState0,
+            CompletionState)
+    ->
+        !Info ^ compl_state := yes(CompletionState),
+        det_take_tail(!.Info ^ compl_point, Orig, OrigKeep),
         reverse_onto(Expansion, OrigKeep, Replacement),
-        MaybeReplacement = yes(Replacement),
-        !Info ^ compl_choices := RotateChoices,
-        !Info ^ compl_point := CompletionPoint
+        MaybeReplacement = yes(Replacement)
+    ;
+        MaybeReplacement = no
     ).
 
 :- pred generate_choices(completion_type::in, list(char)::in, list(char)::in,
@@ -658,29 +675,49 @@ generate_choices(Type, Orig, After, Choices, CompletionPoint, !Info, !IO) :-
         )
     ).
 
-:- pred choose_expansion(bool::in, list(string)::in(non_empty_list),
-    list(char)::out, list(string)::out) is det.
+:- pred choose_expansion(cycle_dir::in, bool::in, list(char)::out,
+    completion_state::in, completion_state::out) is semidet.
 
-choose_expansion(IsNew, Choices, Expansion, RotateChoices) :-
+choose_expansion(CycleDir, IsNew, Expansion,
+        CompletionState0, CompletionState) :-
+    CompletionState0 = completion_state(Back0, Curr0, Forward0),
     (
-        Choices = [Choice],
-        Expansion = to_char_list(Choice),
-        RotateChoices = []
+        CycleDir = forward,
+        cyclic_next(push(Curr0, Back0), Forward0, Back, Curr, Forward)
     ;
-        Choices = [FirstChoice | MoreChoices],
-        MoreChoices = [_ | _],
-        string.to_char_list(FirstChoice, FirstChoiceChars),
-        (
-            IsNew = yes,
-            common_prefix_strings(MoreChoices, FirstChoiceChars, CommonPrefix),
-            CommonPrefix \= FirstChoiceChars
-        ->
-            Expansion = CommonPrefix,
-            RotateChoices = Choices
-        ;
-            Expansion = FirstChoiceChars,
-            RotateChoices = MoreChoices ++ [FirstChoice]
-        )
+        CycleDir = back,
+        cyclic_next(push(Curr0, Forward0), Back0, Forward, Curr, Back)
+    ),
+    CurrChars = to_char_list(Curr),
+    (
+        IsNew = yes,
+        Curr0 = no,
+        common_prefix_strings(Back ++ Forward, CurrChars, CommonPrefix),
+        CommonPrefix \= CurrChars
+    ->
+        Expansion = CommonPrefix,
+        CompletionState = CompletionState0
+    ;
+        Expansion = CurrChars,
+        CompletionState = completion_state(Back, yes(Curr), Forward)
+    ).
+
+:- func push(maybe(T), list(T)) = list(T).
+
+push(no, Xs) = Xs.
+push(yes(X), Xs) = [X | Xs].
+
+:- pred cyclic_next(list(T)::in, list(T)::in,
+    list(T)::out, T::out, list(T)::out) is semidet.
+
+cyclic_next(Back0, Forward0, Back, Curr, Forward) :-
+    (
+        Forward0 = [],
+        Back = [],
+        reverse(Back0, [Curr | Forward])
+    ;
+        Forward0 = [Curr | Forward],
+        Back = Back0
     ).
 
 %-----------------------------------------------------------------------------%
