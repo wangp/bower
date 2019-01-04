@@ -307,14 +307,13 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
             MaybeBefore = yes(Before),
             State = te_state(Before, After, Pre, Post),
             enter_state(State, yes, !Info),
-            clear_first_time_flag(!Info),
-            special_clear_path_completion_choices(!Info),
-            text_entry_loop(Screen, Return, !Info, !IO)
+            special_clear_path_completion_choices(!Info)
         ;
-            MaybeBefore = no,
-            % XXX type tab?
-            continue_text_entry(Screen, Return, !Info, !IO)
-        )
+            MaybeBefore = no
+        ),
+        % Don't clear completion choices.
+        clear_first_time_flag(!Info),
+        text_entry_loop(Screen, Return, !Info, !IO)
     ;
         Key = char('\x1f\') % ^_
     ->
