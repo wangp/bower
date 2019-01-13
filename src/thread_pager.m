@@ -143,6 +143,7 @@
     ;       continue_no_draw
     ;       resize
     ;       start_reply(message, reply_kind)
+    ;       start_forward(message)
     ;       prompt_resend(message_id)
     ;       start_recall
     ;       edit_as_template(message)
@@ -760,6 +761,21 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
             thread_pager_loop(Screen, redraw, !Info, !IO)
         )
     ;
+        Action = start_forward(Message),
+        (
+            Message = message(_, _, _, _, _, _),
+            flush_async_with_progress(Screen, !IO),
+            Config = !.Info ^ tp_config,
+            Crypto = !.Info ^ tp_crypto,
+            start_forward(Config, Crypto, Screen, Message, Transition, !IO),
+            handle_screen_transition(Screen, NewScreen, Transition, _Sent,
+                !Info, !IO)
+        ;
+            Message = excluded_message(_),
+            NewScreen = Screen
+        ),
+        thread_pager_loop(NewScreen, redraw, !Info, !IO)
+    ;
         Action = prompt_resend(MessageId),
         flush_async_with_progress(Screen, !IO),
         handle_resend(Screen, MessageId, !Info, !IO),
@@ -1121,6 +1137,10 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Key = char('L')
     ->
         reply(!.Info, list_reply, Action, MessageUpdate)
+    ;
+        Key = char('W')
+    ->
+        forward(!.Info, Action, MessageUpdate)
     ;
         Key = char('B')
     ->
@@ -2609,6 +2629,21 @@ reply(Info, ReplyKind, Action, MessageUpdate) :-
         Action = start_reply(Message, ReplyKind)
     ;
         MessageUpdate = set_warning("Nothing to reply to."),
+        Action = continue
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred forward(thread_pager_info::in, thread_pager_action::out,
+    message_update::out) is det.
+
+forward(Info, Action, MessageUpdate) :-
+    PagerInfo = Info ^ tp_pager,
+    ( get_top_message(PagerInfo, Message) ->
+        MessageUpdate = clear_message,
+        Action = start_forward(Message)
+    ;
+        MessageUpdate = set_warning("No message to forward."),
         Action = continue
     ).
 

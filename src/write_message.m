@@ -45,6 +45,7 @@
 :- type mime_part
     --->    discrete(
                 discrete_content_type,
+                % maybe(content_charset)?
                 maybe(write_content_disposition),
                 maybe(write_content_transfer_encoding),
                 mime_part_body
@@ -86,8 +87,14 @@
     --->    micalg(string). % pgp-*
 
 :- type write_content_disposition
+    --->    write_content_disposition(
+                write_content_disposition_type,
+                maybe(filename)
+            ).
+
+:- type write_content_disposition_type
     --->    inline
-    ;       attachment(maybe(filename)).
+    ;       attachment.
 
 :- type write_content_transfer_encoding
     --->    cte_8bit
@@ -376,31 +383,32 @@ protocol_string(application_pgp_signature) = "application/pgp-signature".
     io::di, io::uo) is det <= writer(Stream).
 
 write_content_disposition(Stream, Disposition, !IO) :-
+    Disposition = write_content_disposition(DispositionType, MaybeFileName),
     (
-        Disposition = inline,
-        put(Stream, "Content-Disposition: inline\n", !IO)
+        DispositionType = inline,
+        put(Stream, "Content-Disposition: inline", !IO)
     ;
-        Disposition = attachment(MaybeFileName),
-        put(Stream, "Content-Disposition: attachment", !IO),
+        DispositionType = attachment,
+        put(Stream, "Content-Disposition: attachment", !IO)
+    ),
+    (
+        MaybeFileName = yes(filename(FileName)),
+        Attr = attribute("filename"),
+        Value = quoted_string(make_quoted_string(FileName)),
+        rfc2231.encode_parameter(Attr - Value, Param),
+        parameter_to_string(Param, ParamString, Valid),
         (
-            MaybeFileName = yes(filename(FileName)),
-            Attr = attribute("filename"),
-            Value = quoted_string(make_quoted_string(FileName)),
-            rfc2231.encode_parameter(Attr - Value, Param),
-            parameter_to_string(Param, ParamString, Valid),
-            (
-                Valid = yes,
-                put(Stream, "; ", !IO),
-                put(Stream, ParamString, !IO)
-            ;
-                Valid = no
-                % Shouldn't happen.
-            )
+            Valid = yes,
+            put(Stream, "; ", !IO),
+            put(Stream, ParamString, !IO)
         ;
-            MaybeFileName = no
-        ),
-        put(Stream, "\n", !IO)
-    ).
+            Valid = no
+            % Shouldn't happen.
+        )
+    ;
+        MaybeFileName = no
+    ),
+    put(Stream, "\n", !IO).
 
 :- pred write_content_transfer_encoding(Stream::in,
     write_content_transfer_encoding::in, io::di, io::uo) is det

@@ -1,6 +1,7 @@
 Bower 0.10-unreleased
 =====================
 
+* thread/pager: Add 'W' key to forward message.
 * Support BOWER_CONFIG environment variable.
 * Document support for XDG Base Directory Specification.
 * Support tab expansion for query:.

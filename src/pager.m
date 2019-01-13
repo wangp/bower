@@ -129,6 +129,7 @@
 :- import_module mime_type.
 :- import_module pager_text.
 :- import_module quote_arg.
+:- import_module size_util.
 :- import_module string_util.
 :- import_module time_util.
 
@@ -1689,7 +1690,11 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
         */
         (
             MaybeContentLength = yes(content_length(Length)),
-            DecodedLength = decoded_length(MaybeCTE, Length),
+            ( estimate_decoded_length(MaybeCTE, Length, DecodedLength0) ->
+                DecodedLength = DecodedLength0
+            ;
+                DecodedLength = Length
+            ),
             draw(Panel, format_length(DecodedLength), !IO)
         ;
             MaybeContentLength = no
@@ -1803,15 +1808,6 @@ diff_line_to_attr(Attrs, diff_add) = Attrs ^ p_diff_add.
 diff_line_to_attr(Attrs, diff_rem) = Attrs ^ p_diff_rem.
 diff_line_to_attr(Attrs, diff_hunk) = Attrs ^ p_diff_hunk.
 diff_line_to_attr(Attrs, diff_index) = Attrs ^ p_diff_index.
-
-:- func decoded_length(maybe(content_transfer_encoding), int) = int.
-
-decoded_length(MaybeCTE, Length) =
-    ( MaybeCTE = yes(content_transfer_encoding("base64")) ->
-        Length * 3 / 4
-    ;
-        Length
-    ).
 
 :- func format_length(int) = string.
 
