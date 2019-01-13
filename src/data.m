@@ -4,7 +4,6 @@
 :- module data.
 :- interface.
 
-:- import_module bool.
 :- import_module list.
 :- import_module map.
 :- import_module maybe.
@@ -83,16 +82,29 @@
 :- type tag
     --->    tag(string).
 
+:- type filename
+    --->    filename(string).
+
+:- type content_disposition
+    --->    content_disposition(string).
+
+:- type content_length
+    --->    content_length(int).
+
+:- type content_transfer_encoding
+    --->    content_transfer_encoding(string).
+
 :- type part
     --->    part(
-                pt_msgid        :: message_id,
-                pt_part         :: maybe(int),
-                pt_type         :: mime_type,
-                pt_content      :: part_content,
-                pt_filename     :: maybe(string),
-                pt_encoding     :: maybe(string),
-                pt_content_len  :: maybe(int),
-                pt_decrypted    :: bool
+                pt_msgid                :: message_id,
+                pt_part                 :: maybe(int), % XXX use bespoke type
+                pt_content_type         :: mime_type,
+                pt_content_disposition  :: maybe(content_disposition),
+                pt_content              :: part_content,
+                pt_filename             :: maybe(filename),
+                pt_content_length       :: maybe(content_length),
+                pt_content_transfer_encoding :: maybe(content_transfer_encoding),
+                pt_decrypted            :: maybe_decrypted
             ).
 
 :- type part_content
@@ -136,6 +148,10 @@
                 em_headers      :: headers,
                 em_body         :: list(part)
             ).
+
+:- type maybe_decrypted
+    --->    not_decrypted
+    ;       is_decrypted.
 
 %-----------------------------------------------------------------------------%
 

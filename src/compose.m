@@ -497,7 +497,7 @@ first_text_part([Part | Parts], Text, AttachmentParts) :-
 :- pred part_is_application_pgp_encrypted(part::in) is semidet.
 
 part_is_application_pgp_encrypted(Part) :-
-    Part ^ pt_type = mime_type.application_pgp_encrypted.
+    Part ^ pt_content_type = mime_type.application_pgp_encrypted.
 
 :- pred to_old_attachment(part::in, attachment::out) is det.
 
@@ -1613,10 +1613,10 @@ draw_crypto_line(Attrs, Panel, CryptoInfo, !IO) :-
 draw_attachment_line(Attrs, Panel, Attachment, LineNr, IsCursor, !IO) :-
     (
         Attachment = old_attachment(Part),
-        Type = Part ^ pt_type,
+        Type = Part ^ pt_content_type,
         MaybeFilename = Part ^ pt_filename,
         (
-            MaybeFilename = yes(Filename)
+            MaybeFilename = yes(filename(Filename))
         ;
             MaybeFilename = no,
             Filename = "(no filename)"
@@ -2120,7 +2120,7 @@ maybe_cons_unstructured(SkipEmpty, Options, FieldName, Value, !Acc) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred make_text_and_attachments_mime_part(content_transfer_encoding::in,
+:- pred make_text_and_attachments_mime_part(write_content_transfer_encoding::in,
     string::in, list(attachment)::in, boundary::in, mime_part::out) is det.
 
 make_text_and_attachments_mime_part(TextCTE, Text, Attachments, MixedBoundary,
@@ -2137,26 +2137,26 @@ make_text_and_attachments_mime_part(TextCTE, Text, Attachments, MixedBoundary,
             AttachmentParts)
     ).
 
-:- pred make_text_mime_part(content_disposition::in,
-    content_transfer_encoding::in, string::in, mime_part::out) is det.
+:- pred make_text_mime_part(write_content_disposition::in,
+    write_content_transfer_encoding::in, string::in, mime_part::out) is det.
 
 make_text_mime_part(Disposition, TextCTE, Text, MimePart) :-
     % XXX detect charset
     MimePart = discrete(text_plain(yes(utf8)), yes(Disposition), yes(TextCTE),
         text(Text)).
 
-:- pred make_attachment_mime_part(content_transfer_encoding::in,
+:- pred make_attachment_mime_part(write_content_transfer_encoding::in,
     attachment::in, mime_part::out) is det.
 
 make_attachment_mime_part(TextCTE, Attachment, MimePart) :-
     (
         Attachment = old_attachment(OldPart),
-        OldType = mime_type.to_string(OldPart ^ pt_type),
+        OldType = mime_type.to_string(OldPart ^ pt_content_type),
         OldContent = OldPart ^ pt_content,
         MaybeFileName = OldPart ^ pt_filename,
         (
             MaybeFileName = yes(FileName),
-            Disposition = attachment(yes(filename(FileName)))
+            Disposition = attachment(yes(FileName))
         ;
             MaybeFileName = no,
             Disposition = attachment(no)

@@ -4,7 +4,6 @@
 :- module callout.
 :- interface.
 
-:- import_module bool.
 :- import_module io.
 :- import_module list.
 :- import_module maybe.
@@ -46,7 +45,8 @@
 
 :- pred parse_message_for_recall(json::in, message_for_recall::out) is det.
 
-:- pred parse_part(message_id::in, bool::in, json::in, part::out) is det.
+:- pred parse_part(message_id::in, maybe_decrypted::in, json::in, part::out)
+    is det.
 
 :- pred parse_threads_list(json::in, list(thread)::out) is det.
 
@@ -253,7 +253,7 @@ parse_header(Key, unesc_string(Value), !Headers) :-
 
 parse_body(JSON, MessageId, Body) :-
     ( JSON/"body" = list(BodyList) ->
-        IsDecrypted = no,
+        IsDecrypted = not_decrypted,
         list.map(parse_part(MessageId, IsDecrypted), BodyList, Body)
     ;
         notmuch_json_error
@@ -261,13 +261,20 @@ parse_body(JSON, MessageId, Body) :-
 
 parse_part(MessageId, IsDecrypted0, JSON, Part) :-
     (
+        % XXX notmuch/devel/schemata says id can be a string
         JSON/"id" = int(PartId),
         JSON/"content-type" = unesc_string(ContentTypeString)
     ->
         ContentType = make_mime_type(ContentTypeString),
+        ( JSON/"content-disposition" = unesc_string(Disposition) ->
+            MaybeContentDisposition = yes(content_disposition(Disposition))
+        ;
+            MaybeContentDisposition = no
+        ),
         ( mime_type.is_multipart(ContentType) ->
             ( JSON/"content" = list(SubParts0) ->
                 ( ContentType = mime_type.multipart_encrypted ->
+                    % XXX check for encstatus even for other content-types?
                     ( JSON/"encstatus" = EncStatus ->
                         ( parse_encstatus(EncStatus, Encryption0) ->
                             Encryption = Encryption0
@@ -279,13 +286,13 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
                     ),
                     (
                         Encryption = decryption_good,
-                        IsDecrypted = yes
+                        IsDecrypted = is_decrypted
                     ;
                         ( Encryption = encrypted
                         ; Encryption = decryption_bad
                         ; Encryption = not_encrypted % should not occur
                         ),
-                        IsDecrypted = no
+                        IsDecrypted = not_decrypted
                     )
                 ;
                     Encryption = not_encrypted,
@@ -303,8 +310,8 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
                 list.map(parse_part(MessageId, IsDecrypted), SubParts0, SubParts),
                 Content = subparts(Encryption, Signatures, SubParts),
                 MaybeFilename = no,
-                MaybeEncoding = no,
-                MaybeLength = no
+                MaybeContentLength = no,
+                MaybeContentTransferEncoding = no
             ;
                 notmuch_json_error
             )
@@ -314,8 +321,8 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
                     List, EncapMessages),
                 Content = encapsulated_messages(EncapMessages),
                 MaybeFilename = no,
-                MaybeEncoding = no,
-                MaybeLength = no,
+                MaybeContentLength = no,
+                MaybeContentTransferEncoding = no,
                 IsDecrypted = IsDecrypted0
             ;
                 notmuch_json_error
@@ -330,24 +337,33 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
                 Content = unsupported
             ),
             ( JSON/"filename" = unesc_string(Filename) ->
-                MaybeFilename = yes(Filename)
+                MaybeFilename = yes(filename(Filename))
             ;
                 MaybeFilename = no
             ),
-            ( JSON/"content-transfer-encoding" = unesc_string(Encoding) ->
-                MaybeEncoding = yes(Encoding)
+            /*
+            ( JSON/"content-charset" = unesc_string(Charset) ->
+                MaybeContentCharset = yes(content_charset(Charset))
             ;
-                MaybeEncoding = no
+                MaybeContentCharset = no
             ),
+            */
             ( JSON/"content-length" = int(Length) ->
-                MaybeLength = yes(Length)
+                MaybeContentLength = yes(content_length(Length))
             ;
-                MaybeLength = no
+                MaybeContentLength = no
+            ),
+            ( JSON/"content-transfer-encoding" = unesc_string(Encoding) ->
+                MaybeContentTransferEncoding =
+                    yes(content_transfer_encoding(Encoding))
+            ;
+                MaybeContentTransferEncoding = no
             ),
             IsDecrypted = IsDecrypted0
         ),
-        Part = part(MessageId, yes(PartId), ContentType, Content,
-            MaybeFilename, MaybeEncoding, MaybeLength, IsDecrypted)
+        Part = part(MessageId, yes(PartId), ContentType,
+            MaybeContentDisposition, Content, MaybeFilename,
+            MaybeContentLength, MaybeContentTransferEncoding, IsDecrypted)
     ;
         notmuch_json_error
     ).
@@ -427,8 +443,8 @@ parse_signature(JSON, Signature) :-
     ),
     Signature = signature(SigStatus, Errors).
 
-:- pred parse_encapsulated_message(message_id::in, bool::in, json::in,
-    encapsulated_message::out) is det.
+:- pred parse_encapsulated_message(message_id::in, maybe_decrypted::in,
+    json::in, encapsulated_message::out) is det.
 
 parse_encapsulated_message(MessageId, IsDecrypted0, JSON, EncapMessage) :-
     (

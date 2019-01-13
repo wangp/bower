@@ -316,7 +316,7 @@ get_thread_messages(Config, ThreadId, Res, Messages, !IO) :-
     run_notmuch(Config,
         [
             "show", "--format=json", "--entire-thread=false",
-            decrypt_arg(DecryptByDefault),
+            decrypt_arg_bool(DecryptByDefault),
             verify_arg(VerifyByDefault),
             "--", thread_id_to_search_term(ThreadId)
         ],
@@ -331,10 +331,15 @@ get_thread_messages(Config, ThreadId, Res, Messages, !IO) :-
         Messages = []
     ).
 
-:- func decrypt_arg(bool) = string.
+:- func decrypt_arg(maybe_decrypted) = string.
 
-decrypt_arg(yes) = "--decrypt".
-decrypt_arg(no) = "--decrypt=false".
+decrypt_arg(is_decrypted) = decrypt_arg_bool(yes).
+decrypt_arg(not_decrypted) = decrypt_arg_bool(no).
+
+:- func decrypt_arg_bool(bool) = string.
+
+decrypt_arg_bool(yes) = "--decrypt".
+decrypt_arg_bool(no) = "--decrypt=false".
 
 :- func verify_arg(bool) = string.
 
@@ -1824,10 +1829,11 @@ save_part(Action, MessageUpdate, !Info) :-
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
-    Part = part(MessageId, MaybePartId, _Type, _Content, MaybePartFilename,
-        _MaybeEncoding, _MaybeLength, IsDecrypted),
+    Part = part(MessageId, MaybePartId, _Type, _MaybeContentDisposition,
+        _Content, MaybePartFilename, _MaybeContentLength, _MaybeCTE,
+        IsDecrypted),
     (
-        MaybePartFilename = yes(PartFilename)
+        MaybePartFilename = yes(filename(PartFilename))
     ;
         MaybePartFilename = no,
         MaybeSubject = yes(Subject),
@@ -1928,7 +1934,7 @@ make_save_part_initial_prompt(History, PartFilename, Initial) :-
     ).
 
 :- pred do_save_part(prog_config::in, message_id::in, maybe(int)::in,
-    bool::in, string::in, maybe_error::out, io::di, io::uo) is det.
+    maybe_decrypted::in, string::in, maybe_error::out, io::di, io::uo) is det.
 
 do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName, Res, !IO)
         :-
@@ -2043,10 +2049,11 @@ do_open_part(Config, Screen, Part, Command, MessageUpdate, MaybeNextKey,
 
 do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, MaybeNextKey,
         !IO) :-
-    Part = part(MessageId, MaybePartId, _Type, _Content, MaybePartFileName,
-        _MaybeEncoding, _MaybeLength, IsDecrypted),
+    Part = part(MessageId, MaybePartId, _ContentType, _MaybeContentDisposition,
+        _Content, MaybePartFileName, _MaybeContentLength, _MaybeCTE,
+        IsDecrypted),
     (
-        MaybePartFileName = yes(PartFilename),
+        MaybePartFileName = yes(filename(PartFilename)),
         get_extension(PartFilename, Ext)
     ->
         make_temp_suffix(Ext, Res0, !IO)
@@ -2347,7 +2354,7 @@ do_decrypt_part(Screen, MessageId, PartId, MessageUpdate, !Info, !IO) :-
         ],
         redirect_stderr("/dev/null"),
         soft_suspend_curses, % Decryption may invoke pinentry-curses.
-        parse_part(MessageId, no), ParseResult, !IO),
+        parse_part(MessageId, not_decrypted), ParseResult, !IO),
     (
         ParseResult = ok(Part),
         Content = Part ^ pt_content,
@@ -2396,7 +2403,7 @@ verify_part(Screen, !Info, !IO) :-
         get_highlighted_thing(Pager, Thing),
         Thing = highlighted_part(Part, _)
     ->
-        ( Part ^ pt_type = mime_type.multipart_signed ->
+        ( Part ^ pt_content_type = mime_type.multipart_signed ->
             do_verify_part(Screen, Part, MessageUpdate, !Info, !IO)
         ;
             MessageUpdate =
@@ -2411,8 +2418,9 @@ verify_part(Screen, !Info, !IO) :-
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 do_verify_part(Screen, Part0, MessageUpdate, !Info, !IO) :-
-    Part0 = part(MessageId, MaybePartId, Type, _Content0,
-        _MaybeFilename0, _MaybeEncoding0, _MaybeLength0, IsDecrypted),
+    Part0 = part(MessageId, MaybePartId, Type, _MaybeContentDisposition0,
+        _Content0, _MaybeFilename0, _MaybeContentLength, _MaybeCTE,
+        IsDecrypted),
     (
         MaybePartId = yes(PartId),
         Config = !.Info ^ tp_config,
@@ -2427,15 +2435,17 @@ do_verify_part(Screen, Part0, MessageUpdate, !Info, !IO) :-
             ],
             redirect_stderr("/dev/null"),
             soft_suspend_curses, % Decryption may invoke pinentry-curses.
-            parse_part(MessageId, no), ParseResult, !IO),
+            parse_part(MessageId, not_decrypted), ParseResult, !IO),
         (
             ParseResult = ok(Part1),
             (
-                Part1 = part(MessageId, MaybePartId, Type, Content,
-                    MaybeFilename, MaybeEncoding, MaybeLength, _IsDecrypted1)
+                Part1 = part(MessageId, MaybePartId, Type,
+                    MaybeContentDisposition, Content, MaybeFilename,
+                    MaybeContentLength, MaybeCTE, _IsDecrypted1)
             ->
-                Part = part(MessageId, MaybePartId, Type, Content,
-                    MaybeFilename, MaybeEncoding, MaybeLength, IsDecrypted),
+                Part = part(MessageId, MaybePartId, Type,
+                    MaybeContentDisposition, Content, MaybeFilename,
+                    MaybeContentLength, MaybeCTE, IsDecrypted),
 
                 Pager0 = !.Info ^ tp_pager,
                 NumRows = !.Info ^ tp_num_pager_rows,

@@ -415,8 +415,8 @@ make_part_tree(Config, Cols, Part, Tree, !ElideInitialHeadLine, !Counter, !IO)
 
 make_part_tree_with_alts(Config, Cols, AltParts, Part, HandleUnsupported, Tree,
         !ElideInitialHeadLine, !Counter, !IO) :-
-    Part = part(_MessageId, _PartId, PartType, Content, _MaybeFilename,
-        _MaybeEncoding, _MaybeLength, _IsDecrypted),
+    Part = part(_MessageId, _PartId, PartType, _MaybeContentDisposition,
+        Content, _MaybeFilename, _MaybeContentLength, _MaybeCTE, _IsDecrypted),
     allocate_node_id(PartNodeId, !Counter),
     (
         Content = text(InlineText),
@@ -709,8 +709,9 @@ add_encapsulated_header(Header, Value, RevLines0, RevLines) :-
 
 make_unsupported_part_tree(Config, Cols, PartNodeId, Part, HandleUnsupported,
         AltParts, Tree, !IO) :-
-    Part = part(MessageId, MaybePartId, PartType, _Content, _MaybeFilename,
-        _MaybeEncoding, _MaybeLength, _IsDecrypted),
+    Part = part(MessageId, MaybePartId, PartType, _MaybeContentDisposition,
+        _Content, _MaybeFilename, _MaybeContentLength, _MaybeCTE,
+        _IsDecrypted),
     (
         HandleUnsupported = default,
         DoExpand = ( if PartType = mime_type.text_html then yes else no )
@@ -1199,10 +1200,10 @@ line_matches_search(Search, Line) :-
     ;
         Line = part_head(Part, _, _, _),
         (
-            Part ^ pt_type = PartType,
+            Part ^ pt_content_type = PartType,
             strcase_str(to_string(PartType), Search)
         ;
-            Part ^ pt_filename = yes(FileName),
+            Part ^ pt_filename = yes(filename(FileName)),
             strcase_str(FileName, Search)
         )
     ;
@@ -1301,8 +1302,9 @@ get_highlighted_thing(Info, Thing) :-
         MessageId = Message ^ m_id,
         Subject = Message ^ m_headers ^ h_subject,
         PartId = 0,
-        Part = part(MessageId, yes(PartId), mime_type.text_plain, unsupported,
-            no, no, no, no),
+        % Hmm.
+        Part = part(MessageId, yes(PartId), mime_type.text_plain,
+            no, unsupported, no, no, no, not_decrypted),
         MaybeSubject = yes(Subject),
         Thing = highlighted_part(Part, MaybeSubject)
     ;
@@ -1402,7 +1404,7 @@ toggle_part(Config, ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
         scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
         make_extents(Flattened, Extents),
         Info = pager_info(Tree, Counter, Scrollable, Extents),
-        Type = mime_type.to_string(Part ^ pt_type),
+        Type = mime_type.to_string(Part ^ pt_content_type),
         MessageUpdate = set_info("Showing " ++ Type ++ " alternative.")
     ;
         % Fallback.
@@ -1643,8 +1645,9 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
         )
     ;
         Line = part_head(Part, HiddenParts, Expanded, Importance),
-        Part = part(_MessageId, _Part, ContentType, _Content,
-            MaybeFilename, MaybeEncoding, MaybeLength, _IsDecrypted),
+        Part = part(_MessageId, _Part, ContentType, _MaybeContentDisposition,
+            _Content, MaybeFilename, MaybeContentLength, MaybeCTE,
+            _IsDecrypted),
         (
             Importance = importance_normal,
             Attr0 = Attrs ^ p_part_head
@@ -1662,18 +1665,34 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
         draw(Panel, Attr, "[-- ", !IO),
         draw(Panel, mime_type.to_string(ContentType), !IO),
         (
-            MaybeFilename = yes(Filename),
+            MaybeFilename = yes(filename(Filename)),
             draw(Panel, "; ", !IO),
             draw(Panel, Filename, !IO)
         ;
             MaybeFilename = no
         ),
+        /*
         (
-            MaybeLength = yes(Length),
-            DecodedLength = decoded_length(MaybeEncoding, Length),
+            MaybeContentDisposition = yes(content_disposition(Disposition)),
+            draw(Panel, "; ", !IO),
+            draw(Panel, Disposition, !IO)
+        ;
+            MaybeContentDisposition = no
+        ),
+        (
+            MaybeContentCharset = yes(content_charset(Charset)),
+            draw(Panel, "; charset=", !IO),
+            draw(Panel, Charset, !IO)
+        ;
+            MaybeContentCharset = no
+        ),
+        */
+        (
+            MaybeContentLength = yes(content_length(Length)),
+            DecodedLength = decoded_length(MaybeCTE, Length),
             draw(Panel, format_length(DecodedLength), !IO)
         ;
-            MaybeLength = no
+            MaybeContentLength = no
         ),
         draw(Panel, " --]", !IO),
         ( make_part_message(Part, HiddenParts, Expanded, Message) ->
@@ -1785,10 +1804,10 @@ diff_line_to_attr(Attrs, diff_rem) = Attrs ^ p_diff_rem.
 diff_line_to_attr(Attrs, diff_hunk) = Attrs ^ p_diff_hunk.
 diff_line_to_attr(Attrs, diff_index) = Attrs ^ p_diff_index.
 
-:- func decoded_length(maybe(string), int) = int.
+:- func decoded_length(maybe(content_transfer_encoding), int) = int.
 
-decoded_length(MaybeEncoding, Length) =
-    ( MaybeEncoding = yes("base64") ->
+decoded_length(MaybeCTE, Length) =
+    ( MaybeCTE = yes(content_transfer_encoding("base64")) ->
         Length * 3 / 4
     ;
         Length
@@ -1857,7 +1876,7 @@ make_part_message_2(Part, HiddenParts, Expanded, Message) :-
             (
                 HiddenParts = [],
                 Signatures = [],
-                Part ^ pt_type = mime_type.multipart_signed,
+                Part ^ pt_content_type = mime_type.multipart_signed,
                 Message = "y to verify"
             ;
                 HiddenParts = [_],
