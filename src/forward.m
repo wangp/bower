@@ -11,6 +11,9 @@
 :- pred prepare_forward_message(message::in(message), string::in,
     headers::out, string::out, list(part)::out) is det.
 
+:- pred select_body_text_and_attachments(list(part)::in, string::out,
+    list(part)::out) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -40,13 +43,7 @@ prepare_forward_message(OrigMessage, From, Headers, Body, AttachmentParts) :-
     ),
 
     OrigBody = OrigMessage ^ m_body,
-    ( find_body_text(OrigBody, Text0, PathToText0) ->
-        Text = Text0,
-        PathToText = PathToText0
-    ;
-        Text = "",
-        PathToText = []
-    ),
+    select_body_text_and_attachments(OrigBody, Text, AttachmentParts),
 
     Body = append_list([
         "-------- Forwarded message --------\n",
@@ -59,10 +56,7 @@ prepare_forward_message(OrigMessage, From, Headers, Body, AttachmentParts) :-
         Text,
         "\n",
         "-------- End forwarded message --------\n"
-    ]),
-
-    foldl(select_attachments(PathToText), OrigBody, [], RevAttachmentParts),
-    reverse(RevAttachmentParts, AttachmentParts).
+    ]).
 
 %---------------------------------------------------------------------------%
 
@@ -86,6 +80,19 @@ maybe_header(FieldColonSp, Value) = S :-
 :- func soft_line_length = int.
 
 soft_line_length = 78.
+
+%-----------------------------------------------------------------------------%
+
+select_body_text_and_attachments(Body, Text, AttachmentParts) :-
+    ( find_body_text(Body, Text0, PathToText0) ->
+        Text = Text0,
+        PathToText = PathToText0
+    ;
+        Text = "",
+        PathToText = []
+    ),
+    foldl(select_attachments(PathToText), Body, [], RevAttachmentParts),
+    reverse(RevAttachmentParts, AttachmentParts).
 
 %-----------------------------------------------------------------------------%
 

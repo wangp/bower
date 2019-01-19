@@ -69,7 +69,6 @@
 :- import_module pair.
 :- import_module require.
 :- import_module set.
-:- import_module std_util.
 :- import_module string.
 
 :- import_module addressbook.
@@ -447,7 +446,7 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
     Headers0 = Message ^ m_headers,
     Tags0 = Message ^ m_tags,
     Body0 = Message ^ m_body,
-    first_text_part(Body0, Text, AttachmentParts),
+    select_body_text_and_attachments(Body0, Text, AttachmentParts),
     list.map(to_old_attachment, AttachmentParts, Attachments),
     WasEncrypted = contains(Tags0, encrypted_tag),
     DraftSign = contains(Tags0, draft_sign_tag),
@@ -487,44 +486,6 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
             io.error_message(Error)], Warning),
         Transition = screen_transition(not_sent, set_warning(Warning))
     ).
-
-    % XXX replace by the code in forward.m
-    %
-:- pred first_text_part(list(part)::in, string::out, list(part)::out)
-    is det.
-
-first_text_part([], "", []).
-first_text_part([Part | Parts], Text, AttachmentParts) :-
-    PartContent = Part ^ pt_content,
-    (
-        PartContent = text(Text),
-        AttachmentParts = Parts
-    ;
-        PartContent = subparts(Encryption, _Signatures, SubParts),
-        (
-            ( Encryption = not_encrypted
-            ; Encryption = encrypted
-            ; Encryption = decryption_bad
-            ),
-            first_text_part(SubParts, Text, AttachmentParts)
-        ;
-            Encryption = decryption_good,
-            filter(isnt(part_is_application_pgp_encrypted),
-                SubParts, OtherSubParts),
-            first_text_part(OtherSubParts, Text, AttachmentParts)
-        )
-    ;
-        ( PartContent = encapsulated_messages(_)
-        ; PartContent = unsupported
-        ),
-        first_text_part(Parts, Text, AttachmentParts0),
-        AttachmentParts = [Part | AttachmentParts0]
-    ).
-
-:- pred part_is_application_pgp_encrypted(part::in) is semidet.
-
-part_is_application_pgp_encrypted(Part) :-
-    Part ^ pt_content_type = mime_type.application_pgp_encrypted.
 
 :- pred to_old_attachment(part::in, attachment::out) is det.
 
