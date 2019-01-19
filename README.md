@@ -219,6 +219,12 @@ The 'o' command, which opens parts and URLs, takes a command using Unix shell
 quoting syntax.  If the command ends with an unquoted '&' character then the
 command will be run in the background.
 
+Note: forward (W) and edit-as-new (E) currently will not create a proper
+message template for messages that are manually decrypted in the thread view.
+A workaround is to set `crypto.decrypt_by_default = true` in the bower
+configuration so that encrypted messages are automatically decrypted upon
+opening a thread.
+
 
 Limit command syntax extensions
 ===============================
