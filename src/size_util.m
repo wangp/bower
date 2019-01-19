@@ -25,7 +25,9 @@
 
 estimate_decoded_length(MaybeCTE, Length, DecodedLength) :-
     MaybeCTE = yes(content_transfer_encoding("base64")),
-    DecodedLength = Length * 3 / 4.
+    % DecodedLength = Length * 3 / 4.
+    % This produces a better estimate assuming the usual line breaks.
+    DecodedLength = round_to_int(float(Length) * 0.7402595).
 
 format_approx_length(Size) = String :-
     ( Size = 0 ->
