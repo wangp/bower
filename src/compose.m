@@ -1602,32 +1602,18 @@ draw_attachment_line(Attrs, Panel, Attachment, LineNr, IsCursor, !IO) :-
     (
         Attachment = old_attachment(Part),
         Part = part(_MessageId, _PartId, ContentType, MaybeContentDisposition,
-            _Content, MaybeFilename, MaybeContentLength, MaybeCTE,
+            _Content, MaybeFilename, MaybeContentLength, _MaybeCTE,
             _IsDecrypted),
         (
             MaybeFilename = yes(filename(Filename))
         ;
             MaybeFilename = no,
             Filename = "(no filename)"
-        ),
-        (
-            MaybeContentLength = yes(content_length(Length)),
-            ( estimate_decoded_length(MaybeCTE, Length, DecodedLength) ->
-                Size = DecodedLength,
-                ApproxSize = "~"
-            ;
-                Size = Length,
-                ApproxSize = ""
-            )
-        ;
-            MaybeContentLength = no,
-            Size = -1,
-            ApproxSize = ""
         )
     ;
         Attachment = new_attachment(ContentType, _, Filename, Size),
-        ApproxSize = "",
-        MaybeContentDisposition = no
+        MaybeContentDisposition = no,
+        MaybeContentLength = yes(content_length(Size))
     ),
     panel.erase(Panel, !IO),
     panel.move(Panel, 0, 10, !IO),
@@ -1660,17 +1646,12 @@ draw_attachment_line(Attrs, Panel, Attachment, LineNr, IsCursor, !IO) :-
         true
     ),
     draw(Panel, Attr, ")", !IO),
-    % XXX pager uses SI prefixes instead
-    ( Size >= 1024 * 1024 ->
-        SizeM = float(Size) / (1024.0 * 1024.0),
-        draw(Panel, format(" %s%.1f MiB", [s(ApproxSize), f(SizeM)]), !IO)
-    ; Size >= 1024 ->
-        SizeK = float(Size) / 1024.0,
-        draw(Panel, format(" %s%.1f KiB", [s(ApproxSize), f(SizeK)]), !IO)
-    ; Size >= 0 ->
-        draw(Panel, format(" %s%d bytes", [s(ApproxSize), i(Size)]), !IO)
+    (
+        MaybeContentLength = yes(content_length(Length)),
+        % This is the encoded size.
+        draw2(Panel, " ", format_approx_length(Length), !IO)
     ;
-        true
+        MaybeContentLength = no
     ).
 
 :- pred draw_attachments_label(compose_attrs::in, list(panel)::in,

@@ -1695,7 +1695,9 @@ draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
             ;
                 DecodedLength = Length
             ),
-            draw(Panel, format_length(DecodedLength), !IO)
+            draw(Panel, " (", !IO),
+            draw(Panel, format_approx_length(DecodedLength), !IO),
+            draw(Panel, ")", !IO)
         ;
             MaybeContentLength = no
         ),
@@ -1808,19 +1810,6 @@ diff_line_to_attr(Attrs, diff_add) = Attrs ^ p_diff_add.
 diff_line_to_attr(Attrs, diff_rem) = Attrs ^ p_diff_rem.
 diff_line_to_attr(Attrs, diff_hunk) = Attrs ^ p_diff_hunk.
 diff_line_to_attr(Attrs, diff_index) = Attrs ^ p_diff_index.
-
-:- func format_length(int) = string.
-
-format_length(Size) = String :-
-    ( Size = 0 ->
-        String = " (0 bytes)"
-    ; Size =< 1000000 ->
-        Ks = float(Size) / 1000.0,
-        String = format(" (%.1f kB)", [f(Ks)])
-    ;
-        Ms = float(Size) / 1000000.0,
-        String = format(" (%.1f MB)", [f(Ms)])
-    ).
 
 :- pred make_part_message(part::in, list(part)::in, part_expanded::in,
     string::out) is semidet.
