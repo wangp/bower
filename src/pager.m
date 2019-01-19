@@ -459,7 +459,8 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, HandleUnsupported, Tree,
         ->
             % Assuming Signatures = []
             make_part_tree_with_alts(Config, Cols, RestSubParts, FirstSubPart,
-                default, Tree, no, _ElideInitialHeadLine, !Counter, !IO)
+                default, Tree, no, _ElideInitialHeadLine, !Counter, !IO),
+            !:ElideInitialHeadLine = no
         ;
             get_importance(PartType, AltParts, Encryption, Signatures,
                 Importance),
