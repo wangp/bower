@@ -1,5 +1,5 @@
-Bower 0.10-unreleased
-=====================
+Bower 0.10 (2019-01-26)
+=======================
 
 * thread/pager: Add 'W' key to forward message.
 * Support BOWER_CONFIG environment variable.
@@ -8,6 +8,7 @@ Bower 0.10-unreleased
 * Support ~NAME as a shorthand for query:NAME.
 * Support Shift-Tab to cycle through completions in reverse.
 * Make path completion work more smoothly.
+* Minor improvements.
 
 Bower 0.9 (2018-10-07)
 ======================
