@@ -324,30 +324,21 @@ get_thread_messages(Config, ThreadId, IncludeTags, Res, Messages, !IO) :-
         RedirectStderr = no_redirect,
         SuspendCurs = no_suspend_curses
     ),
-    IncludeTagsList = set.to_sorted_list(IncludeTags),
-    (
-        IncludeTagsList = [],
-        SearchTerms = [thread_id_to_search_term(ThreadId)]
-    ;
-        IncludeTagsList = [_ | _],
-        % List tags to suppress search.tag_exclude,
-        % but messages without any of those tags must still be included
-        % (we may wish to use --entire-thread=true instead).
-        SearchTerms = [
-            thread_id_to_search_term(ThreadId), "OR",
-            thread_id_to_search_term(ThreadId)          % implicit AND
-            | map(tag_to_search_term, IncludeTagsList)  % implicit ORs
-        ]
-    ),
+
+    get_exclude_tags(Config, ExcludeTags0),
+    set.difference(ExcludeTags0, IncludeTags, ExcludeTags),
+
+    % Pass --exclude=false so that we can decide for ourselves if a message
+    % should be excluded.
     run_notmuch(Config,
         [
-            "show", "--format=json", "--entire-thread=false",
+            "show", "--format=json", "--entire-thread=true", "--exclude=false",
             decrypt_arg_bool(DecryptByDefault),
             verify_arg(VerifyByDefault),
-            "--" | SearchTerms
+            "--", thread_id_to_search_term(ThreadId)
         ],
         RedirectStderr, SuspendCurs,
-        parse_messages_list, ParseResult, !IO),
+        parse_messages_list(yes(ExcludeTags)), ParseResult, !IO),
     (
         ParseResult = ok(Messages),
         Res = ok
@@ -371,10 +362,6 @@ decrypt_arg_bool(no) = "--decrypt=false".
 
 verify_arg(yes) = "--verify".
 verify_arg(no) = "--verify=false".
-
-:- func tag_to_search_term(tag) = string.
-
-tag_to_search_term(tag(Tag)) = "tag:" ++ Tag.
 
 %-----------------------------------------------------------------------------%
 

@@ -8,8 +8,10 @@
 :- import_module io.
 :- import_module list.
 :- import_module maybe.
+:- import_module set.
 
 :- import_module color.
+:- import_module data.
 :- import_module mime_type.
 :- import_module quote_arg.
 :- import_module rfc5322.
@@ -85,6 +87,8 @@
 
 :- pred get_post_sendmail_action(account::in, post_sendmail::out) is det.
 
+:- pred get_exclude_tags(prog_config::in, set(tag)::out) is det.
+
 :- func generic_attrs(prog_config) = generic_attrs.
 :- func status_attrs(prog_config) = status_attrs.
 :- func pager_attrs(prog_config) = pager_attrs.
@@ -130,6 +134,7 @@
                 message_id_right :: string,
                 accounts        :: list(account),
                 default_account :: maybe(account),
+                exclude_tags    :: set(tag),
                 colors          :: colors
             ).
 
@@ -343,6 +348,8 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
         append(AccountErrors, !Errors)
     ),
 
+    get_notmuch_search_exclude_tags(Notmuch, ExcludeTags, !Errors, !IO),
+
     make_colors(Config, Colors),
 
     ProgConfig ^ notmuch = Notmuch,
@@ -359,6 +366,7 @@ make_prog_config(Config, ProgConfig, !Errors, !IO) :-
     ProgConfig ^ message_id_right = MessageIdRight,
     ProgConfig ^ accounts = Accounts,
     ProgConfig ^ default_account = DefaultAccount,
+    ProgConfig ^ exclude_tags = ExcludeTags,
     ProgConfig ^ colors = Colors.
 
 %-----------------------------------------------------------------------------%
@@ -437,7 +445,6 @@ parse_filter(Name, Value, !Filters, !Errors) :-
     ).
 
 %-----------------------------------------------------------------------------%
-
 
 :- pred check_poll_period_secs(string::in, maybe(int)::out,
     list(string)::in, list(string)::out) is det.
@@ -680,6 +687,24 @@ is_default_account(Account) :-
 
 %-----------------------------------------------------------------------------%
 
+:- pred get_notmuch_search_exclude_tags(command_prefix::in, set(tag)::out,
+    list(string)::in, list(string)::out, io::di, io::uo) is det.
+
+get_notmuch_search_exclude_tags(Notmuch, TagsSet, !Errors, !IO) :-
+    get_notmuch_config0(Notmuch, "search.exclude_tags", ResValue, !IO),
+    (
+        ResValue = ok(String),
+        Words = string.words_separator(unify('\n'), String),
+        Tags = list.map(func(Name) = tag(Name), Words),
+        TagsSet = set.from_list(Tags)
+    ;
+        ResValue = error(Error),
+        TagsSet = set.init,
+        cons(Error, !Errors)
+    ).
+
+%-----------------------------------------------------------------------------%
+
 :- pred to_bool(string::in, bool::out) is semidet.
 
 to_bool(String, Bool) :-
@@ -790,6 +815,11 @@ get_sendmail_command(Account, sendmail_read_recipients, Command) :-
 
 get_post_sendmail_action(Account, Action) :-
     Action = Account ^ post_sendmail.
+
+%-----------------------------------------------------------------------------%
+
+get_exclude_tags(Config, ExcludeTags) :-
+    ExcludeTags = Config ^ exclude_tags.
 
 %-----------------------------------------------------------------------------%
 

@@ -8,6 +8,7 @@
 :- import_module list.
 :- import_module maybe.
 :- import_module pair.
+:- import_module set.
 
 :- import_module data.
 :- import_module json.
@@ -39,7 +40,8 @@
 :- mode run_notmuch(in, in, in, in,
     in(pred(in, out) is det), out, di, uo) is det.
 
-:- pred parse_messages_list(json::in, list(message)::out) is det.
+:- pred parse_messages_list(maybe(set(tag))::in, json::in, list(message)::out)
+    is det.
 
 :- pred parse_top_message(json::in, message::out) is det.
 
@@ -60,11 +62,11 @@
 
 :- implementation.
 
+:- import_module bool.
 :- import_module float.
 :- import_module map.
 :- import_module parsing_utils.
 :- import_module require.
-:- import_module set.
 :- import_module string.
 
 :- import_module call_system.
@@ -151,9 +153,9 @@ call_command_parse_json(Command, SuspendCurs, Parser, Result, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-parse_messages_list(JSON, Messages) :-
+parse_messages_list(CustomExcludeTags, JSON, Messages) :-
     ( JSON = list([List]) ->
-        parse_inner_message_list(List, Messages)
+        parse_inner_message_list(CustomExcludeTags, List, Messages)
     ; JSON = list([]) ->
         Messages = []
     ;
@@ -161,58 +163,78 @@ parse_messages_list(JSON, Messages) :-
     ).
 
 parse_top_message(JSON, Message) :-
-    parse_message_details(JSON, [], Message).
+    parse_message_details(no, JSON, [], Message).
 
-:- pred parse_inner_message_list(json::in, list(message)::out) is det.
+:- pred parse_inner_message_list(maybe(set(tag))::in, json::in,
+    list(message)::out) is det.
 
-parse_inner_message_list(JSON, Messages) :-
+parse_inner_message_list(CustomExcludeTags, JSON, Messages) :-
     ( JSON = list(Array) ->
-        list.map(parse_message, Array, Messagess),
+        list.map(parse_message(CustomExcludeTags), Array, Messagess),
         list.condense(Messagess, Messages)
     ;
         notmuch_json_error
     ).
 
-:- pred parse_message(json::in, list(message)::out) is det.
+:- pred parse_message(maybe(set(tag))::in, json::in, list(message)::out)
+    is det.
 
-parse_message(JSON, Messages) :-
+parse_message(CustomExcludeTags, JSON, Messages) :-
     ( JSON = list([JSON1, JSON2]) ->
-        parse_inner_message_list(JSON2, Replies),
+        parse_inner_message_list(CustomExcludeTags, JSON2, Replies),
         ( JSON1 = null ->
-            (
-                Replies = [],
-                Messages = []
-            ;
-                Replies = [_ | _],
-                Messages = [excluded_message(Replies)]
-            )
+            Message = excluded_message(Replies)
         ;
-            parse_message_details(JSON1, Replies, Message),
+            parse_message_details(CustomExcludeTags, JSON1, Replies, Message)
+        ),
+        % Completely hide excluded messages without replies.
+        ( Message = excluded_message([]) ->
+            Messages = []
+        ;
             Messages = [Message]
         )
     ;
         notmuch_json_error
     ).
 
-:- pred parse_message_details(json::in, list(message)::in, message::out)
-    is det.
+:- pred parse_message_details(maybe(set(tag))::in, json::in,
+    list(message)::in, message::out) is det.
 
-parse_message_details(JSON, Replies, Message) :-
+parse_message_details(CustomExcludeTags, JSON, Replies, Message) :-
     parse_message_for_recall(JSON, Message0),
     Message0 = message_for_recall(MessageId, Timestamp, Headers, TagSet),
-    parse_body(JSON, MessageId, Body),
-    Message = message(MessageId, Timestamp, Headers, TagSet, Body, Replies).
+    (
+        JSON/"excluded" = bool(yes),
+        really_exclude_message(CustomExcludeTags, TagSet)
+    ->
+        Message = excluded_message(Replies)
+    ;
+        parse_body(JSON, MessageId, Body),
+        Message = message(MessageId, Timestamp, Headers, TagSet, Body,
+            Replies)
+    ).
+
+:- pred really_exclude_message(maybe(set(tag))::in, set(tag)::in) is semidet.
+
+really_exclude_message(CustomExcludeTags, MessageTags) :-
+    (
+        CustomExcludeTags = no
+    ;
+        CustomExcludeTags = yes(ExcludeTags),
+        set.member(Tag, ExcludeTags),
+        set.member(Tag, MessageTags)
+    ).
 
 parse_message_for_recall(JSON, Message) :-
     (
         JSON/"id" = unesc_string(Id),
-        MessageId = message_id(Id),
         JSON/"timestamp" = int(TimestampInt),   % Y2038
         JSON/"headers" = map(HeaderMap),
         map.foldl(parse_header, HeaderMap, init_headers, Headers),
         JSON/"tags" = list(TagsList),
         list.map(parse_tag, TagsList, Tags)
     ->
+        MessageId = message_id(Id),
         Timestamp = timestamp(float(TimestampInt)),
         TagSet = set.from_list(Tags),
         Message = message_for_recall(MessageId, Timestamp, Headers, TagSet)
