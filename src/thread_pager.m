@@ -32,7 +32,7 @@
             ).
 
 :- pred open_thread_pager(prog_config::in, crypto::in, screen::in,
-    thread_id::in, list(string)::in, maybe(string)::in,
+    thread_id::in, set(tag)::in, list(string)::in, maybe(string)::in,
     screen_transition(thread_pager_effects)::out,
     common_history::in, common_history::out, io::di, io::uo) is det.
 
@@ -83,6 +83,7 @@
                 tp_config           :: prog_config,
                 tp_crypto           :: crypto,
                 tp_thread_id        :: thread_id,
+                tp_include_tags     :: set(tag),
                 tp_messages         :: list(message),
                 tp_ordering         :: ordering,
 
@@ -180,10 +181,12 @@
 
 %-----------------------------------------------------------------------------%
 
-open_thread_pager(Config, Crypto, Screen, ThreadId, IndexPollTerms,
-        MaybeSearch, Transition, CommonHistory0, CommonHistory, !IO) :-
+open_thread_pager(Config, Crypto, Screen, ThreadId, IncludeTags,
+        IndexPollTerms, MaybeSearch, Transition, CommonHistory0, CommonHistory,
+        !IO) :-
     current_timestamp(RefreshTime, !IO),
-    get_thread_messages(Config, ThreadId, ParseResult, Messages, !IO),
+    get_thread_messages(Config, ThreadId, IncludeTags, ParseResult, Messages,
+        !IO),
 
     Ordering = ordering_threaded,
     create_pager_and_thread_lines(Config, Screen, Messages, Ordering,
@@ -197,7 +200,7 @@ open_thread_pager(Config, Crypto, Screen, ThreadId, IndexPollTerms,
     IndexPollCount = 0,
     AddedMessages0 = 0,
 
-    Info0 = thread_pager_info(Config, Crypto, ThreadId, Messages,
+    Info0 = thread_pager_info(Config, Crypto, ThreadId, IncludeTags, Messages,
         Ordering, Scrollable, NumThreadRows, PagerInfo, NumPagerRows,
         RefreshTime, NextPollTime, ThreadPollCount,
         IndexPollString, IndexPollCount,
@@ -223,7 +226,8 @@ open_thread_pager(Config, Crypto, Screen, ThreadId, IndexPollTerms,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 reopen_thread_pager(Screen, KeepCached, !Info, !IO) :-
-    !.Info = thread_pager_info(Config, _Crypto, ThreadId, Messages0, Ordering,
+    !.Info = thread_pager_info(Config, _Crypto, ThreadId, IncludeTags,
+        Messages0, Ordering,
         Scrollable0, _NumThreadRows0, Pager0, _NumPagerRows0,
         _RefreshTime0, _NextPollTime0, _ThreadPollCount0,
         _IndexPollString, _IndexPollCount,
@@ -238,7 +242,8 @@ reopen_thread_pager(Screen, KeepCached, !Info, !IO) :-
         ShowMessageUpdate = bool.no
     ;
         current_timestamp(RefreshTime, !IO),
-        get_thread_messages(Config, ThreadId, ParseResult, Messages, !IO),
+        get_thread_messages(Config, ThreadId, IncludeTags, ParseResult,
+            Messages, !IO),
         ShowMessageUpdate = bool.yes,
         !Info ^ tp_refresh_time := RefreshTime,
         !Info ^ tp_next_poll_time := next_poll_time(Config, RefreshTime),
@@ -296,12 +301,17 @@ reopen_thread_pager(Screen, KeepCached, !Info, !IO) :-
         ShowMessageUpdate = no
     ).
 
+:- func showing_num_messages(int) = string.
+
+showing_num_messages(Count) =
+    string.format("Showing %d messages.", [i(Count)]).
+
 %-----------------------------------------------------------------------------%
 
-:- pred get_thread_messages(prog_config::in, thread_id::in,
+:- pred get_thread_messages(prog_config::in, thread_id::in, set(tag)::in,
     maybe_error::out, list(message)::out, io::di, io::uo) is det.
 
-get_thread_messages(Config, ThreadId, Res, Messages, !IO) :-
+get_thread_messages(Config, ThreadId, IncludeTags, Res, Messages, !IO) :-
     get_decrypt_by_default(Config, DecryptByDefault),
     get_verify_by_default(Config, VerifyByDefault),
     (
@@ -314,12 +324,27 @@ get_thread_messages(Config, ThreadId, Res, Messages, !IO) :-
         RedirectStderr = no_redirect,
         SuspendCurs = no_suspend_curses
     ),
+    IncludeTagsList = set.to_sorted_list(IncludeTags),
+    (
+        IncludeTagsList = [],
+        SearchTerms = [thread_id_to_search_term(ThreadId)]
+    ;
+        IncludeTagsList = [_ | _],
+        % List tags to suppress search.tag_exclude,
+        % but messages without any of those tags must still be included
+        % (we may wish to use --entire-thread=true instead).
+        SearchTerms = [
+            thread_id_to_search_term(ThreadId), "OR",
+            thread_id_to_search_term(ThreadId)          % implicit AND
+            | map(tag_to_search_term, IncludeTagsList)  % implicit ORs
+        ]
+    ),
     run_notmuch(Config,
         [
             "show", "--format=json", "--entire-thread=false",
             decrypt_arg_bool(DecryptByDefault),
             verify_arg(VerifyByDefault),
-            "--", thread_id_to_search_term(ThreadId)
+            "--" | SearchTerms
         ],
         RedirectStderr, SuspendCurs,
         parse_messages_list, ParseResult, !IO),
@@ -347,10 +372,9 @@ decrypt_arg_bool(no) = "--decrypt=false".
 verify_arg(yes) = "--verify".
 verify_arg(no) = "--verify=false".
 
-:- func showing_num_messages(int) = string.
+:- func tag_to_search_term(tag) = string.
 
-showing_num_messages(Count) =
-    string.format("Showing %d messages.", [i(Count)]).
+tag_to_search_term(tag(Tag)) = "tag:" ++ Tag.
 
 %-----------------------------------------------------------------------------%
 

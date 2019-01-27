@@ -127,7 +127,7 @@
     --->    continue
     ;       continue_no_draw
     ;       resize
-    ;       open_pager(thread_id)
+    ;       open_pager(thread_id, set(tag))
     ;       enter_limit(maybe(string))
     ;       refresh_all
     ;       start_compose
@@ -329,7 +329,7 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         recreate_screen(NewScreen, !IndexInfo),
         index_loop(NewScreen, redraw, !.IndexInfo, !IO)
     ;
-        Action = open_pager(ThreadId),
+        Action = open_pager(ThreadId, IncludeTags),
         flush_async_with_progress(Screen, !IO),
         Config = !.IndexInfo ^ i_config,
         Crypto = !.IndexInfo ^ i_crypto,
@@ -344,8 +344,9 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         ;
             MaybeSearch = no
         ),
-        open_thread_pager(Config, Crypto, Screen, ThreadId, IndexPollTerms,
-            MaybeSearch, Transition, CommonHistory0, CommonHistory, !IO),
+        open_thread_pager(Config, Crypto, Screen, ThreadId, IncludeTags,
+            IndexPollTerms, MaybeSearch, Transition,
+            CommonHistory0, CommonHistory, !IO),
         handle_screen_transition(Screen, NewScreen, Transition,
             TagUpdates, !IndexInfo, !IO),
         effect_thread_pager_changes(TagUpdates, !IndexInfo, !IO),
@@ -756,7 +757,8 @@ enter(Info, Action) :-
     Scrollable = Info ^ i_scrollable,
     ( get_cursor_line(Scrollable, _, CursorLine) ->
         ThreadId = CursorLine ^ i_id,
-        Action = open_pager(ThreadId)
+        IncludeTags = CursorLine ^ i_tags,
+        Action = open_pager(ThreadId, IncludeTags)
     ;
         Action = continue
     ).
