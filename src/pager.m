@@ -158,11 +158,15 @@
     --->    node_id - pager_line.
 
 :- type pager_line
-    --->    header(
-                start_message   :: maybe(message),
-                continue        :: bool,
-                name            :: string,
-                value           :: string % folded (wrapped)
+    --->    start_of_message_header(
+                som_message     :: message,
+                som_header_name :: string,
+                som_header_value :: string % folded (wrapped)
+            )
+    ;       subseq_message_header(
+                smh_continue    :: bool,
+                smh_name        :: string,
+                smh_value       :: string % folded (wrapped)
             )
     ;       text(pager_text)
     ;       part_head(
@@ -273,7 +277,8 @@ is_blank_line(Line) :-
     ;
         Line = message_separator
     ;
-        ( Line = header(_, _, _, _)
+        ( Line = start_of_message_header(_, _, _)
+        ; Line = subseq_message_header(_, _, _)
         ; Line = part_head(_, _, _, _)
         ; Line = fold_marker(_, _)
         ; Line = signature(_)
@@ -383,14 +388,21 @@ add_header(StartMessage, Cols, Name, Value, !RevLines) :-
     ;
         Folded = [FoldedHead | FoldedTail]
     ),
-    cons(header(StartMessage, no, Name, FoldedHead), !RevLines),
+    (
+        StartMessage = yes(Message),
+        Line = start_of_message_header(Message, Name, FoldedHead)
+    ;
+        StartMessage = no,
+        Line = subseq_message_header(no, Name, FoldedHead)
+    ),
+    cons(Line, !RevLines),
     foldl(add_header_cont(Name), FoldedTail, !RevLines).
 
 :- pred add_header_cont(string::in, string::in,
     list(pager_line)::in, list(pager_line)::out) is det.
 
 add_header_cont(Name, Value, !RevLines) :-
-    cons(header(no, yes, Name, Value), !RevLines).
+    cons(subseq_message_header(yes, Name, Value), !RevLines).
 
 :- pred maybe_add_header(int::in, string::in, header_value::in,
     list(pager_line)::in, list(pager_line)::out) is det.
@@ -642,7 +654,8 @@ is_quoted_text(Line) :-
         Line = text(pager_text(Level, _, _, _)),
         Level > 0
     ;
-        ( Line = header(_, _, _, _)
+        ( Line = start_of_message_header(_, _, _)
+        ; Line = subseq_message_header(_, _, _)
         ; Line = part_head(_, _, _, _)
         ; Line = fold_marker(_, _)
         ; Line = signature(_)
@@ -1045,12 +1058,12 @@ skip_quoted_text(MessageUpdate, !Info) :-
 is_quoted_text_or_message_start(_Id - Line) :-
     require_complete_switch [Line]
     (
-        Line = header(yes(_), _, _, _)
+        Line = start_of_message_header(_, _, _)
     ;
         Line = text(pager_text(Level, _, _, _)),
         Level > 0
     ;
-        ( Line = header(no, _, _, _)
+        ( Line = subseq_message_header(_, _, _)
         ; Line = part_head(_, _, _, _)
         ; Line = fold_marker(_, _)
         ; Line = signature(_)
@@ -1186,16 +1199,18 @@ id_pager_line_matches_search(Search, _Id - Line) :-
 line_matches_search(Search, Line) :-
     require_complete_switch [Line]
     (
-        Line = header(StartMessage, _Cont, _, String),
+        Line = start_of_message_header(Message, _Name, Value),
         (
-            strcase_str(String, Search)
+            strcase_str(Value, Search)
         ;
             % XXX this won't match current tags
-            StartMessage = yes(Message),
             Tags = Message ^ m_tags,
             set.member(tag(TagName), Tags),
             strcase_str(TagName, Search)
         )
+    ;
+        Line = subseq_message_header(_Continue, _Name, Value),
+        strcase_str(Value, Search)
     ;
         Line = text(pager_text(_, String, _, _)),
         strcase_str(String, Search)
@@ -1271,7 +1286,8 @@ is_highlightable_minor(_Id - Line) :-
     ;
         Line = fold_marker(_, _)
     ;
-        ( Line = header(_, _, _, _)
+        ( Line = start_of_message_header(_, _, _)
+        ; Line = subseq_message_header(_, _, _)
         ; Line = signature(_)
         ; Line = message_separator
         ),
@@ -1283,11 +1299,12 @@ is_highlightable_minor(_Id - Line) :-
 is_highlightable_major(_Id - Line) :-
     require_complete_switch [Line]
     (
-        Line = header(yes(_), _, _, _)
+        Line = start_of_message_header(_, _, _)
     ;
         Line = part_head(_, _, _, _)
     ;
-        ( Line = text(_)
+        ( Line = subseq_message_header(_, _, _)
+        ; Line = text(_)
         ; Line = fold_marker(_, _)
         ; Line = signature(_)
         ; Line = message_separator
@@ -1300,7 +1317,7 @@ get_highlighted_thing(Info, Thing) :-
     get_cursor_line(Scrollable, _, _NodeId - Line),
     require_complete_switch [Line]
     (
-        Line = header(yes(Message), _, _, _),
+        Line = start_of_message_header(Message, _, _),
         MessageId = Message ^ m_id,
         Subject = Message ^ m_headers ^ h_subject,
         PartId = 0,
@@ -1309,6 +1326,9 @@ get_highlighted_thing(Info, Thing) :-
             no, unsupported, no, no, no, not_decrypted),
         MaybeSubject = yes(Subject),
         Thing = highlighted_part(Part, MaybeSubject)
+    ;
+        Line = subseq_message_header(_, _, _),
+        fail
     ;
         Line = part_head(Part, _, _, _),
         MaybeSubject = no,
@@ -1320,9 +1340,6 @@ get_highlighted_thing(Info, Thing) :-
     ;
         Line = fold_marker(_, _),
         Thing = highlighted_fold_marker
-    ;
-        Line = header(no, _, _, _),
-        fail
     ;
         Line = signature(_),
         fail
@@ -1373,7 +1390,8 @@ toggle_line(Config, ToggleType, NumRows, Cols, NodeId - Line, MessageUpdate,
         toggle_folding(NumRows, NodeId, Line, !Info),
         MessageUpdate = clear_message
     ;
-        ( Line = header(_, _, _, _)
+        ( Line = start_of_message_header(_, _, _)
+        ; Line = subseq_message_header(_, _, _)
         ; Line = text(pager_text(_, _, _, _))
         ; Line = signature(_)
         ; Line = message_separator
@@ -1521,10 +1539,10 @@ skip_message_lines(Lines0, Lines, LineNr0, LineNr) :-
 is_start_of_message(_NodeId - Line, Message) :-
     require_complete_switch [Line]
     (
-        Line = header(MaybeStartMessage, _Continue, _Name, _Value),
-        MaybeStartMessage = yes(Message)
+        Line = start_of_message_header(Message, _Name, _Value)
     ;
-        ( Line = text(_)
+        ( Line = subseq_message_header(_, _, _)
+        ; Line = text(_)
         ; Line = part_head(_, _, _, _)
         ; Line = fold_marker(_, _)
         ; Line = signature(_)
@@ -1538,8 +1556,10 @@ is_start_of_message(_NodeId - Line, Message) :-
 is_part_of_message(_NodeId - Line) :-
     require_complete_switch [Line]
     (
-        Line = header(MaybeStartMessage, _Continue, _Name, _Value),
-        MaybeStartMessage = no
+        Line = start_of_message_header(_, _, _),
+        fail
+    ;
+        Line = subseq_message_header(_, _, _)
     ;
         Line = text(_)
     ;
@@ -1590,7 +1610,12 @@ draw_id_pager_line(Attrs, Panel, _Id - Line, _LineNr, IsCursor, !IO) :-
 draw_pager_line(Attrs, Panel, Line, IsCursor, !IO) :-
     GAttrs = Attrs ^ p_generic,
     (
-        Line = header(_, Continue, Name, Value),
+        (
+            Line = start_of_message_header(_Message, Name, Value),
+            Continue = no
+        ;
+            Line = subseq_message_header(Continue, Name, Value)
+        ),
         attr(Panel, GAttrs ^ field_name, !IO),
         (
             Continue = no,
