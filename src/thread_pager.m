@@ -1279,22 +1279,32 @@ goto_parent_message(MessageUpdate, !Info) :-
     Scrollable0 = !.Info ^ tp_scrollable,
     NumThreadRows = !.Info ^ tp_num_thread_rows,
     PagerInfo0 = !.Info ^ tp_pager,
-    ( get_cursor_line(Scrollable0, Cursor0, ThreadLine) ->
-        (
-            ThreadLine ^ tp_parent = yes(ParentId),
-            search_reverse(is_message(ParentId), Scrollable0, Cursor0, Cursor)
-        ->
-            set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
-            skip_to_message(ParentId, PagerInfo0, PagerInfo),
-            !Info ^ tp_scrollable := Scrollable,
-            !Info ^ tp_pager := PagerInfo,
-            MessageUpdate = clear_message
-        ;
-            % Could handle excluded messages better.
-            MessageUpdate = set_warning("Message has no parent.")
-        )
-    ;
+    (
+        get_cursor_line(Scrollable0, Cursor0, ThreadLine0),
+        ThreadLine0 ^ tp_parent = yes(ParentId),
+        find_non_excluded_ancestor(Scrollable0, ParentId, Cursor0, Cursor,
+            AncestorId)
+    ->
+        set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
+        skip_to_message(AncestorId, PagerInfo0, PagerInfo),
+        !Info ^ tp_scrollable := Scrollable,
+        !Info ^ tp_pager := PagerInfo,
         MessageUpdate = clear_message
+    ;
+        MessageUpdate = set_warning("Message has no parent.")
+    ).
+
+:- pred find_non_excluded_ancestor(scrollable(thread_line)::in, message_id::in,
+    int::in, int::out, message_id::out) is semidet.
+
+find_non_excluded_ancestor(Scrollable, ParentId, !Cursor, AncestorId) :-
+    search_reverse(thread_line_has_message_id(ParentId), Scrollable, !Cursor),
+    get_line(Scrollable, !.Cursor, ThreadLine),
+    ( non_excluded_message(ThreadLine ^ tp_message) ->
+        AncestorId = ParentId
+    ;
+        ThreadLine ^ tp_parent = yes(GP),
+        find_non_excluded_ancestor(Scrollable, GP, !Cursor, AncestorId)
     ).
 
 :- pred skip_quoted_text(message_update::out,
@@ -1328,7 +1338,10 @@ sync_thread_to_pager(!Info) :-
     scrollable(thread_line)::in, scrollable(thread_line)::out) is det.
 
 goto_message(MessageId, NumThreadRows, !Scrollable) :-
-    ( search_forward(is_message(MessageId), !.Scrollable, 0, Cursor, _) ->
+    (
+        search_forward(thread_line_has_message_id(MessageId),
+            !.Scrollable, 0, Cursor, _)
+    ->
         set_cursor_centred(Cursor, NumThreadRows, !Scrollable)
     ;
         true
@@ -1359,10 +1372,16 @@ skip_to_unread(MessageUpdate, !Info) :-
         MessageUpdate = set_warning("No more unread messages.")
     ).
 
-:- pred is_message(message_id::in, thread_line::in) is semidet.
+:- pred thread_line_has_message_id(message_id::in, thread_line::in) is semidet.
 
-is_message(MessageId, Line) :-
-    Line ^ tp_message ^ m_id = MessageId.
+thread_line_has_message_id(MessageId, Line) :-
+    Message = Line ^ tp_message,
+    require_complete_switch [Message]
+    (
+        Message = message(MessageId, _, _, _, _, _)
+    ;
+        Message = excluded_message(yes(MessageId), _, _, _, _)
+    ).
 
 :- pred is_unread_and_not_excluded(thread_line::in) is semidet.
 
