@@ -183,12 +183,12 @@ parse_message(CustomExcludeTags, JSON, Messages) :-
     ( JSON = list([JSON1, JSON2]) ->
         parse_inner_message_list(CustomExcludeTags, JSON2, Replies),
         ( JSON1 = null ->
-            Message = excluded_message(Replies)
+            Message = excluded_message(no, no, no, no, Replies)
         ;
             parse_message_details(CustomExcludeTags, JSON1, Replies, Message)
         ),
         % Completely hide excluded messages without replies.
-        ( Message = excluded_message([]) ->
+        ( Message = excluded_message(_, _, _, _, []) ->
             Messages = []
         ;
             Messages = [Message]
@@ -207,7 +207,8 @@ parse_message_details(CustomExcludeTags, JSON, Replies, Message) :-
         JSON/"excluded" = bool(yes),
         really_exclude_message(CustomExcludeTags, TagSet)
     ->
-        Message = excluded_message(Replies)
+        Message = excluded_message(yes(MessageId), yes(Timestamp),
+            yes(Headers), yes(TagSet), Replies)
     ;
         parse_body(JSON, MessageId, Body),
         Message = message(MessageId, Timestamp, Headers, TagSet, Body,

@@ -319,10 +319,32 @@ setup_pager(Config, Mode, Cols, Messages, Info, !IO) :-
     message::in, tree::out, counter::in, counter::out, io::di, io::uo) is det.
 
 make_message_tree(Config, Mode, Cols, Message, Tree, !Counter, !IO) :-
-    Headers = Message ^ m_headers,
-    counter.allocate(NodeIdInt, !Counter),
-    NodeId = node_id(NodeIdInt),
+    allocate_node_id(NodeId, !Counter),
+    (
+        Message = message(_MessageId, _Timestamp, _Headers, _Tags, _Body,
+            Replies),
+        make_message_self_trees(Config, Cols, Message, NodeId, SelfTrees,
+            !Counter, !IO)
+    ;
+        Message = excluded_message(_, _, _, _, Replies),
+        SelfTrees = []
+    ),
+    (
+        Mode = include_replies,
+        list.map_foldl2(make_message_tree(Config, Mode, Cols),
+            Replies, ReplyTrees, !Counter, !IO)
+    ;
+        Mode = toplevel_only,
+        ReplyTrees = []
+    ),
+    Tree = node(NodeId, SelfTrees ++ ReplyTrees, no).
 
+:- pred make_message_self_trees(prog_config::in, int::in, message::in(message),
+    node_id::in, list(tree)::out, counter::in, counter::out, io::di, io::uo)
+    is det.
+
+make_message_self_trees(Config, Cols, Message, NodeId, Trees, !Counter, !IO) :-
+    Message = message(_MessageId, _Timestamp, Headers, _Tags, Body, _Replies),
     some [!RevLines] (
         !:RevLines = [],
         add_header(yes(Message), Cols, "Date", Headers ^ h_date, !RevLines),
@@ -335,7 +357,6 @@ make_message_tree(Config, Mode, Cols, Message, Tree, !Counter, !IO) :-
         HeaderTree = leaf(list.reverse(!.RevLines))
     ),
 
-    Body = Message ^ m_body,
     list.map_foldl3(make_part_tree(Config, Cols), Body, BodyTrees,
         yes, _ElideInitialHeadLine, !Counter, !IO),
     BodyTree = node(NodeId, BodyTrees, no),
@@ -346,32 +367,7 @@ make_message_tree(Config, Mode, Cols, Message, Tree, !Counter, !IO) :-
         message_separator
     ]),
 
-    (
-        Mode = include_replies,
-        Replies = Message ^ m_replies,
-        list.map_foldl2(make_message_tree(Config, Mode, Cols),
-            Replies, ReplyTrees, !Counter, !IO)
-    ;
-        Mode = toplevel_only,
-        ReplyTrees = []
-    ),
-
-    SubTrees = [HeaderTree, BodyTree, Separators | ReplyTrees],
-    Tree = node(NodeId, SubTrees, no).
-
-make_message_tree(Config, Mode, Cols, Message, Tree, !Counter, !IO) :-
-    Message = excluded_message(Replies),
-    counter.allocate(NodeIdInt, !Counter),
-    NodeId = node_id(NodeIdInt),
-    (
-        Mode = include_replies,
-        list.map_foldl2(make_message_tree(Config, Mode, Cols),
-            Replies, ReplyTrees, !Counter, !IO)
-    ;
-        Mode = toplevel_only,
-        ReplyTrees = []
-    ),
-    Tree = node(NodeId, ReplyTrees, no).
+    Trees = [HeaderTree, BodyTree, Separators].
 
 :- pred add_header(maybe(message)::in, int::in, string::in, header_value::in,
     list(pager_line)::in, list(pager_line)::out) is det.

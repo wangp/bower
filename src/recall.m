@@ -202,7 +202,7 @@ enter(Info, MaybeSelected, !IO) :-
                 Message = message(_, _, _, _, _, _),
                 MaybeSelected = yes(Message)
             ;
-                Message = excluded_message(_Replies),
+                Message = excluded_message(_, _, _, _, _),
                 MaybeSelected = no
             )
         ;

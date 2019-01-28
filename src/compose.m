@@ -410,7 +410,7 @@ start_reply_to_message_id(Config, Crypto, Screen, MessageId, ReplyKind,
             start_reply(Config, Crypto, Screen, Message, ReplyKind, Transition,
                 !IO)
         ;
-            Message = excluded_message(_),
+            Message = excluded_message(_, _, _, _, _),
             Warning = "Excluded message.",
             Transition = screen_transition(not_sent, set_warning(Warning))
         )

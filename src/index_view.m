@@ -890,7 +890,7 @@ handle_recall(!Screen, Sent, !IndexInfo, !IO) :-
             handle_screen_transition(!Screen, TransitionB, Sent, !IndexInfo,
                 !IO)
         ;
-            Message = excluded_message(_),
+            Message = excluded_message(_, _, _, _, _),
             Sent = not_sent
         )
     ;
