@@ -21,7 +21,10 @@
 
 :- type thread_pager_effects
     --->    thread_pager_effects(
-                % Set of tags for the thread (non-excluded messages only).
+                % Set of tags to assign to the thread in the index view.
+                % This IDEALLY would be consistent with the set of tags that
+                % notmuch search would have produced, but see the comment in
+                % get_effects.
                 thread_tags     :: set(tag),
 
                 % Tag changes to be applied to messages.
@@ -218,7 +221,7 @@ open_thread_pager(Config, Crypto, Screen, ThreadId, IncludeTags,
     thread_pager_loop(Screen, redraw, Info0, Info, !IO),
     flush_async_with_progress(Screen, !IO),
 
-    get_effects(Info, Effects),
+    get_effects(Info, IncludeTags, Effects),
     Transition = screen_transition(Effects, no_change),
     CommonHistory = Info ^ tp_common_history.
 
@@ -2612,15 +2615,37 @@ toggle_ordering(!Info) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred get_effects(thread_pager_info::in, thread_pager_effects::out) is det.
+:- pred get_effects(thread_pager_info::in, set(tag)::in,
+    thread_pager_effects::out) is det.
 
-get_effects(Info, Effects) :-
+get_effects(Info, IncludeTags, Effects) :-
+    Config = Info ^ tp_config,
     Scrollable = Info ^ tp_scrollable,
     Lines = get_lines(Scrollable),
+
     version_array.foldl(get_non_excluded_message_tags, Lines,
-        set.init, TagSet),
+        set.init, AllMessageTags),
+    %
+    % Remove any exclude tags EXCEPT for tags are were specifically included.
+    %
+    % This is still not quite right in this situation:
+    %   1. search for tag:excl1 tag:excl2
+    %   2. assume the thread has IncludeTags = [excl1]
+    %   3. tag a message with +excl2
+    %   4. returning to the index view, the thread will be assigned with
+    %      TagSet = [excl1]
+    %   5. open the thread again, the message tagged excl2 will be excluded
+    %   6. refreshing the search results, the thread will have tags
+    %       [excl1, excl2]; i.e. different from TagSet
+    %   7. open the thread again, the message thread excl2 will be visible
+    %
+    get_exclude_tags(Config, ExcludeTags0),
+    set.difference(ExcludeTags0, IncludeTags, ExcludeTags),
+    set.difference(AllMessageTags, ExcludeTags, TagSet),
+
     version_array.foldl(get_non_excluded_message_tag_delta_groups, Lines,
         map.init, TagDeltaGroups),
+
     AddedMessages = Info ^ tp_added_messages,
     Effects = thread_pager_effects(TagSet, TagDeltaGroups, AddedMessages).
 
