@@ -13,6 +13,7 @@
 :- import_module color.
 :- import_module data.
 :- import_module mime_type.
+:- import_module notmuch_config.
 :- import_module quote_arg.
 :- import_module rfc5322.
 :- import_module shell_word.
@@ -22,7 +23,7 @@
 :- type prog_config.
 
 :- type load_prog_config_result
-    --->    ok(prog_config)
+    --->    ok(prog_config, notmuch_config)
     ;       errors(list(string)).
 
 :- type account.
@@ -112,7 +113,6 @@
 :- import_module string.
 
 :- import_module config.
-:- import_module notmuch_config.
 :- import_module rfc5322.parser.
 :- import_module rfc5322.writer.
 :- import_module sys_util.
@@ -184,19 +184,19 @@ load_prog_config(Res, !IO) :-
     io::di, io::uo) is cc_multi.
 
 load_prog_config_2(Config, Res, !IO) :-
-    make_prog_config(Config, ProgConfig, [], RevErrors, !IO),
+    make_prog_config(Config, ProgConfig, NotmuchConfig, [], RevErrors, !IO),
     (
         RevErrors = [],
-        Res = ok(ProgConfig)
+        Res = ok(ProgConfig, NotmuchConfig)
     ;
         RevErrors = [_ | _],
         Res = errors(reverse(RevErrors))
     ).
 
-:- pred make_prog_config(config::in, prog_config::out,
+:- pred make_prog_config(config::in, prog_config::out, notmuch_config::out,
     list(string)::in, list(string)::out, io::di, io::uo) is cc_multi.
 
-make_prog_config(Config, ProgConfig, !Errors, !IO) :-
+make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ( search_config(Config, "command", "notmuch", Notmuch0) ->
         parse_command(Notmuch0, Notmuch, !Errors)
     ;

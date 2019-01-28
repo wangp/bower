@@ -22,6 +22,7 @@
 :- import_module crypto.
 :- import_module curs.
 :- import_module index_view.
+:- import_module notmuch_config.
 :- import_module prog_config.
 :- import_module screen.
 :- import_module search_term.
@@ -41,11 +42,11 @@ main(!IO) :-
     setlocale(!IO),
     load_prog_config(ResConfig, !IO),
     (
-        ResConfig = ok(Config),
+        ResConfig = ok(Config, NotmuchConfig),
         init_crypto(ResCrypto, !IO),
         (
             ResCrypto = ok(Crypto),
-            main_2(Config, Crypto, !IO),
+            main_2(Config, NotmuchConfig, Crypto, !IO),
             shutdown_crypto(Crypto, !IO)
         ;
             ResCrypto = error(Error),
@@ -63,16 +64,17 @@ main(!IO) :-
         io.set_exit_status(1, !IO)
     ).
 
-:- pred main_2(prog_config::in, crypto::in, io::di, io::uo) is cc_multi.
+:- pred main_2(prog_config::in, notmuch_config::in, crypto::in, io::di, io::uo)
+    is cc_multi.
 
-main_2(Config, Crypto, !IO) :-
+main_2(Config, NotmuchConfig, Crypto, !IO) :-
     % Install our SIGINT, SIGCHLD handlers.
     signal.ignore_sigint(no, !IO),
     async.install_sigchld_handler(!IO),
     io.command_line_arguments(Args, !IO),
     (
         Args = [],
-        get_default_search_terms(Config, Terms, !IO)
+        get_default_search_terms(NotmuchConfig, Terms)
     ;
         Args = [_ | _],
         Terms = string.join_list(" ", Args)
@@ -83,7 +85,8 @@ main_2(Config, Crypto, !IO) :-
         create_screen(status_attrs(Config), Screen, !IO),
         draw_status_bar(Screen, !IO),
         curs.refresh(!IO),
-        open_index(Config, Crypto, Screen, Terms, CommonHistory0, !IO)
+        open_index(Config, NotmuchConfig, Crypto, Screen, Terms,
+            CommonHistory0, !IO)
     ) then
         curs.stop(!IO)
       catch sigint_received ->

@@ -9,20 +9,20 @@
 :- import_module list.
 :- import_module maybe.
 
+:- import_module notmuch_config.
 :- import_module prog_config.
 
 %-----------------------------------------------------------------------------%
 
 :- type token.
 
-:- pred predigest_search_string(prog_config::in, string::in,
-    maybe_error(list(token))::out, io::di, io::uo) is det.
+:- pred predigest_search_string(prog_config::in, maybe(notmuch_config)::in,
+    string::in, maybe_error(list(token))::out, io::di, io::uo) is det.
 
 :- pred tokens_to_search_terms(list(token)::in, string::out, bool::out,
     io::di, io::uo) is det.
 
-:- pred get_default_search_terms(prog_config::in, string::out, io::di, io::uo)
-    is det.
+:- pred get_default_search_terms(notmuch_config::in, string::out) is det.
 
 :- func search_alias_section = string.
 
@@ -37,9 +37,6 @@
 :- import_module require.
 :- import_module set.
 :- import_module string.
-
-:- import_module callout.
-:- import_module notmuch_config.
 
 :- type token
     --->    literal(string)             % pass through to notmuch
@@ -57,15 +54,24 @@
 
 %-----------------------------------------------------------------------------%
 
-predigest_search_string(Config, Input, Res, !IO) :-
+predigest_search_string(Config, MaybeNotmuchConfig, Input, Res, !IO) :-
     promise_equivalent_solutions [ParseResult] (
         parsing_utils.parse(Input, tokens, ParseResult)
     ),
     (
         ParseResult = ok(Tokens0),
         ( contains_macro(Tokens0) ->
-            get_notmuch_command(Config, Notmuch),
-            get_notmuch_config(Notmuch, ResConfig, !IO)
+            % At startup, use the notmuch config result we have got already.
+            % Subsequently, call notmuch config afresh in case the user
+            % modified the configuration.
+            (
+                MaybeNotmuchConfig = yes(NotmuchConfig0),
+                ResConfig = ok(NotmuchConfig0)
+            ;
+                MaybeNotmuchConfig = no,
+                get_notmuch_command(Config, Notmuch),
+                get_notmuch_config(Notmuch, ResConfig, !IO)
+            )
         ;
             ResConfig = ok(empty_notmuch_config)
         ),
@@ -353,10 +359,9 @@ token_to_search_term(Token, Term, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-get_default_search_terms(Config, Terms, !IO) :-
-    get_notmuch_config(Config, search_alias_section, "default", Res, !IO),
+get_default_search_terms(Config, Terms) :-
     (
-        Res = ok(Value),
+        search(Config, search_alias_section, "default", Value),
         Value \= ""
     ->
         Terms = Value

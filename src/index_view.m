@@ -7,14 +7,15 @@
 :- import_module io.
 
 :- import_module crypto.
+:- import_module notmuch_config.
 :- import_module prog_config.
 :- import_module screen.
 :- import_module view_common.
 
 %-----------------------------------------------------------------------------%
 
-:- pred open_index(prog_config::in, crypto::in, screen::in, string::in,
-    common_history::in, io::di, io::uo) is det.
+:- pred open_index(prog_config::in, notmuch_config::in, crypto::in, screen::in,
+    string::in, common_history::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -167,13 +168,15 @@
 
 %-----------------------------------------------------------------------------%
 
-open_index(Config, Crypto, Screen, SearchString, !.CommonHistory, !IO) :-
+open_index(Config, NotmuchConfig, Crypto, Screen, SearchString,
+        !.CommonHistory, !IO) :-
     current_timestamp(Time, !IO),
     ( SearchString = "" ->
         SearchTokens = [],
         Threads = []
     ;
-        predigest_search_string(Config, SearchString, ParseRes, !IO),
+        predigest_search_string(Config, yes(NotmuchConfig), SearchString,
+            ParseRes, !IO),
         (
             ParseRes = ok(SearchTokens),
             search_terms_with_progress(Config, Screen, SearchTokens,
@@ -372,7 +375,7 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
             add_history_nodup(LimitString, History0, History),
             !IndexInfo ^ i_common_history ^ ch_limit_history := History,
             current_timestamp(Time, !IO),
-            predigest_search_string(Config, LimitString, ParseRes, !IO),
+            predigest_search_string(Config, no, LimitString, ParseRes, !IO),
             (
                 ParseRes = ok(Tokens),
                 search_terms_with_progress(Config, Screen, Tokens,
@@ -1528,7 +1531,7 @@ refresh_all(Screen, Verbose, !Info, !IO) :-
     % refresh, so expand the search terms from the beginning.
     Config = !.Info ^ i_config,
     Terms = !.Info ^ i_search_terms,
-    predigest_search_string(Config, Terms, ParseRes, !IO),
+    predigest_search_string(Config, no, Terms, ParseRes, !IO),
     (
         ParseRes = ok(Tokens),
         (
