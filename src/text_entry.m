@@ -975,7 +975,8 @@ get_notmuch_config_cached(Config, NotmuchConfig, !Info, !IO) :-
         Cache0 = yes(NotmuchConfig)
     ;
         Cache0 = no,
-        get_notmuch_config(Config, ResConfig, !IO),
+        get_notmuch_command(Config, Notmuch),
+        get_notmuch_config(Notmuch, ResConfig, !IO),
         (
             ResConfig = ok(NotmuchConfig)
         ;

@@ -7,13 +7,13 @@
 :- import_module io.
 :- import_module list.
 
-:- import_module prog_config.
+:- import_module quote_arg.
 
 :- type notmuch_config.
 
 :- func empty_notmuch_config = notmuch_config.
 
-:- pred get_notmuch_config(prog_config::in, io.res(notmuch_config)::out,
+:- pred get_notmuch_config(command_prefix::in, io.res(notmuch_config)::out,
     io::di, io::uo) is det.
 
 :- pred contains(notmuch_config::in, string::in, string::in) is semidet.
@@ -40,7 +40,6 @@
 :- import_module string.
 
 :- import_module call_system.
-:- import_module quote_arg.
 
 :- type notmuch_config == list(string).     % section.item=value
 
@@ -50,8 +49,7 @@ empty_notmuch_config = [].
 
 %-----------------------------------------------------------------------------%
 
-get_notmuch_config(Config, Res, !IO) :-
-    get_notmuch_command(Config, Notmuch),
+get_notmuch_config(Notmuch, Res, !IO) :-
     make_quoted_command(Notmuch, ["config", "list"],
         redirect_input("/dev/null"), no_redirect, Command),
     call_system_capture_stdout(Command, no, CallRes, !IO),

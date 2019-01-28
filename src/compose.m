@@ -688,7 +688,8 @@ maybe_expand_mailbox(Config, Opt, Mailbox0, Mailbox, !Cache, !IO) :-
             !.Cache = yes(NotmuchConfig)
         ;
             !.Cache = no,
-            get_notmuch_config(Config, ResConfig, !IO),
+            get_notmuch_command(Config, Notmuch),
+            get_notmuch_config(Notmuch, ResConfig, !IO),
             (
                 ResConfig = ok(NotmuchConfig)
             ;

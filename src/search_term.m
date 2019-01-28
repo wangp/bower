@@ -64,7 +64,8 @@ predigest_search_string(Config, Input, Res, !IO) :-
     (
         ParseResult = ok(Tokens0),
         ( contains_macro(Tokens0) ->
-            get_notmuch_config(Config, ResConfig, !IO)
+            get_notmuch_command(Config, Notmuch),
+            get_notmuch_config(Notmuch, ResConfig, !IO)
         ;
             ResConfig = ok(empty_notmuch_config)
         ),

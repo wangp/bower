@@ -20,9 +20,6 @@
 :- pred get_notmuch_config(prog_config::in, string::in,
     maybe_error(string)::out, io::di, io::uo) is det.
 
-:- pred get_notmuch_config0(command_prefix::in, string::in,
-    maybe_error(string)::out, io::di, io::uo) is det.
-
 :- pred get_notmuch_config(prog_config::in, string::in, string::in,
     maybe_error(string)::out, io::di, io::uo) is det.
 
@@ -78,9 +75,6 @@
 
 get_notmuch_config(Config, Key, Res, !IO) :-
     get_notmuch_command(Config, Notmuch),
-    get_notmuch_config0(Notmuch, Key, Res, !IO).
-
-get_notmuch_config0(Notmuch, Key, Res, !IO) :-
     make_quoted_command(Notmuch, ["config", "get", Key],
         redirect_input("/dev/null"), no_redirect, redirect_stderr("/dev/null"),
         run_in_foreground, Command),
