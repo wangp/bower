@@ -38,7 +38,7 @@ convert_invalid_key(Key0, Next, Key) :-
     if (SUCCESS_INDICATOR) {
         Next = Key->next;
         MR_make_aligned_string_copy_msg(Fingerprint, Key->fpr, MR_ALLOC_ID);
-        Reason = _gpgme_error_to_string(Key->reason);
+        Reason = _gpgme_error_to_string(Key->reason, MR_ALLOC_ID);
     } else {
         Next = NULL;
         Fingerprint = MR_make_string_const("""");

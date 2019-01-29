@@ -79,7 +79,7 @@ gpgme_data_new(Res, !IO) :-
         Error = MR_make_string_const("""");
     } else {
         Ok = MR_NO;
-        Error = _gpgme_error_to_string(err);
+        Error = _gpgme_error_to_string(err, MR_ALLOC_ID);
     }
 ").
 
@@ -114,7 +114,7 @@ gpgme_data_new_from_string(String, Res, !IO) :-
         Error = MR_make_string_const("""");
     } else {
         Ok = MR_NO;
-        Error = _gpgme_error_to_string(err);
+        Error = _gpgme_error_to_string(err, MR_ALLOC_ID);
     }
 ").
 

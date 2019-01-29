@@ -63,7 +63,7 @@ gpgme_signers_add(Ctx, Key, Res, !IO) :-
         Error = MR_make_string_const("""");
     } else {
         Ok = MR_NO;
-        Error = _gpgme_error_to_string(err);
+        Error = _gpgme_error_to_string(err, MR_ALLOC_ID);
     }
 ").
 

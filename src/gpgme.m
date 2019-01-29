@@ -202,17 +202,17 @@
 
 :- pragma foreign_decl("C", "
 MR_String
-_gpgme_error_to_string(gpgme_error_t err);
+_gpgme_error_to_string(gpgme_error_t err, MR_AllocSiteInfoPtr alloc_id);
 ").
 
 :- pragma foreign_code("C", "
 MR_String
-_gpgme_error_to_string(gpgme_error_t err)
+_gpgme_error_to_string(gpgme_error_t err, MR_AllocSiteInfoPtr alloc_id)
 {
     char buf[128];
 
     gpgme_strerror_r(err, buf, sizeof(buf));
-    return MR_make_string(MR_ALLOC_ID, ""%s"", buf);
+    return MR_make_string(alloc_id, ""%s"", buf);
 }
 ").
 
@@ -259,7 +259,7 @@ gpgme_engine_check_version(Proto, Res, !IO) :-
         Error = MR_make_string_const("""");
     } else {
         Ok = MR_NO;
-        Error = _gpgme_error_to_string(err);
+        Error = _gpgme_error_to_string(err, MR_ALLOC_ID);
     }
 ").
 
@@ -319,7 +319,7 @@ gpgme_new(Res, !IO) :-
         Error = MR_make_string_const("""");
     } else {
         Ok = MR_NO;
-        Error = _gpgme_error_to_string(err);
+        Error = _gpgme_error_to_string(err, MR_ALLOC_ID);
     }
 ").
 
@@ -362,7 +362,7 @@ gpgme_set_protocol(Ctx, Proto, Res, !IO) :-
         Error = MR_make_string_const("""");
     } else {
         Ok = MR_NO;
-        Error = _gpgme_error_to_string(err);
+        Error = _gpgme_error_to_string(err, MR_ALLOC_ID);
     }
 ").
 

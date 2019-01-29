@@ -118,7 +118,7 @@ gpgme_op_keylist_start(Ctx, MaybePattern, SecretOnly, Res, !IO) :-
         Error = MR_make_string_const("""");
     } else {
         Ok = MR_NO;
-        Error = _gpgme_error_to_string(err);
+        Error = _gpgme_error_to_string(err, MR_ALLOC_ID);
     }
 ").
 
@@ -158,7 +158,7 @@ gpgme_op_keylist_end(Ctx, Res, !IO) :-
         Error = MR_make_string_const("""");
     } else {
         Ok = MR_NO;
-        Error = _gpgme_error_to_string(err);
+        Error = _gpgme_error_to_string(err, MR_ALLOC_ID);
     }
 ").
 
@@ -200,7 +200,7 @@ gpgme_op_keylist_next(Ctx, Res, !IO) :-
         Error = MR_make_string_const("""");
     } else {
         RC = -1;
-        Error = _gpgme_error_to_string(err);
+        Error = _gpgme_error_to_string(err, MR_ALLOC_ID);
     }
 ").
 
