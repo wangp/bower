@@ -2118,13 +2118,15 @@ do_open_part(Config, Screen, Part, Command, MessageUpdate, MaybeNextKey,
                 MaybeNextKey, !IO)
         ;
             (
-                ParseResult = error(yes(Error), _Line, Column)
+                ParseResult = error(yes(Error), _Line, Column),
+                Message = string.format("parse error at column %d: %s",
+                    [i(Column), s(Error)])
             ;
                 ParseResult = error(no, _Line, Column),
-                Error = "parse error"
+                Message = string.format("parse error at column %d",
+                    [i(Column)])
             ),
-            Msg = string.format("%d: %s", [i(Column), s(Error)]),
-            MessageUpdate = set_warning(Msg),
+            MessageUpdate = set_warning(Message),
             MaybeNextKey = no
         )
     ).
@@ -2310,13 +2312,15 @@ do_open_url(Screen, Command, Url, MessageUpdate, !IO) :-
             )
         ;
             (
-                ParseResult = error(yes(Error), _Line, Column)
+                ParseResult = error(yes(Error), _Line, Column),
+                Message = string.format("parse error at column %d: %s",
+                    [i(Column), s(Error)])
             ;
                 ParseResult = error(no, _Line, Column),
-                Error = "parse error"
+                Message = string.format("parse error at column %d",
+                    [i(Column)])
             ),
-            Msg = string.format("%d: %s", [i(Column), s(Error)]),
-            MessageUpdate = set_warning(Msg)
+            MessageUpdate = set_warning(Message)
         )
     ).
 
