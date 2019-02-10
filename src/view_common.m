@@ -16,6 +16,7 @@
                 ch_subject_history  :: history,
                 ch_open_part_history:: history,
                 ch_open_url_history :: history,
+                ch_pipe_id_history  :: history,
                 ch_save_history     :: history
             ).
 
@@ -29,6 +30,7 @@
 init_common_history(Config, CommonHistory) :-
     get_open_part_command(Config, OpenPart),
     get_open_url_command(Config, OpenUrl),
+    get_pipe_id_command(Config, PipeId),
 
     CommonHistory ^ ch_limit_history = init_history,
     CommonHistory ^ ch_internal_search_history = init_history,
@@ -37,6 +39,7 @@ init_common_history(Config, CommonHistory) :-
     CommonHistory ^ ch_subject_history = init_history,
     CommonHistory ^ ch_open_part_history = init_history(OpenPart),
     CommonHistory ^ ch_open_url_history = init_history(OpenUrl),
+    CommonHistory ^ ch_pipe_id_history = init_history(PipeId),
     CommonHistory ^ ch_save_history = init_history.
 
 %-----------------------------------------------------------------------------%

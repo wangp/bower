@@ -47,6 +47,12 @@
     #
   ; open_url = xdg-open&
 
+    # Default command to pass thread or message IDs to using the '|' command.
+    # The command should read from standard input. Multiple IDs are separated
+    # by spaces.
+    #
+  ; pipe_id = xclip
+
     # Command to execute after polling finds there are new unread messages
     # matching the current search terms in the index view.
     # The notification message is provided as an argument.

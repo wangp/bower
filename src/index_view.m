@@ -44,8 +44,8 @@
 :- import_module curs.
 :- import_module curs.panel.
 :- import_module data.
+:- import_module pipe_to.
 :- import_module poll_notify.
-:- import_module quote_arg.
 :- import_module recall.
 :- import_module scrollable.
 :- import_module search_term.
@@ -122,6 +122,7 @@
     ;       toggle_select
     ;       unselect_all
     ;       bulk_tag(keep_selection)
+    ;       pipe_thread_id
     ;       quit.
 
 :- type action
@@ -143,6 +144,7 @@
     ;       unset_deleted
     ;       prompt_tag(string)
     ;       bulk_tag(keep_selection)
+    ;       pipe_thread_id
     ;       quit.
 
 :- type keep_selection
@@ -496,6 +498,10 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         ),
         index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
+        Action = pipe_thread_id,
+        pipe_thread_id(Screen, !IndexInfo, !IO),
+        index_loop(Screen, redraw, !.IndexInfo, !IO)
+    ;
         Action = quit,
         flush_async_with_progress(Screen, !IO)
     ).
@@ -630,6 +636,10 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = bulk_tag(KeepSelection)
         ;
+            Binding = pipe_thread_id,
+            MessageUpdate = no_change,
+            Action = pipe_thread_id
+        ;
             Binding = quit,
             MessageUpdate = no_change,
             Action = quit
@@ -700,6 +710,7 @@ key_binding_char('t', toggle_select).
 key_binding_char('T', unselect_all).
 key_binding_char('''', bulk_tag(clear_selection)).
 key_binding_char('"', bulk_tag(keep_selection)).
+key_binding_char('|', pipe_thread_id).
 key_binding_char('q', quit).
 
 :- pred move_cursor(screen::in, int::in, message_update::out,
@@ -1518,6 +1529,84 @@ async_tag_messages(Config, TagDeltaSet, MessageIds, !IO) :-
 :- func async_tag_attempts = int.
 
 async_tag_attempts = 3.
+
+%-----------------------------------------------------------------------------%
+
+:- pred pipe_thread_id(screen::in, index_info::in, index_info::out,
+    io::di, io::uo) is det.
+
+pipe_thread_id(Screen, !Info, !IO) :-
+    get_selected_or_current_thread_ids(!.Info, HaveSelectedThreads, ThreadIds),
+    (
+        HaveSelectedThreads = no,
+        PromptCommand = "Pipe current thread ID: "
+    ;
+        HaveSelectedThreads = yes,
+        PromptCommand = "Pipe selected thread IDs: "
+    ),
+    (
+        ThreadIds = [],
+        MessageUpdate = set_warning("No thread.")
+    ;
+        ThreadIds = [_ | _],
+        IdStrings = map(thread_id_to_search_term, ThreadIds),
+        pipe_thread_id_2(Screen, PromptCommand, IdStrings, MessageUpdate,
+            !Info, !IO)
+    ),
+    update_message(Screen, MessageUpdate, !IO).
+
+:- pred pipe_thread_id_2(screen::in, string::in, list(string)::in,
+    message_update::out, index_info::in, index_info::out, io::di, io::uo)
+    is det.
+
+pipe_thread_id_2(Screen, PromptCommand, Strings, MessageUpdate, !Info, !IO) :-
+    History0 = !.Info ^ i_common_history ^ ch_pipe_id_history,
+    text_entry(Screen, PromptCommand, History0, complete_none, Return, !IO),
+    (
+        Return = yes(Command),
+        Command \= ""
+    ->
+        pipe_to_command(Command, Strings, MaybeError, !IO),
+        (
+            MaybeError = ok,
+            MessageUpdate = clear_message
+        ;
+            MaybeError = error(Error),
+            MessageUpdate = set_warning(Error)
+        ),
+        add_history_nodup(Command, History0, History),
+        !Info ^ i_common_history ^ ch_pipe_id_history := History
+    ;
+        MessageUpdate = clear_message
+    ).
+
+:- pred get_selected_or_current_thread_ids(index_info::in, bool::out,
+    list(thread_id)::out) is det.
+
+get_selected_or_current_thread_ids(Info, Selected, ThreadIds) :-
+    Scrollable = Info ^ i_scrollable,
+    Lines = get_lines_list(Scrollable),
+    (
+        list.filter_map(selected_line_thread_id, Lines, SelectedThreadIds),
+        SelectedThreadIds \= []
+    ->
+        Selected = yes,
+        ThreadIds = SelectedThreadIds
+    ;
+        Selected = no,
+        ( get_cursor_line(Scrollable, _Cursor, CursorLine) ->
+            ThreadId = CursorLine ^ i_id,
+            ThreadIds = [ThreadId]
+        ;
+            ThreadIds = []
+        )
+    ).
+
+:- pred selected_line_thread_id(index_line::in, thread_id::out) is semidet.
+
+selected_line_thread_id(Line, ThreadId) :-
+    Line ^ i_selected = selected,
+    ThreadId = Line ^ i_id.
 
 %-----------------------------------------------------------------------------%
 

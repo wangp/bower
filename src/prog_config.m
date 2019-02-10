@@ -49,6 +49,8 @@
 
 :- pred get_open_url_command(prog_config::in, string::out) is det.
 
+:- pred get_pipe_id_command(prog_config::in, string::out) is det.
+
 :- pred get_poll_notify_command(prog_config::in, maybe(command_prefix)::out)
     is det.
 
@@ -127,6 +129,7 @@
                 text_filters    :: map(mime_type, command_prefix),
                 open_part       :: string, % not shell-quoted
                 open_url        :: string, % not shell-quoted
+                pipe_id         :: string, % not shell-quoted
                 poll_notify     :: maybe(command_prefix),
                 poll_period_secs :: maybe(int),
                 wrap_width      :: maybe(int),
@@ -236,6 +239,12 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
         OpenUrl = OpenUrl0
     ;
         OpenUrl = default_open_url_command
+    ),
+
+    ( search_config(Config, "command", "pipe_id", PipeId0) ->
+        PipeId = PipeId0
+    ;
+        PipeId = default_pipe_id_command
     ),
 
     (
@@ -378,6 +387,7 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ProgConfig ^ editor = Editor,
     ProgConfig ^ open_part = OpenPart,
     ProgConfig ^ open_url = OpenUrl,
+    ProgConfig ^ pipe_id = PipeId,
     ProgConfig ^ poll_notify = PollNotify,
     ProgConfig ^ poll_period_secs = PollSecs,
     ProgConfig ^ wrap_width = WrapWidth,
@@ -748,6 +758,9 @@ get_open_part_command(Config, Command) :-
 get_open_url_command(Config, Command) :-
     Command = Config ^ open_url.
 
+get_pipe_id_command(Config, Command) :-
+    Command = Config ^ pipe_id.
+
 get_poll_notify_command(Config, Command) :-
     Command = Config ^ poll_notify.
 
@@ -879,6 +892,10 @@ default_open_part_command = "xdg-open&".
 :- func default_open_url_command = string.
 
 default_open_url_command = "xdg-open&".
+
+:- func default_pipe_id_command = string.
+
+default_pipe_id_command = "xclip".
 
 :- func default_poll_period_secs = maybe(int).
 
