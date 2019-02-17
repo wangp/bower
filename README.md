@@ -158,6 +158,8 @@ The keys are:
     R               recall postponed message
     @               add to address book
 
+    |               pipe thread IDs to command
+
     q               quit
 
 Thread/pager view keys
@@ -210,6 +212,8 @@ This view pages through an entire thread.  The keys are:
     Z               toggle inline display of part / decrypt
     z, o            expand/collapse folded text
     y               verify signed part
+
+    |               pipe thread or message IDs to command
 
     i, q            return to index
     I               return to index, removing 'unread' tag on all messages
