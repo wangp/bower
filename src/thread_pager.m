@@ -65,6 +65,7 @@
 :- import_module mime_type.
 :- import_module pager.
 :- import_module path_expand.
+:- import_module pipe_to.
 :- import_module poll_notify.
 :- import_module quote_arg.
 :- import_module recall.
@@ -159,6 +160,7 @@
     ;       toggle_content(toggle_type)
     ;       toggle_ordering
     ;       addressbook_add
+    ;       pipe_ids
     ;       refresh_results
     ;       leave.
 
@@ -910,6 +912,10 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
         addressbook_add(Screen, !.Info, !IO),
         thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
+        Action = pipe_ids,
+        pipe_ids(Screen, !Info, !IO),
+        thread_pager_loop(Screen, redraw, !Info, !IO)
+    ;
         Action = refresh_results,
         flush_async_with_progress(Screen, !IO),
         reopen_thread_pager(Screen, no, !Info, !IO),
@@ -1201,6 +1207,11 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Key = char('@')
     ->
         Action = addressbook_add,
+        MessageUpdate = no_change
+    ;
+        Key = char('|')
+    ->
+        Action = pipe_ids,
         MessageUpdate = no_change
     ;
         ( Key = code(key_resize) ->
@@ -2836,6 +2847,116 @@ addressbook_add(Screen, Info, !IO) :-
         Address0 = ""
     ),
     prompt_addressbook_add(Config, Screen, Address0, !IO).
+
+%-----------------------------------------------------------------------------%
+
+:- pred pipe_ids(screen::in, thread_pager_info::in, thread_pager_info::out,
+    io::di, io::uo) is det.
+
+pipe_ids(Screen, !Info, !IO) :-
+    PromptWhat0 = "Pipe: (t) current thread ID",
+    get_selected_or_current_message_ids(!.Info, HaveSelectedMessages,
+        MessageIds),
+    (
+        HaveSelectedMessages = no,
+        PromptWhat = PromptWhat0 ++ ", (m) current message ID"
+    ;
+        HaveSelectedMessages = yes,
+        PromptWhat = PromptWhat0 ++ ", (m) selected message IDs"
+    ),
+    update_message_immed(Screen, set_prompt(PromptWhat), !IO),
+    get_keycode_blocking(KeyCode, !IO),
+    ( KeyCode = char('t') ->
+        PromptCommand = "Pipe thread ID: ",
+        ThreadId = !.Info ^ tp_thread_id,
+        IdStrings = [thread_id_to_search_term(ThreadId)],
+        pipe_ids_2(Screen, PromptCommand, IdStrings, MessageUpdate, !Info, !IO)
+    ; KeyCode = char('m') ->
+        (
+            MessageIds = [],
+            MessageUpdate = set_warning("No message.")
+        ;
+            (
+                MessageIds = [_],
+                PromptCommand = "Pipe message ID: "
+            ;
+                MessageIds = [_, _ | _],
+                PromptCommand = "Pipe message IDs: "
+            ),
+            IdStrings = map(message_id_to_search_term, MessageIds),
+            pipe_ids_2(Screen, PromptCommand, IdStrings, MessageUpdate,
+                !Info, !IO)
+        )
+    ;
+        MessageUpdate = clear_message
+    ),
+    update_message(Screen, MessageUpdate, !IO).
+
+:- pred pipe_ids_2(screen::in, string::in, list(string)::in,
+    message_update::out, thread_pager_info::in, thread_pager_info::out,
+    io::di, io::uo) is det.
+
+pipe_ids_2(Screen, PromptCommand, Strings, MessageUpdate, !Info, !IO) :-
+    History0 = !.Info ^ tp_common_history ^ ch_pipe_id_history,
+    text_entry(Screen, PromptCommand, History0, complete_none, Return, !IO),
+    (
+        Return = yes(Command),
+        Command \= ""
+    ->
+        pipe_to_command(Command, Strings, MaybeError, !IO),
+        (
+            MaybeError = ok,
+            MessageUpdate = clear_message
+        ;
+            MaybeError = error(Error),
+            MessageUpdate = set_warning(Error)
+        ),
+        add_history_nodup(Command, History0, History),
+        !Info ^ tp_common_history ^ ch_pipe_id_history := History
+    ;
+        MessageUpdate = clear_message
+    ).
+
+:- pred get_selected_or_current_message_ids(thread_pager_info::in, bool::out,
+    list(message_id)::out) is det.
+
+get_selected_or_current_message_ids(Info, Selected, MessageIds) :-
+    Scrollable = Info ^ tp_scrollable,
+    Lines = get_lines_list(Scrollable),
+    (
+        list.filter_map(selected_line_message_id, Lines, SelectedMessageIds),
+        SelectedMessageIds \= []
+    ->
+        Selected = yes,
+        MessageIds = SelectedMessageIds
+    ;
+        Selected = no,
+        (
+            get_cursor_line(Scrollable, _Cursor, CursorLine),
+            thread_line_message_id(CursorLine, MessageId)
+        ->
+            MessageIds = [MessageId]
+        ;
+            MessageIds = []
+        )
+    ).
+
+:- pred selected_line_message_id(thread_line::in, message_id::out) is semidet.
+
+selected_line_message_id(Line, MessageId) :-
+    Line ^ tp_selected = selected,
+    thread_line_message_id(Line, MessageId).
+
+:- pred thread_line_message_id(thread_line::in, message_id::out) is semidet.
+
+thread_line_message_id(Line, MessageId) :-
+    Message = Line ^ tp_message,
+    require_complete_switch [Message]
+    (
+        Message = message(MessageId, _, _, _, _, _)
+    ;
+        Message = excluded_message(yes(MessageId), _, _, _, _)
+    ).
 
 %-----------------------------------------------------------------------------%
 
