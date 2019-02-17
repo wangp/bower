@@ -6,16 +6,19 @@
 
 :- import_module io.
 :- import_module list.
-:- import_module maybe.
 
-:- pred pipe_to_command(string::in, list(string)::in, maybe_error::out,
-    io::di, io::uo) is det.
+:- import_module screen.
+:- import_module text_entry.
+
+:- pred prompt_and_pipe_to_command(screen::in, string::in, list(string)::in,
+    message_update::out, history::in, history::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
+:- import_module maybe.
 :- import_module parsing_utils.
 :- import_module string.
 
@@ -24,6 +27,29 @@
 :- import_module prog_config.
 :- import_module quote_arg.
 :- import_module shell_word.
+
+prompt_and_pipe_to_command(Screen, PromptCommand, Strings, MessageUpdate,
+        !History, !IO) :-
+    text_entry(Screen, PromptCommand, !.History, complete_none, Return, !IO),
+    (
+        Return = yes(Command),
+        Command \= ""
+    ->
+        add_history_nodup(Command, !History),
+        pipe_to_command(Command, Strings, MaybeError, !IO),
+        (
+            MaybeError = ok,
+            MessageUpdate = clear_message
+        ;
+            MaybeError = error(Error),
+            MessageUpdate = set_warning(Error)
+        )
+    ;
+        MessageUpdate = clear_message
+    ).
+
+:- pred pipe_to_command(string::in, list(string)::in, maybe_error::out,
+    io::di, io::uo) is det.
 
 pipe_to_command(Command, Strings, MaybeError, !IO) :-
     promise_equivalent_solutions [MaybeError, !:IO] (

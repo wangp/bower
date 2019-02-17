@@ -2898,24 +2898,9 @@ pipe_ids(Screen, !Info, !IO) :-
 
 pipe_ids_2(Screen, PromptCommand, Strings, MessageUpdate, !Info, !IO) :-
     History0 = !.Info ^ tp_common_history ^ ch_pipe_id_history,
-    text_entry(Screen, PromptCommand, History0, complete_none, Return, !IO),
-    (
-        Return = yes(Command),
-        Command \= ""
-    ->
-        pipe_to_command(Command, Strings, MaybeError, !IO),
-        (
-            MaybeError = ok,
-            MessageUpdate = clear_message
-        ;
-            MaybeError = error(Error),
-            MessageUpdate = set_warning(Error)
-        ),
-        add_history_nodup(Command, History0, History),
-        !Info ^ tp_common_history ^ ch_pipe_id_history := History
-    ;
-        MessageUpdate = clear_message
-    ).
+    prompt_and_pipe_to_command(Screen, PromptCommand, Strings, MessageUpdate,
+        History0, History, !IO),
+    !Info ^ tp_common_history ^ ch_pipe_id_history := History.
 
 :- pred get_selected_or_current_message_ids(thread_pager_info::in, bool::out,
     list(message_id)::out) is det.
