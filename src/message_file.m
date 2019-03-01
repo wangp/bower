@@ -67,7 +67,7 @@ read_headers(String, Pos0, Pos, !Headers) :-
         % Other headers should be decoded as well.
         ( strcase_equal(Name, "Subject") ->
             decode_unstructured(RawValue, Decoded),
-            Value = decoded_unstructured(Decoded)
+            Value = decoded_unstructured(string.replace_all(Decoded, "\t", " "))
         ;
             Value = header_value(RawValue)
         ),

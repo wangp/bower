@@ -252,7 +252,7 @@ parse_header(Key, unesc_string(Value), !Headers) :-
         !Headers ^ h_bcc := header_value(Value)
     ; Key = "Subject" ->
         % notmuch should provide the decoded value.
-        !Headers ^ h_subject := decoded_unstructured(Value)
+        !Headers ^ h_subject := decoded_unstructured(string.replace_all(Value, "\t", " "))
     ; Key = "Reply-To" ->
         !Headers ^ h_replyto := header_value(Value)
     ; Key = "References" ->
@@ -499,7 +499,7 @@ parse_thread(Json, Thread) :-
     ->
         TagSet = set.from_list(Tags),
         Thread = thread(thread_id(Id), timestamp(float(Timestamp)), Authors,
-            Subject, TagSet, Matched, Total)
+            string.replace_all(Subject, "\t", " "), TagSet, Matched, Total)
     ;
         notmuch_json_error
     ).
