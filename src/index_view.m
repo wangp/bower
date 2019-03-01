@@ -1906,11 +1906,14 @@ draw_index_line(IAttrs, AuthorWidth, Panel, Line, _LineNr, IsCursor, !IO) :-
     ),
 
     ( Matched = Total ->
-        CountStr = format(" %3d     ", [i(Total)])
+        CountStr = format(" %3d", [i(Total)]),
+        TotalStr = "     "
     ;
-        CountStr = format(" %3d/%-3d ", [i(Matched), i(Total)])
+        CountStr = format(" %3d", [i(Matched)]),
+        TotalStr = format("/%-3d ", [i(Total)])
     ),
     mattr_draw(Panel, unless(IsCursor, IAttrs ^ i_count), CountStr, !IO),
+    mattr_draw(Panel, unless(IsCursor, IAttrs ^ i_total), TotalStr, !IO),
 
     panel.getyx(Panel, Row, SubjectX0, !IO),
     mattr_draw(Panel, unless(IsCursor, Attrs ^ subject), Subject, !IO),

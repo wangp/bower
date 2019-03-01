@@ -205,6 +205,7 @@
 
 [color.index]
   ; count = green
+  ; total = bold black
 
 [color.thread]
   ; tree = magenta
