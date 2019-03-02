@@ -3,6 +3,8 @@ Bower 0.11-unreleased
 
 * thread/pager: Show messages with exclude tags if the tags are explicitly
   searched for in the index view.
+* compose: Allow non-UTF-8 "text" files to be attached by using
+  base64 transfer encoding.
 
 Bower 0.10 (2019-01-26)
 =======================

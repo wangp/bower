@@ -146,7 +146,7 @@
 
 :- type attachment_content
     --->    text(string)
-    ;       binary_base64(string).
+    ;       base64_encoded(string).
 
 :- type staging_screen_action
     --->    continue
@@ -1119,15 +1119,12 @@ do_attach_file_2(FileName, NumRows, MessageUpdate, !AttachInfo, !IO) :-
         ;
             BaseName = FileName
         ),
-        ( Charset = "binary" ->
-            do_attach_binary_file(FileName, BaseName, Type, NumRows,
-                MessageUpdate, !AttachInfo, !IO)
-        ; acceptable_charset(Charset) ->
+        ( acceptable_charset(Charset) ->
             do_attach_text_file(FileName, BaseName, Type, NumRows,
                 MessageUpdate, !AttachInfo, !IO)
         ;
-            MessageUpdate = set_warning(
-                "Only ASCII and UTF-8 text files supported yet.")
+            do_attach_file_with_base64_encoding(FileName, BaseName, Type,
+                NumRows, MessageUpdate, !AttachInfo, !IO)
         )
     ;
         ResDetect = error(Error),
@@ -1173,19 +1170,19 @@ do_attach_text_file(FileName, BaseName, Type, NumRows, MessageUpdate,
         MessageUpdate = set_warning(Msg)
     ).
 
-:- pred do_attach_binary_file(string::in, string::in, mime_type::in, int::in,
-    message_update::out, attach_info::in, attach_info::out, io::di, io::uo)
-    is det.
+:- pred do_attach_file_with_base64_encoding(string::in, string::in,
+    mime_type::in, int::in, message_update::out,
+    attach_info::in, attach_info::out, io::di, io::uo) is det.
 
-do_attach_binary_file(FileName, BaseName, Type, NumRows, MessageUpdate,
-        !AttachInfo, !IO) :-
+do_attach_file_with_base64_encoding(FileName, BaseName, Type, NumRows,
+        MessageUpdate, !AttachInfo, !IO) :-
     make_quoted_command(base64_command, [FileName],
         redirect_input("/dev/null"), no_redirect, Command),
     call_system_capture_stdout(Command, no, CallRes, !IO),
     (
         CallRes = ok(Content),
         string.length(Content, Size),
-        NewAttachment = new_attachment(Type, binary_base64(Content), BaseName,
+        NewAttachment = new_attachment(Type, base64_encoded(Content), BaseName,
             Size),
         append_attachment(NewAttachment, NumRows, !AttachInfo),
         MessageUpdate = clear_message
@@ -2188,7 +2185,7 @@ make_attachment_mime_part(TextCTE, Attachment, MimePart) :-
             make_text_mime_part(WriteContentDisposition, TextCTE, Text,
                 MimePart)
         ;
-            Content = binary_base64(Base64),
+            Content = base64_encoded(Base64),
             TypeString = mime_type.to_string(Type),
             MimePart = discrete(content_type(TypeString),
                 yes(WriteContentDisposition), yes(cte_base64), base64(Base64))
