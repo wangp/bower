@@ -616,7 +616,7 @@ enter_staging(Config, Screen, Headers0, Text, Attachments, MaybeOldDraft,
         MaybeOldDraft, init_history),
     AttachInfo = scrollable.init_with_cursor(Attachments),
     get_cols(Screen, Cols),
-    setup_pager_for_staging(Cols, Text, new_pager, PagerInfo),
+    setup_pager_for_staging(Config, Cols, Text, new_pager, PagerInfo),
     staging_screen(Screen, StagingInfo, AttachInfo, PagerInfo, Transition,
         !CryptoInfo, !IO).
 
@@ -895,8 +895,9 @@ resize_staging_screen(Screen0, Screen, StagingInfo, PagerInfo0, PagerInfo,
     split_panels(Screen, _HeaderPanels, _AttachmentPanels, _MaybeSepPanel,
         PagerPanels),
     NumPagerRows = list.length(PagerPanels),
+    Config = StagingInfo ^ si_config,
     Text = StagingInfo ^ si_text,
-    setup_pager_for_staging(Cols, Text,
+    setup_pager_for_staging(Config, Cols, Text,
         retain_pager_pos(PagerInfo0, NumPagerRows), PagerInfo).
 
 %-----------------------------------------------------------------------------%

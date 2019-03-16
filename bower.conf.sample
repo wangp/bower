@@ -123,6 +123,10 @@
     #
   ; poll_period_secs = 60
 
+    # Wrap lines in message bodies at this column, if the terminal is wider.
+    #
+  ; wrap_width =
+
 #-----------------------------------------------------------------------------#
 
 [crypto]

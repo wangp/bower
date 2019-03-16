@@ -31,7 +31,7 @@
 :- pred setup_pager(prog_config::in, setup_mode::in, int::in,
     list(message)::in, pager_info::out, io::di, io::uo) is det.
 
-:- pred setup_pager_for_staging(int::in, string::in,
+:- pred setup_pager_for_staging(prog_config::in, int::in, string::in,
     retain_pager_pos::in, pager_info::out) is det.
 
 :- type pager_action
@@ -442,7 +442,8 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, HandleUnsupported, Tree,
             Text = InlineText,
             Filtered = part_not_filtered
         ),
-        make_text_lines(Cols, Text, Lines0),
+        get_wrap_width(Config, Cols, WrapWidth),
+        make_text_lines(WrapWidth, Text, Lines0),
         list.map(wrap_text, Lines0) = Lines,
         fold_quote_blocks(Lines, TextTrees, !Counter),
         (
@@ -747,7 +748,8 @@ make_unsupported_part_tree(Config, Cols, PartNodeId, Part, HandleUnsupported,
             MaybeText, !IO),
         (
             MaybeText = ok(Text),
-            make_text_lines(Cols, Text, TextLines)
+            get_wrap_width(Config, Cols, WrapWidth),
+            make_text_lines(WrapWidth, Text, TextLines)
         ;
             MaybeText = error(Error),
             make_text_lines(Cols, "(" ++ Error ++ ")", TextLines)
@@ -783,8 +785,9 @@ wrap_text(Text) = text(Text).
 
 %-----------------------------------------------------------------------------%
 
-setup_pager_for_staging(Cols, Text, RetainPagerPos, Info) :-
-    make_text_lines(Cols, Text, Lines0),
+setup_pager_for_staging(Config, Cols, Text, RetainPagerPos, Info) :-
+    get_wrap_width(Config, Cols, WrapWidth),
+    make_text_lines(WrapWidth, Text, Lines0),
     Lines = wrap_texts(Lines0) ++ [
         message_separator,
         message_separator,

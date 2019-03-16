@@ -54,6 +54,8 @@
 
 :- pred get_poll_period_secs(prog_config::in, maybe(int)::out) is det.
 
+:- pred get_wrap_width(prog_config::in, int::in, int::out) is det.
+
 :- pred get_text_filter_command(prog_config::in, mime_type::in,
     command_prefix::out) is semidet.
 
@@ -127,6 +129,7 @@
                 open_url        :: string, % not shell-quoted
                 poll_notify     :: maybe(command_prefix),
                 poll_period_secs :: maybe(int),
+                wrap_width      :: maybe(int),
                 encrypt_by_default :: bool,
                 sign_by_default :: bool,
                 decrypt_by_default :: bool,
@@ -254,6 +257,16 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
         PollSecs = default_poll_period_secs
     ),
 
+    (
+        search_config(Config, "ui", "wrap_width", WrapWidth0),
+        string.to_int(WrapWidth0, WrapWidthInt),
+        WrapWidthInt > 0
+    ->
+        WrapWidth = yes(WrapWidthInt)
+    ;
+        WrapWidth = no
+    ),
+
     some [!Filters] (
         !:Filters = map.singleton(text_html, default_html_dump_command),
         % For backwards compatibility.
@@ -367,6 +380,7 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ProgConfig ^ open_url = OpenUrl,
     ProgConfig ^ poll_notify = PollNotify,
     ProgConfig ^ poll_period_secs = PollSecs,
+    ProgConfig ^ wrap_width = WrapWidth,
     ProgConfig ^ text_filters = Filters,
     ProgConfig ^ encrypt_by_default = EncryptByDefault,
     ProgConfig ^ sign_by_default = SignByDefault,
@@ -739,6 +753,16 @@ get_poll_notify_command(Config, Command) :-
 
 get_poll_period_secs(Config, PollPeriodSecs) :-
     PollPeriodSecs = Config ^ poll_period_secs.
+
+get_wrap_width(Config, Cols, WrapWidth) :-
+    MaybeWrapWidth = Config ^ wrap_width,
+    (
+        MaybeWrapWidth = yes(WrapWidth0),
+        WrapWidth = min(WrapWidth0, Cols)
+    ;
+        MaybeWrapWidth = no,
+        WrapWidth = Cols
+    ).
 
 get_text_filter_command(Config, MimeType, Command) :-
     Filters = Config ^ text_filters,
