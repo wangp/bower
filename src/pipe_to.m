@@ -22,8 +22,8 @@
 :- import_module parsing_utils.
 :- import_module string.
 
+:- import_module call_system.
 :- import_module curs.
-:- import_module make_temp.
 :- import_module prog_config.
 :- import_module quote_arg.
 :- import_module shell_word.
@@ -80,52 +80,27 @@ pipe_to_command(Command, Strings, MaybeError, !IO) :-
     maybe_error::out, io::di, io::uo) is det.
 
 pipe_to_command_2(CommandWords, Strings, MaybeError, !IO) :-
-    % Use a temporary file for now.
-    make_temp_suffix("", TempRes, !IO),
+    make_pipe_to_command(CommandWords, Command),
+    Input = string.join_list(" ", Strings),
+    curs.suspend(call_system_write_to_stdin(Command, Input), CallRes, !IO),
     (
-        TempRes = ok(FileName),
-        io.open_output(FileName, OpenRes, !IO),
-        (
-            OpenRes = ok(Stream),
-            io.write_list(Stream, Strings, " ", io.write_string(Stream), !IO),
-            io.close_output(Stream, !IO),
-
-            make_pipe_to_command(CommandWords, FileName, Command),
-            curs.suspend(io.call_system(Command), CallRes, !IO),
-            (
-                CallRes = ok(ExitStatus),
-                ( ExitStatus = 0 ->
-                    MaybeError = ok
-                ;
-                    string.format("%s returned with exit status %d",
-                        [s(Command), i(ExitStatus)], Msg),
-                    MaybeError = error(Msg)
-                )
-            ;
-                CallRes = error(Error),
-                MaybeError = error(io.error_message(Error))
-            ),
-            io.remove_file(FileName, _, !IO)
-        ;
-            OpenRes = error(Error),
-            MaybeError = error(io.error_message(Error))
-        )
+        CallRes = ok,
+        MaybeError = ok
     ;
-        TempRes = error(Error),
-        MaybeError = error(Error)
+        CallRes = error(Error),
+        MaybeError = error(io.error_message(Error))
     ).
 
-:- pred make_pipe_to_command(list(word)::in, string::in, string::out) is det.
+:- pred make_pipe_to_command(list(word)::in, string::out) is det.
 
-make_pipe_to_command(CommandWords, FileName, Command) :-
+make_pipe_to_command(CommandWords, Command) :-
     % Could check for bg operator.
     WordStrings = list.map(word_string, CommandWords),
     CommandPrefix = command_prefix(
         shell_quoted(string.join_list(" ", list.map(quote_arg, WordStrings))),
         ( detect_ssh(CommandWords) -> quote_twice ; quote_once )
     ),
-    make_quoted_command(CommandPrefix, [], redirect_input(FileName),
-        no_redirect, Command).
+    make_quoted_command(CommandPrefix, [], no_redirect, no_redirect, Command).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
