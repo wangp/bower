@@ -19,6 +19,9 @@
 :- pred posix_spawn(string::in, list(string)::in, io.res(pid)::out,
     io::di, io::uo) is det.
 
+:- pred posix_spawn_get_stdin(string::in, list(string)::in,
+    io.res({pid, pipe_write})::out, io::di, io::uo) is det.
+
 :- pred posix_spawn_get_stdout(string::in, list(string)::in,
     io.res({pid, pipe_read})::out, io::di, io::uo) is det.
 
@@ -134,6 +137,18 @@ posix_spawn(Prog, Args, Res, !IO) :-
         _StdinFd, _StdoutFd, !IO),
     ( Pid >= 0 ->
         Res = ok(pid(Pid))
+    ;
+        Res = error(io.make_io_error("posix_spawn failed"))
+    ).
+
+posix_spawn_get_stdin(Prog, Args, Res, !IO) :-
+    list.length(Args, NumArgs),
+    GetStdin = yes,
+    GetStdout = no,
+    posix_spawn_2(Prog, Args, NumArgs, GetStdin, GetStdout, Pid,
+        StdinFd, _StdoutFd, !IO),
+    ( Pid >= 0 ->
+        Res = ok({pid(Pid), pipe_write(StdinFd)})
     ;
         Res = error(io.make_io_error("posix_spawn failed"))
     ).
