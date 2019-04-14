@@ -1824,14 +1824,27 @@ next_poll_time(Config, Time) = NextPollTime :-
 draw_index_view(Screen, Info, !IO) :-
     Config = Info ^ i_config,
     Attrs = index_attrs(Config),
-    Scrollable = Info ^ i_scrollable,
+    get_cols(Screen, Cols),
+    get_author_width(Cols, AuthorWidth),
     get_main_panels(Screen, MainPanels),
-    scrollable.draw(draw_index_line(Attrs), MainPanels, Scrollable, !IO).
+    Scrollable = Info ^ i_scrollable,
+    scrollable.draw(draw_index_line(Attrs, AuthorWidth), MainPanels,
+        Scrollable, !IO).
 
-:- pred draw_index_line(index_attrs::in, panel::in, index_line::in, int::in,
-    bool::in, io::di, io::uo) is det.
+:- pred get_author_width(int::in, int::out) is det.
 
-draw_index_line(IAttrs, Panel, Line, _LineNr, IsCursor, !IO) :-
+get_author_width(Cols, AuthorWidth) :-
+    Rem = Cols - 16 - 40,
+    ( Rem < 4 ->
+        AuthorWidth = 0
+    ;
+        AuthorWidth = min(Rem, 20)
+    ).
+
+:- pred draw_index_line(index_attrs::in, int::in, panel::in, index_line::in,
+    int::in, bool::in, io::di, io::uo) is det.
+
+draw_index_line(IAttrs, AuthorWidth, Panel, Line, _LineNr, IsCursor, !IO) :-
     Line = index_line(_Id, Selected, Date, Authors, Subject, Tags, StdTags,
         NonstdTagsWidth, Matched, Total),
     Attrs = IAttrs ^ i_generic,
@@ -1885,8 +1898,12 @@ draw_index_line(IAttrs, Panel, Line, _LineNr, IsCursor, !IO) :-
         draw(Panel, "  ", !IO)
     ),
 
-    mattr_draw_fixed(Panel, unless(IsCursor, Attrs ^ author + Base),
-        25, Authors, ' ', !IO),
+    ( AuthorWidth > 0 ->
+        mattr_draw_fixed(Panel, unless(IsCursor, Attrs ^ author + Base),
+            AuthorWidth, Authors, ' ', !IO)
+    ;
+        true
+    ),
 
     ( Matched = Total ->
         CountStr = format(" %3d     ", [i(Total)])
