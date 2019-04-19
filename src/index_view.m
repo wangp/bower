@@ -72,6 +72,7 @@
                 i_poll_count        :: int,
                 i_internal_search   :: maybe(string),
                 i_internal_search_dir :: search_direction,
+                i_showing_author    :: authorvisible,
                 i_common_history    :: common_history
             ).
 
@@ -92,6 +93,10 @@
 :- type selected
     --->    not_selected
     ;       selected.
+
+:- type authorvisible
+    --->    showing_author
+    ;       not_showing_author.
 
 :- type binding
     --->    scroll_down
@@ -123,6 +128,7 @@
     ;       unselect_all
     ;       bulk_tag(keep_selection)
     ;       pipe_thread_id
+    ;       toggle_author
     ;       quit.
 
 :- type action
@@ -206,7 +212,7 @@ open_index(Config, NotmuchConfig, Crypto, Screen, SearchString,
     MaybeSearch = no,
     IndexInfo = index_info(Config, Crypto, Scrollable, SearchString,
         SearchTokens, SearchTime, NextPollTime, PollCount, MaybeSearch,
-        dir_forward, !.CommonHistory),
+        dir_forward, showing_author, !.CommonHistory),
     index_loop(Screen, redraw, IndexInfo, !IO).
 
 :- pred search_terms_with_progress(prog_config::in, screen::in,
@@ -640,6 +646,19 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = pipe_thread_id
         ;
+            Binding = toggle_author,
+            Showing0 = !.IndexInfo ^ i_showing_author,
+            ( Showing0 = showing_author,
+              MessageUpdate = set_info("Hiding author info"),
+              Showing = not_showing_author
+            ;
+              Showing0 = not_showing_author,
+              MessageUpdate = set_info("Showing author info"),
+              Showing = showing_author
+            ),
+            !IndexInfo ^ i_showing_author := Showing,
+            Action = continue
+        ;
             Binding = quit,
             MessageUpdate = no_change,
             Action = quit
@@ -712,6 +731,7 @@ key_binding_char('''', bulk_tag(clear_selection)).
 key_binding_char('"', bulk_tag(keep_selection)).
 key_binding_char('|', pipe_thread_id).
 key_binding_char('q', quit).
+key_binding_char('z', toggle_author).
 
 :- pred move_cursor(screen::in, int::in, message_update::out,
     index_info::in, index_info::out) is det.
@@ -1825,24 +1845,25 @@ draw_index_view(Screen, Info, !IO) :-
     Config = Info ^ i_config,
     Attrs = index_attrs(Config),
     get_cols(Screen, Cols),
-    get_author_width(Cols, AuthorWidth),
+    ShowAuthor = Info ^ i_showing_author,
+    get_author_width(Cols, ShowAuthor, AuthorWidth),
     get_main_panels(Screen, MainPanels),
     Scrollable = Info ^ i_scrollable,
     scrollable.draw(draw_index_line(Attrs, AuthorWidth), MainPanels,
         Scrollable, !IO).
 
-:- pred get_author_width(int::in, int::out) is det.
+:- pred get_author_width(int::in, authorvisible::in, int::out) is det.
 
-get_author_width(Cols, AuthorWidth) :-
+get_author_width(Cols, AuthorVisible, AuthorWidth) :-
     Rem = Cols - 16 - 40,
-    ( Rem < 4 ->
-        AuthorWidth = 0
-    ;
+    ( AuthorVisible = showing_author, Rem >= 4 ->
         AuthorWidth = min(Rem, 20)
+    ;
+        AuthorWidth = 0
     ).
 
-:- pred draw_index_line(index_attrs::in, int::in, panel::in, index_line::in,
-    int::in, bool::in, io::di, io::uo) is det.
+:- pred draw_index_line(index_attrs::in, int::in, panel::in,
+    index_line::in, int::in, bool::in, io::di, io::uo) is det.
 
 draw_index_line(IAttrs, AuthorWidth, Panel, Line, _LineNr, IsCursor, !IO) :-
     Line = index_line(_Id, Selected, Date, Authors, Subject, Tags, StdTags,
