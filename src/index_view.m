@@ -72,7 +72,7 @@
                 i_poll_count        :: int,
                 i_internal_search   :: maybe(string),
                 i_internal_search_dir :: search_direction,
-                i_showing_author    :: authorvisible,
+                i_show_authors      :: show_authors,
                 i_common_history    :: common_history
             ).
 
@@ -94,9 +94,9 @@
     --->    not_selected
     ;       selected.
 
-:- type authorvisible
-    --->    showing_author
-    ;       not_showing_author.
+:- type show_authors
+    --->    show_authors
+    ;       hide_authors.
 
 :- type binding
     --->    scroll_down
@@ -128,7 +128,7 @@
     ;       unselect_all
     ;       bulk_tag(keep_selection)
     ;       pipe_thread_id
-    ;       toggle_author
+    ;       toggle_show_authors
     ;       quit.
 
 :- type action
@@ -212,7 +212,7 @@ open_index(Config, NotmuchConfig, Crypto, Screen, SearchString,
     MaybeSearch = no,
     IndexInfo = index_info(Config, Crypto, Scrollable, SearchString,
         SearchTokens, SearchTime, NextPollTime, PollCount, MaybeSearch,
-        dir_forward, showing_author, !.CommonHistory),
+        dir_forward, show_authors, !.CommonHistory),
     index_loop(Screen, redraw, IndexInfo, !IO).
 
 :- pred search_terms_with_progress(prog_config::in, screen::in,
@@ -646,17 +646,8 @@ index_view_input(Screen, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = pipe_thread_id
         ;
-            Binding = toggle_author,
-            Showing0 = !.IndexInfo ^ i_showing_author,
-            ( Showing0 = showing_author,
-              MessageUpdate = set_info("Hiding author info"),
-              Showing = not_showing_author
-            ;
-              Showing0 = not_showing_author,
-              MessageUpdate = set_info("Showing author info"),
-              Showing = showing_author
-            ),
-            !IndexInfo ^ i_showing_author := Showing,
+            Binding = toggle_show_authors,
+            toggle_show_authors(MessageUpdate, !IndexInfo),
             Action = continue
         ;
             Binding = quit,
@@ -730,8 +721,8 @@ key_binding_char('T', unselect_all).
 key_binding_char('''', bulk_tag(clear_selection)).
 key_binding_char('"', bulk_tag(keep_selection)).
 key_binding_char('|', pipe_thread_id).
+key_binding_char('z', toggle_show_authors).
 key_binding_char('q', quit).
-key_binding_char('z', toggle_author).
 
 :- pred move_cursor(screen::in, int::in, message_update::out,
     index_info::in, index_info::out) is det.
@@ -1615,6 +1606,24 @@ selected_line_thread_id(Line, ThreadId) :-
 
 %-----------------------------------------------------------------------------%
 
+:- pred toggle_show_authors(message_update::out,
+    index_info::in, index_info::out) is det.
+
+toggle_show_authors(MessageUpdate, !Info) :-
+    ShowAuthors0 = !.Info ^ i_show_authors,
+    (
+        ShowAuthors0 = show_authors,
+        MessageUpdate = set_info("Hiding authors."),
+        ShowAuthors = hide_authors
+    ;
+        ShowAuthors0 = hide_authors,
+        MessageUpdate = set_info("Showing authors."),
+        ShowAuthors = show_authors
+    ),
+    !Info ^ i_show_authors := ShowAuthors.
+
+%-----------------------------------------------------------------------------%
+
 :- pred refresh_all(screen::in, verbosity::in, index_info::in, index_info::out,
     io::di, io::uo) is det.
 
@@ -1844,26 +1853,32 @@ next_poll_time(Config, Time) = NextPollTime :-
 draw_index_view(Screen, Info, !IO) :-
     Config = Info ^ i_config,
     Attrs = index_attrs(Config),
-    get_cols(Screen, Cols),
-    ShowAuthor = Info ^ i_showing_author,
-    get_author_width(Cols, ShowAuthor, AuthorWidth),
+    ShowAuthors = Info ^ i_show_authors,
+    (
+        ShowAuthors = show_authors,
+        get_cols(Screen, Cols),
+        get_author_width(Cols, AuthorWidth)
+    ;
+        ShowAuthors = hide_authors,
+        AuthorWidth = 0
+    ),
     get_main_panels(Screen, MainPanels),
     Scrollable = Info ^ i_scrollable,
     scrollable.draw(draw_index_line(Attrs, AuthorWidth), MainPanels,
         Scrollable, !IO).
 
-:- pred get_author_width(int::in, authorvisible::in, int::out) is det.
+:- pred get_author_width(int::in, int::out) is det.
 
-get_author_width(Cols, AuthorVisible, AuthorWidth) :-
+get_author_width(Cols, AuthorWidth) :-
     Rem = Cols - 16 - 40,
-    ( AuthorVisible = showing_author, Rem >= 4 ->
-        AuthorWidth = min(Rem, 20)
-    ;
+    ( Rem < 4 ->
         AuthorWidth = 0
+    ;
+        AuthorWidth = min(Rem, 20)
     ).
 
-:- pred draw_index_line(index_attrs::in, int::in, panel::in,
-    index_line::in, int::in, bool::in, io::di, io::uo) is det.
+:- pred draw_index_line(index_attrs::in, int::in, panel::in, index_line::in,
+    int::in, bool::in, io::di, io::uo) is det.
 
 draw_index_line(IAttrs, AuthorWidth, Panel, Line, _LineNr, IsCursor, !IO) :-
     Line = index_line(_Id, Selected, Date, Authors, Subject, Tags, StdTags,
