@@ -136,6 +136,7 @@ The keys are:
     Enter           open thread
     l, ~            change search terms ("limit")
     =               refresh search results
+    z               toggle authors column
 
     /, ?            search for string within results
     n               skip to next search result
