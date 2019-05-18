@@ -3141,6 +3141,7 @@ draw_thread_line(TAttrs, Panel, Line, _LineNr, IsCursor, !IO) :-
         draw(Panel, "(excluded) ", !IO)
     ),
 
+    panel.getyx(Panel, Row, FromStartX, !IO),
     (
         Unread = unread,
         Highlight = bold
@@ -3148,32 +3149,24 @@ draw_thread_line(TAttrs, Panel, Line, _LineNr, IsCursor, !IO) :-
         Unread = read,
         Highlight = normal
     ),
-    mattr_draw(Panel, unless(IsCursor, Attrs ^ author + Highlight), From,
-        !IO),
-
+    mattr_draw(Panel, unless(IsCursor, Attrs ^ author + Highlight), From, !IO),
     (
         MaybeSubject = yes(Subject),
         draw(Panel, ". ", !IO),
-        panel.getyx(Panel, Row, SubjectX0, !IO),
         mattr_draw(Panel, unless(IsCursor, Attrs ^ subject),
-            header_value_string(Subject), !IO),
-        panel.getyx(Panel, _, SubjectX, !IO),
-        panel.getmaxyx(Panel, _, MaxX, !IO)
+            header_value_string(Subject), !IO)
     ;
-        MaybeSubject = no,
-        panel.getmaxyx(Panel, Row, MaxX, !IO),
-        SubjectX0 = MaxX,
-        SubjectX = MaxX
+        MaybeSubject = no
     ),
+    panel.getyx(Panel, _, SubjectEndX, !IO),
+    panel.getmaxyx(Panel, _, MaxX, !IO),
 
-    % Draw non-standard tags, overlapping up to half of the subject.
+    % Draw non-standard tags, overlapping from/subject text if necessary.
     ( NonstdTagsWidth > 0 ->
         (
-            MaybeSubject = yes(_),
-            MaxX - SubjectX < NonstdTagsWidth,
-            SubjectMidX = (MaxX + SubjectX0)/2,
-            MoveX = max(SubjectMidX, MaxX - NonstdTagsWidth),
-            MoveX < SubjectX
+            NonstdTagsWidth > MaxX - SubjectEndX,
+            MoveX = max(FromStartX, MaxX - NonstdTagsWidth),
+            MoveX < SubjectEndX
         ->
             panel.move(Panel, Row, MoveX, !IO)
         ;
