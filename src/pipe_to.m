@@ -23,10 +23,11 @@
 :- import_module string.
 
 :- import_module call_system.
-:- import_module curs.
 :- import_module prog_config.
 :- import_module quote_arg.
 :- import_module shell_word.
+
+:- use_module curs.
 
 prompt_and_pipe_to_command(Screen, PromptCommand, Strings, MessageUpdate,
         !History, !IO) :-

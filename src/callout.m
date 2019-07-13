@@ -67,9 +67,10 @@
 :- import_module string.
 
 :- import_module call_system.
-:- import_module curs.
 :- import_module mime_type.
 :- import_module time_util.
+
+:- use_module curs.
 
 %-----------------------------------------------------------------------------%
 

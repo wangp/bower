@@ -9,8 +9,7 @@
 :- import_module list.
 :- import_module version_array.
 
-:- import_module curs.
-:- import_module curs.panel.
+:- import_module screen.
 
 %-----------------------------------------------------------------------------%
 
@@ -20,8 +19,8 @@
     --->    dir_forward
     ;       dir_reverse.
 
-:- type draw_line(T) == pred(panel, T, int, bool, io, io).
-:- inst draw_line    == (pred(in, in, in, in, di, uo) is det).
+:- type draw_line(T) == pred(screen, vpanel, T, int, bool, io, io).
+:- inst draw_line    == (pred(in, in, in, in, in, di, uo) is det).
 
 :- func init(list(T)) = scrollable(T).
 
@@ -91,8 +90,8 @@
 
 :- pred delete_cursor_line(scrollable(T)::in, scrollable(T)::out) is semidet.
 
-:- pred draw(draw_line(T)::in(draw_line), list(panel)::in, scrollable(T)::in,
-    io::di, io::uo) is det.
+:- pred draw(draw_line(T)::in(draw_line), screen::in, list(vpanel)::in,
+    scrollable(T)::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -362,7 +361,7 @@ delete_cursor_line(Scrollable0, Scrollable) :-
 
 %-----------------------------------------------------------------------------%
 
-draw(Pred, RowPanels, Scrollable, !IO) :-
+draw(Pred, Screen, RowPanels, Scrollable, !IO) :-
     Scrollable = scrollable(Lines, Top, MaybeCursor),
     (
         MaybeCursor = yes(Cursor)
@@ -370,23 +369,23 @@ draw(Pred, RowPanels, Scrollable, !IO) :-
         MaybeCursor = no,
         Cursor = -1
     ),
-    draw_lines(Pred, RowPanels, Lines, Top, Cursor, !IO).
+    draw_lines(Pred, Screen, RowPanels, Lines, Top, Cursor, !IO).
 
-:- pred draw_lines(draw_line(T)::in(draw_line), list(panel)::in,
+:- pred draw_lines(draw_line(T)::in(draw_line), screen::in, list(vpanel)::in,
     version_array(T)::in, int::in, int::in, io::di, io::uo) is det.
 
-draw_lines(_Pred, [], _, _, _, !IO).
-draw_lines(Pred, [Panel | Panels], Lines, I, Cursor, !IO) :-
-    panel.erase(Panel, !IO),
+draw_lines(_Pred, _, [], _, _, _, !IO).
+draw_lines(Pred, Screen, [Panel | Panels], Lines, I, Cursor, !IO) :-
+    erase(Screen, Panel, !IO),
     Size = version_array.size(Lines),
     ( I < Size ->
         Line = version_array.lookup(Lines, I),
         IsCursor = (I = Cursor -> yes ; no),
-        Pred(Panel, Line, I, IsCursor, !IO)
+        Pred(Screen, Panel, Line, I, IsCursor, !IO)
     ;
         true
     ),
-    draw_lines(Pred, Panels, Lines, I + 1, Cursor, !IO).
+    draw_lines(Pred, Screen, Panels, Lines, I + 1, Cursor, !IO).
 
 :- func clamp(int, int, int) = int.
 

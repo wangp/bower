@@ -72,12 +72,12 @@
 
 :- import_module addressbook.
 :- import_module call_system.
-:- import_module curs.
-:- import_module curs.panel.
 :- import_module list_util.
 :- import_module notmuch_config.
 :- import_module quote_arg.
 :- import_module string_util.
+
+:- use_module curs.
 
 :- type info
     --->    info(
@@ -196,7 +196,7 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
     ;
         ( Key = char('\x7f\') % DEL
         ; Key = char('\x08\') % BS
-        ; Key = code(key_backspace)
+        ; Key = code(curs.key_backspace)
         )
     ->
         modify_before(delete_char, yes, !Info),
@@ -205,14 +205,14 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
         ( Key = char('\x17\') % ^W
         ; Key = meta('\x7f\') % DEL
         ; Key = meta('\x08\') % BS
-        ; Key = metacode(key_backspace)
+        ; Key = metacode(curs.key_backspace)
         )
     ->
         modify_before(delete_word, yes, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x04\') % ^D
-        ; Key = code(key_del)
+        ; Key = code(curs.key_del)
         )
     ->
         modify_after(delete_char, yes, !Info),
@@ -224,14 +224,14 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x02\') % ^B
-        ; Key = code(key_left)
+        ; Key = code(curs.key_left)
         )
     ->
         modify_before_after(left_char, no, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x06\') % ^F
-        ; Key = code(key_right)
+        ; Key = code(curs.key_right)
         )
     ->
         modify_before_after(right_char, no, !Info),
@@ -248,14 +248,14 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x01\') % ^A
-        ; Key = code(key_home)
+        ; Key = code(curs.key_home)
         )
     ->
         modify_before_after(bol, no, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x05\') % ^E
-        ; Key = code(key_end)
+        ; Key = code(curs.key_end)
         )
     ->
         modify_before_after(eol, no, !Info),
@@ -277,14 +277,14 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\x10\') % ^P
-        ; Key = code(key_up)
+        ; Key = code(curs.key_up)
         )
     ->
         move_history(pre, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         ( Key = char('\xe\') % ^N
-        ; Key = code(key_down)
+        ; Key = code(curs.key_down)
         )
     ->
         move_history(post, !Info),
@@ -294,7 +294,7 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
             Key = char('\x09\'), % Tab
             CycleDir = forward
         ;
-            Key = code(key_btab), % Shift-Tab
+            Key = code(curs.key_btab), % Shift-Tab
             CycleDir = back
         )
     ->
@@ -1055,7 +1055,7 @@ draw_text_entry(Screen, !Info, !IO) :-
     !.Info ^ state = te_state(Before, After, _Pre, _Post),
     !.Info ^ left_offset = LeftOffset0,
 
-    get_cols(Screen, Cols),
+    get_cols(Screen, Cols, !IO),
     RemainCols = Cols - string_wcwidth(Prompt),
     calc_draw(RemainCols, Before, BeforeDraw, After, AfterDraw,
         LeftOffset0, LeftOffset),
@@ -1064,12 +1064,12 @@ draw_text_entry(Screen, !Info, !IO) :-
 
     % Bit ugly.
     update_message(Screen, set_prompt(Prompt), !IO),
-    get_msgentry_panel(Screen, Panel),
-    draw(Panel, string.from_rev_char_list(BeforeDraw), !IO),
-    panel.getyx(Panel, Y, X, !IO),
-    draw(Panel, string.from_char_list(AfterDraw), !IO),
-    panel.move(Panel, Y, X, !IO),
-    panel.update_panels(!IO).
+    Panel = msgentry_panel,
+    draw(Screen, Panel, string.from_rev_char_list(BeforeDraw), !IO),
+    getyx(Screen, Panel, Y, X, !IO),
+    draw(Screen, Panel, string.from_char_list(AfterDraw), !IO),
+    move(Screen, Panel, Y, X, !IO),
+    update_panels(Screen, !IO).
 
 :- pred calc_draw(int::in, list(char)::in, list(char)::out,
     list(char)::in, list(char)::out, int::in, int::out) is det.

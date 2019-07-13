@@ -20,7 +20,6 @@
 
 :- import_module async.
 :- import_module crypto.
-:- import_module curs.
 :- import_module index_view.
 :- import_module notmuch_config.
 :- import_module prog_config.
@@ -28,6 +27,8 @@
 :- import_module search_term.
 :- import_module signal.
 :- import_module view_common.
+
+:- use_module curs.
 
 %-----------------------------------------------------------------------------%
 
