@@ -529,8 +529,8 @@ create_edit_stage_2(Config, Screen, Headers0, Text0, Attachments,
                 ResParse = ok(Headers1 - Text),
                 io.remove_file(Filename, _, !IO),
                 update_references(Headers0, Headers1, Headers2),
-                enter_staging(Config, Screen, Headers2, Text, Attachments,
-                    MaybeOldDraft, Transition, !CryptoInfo, !IO)
+                reenter_staging_screen(Config, Screen, Headers2, Text,
+                    Attachments, MaybeOldDraft, Transition, !CryptoInfo, !IO)
             ;
                 ResParse = error(Error),
                 io.error_message(Error, Msg),
@@ -601,12 +601,13 @@ update_references(Headers0, !Headers) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred enter_staging(prog_config::in, screen::in, headers::in, string::in,
-    list(attachment)::in, maybe(message_id)::in, screen_transition(sent)::out,
-    crypto_info::in, crypto_info::out, io::di, io::uo) is det.
+:- pred reenter_staging_screen(prog_config::in, screen::in, headers::in,
+    string::in, list(attachment)::in, maybe(message_id)::in,
+    screen_transition(sent)::out, crypto_info::in, crypto_info::out,
+    io::di, io::uo) is det.
 
-enter_staging(Config, Screen, Headers0, Text, Attachments, MaybeOldDraft,
-        Transition, !CryptoInfo, !IO) :-
+reenter_staging_screen(Config, Screen, Headers0, Text, Attachments,
+        MaybeOldDraft, Transition, !CryptoInfo, !IO) :-
     parse_and_expand_headers(Config, Headers0, Headers, Parsed, !IO),
     get_some_matching_account(Config, Parsed ^ ph_from, MaybeAccount),
     maintain_encrypt_keys(Parsed, !CryptoInfo, !IO),
@@ -617,6 +618,7 @@ enter_staging(Config, Screen, Headers0, Text, Attachments, MaybeOldDraft,
     AttachInfo = scrollable.init_with_cursor(Attachments),
     get_cols(Screen, Cols, !IO),
     setup_pager_for_staging(Config, Cols, Text, new_pager, PagerInfo),
+    update_message(Screen, clear_message, !IO),
     staging_screen(Screen, StagingInfo, AttachInfo, PagerInfo, Transition,
         !CryptoInfo, !IO).
 
