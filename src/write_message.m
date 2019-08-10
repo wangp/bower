@@ -339,7 +339,7 @@ write_discrete_content_type(Stream, ContentType, !IO) :-
         Value = "application/pgp-encrypted"
     ;
         ContentType = application_pgp_signature,
-        Value = "application/pgp-signature"
+        Value = "application/pgp-signature; name=""signature.asc"""
     ;
         ContentType = content_type(Value)
     ),
