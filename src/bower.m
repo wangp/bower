@@ -29,6 +29,7 @@
 :- import_module view_common.
 
 :- use_module curs.
+:- use_module curs_signal.
 
 %-----------------------------------------------------------------------------%
 
@@ -69,7 +70,7 @@ main(!IO) :-
     is cc_multi.
 
 main_2(Config, NotmuchConfig, Crypto, !IO) :-
-    % Install our SIGINT, SIGCHLD handlers.
+    curs_signal.install_suspend_handlers(!IO),
     signal.ignore_sigint(no, !IO),
     async.install_sigchld_handler(!IO),
     io.command_line_arguments(Args, !IO),
