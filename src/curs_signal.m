@@ -8,6 +8,8 @@
 
 :- pred install_suspend_handlers(io::di, io::uo) is det.
 
+:- pred install_exit_handlers(io::di, io::uo) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -52,6 +54,12 @@ static void curs_signal_handler(int sig)
     errno = save_errno;
 }
 
+static void curs_exit_handler(int sig)
+{
+    curs_set(1);
+    endwin(); /* just to be safe */
+    exit(128 + sig);
+}
 ").
 
 :- pragma foreign_proc("C",
@@ -72,6 +80,21 @@ static void curs_signal_handler(int sig)
 
     sigaction(SIGCONT, &act, NULL);
     sigaction(SIGTSTP, &act, NULL);
+").
+
+:- pragma foreign_proc("C",
+    install_exit_handlers(_IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
+"
+    struct sigaction act;
+
+    sigemptyset(&act.sa_mask);
+    act.sa_flags = 0;
+    act.sa_handler = curs_exit_handler;
+    sigaction(SIGTERM, &act, NULL);
+    sigaction(SIGHUP, &act, NULL);
+    sigaction(SIGQUIT, &act, NULL);
 ").
 
 %-----------------------------------------------------------------------------%

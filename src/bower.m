@@ -71,6 +71,7 @@ main(!IO) :-
 
 main_2(Config, NotmuchConfig, Crypto, !IO) :-
     curs_signal.install_suspend_handlers(!IO),
+    curs_signal.install_exit_handlers(!IO),
     signal.ignore_sigint(no, !IO),
     async.install_sigchld_handler(!IO),
     io.command_line_arguments(Args, !IO),
