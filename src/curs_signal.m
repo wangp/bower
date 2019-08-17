@@ -20,6 +20,7 @@
     #include <ncurses.h>
 
     static void curs_signal_handler(int sig);
+    static void curs_exit_handler(int sig);
 ").
 
 :- pragma foreign_code("C", "
