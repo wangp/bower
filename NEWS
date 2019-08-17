@@ -1,13 +1,16 @@
-Bower 0.11-unreleased
-=====================
+Bower 0.11 (2019-08-17)
+=======================
 
 * Add '|' key to pipe thread or message IDs to external command.
-* index: Add 'z' key to toggle authors column.
+* index: Add 'z' key to toggle authors column. (Will Dietz)
 * thread/pager: Show messages with exclude tags if the tags are explicitly
   searched for in the index view.
-* compose: Allow non-UTF-8 "text" files to be attached (base64 encoded).
+* compose: Allow non-UTF-8 "text" files to be attached.
 * config: Add ui.wrap_width option to wrap message lines before terminal width.
-* config: Add color.index.total option.
+* config: Add color.index.total option. (Will Dietz)
+* Install signal handlers to improve behaviour with suspending and exiting.
+* Write pgp-signature parts with name="signature.asc"
+* Minor improvements.
 
 Bower 0.10 (2019-01-26)
 =======================
