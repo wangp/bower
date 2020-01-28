@@ -2672,15 +2672,15 @@ get_non_excluded_message_tag_delta_groups(Line, !TagDeltaGroups) :-
     (
         Message = message(MessageId, _, _, _, _, _),
         TagDeltaSet = get_tag_delta_set(PrevTags, CurrTags),
-        ( set.non_empty(TagDeltaSet) ->
+        ( set.is_empty(TagDeltaSet) ->
+            true
+        ;
             ( map.search(!.TagDeltaGroups, TagDeltaSet, Messages0) ->
                 map.det_update(TagDeltaSet, [MessageId | Messages0],
                     !TagDeltaGroups)
             ;
                 map.det_insert(TagDeltaSet, [MessageId], !TagDeltaGroups)
             )
-        ;
-            true
         )
     ;
         Message = excluded_message(_, _, _, _, _)
