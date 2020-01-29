@@ -115,7 +115,7 @@ valid: «"user\\name"@example.com»
 
 [mailbox(
    mailbox(no, 
-     addr_spec(lpart_quoted_string(quoted_string(ascii("user\name"))), 
+     addr_spec(lpart_quoted_string(quoted_string(ascii("user\\name"))), 
        domain_name(dot_atom(ascii("example.com"))))))]
 --------
 input: «"user\"name"@example.com»
@@ -123,7 +123,7 @@ valid: «"user\"name"@example.com»
 
 [mailbox(
    mailbox(no, 
-     addr_spec(lpart_quoted_string(quoted_string(ascii("user"name"))), 
+     addr_spec(lpart_quoted_string(quoted_string(ascii("user\"name"))), 
        domain_name(dot_atom(ascii("example.com"))))))]
 --------
 input: «user @example.com»
@@ -174,7 +174,7 @@ invalid: «user@[»
 input: «user@[\]»
 invalid: «user@[\]»
 
-[mailbox(bad_mailbox("user@[\]"))]
+[mailbox(bad_mailbox("user@[\\]"))]
 --------
 input: «user@[[]»
 invalid: «user@[[]»
@@ -239,17 +239,17 @@ valid: «Display Name <user@example.com>»
 input: «Display\Name <user@example.com>»
 invalid: «Display\Name <user@example.com>»
 
-[mailbox(bad_mailbox("Display\Name <user@example.com>"))]
+[mailbox(bad_mailbox("Display\\Name <user@example.com>"))]
 --------
 input: «Display\\Name <user@example.com>»
 invalid: «Display\\Name <user@example.com>»
 
-[mailbox(bad_mailbox("Display\\Name <user@example.com>"))]
+[mailbox(bad_mailbox("Display\\\\Name <user@example.com>"))]
 --------
 input: «Display\"Name <user@example.com>»
 invalid: «Display\"Name <user@example.com>»
 
-[mailbox(bad_mailbox("Display\"Name <user@example.com>"))]
+[mailbox(bad_mailbox("Display\\\"Name <user@example.com>"))]
 --------
 input: «"Display Name" <user@example.com>»
 valid: «"Display Name" <user@example.com>»
@@ -287,7 +287,7 @@ valid: «"Display\\Name" Name2 <user@example.com>»
 [mailbox(
    mailbox(
      yes(
-       [word_quoted_string(quoted_string(ascii("Display\Name"))), 
+       [word_quoted_string(quoted_string(ascii("Display\\Name"))), 
         word_atom(atom(ascii("Name2")))]), 
      addr_spec(lpart_atom(dot_atom(ascii("user"))), 
        domain_name(dot_atom(ascii("example.com"))))))]
@@ -298,7 +298,7 @@ valid: «"Display\"Name" Name2 <user@example.com>»
 [mailbox(
    mailbox(
      yes(
-       [word_quoted_string(quoted_string(ascii("Display"Name"))), 
+       [word_quoted_string(quoted_string(ascii("Display\"Name"))), 
         word_atom(atom(ascii("Name2")))]), 
      addr_spec(lpart_atom(dot_atom(ascii("user"))), 
        domain_name(dot_atom(ascii("example.com"))))))]

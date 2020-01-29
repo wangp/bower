@@ -93,16 +93,17 @@ Phrases
      ascii(
        "123456789-123456789-123456789-123456789-123456789-123456789-123x")))]
 --------
-[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz!"#$%")))]
+[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz!\"#$%")))]
 [word_atom(
    atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz!=22=23=24=25?=")))]
 [word_quoted_string(
-   quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz!"#$%")))]
+   quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz!\"#$%")))]
 --------
-[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz&'()")))]
+[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz&\'()")))]
 [word_atom(
    atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=26=27=28=29?=")))]
-[word_quoted_string(quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz&'()")))]
+[word_quoted_string(
+   quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz&\'()")))]
 --------
 [word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz*+,-./")))]
 [word_atom(
@@ -123,10 +124,10 @@ Phrases
 [word_atom(atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=3F=40?=")))]
 [word_quoted_string(quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz?@")))]
 --------
-[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz[\]")))]
+[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz[\\]")))]
 [word_atom(
    atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=5B=5C=5D?=")))]
-[word_quoted_string(quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz[\]")))]
+[word_quoted_string(quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz[\\]")))]
 --------
 [word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz^_`")))]
 [word_atom(

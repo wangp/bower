@@ -8,8 +8,7 @@ input: «mailto:infobot@example.com?body=send%20current-issue»
 ["To" - "infobot@example.com", "body" - "send current-issue"]
 --------
 input: «mailto:infobot@example.com?body=send%20current-issue%0D%0Asend%20index»
-["To" - "infobot@example.com", "body" - "send current-issue
-send index"]
+["To" - "infobot@example.com", "body" - "send current-issue\r\nsend index"]
 --------
 input: «mailto:list@example.org?In-Reply-To=%3C3469A91.D10AF4C@example.com%3E»
 ["To" - "list@example.org", "In-Reply-To" - "<3469A91.D10AF4C@example.com>"]
@@ -33,13 +32,13 @@ input: «mailto:Mike%26family@example.org»
 ["To" - "Mike&family@example.org"]
 --------
 input: «mailto:%22not%40me%22@example.org»
-["To" - ""not@me"@example.org"]
+["To" - "\"not@me\"@example.org"]
 --------
 input: «mailto:%22oh%5C%5Cno%22@example.org»
-["To" - ""oh\\no"@example.org"]
+["To" - "\"oh\\\\no\"@example.org"]
 --------
 input: «mailto:%22%5C%5C%5C%22it's%5C%20ugly%5C%5C%5C%22%22@example.org»
-["To" - ""\\\"it's\ ugly\\\""@example.org"]
+["To" - "\"\\\\\\\"it\'s\\ ugly\\\\\\\"\"@example.org"]
 --------
 input: «mailto:user@example.org?subject=caf%C3%A9»
 ["To" - "user@example.org", "subject" - "café"]

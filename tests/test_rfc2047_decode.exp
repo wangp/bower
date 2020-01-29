@@ -46,7 +46,7 @@ input: ["=?UTF-8?Q?=00?="]
 [word_atom(atom(ascii("=?UTF-8?Q?=00?=")))]
 --------
 input: ["=?UTF-8?Q?=09?="]
-[word_quoted_string(quoted_string(ascii("	")))]
+[word_quoted_string(quoted_string(ascii("\t")))]
 --------
 input: ["=?UTF-8?Q?=20?="]
 [word_quoted_string(quoted_string(ascii(" ")))]
@@ -73,7 +73,7 @@ input: ["=?UTF-8*EN?Q?=C3=A9?="]
 [word_atom(atom(unicode("é")))]
 --------
 input: ["=?UTF-8?Q?=22=C3=A9=22?="]
-[word_quoted_string(quoted_string(unicode(""é"")))]
+[word_quoted_string(quoted_string(unicode("\"é\"")))]
 --------
 input: ["=?UTF-8?Q?=e5=99=b8?="]
 [word_atom(atom(unicode("噸")))]

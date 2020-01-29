@@ -231,17 +231,17 @@ string(esc_string("☿"))
 1:2: invalid character
 --------
 «"\""»
-string(esc_string("\""))
+string(esc_string("\\\""))
 
 «"»
 --------
 «"\\"»
-string(esc_string("\\"))
+string(esc_string("\\\\"))
 
 «\»
 --------
 «"\/"»
-string(esc_string("\/"))
+string(esc_string("\\/"))
 
 «/»
 --------
@@ -250,28 +250,28 @@ string(esc_string("\/"))
 1:2: invalid escape sequence
 --------
 «"\b"»
-string(esc_string("\b"))
+string(esc_string("\\b"))
 
 «»
 --------
 «"\f"»
-string(esc_string("\f"))
+string(esc_string("\\f"))
 
 «»
 --------
 «"\n"»
-string(esc_string("\n"))
+string(esc_string("\\n"))
 
 «
 »
 --------
 «"\r"»
-string(esc_string("\r"))
+string(esc_string("\\r"))
 
 «»
 --------
 «"\t"»
-string(esc_string("\t"))
+string(esc_string("\\t"))
 
 «	»
 --------
@@ -300,22 +300,22 @@ string(esc_string("\t"))
 1:2: null character not allowed
 --------
 «"\u0001"»
-string(esc_string("\u0001"))
+string(esc_string("\\u0001"))
 
 «»
 --------
 «"\u005C"»
-string(esc_string("\u005C"))
+string(esc_string("\\u005C"))
 
 «\»
 --------
 «"\u00e9"»
-string(esc_string("\u00e9"))
+string(esc_string("\\u00e9"))
 
 «é»
 --------
 «"\u263f"»
-string(esc_string("\u263f"))
+string(esc_string("\\u263f"))
 
 «☿»
 --------
@@ -335,22 +335,22 @@ string(esc_string("𝄞"))
 «𝄞»
 --------
 «"\uD834\uDD1E"»
-string(esc_string("\uD834\uDD1E"))
+string(esc_string("\\uD834\\uDD1E"))
 
 «𝄞»
 --------
 «"\ud834\uDd1E"»
-string(esc_string("\ud834\uDd1E"))
+string(esc_string("\\ud834\\uDd1E"))
 
 «𝄞»
 --------
 «"\ud800\udc00"»
-string(esc_string("\ud800\udc00"))
+string(esc_string("\\ud800\\udc00"))
 
 «𐀀»
 --------
 «"\udbff\udfff"»
-string(esc_string("\udbff\udfff"))
+string(esc_string("\\udbff\\udfff"))
 
 «􏿿»
 --------
@@ -372,7 +372,7 @@ string(esc_string("﷐﷯"))
 «﷐﷯»
 --------
 «"\ufdd0\ufdef"»
-string(esc_string("\ufdd0\ufdef"))
+string(esc_string("\\ufdd0\\ufdef"))
 
 «﷐﷯»
 --------
@@ -382,7 +382,7 @@ string(esc_string("￾￿"))
 «￾￿»
 --------
 «"\ufffe\uffff"»
-string(esc_string("\ufffe\uffff"))
+string(esc_string("\\ufffe\\uffff"))
 
 «￾￿»
 --------
