@@ -63,6 +63,8 @@ test_unescaped_strings(Value, !IO) :-
     ;
         Value = int(_)
     ;
+        Value = integer(_)
+    ;
         Value = float(_)
     ;
         Value = string(EscString),
@@ -121,6 +123,8 @@ cases = [
     "0b1", % bad
     "2147483647",  %  (2**31)-1
     "-2147483648", % -(2**31)
+    "9223372036854775809",  %  (2**63)+1
+    "-9223372036854775809", % -(2**63)-1
 
     % float
     "2.71828",
