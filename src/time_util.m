@@ -179,26 +179,43 @@ make_reldate(Nowish, TM, Shorter, String) :-
         Month = NowMonth,
         Day = NowDay
     ->
-        (
-            Shorter = yes,
-            String = string.format("%02d:%02d", [i(Hour), i(Min)])
-        ;
-            Shorter = no,
-            String = string.format("Today %02d:%02d", [i(Hour), i(Min)])
-        )
+        String = reldate_today(Shorter, Hour, Min)
     ;
         (NowYear * 365 + NowYday) - (Year * 365 + Yday) < 7
     ->
-        ( weekday_short_name(Wday, WdayName) ->
-            String = string.format("%s %02d:%02d",
-                [s(WdayName), i(Hour), i(Min)])
-        ;
-            unexpected($module, $pred, "bad weekday")
-        )
+        String = reldate_weekday(Wday, Hour, Min)
     ;
-        Year = NowYear,
-        month_short_name(Month, MonthName)
+        Year = NowYear
     ->
+        String = reldate_month_day(Shorter, Month, Day, Hour, Min)
+    ;
+        String = string.format("%04d-%02d-%02d", [i(Year), i(Month), i(Day)])
+    ).
+
+:- func reldate_today(bool, int, int) = string.
+
+reldate_today(Shorter, Hour, Min) = String :-
+    (
+        Shorter = yes,
+        String = string.format("%02d:%02d", [i(Hour), i(Min)])
+    ;
+        Shorter = no,
+        String = string.format("Today %02d:%02d", [i(Hour), i(Min)])
+    ).
+
+:- func reldate_weekday(int, int, int) = string.
+
+reldate_weekday(Wday, Hour, Min) = String :-
+    ( weekday_short_name(Wday, WdayName) ->
+        String = string.format("%s %02d:%02d", [s(WdayName), i(Hour), i(Min)])
+    ;
+        unexpected($module, $pred, "bad weekday")
+    ).
+
+:- func reldate_month_day(bool, int, int, int, int) = string.
+
+reldate_month_day(Shorter, Month, Day, Hour, Min) = String :-
+    ( month_short_name(Month, MonthName) ->
         (
             Shorter = yes,
             String = string.format("%02d %s", [i(Day), s(MonthName)])
@@ -208,7 +225,7 @@ make_reldate(Nowish, TM, Shorter, String) :-
                 [i(Day), s(MonthName), i(Hour), i(Min)])
         )
     ;
-        String = string.format("%04d-%02d-%02d", [i(Year), i(Month), i(Day)])
+        unexpected($module, $pred, "bad month")
     ).
 
 %-----------------------------------------------------------------------------%
