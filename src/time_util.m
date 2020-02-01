@@ -181,7 +181,11 @@ make_reldate(Nowish, TM, Shorter, String) :-
     ->
         String = reldate_today(Shorter, Hour, Min)
     ;
-        (NowYear * 365 + NowYday) - (Year * 365 + Yday) < 7
+        Days0 = NowYear * 365 + NowYday,
+        Days1 = Year * 365 + Yday,
+        Diff = Days0 - Days1,
+        Diff >= 0,  % don't use this format for timestamps in future
+        Diff < 7
     ->
         String = reldate_weekday(Wday, Hour, Min)
     ;
