@@ -567,10 +567,11 @@ parse_timestamp(Json, Timestamp) :-
         Timestamp = timestamp(float(Int))
     ;
         Json = integer(Integer),
-        % XXX integer.to_int will fail on timestamps beyond 2038 on 32-bit
-        % platforms. This case is currently unreachable in practice.
-        integer.to_int(Integer, Int),
-        Timestamp = timestamp(float(Int))
+        % Convert directly to float in case int is 32-bits.
+        % This case is currently unreachable in practice.
+        Str = integer.to_string(Integer),
+        string.to_float(Str, Float),
+        Timestamp = timestamp(Float)
     ).
 
 %-----------------------------------------------------------------------------%
