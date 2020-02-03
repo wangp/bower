@@ -36,7 +36,6 @@
 :- import_module char.
 :- import_module float.
 :- import_module int.
-:- import_module integer.
 :- import_module maybe.
 :- import_module string.
 :- import_module unit.
