@@ -5,7 +5,7 @@ bower:
 	@$(MAKE) -C src ../bower
 
 clean:
-	rm -rf src/Mercury bower bower.1
+	rm -rf src/Mercury src/*.err src/*.mh src/bower bower bower.1
 
 .PHONY: man
 man: bower.1
