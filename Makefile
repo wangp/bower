@@ -4,6 +4,9 @@ AWK = awk
 bower:
 	@$(MAKE) -C src ../bower
 
+clean:
+	rm -rf src/Mercury bower bower.1
+
 .PHONY: man
 man: bower.1
 
