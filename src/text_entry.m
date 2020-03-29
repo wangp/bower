@@ -177,8 +177,7 @@ text_entry_full(Screen, Prompt, History, Initial, CompleteType, FirstTime,
     io::di, io::uo) is det.
 
 text_entry_loop(Screen, Return, !Info, !IO) :-
-    draw_text_entry(Screen, !Info, !IO),
-    get_keycode_blocking(Key, !IO),
+    draw_text_entry_get_key(Screen, Key, !Info, !IO),
     (
         ( Key = char('\x07\') % BEL (^G)
         ; Key = char('\x1b\') % ESC
@@ -329,6 +328,22 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
         % Don't clear first time flag or completion choices
         % if no character entered.
         text_entry_loop(Screen, Return, !Info, !IO)
+    ).
+
+:- pred draw_text_entry_get_key(screen::in, keycode::out, info::in, info::out,
+    io::di, io::uo) is det.
+
+draw_text_entry_get_key(Screen, Key, !Info, !IO) :-
+    draw_text_entry(Screen, !Info, !IO),
+    get_keycode_blocking(Key0, !IO),
+    ( Key0 = code(curs.key_resize) ->
+        % XXX handle resize properly
+        % This misses out on higher-level resize handling in the caller of
+        % the text entry.
+        recreate_screen_for_resize(Screen, !IO),
+        draw_text_entry_get_key(Screen, Key, !Info, !IO)
+    ;
+        Key = Key0
     ).
 
 :- pred continue_text_entry(screen::in, maybe(string)::out,
