@@ -315,7 +315,6 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
     (
         OnEntry = redraw,
         draw_index_view(Screen, !.IndexInfo, !IO),
-        draw_index_bar(Screen, !.IndexInfo, !IO),
         update_panels(Screen, !IO)
     ;
         OnEntry = no_draw
@@ -1292,8 +1291,8 @@ bulk_tag(Screen, Done, !Info, !IO) :-
     ( any_selected_line(Lines0) ->
         Prompt = "Action: (d)elete, (u)ndelete, (N) toggle unread, " ++
             "(') mark read, (+/-) change tags",
-        update_message_immed(Screen, set_prompt(Prompt), !IO),
-        get_keycode_blocking(KeyCode, !IO),
+        get_keycode_blocking_handle_resize(Screen, set_prompt(Prompt), KeyCode,
+            !Info, !IO),
         ( KeyCode = char('-') ->
             Config = !.Info ^ i_config,
             init_bulk_tag_completion(Config, Lines0, Completion),
@@ -1835,6 +1834,24 @@ next_poll_time(Config, Time) = NextPollTime :-
 
 %-----------------------------------------------------------------------------%
 
+:- pred get_keycode_blocking_handle_resize(screen::in, message_update::in,
+    keycode::out, index_info::in, index_info::out, io::di, io::uo) is det.
+
+get_keycode_blocking_handle_resize(Screen, Message, Key, !Info, !IO) :-
+    update_message_immed(Screen, Message, !IO),
+    get_keycode_blocking(Key0, !IO),
+    ( Key0 = code(curs.key_resize) ->
+        recreate_screen_for_resize(Screen, !IO),
+        recreate_index_view(Screen, !Info, !IO),
+        draw_index_view(Screen, !.Info, !IO),
+        update_panels(Screen, !IO),
+        get_keycode_blocking_handle_resize(Screen, Message, Key, !Info, !IO)
+    ;
+        Key = Key0
+    ).
+
+%-----------------------------------------------------------------------------%
+
 :- pred draw_index_view(screen::in, index_info::in, io::di, io::uo) is det.
 
 draw_index_view(Screen, Info, !IO) :-
@@ -1852,7 +1869,8 @@ draw_index_view(Screen, Info, !IO) :-
     get_main_panels(Screen, MainPanels, !IO),
     Scrollable = Info ^ i_scrollable,
     scrollable.draw(draw_index_line(Attrs, AuthorWidth), Screen, MainPanels,
-        Scrollable, !IO).
+        Scrollable, !IO),
+    draw_index_bar(Screen, Info, !IO).
 
 :- pred get_author_width(int::in, int::out) is det.
 
