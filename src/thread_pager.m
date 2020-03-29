@@ -1680,8 +1680,8 @@ bulk_tag(Screen, Done, !Info, !IO) :-
     ( any_selected_line(Lines0) ->
         Prompt = "Action: (d)elete, (u)ndelete, (N) toggle unread, " ++
             "(') mark read, (+/-) change tags",
-        update_message_immed(Screen, set_prompt(Prompt), !IO),
-        get_keycode_blocking(KeyCode, !IO),
+        get_keycode_blocking_handle_resize(Screen, set_prompt(Prompt), KeyCode,
+            !Info, !IO),
         ( KeyCode = char('-') ->
             Config = !.Info ^ tp_config,
             init_bulk_tag_completion(Config, Lines0, Completion),
