@@ -124,8 +124,12 @@
     ;       metacode(int)
     ;       timeout_or_error.
 
+    % Note: this returns resizes.
+    %
 :- pred get_keycode_blocking(keycode::out, io::di, io::uo) is det.
 
+    % Note: this returns resizes.
+    %
 :- pred get_keycode_async_aware(maybe(timestamp)::in, keycode::out,
     io::di, io::uo) is det.
 

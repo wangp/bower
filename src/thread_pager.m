@@ -2092,7 +2092,7 @@ prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
         !Info ^ tp_common_history ^ ch_open_part_history := History,
         Config = !.Info ^ tp_config,
         do_open_part(Config, Screen, Part, Command1, MessageUpdate,
-            MaybeNextKey, !IO)
+            MaybeNextKey, !Info, !IO)
     ;
         MessageUpdate = clear_message,
         MaybeNextKey = no
@@ -2100,11 +2100,12 @@ prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
     update_message(Screen, MessageUpdate, !IO).
 
 :- pred do_open_part(prog_config::in, screen::in, part::in, string::in,
-    message_update::out, maybe(keycode)::out, io::di, io::uo) is det.
+    message_update::out, maybe(keycode)::out,
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 do_open_part(Config, Screen, Part, Command, MessageUpdate, MaybeNextKey,
-        !IO) :-
-    promise_equivalent_solutions [MessageUpdate, MaybeNextKey, !:IO] (
+        !Info, !IO) :-
+    promise_equivalent_solutions [MessageUpdate, MaybeNextKey, !:Info, !:IO] (
         shell_word.split(Command, ParseResult),
         (
             ParseResult = ok([]),
@@ -2115,7 +2116,7 @@ do_open_part(Config, Screen, Part, Command, MessageUpdate, MaybeNextKey,
             ParseResult = ok(CommandWords),
             CommandWords = [_ | _],
             do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate,
-                MaybeNextKey, !IO)
+                MaybeNextKey, !Info, !IO)
         ;
             (
                 ParseResult = error(yes(Error), _Line, Column),
@@ -2133,10 +2134,10 @@ do_open_part(Config, Screen, Part, Command, MessageUpdate, MaybeNextKey,
 
 :- pred do_open_part_2(prog_config::in, screen::in, part::in,
     list(word)::in(non_empty_list), message_update::out, maybe(keycode)::out,
-    io::di, io::uo) is det.
+    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, MaybeNextKey,
-        !IO) :-
+        !Info, !IO) :-
     Part = part(MessageId, MaybePartId, _ContentType, _MaybeContentDisposition,
         _Content, MaybePartFileName, _MaybeContentLength, _MaybeCTE,
         IsDecrypted),
@@ -2157,10 +2158,9 @@ do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, MaybeNextKey,
             call_open_command(Screen, CommandWords, FileName, MaybeError, !IO),
             (
                 MaybeError = ok,
-                ContMessage = set_info(
-                    "Press any key to continue (deletes temporary file)"),
-                update_message_immed(Screen, ContMessage, !IO),
-                get_keycode_blocking(Key, !IO),
+                Message = "Press any key to continue (deletes temporary file)",
+                get_keycode_blocking_handle_resize(Screen, set_info(Message),
+                    Key, !Info, !IO),
                 MaybeNextKey = yes(Key),
                 MessageUpdate = clear_message
             ;
@@ -3024,6 +3024,25 @@ next_poll_time(Config, Time) = NextPollTime :-
     ;
         Maybe = no,
         NextPollTime = no
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred get_keycode_blocking_handle_resize(screen::in, message_update::in,
+    keycode::out, thread_pager_info::in, thread_pager_info::out,
+    io::di, io::uo) is det.
+
+get_keycode_blocking_handle_resize(Screen, Message, Key, !Info, !IO) :-
+    update_message_immed(Screen, Message, !IO),
+    get_keycode_blocking(Key0, !IO),
+    ( Key0 = code(curs.key_resize) ->
+        recreate_screen_for_resize(Screen, !IO),
+        resize_thread_pager(Screen, !Info, !IO),
+        draw_thread_pager(Screen, !.Info, !IO),
+        update_panels(Screen, !IO),
+        get_keycode_blocking_handle_resize(Screen, Message, Key, !Info, !IO)
+    ;
+        Key = Key0
     ).
 
 %-----------------------------------------------------------------------------%
