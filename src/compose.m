@@ -1834,6 +1834,12 @@ prompt_confirm(Screen, Prompt, Res, !IO) :-
         Res = yes
     ; KeyCode = char('y') ->
         Res = yes
+    ; KeyCode = code(curs.key_resize) ->
+        % XXX handle resize properly
+        % Unforunately we need to pass down a lot of data to redraw the screen.
+        % Forunately this confirmation prompt occurs rarely.
+        recreate_screen_for_resize(Screen, !IO),
+        prompt_confirm(Screen, Prompt, Res, !IO)
     ;
         Res = no
     ).
