@@ -2852,8 +2852,8 @@ pipe_ids(Screen, !Info, !IO) :-
         HaveSelectedMessages = yes,
         PromptWhat = PromptWhat0 ++ ", (m) selected message IDs"
     ),
-    update_message_immed(Screen, set_prompt(PromptWhat), !IO),
-    get_keycode_blocking(KeyCode, !IO),
+    get_keycode_blocking_handle_resize(Screen, set_prompt(PromptWhat), KeyCode,
+        !Info, !IO),
     ( KeyCode = char('t') ->
         PromptCommand = "Pipe thread ID: ",
         ThreadId = !.Info ^ tp_thread_id,
