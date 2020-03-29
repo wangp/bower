@@ -177,12 +177,25 @@ prompt_to(Config, Screen, Res, !ToHistory, !IO) :-
 
 confirm_resend(Screen, From, To, Confirmation, !IO) :-
     Prompt = "Resend from " ++ From ++ " to " ++ To ++ "? (Y/n) ",
-    update_message_immed(Screen, set_prompt(Prompt), !IO),
-    get_keycode_blocking(Code, !IO),
-    ( Code = char('Y') ->
+    confirm_resend_get_key(Screen, set_prompt(Prompt), Key, !IO),
+    ( Key = char('Y') ->
         Confirmation = yes
     ;
         Confirmation = no
+    ).
+
+:- pred confirm_resend_get_key(screen::in, message_update::in,
+    keycode::out, io::di, io::uo) is det.
+
+confirm_resend_get_key(Screen, Message, Key, !IO) :-
+    update_message_immed(Screen, Message, !IO),
+    get_keycode_blocking(Key0, !IO),
+    ( Key0 = code(curs.key_resize) ->
+        % XXX same as text entry, the caller may require resize handling
+        recreate_screen_for_resize(Screen, !IO),
+        confirm_resend_get_key(Screen, Message, Key, !IO)
+    ;
+        Key = Key0
     ).
 
 %-----------------------------------------------------------------------------%
