@@ -45,6 +45,7 @@
 :- import_module pipe_to.
 :- import_module poll_notify.
 :- import_module recall.
+:- import_module sanitise.
 :- import_module scrollable.
 :- import_module search_term.
 :- import_module signal.
@@ -81,8 +82,8 @@
                 i_id        :: thread_id,
                 i_selected  :: selected,
                 i_date      :: string,
-                i_authors   :: string,
-                i_subject   :: string,
+                i_authors   :: presentable_string,
+                i_subject   :: presentable_string,
                 i_tags      :: set(tag),
                 i_std_tags  :: standard_tags, % cached from i_tags
                 i_nonstd_tags_width :: int,   % cached from i_nonstd_tags_width
@@ -295,8 +296,9 @@ thread_to_index_line(Nowish, Thread, Line, !IO) :-
     Shorter = yes,
     make_reldate(Nowish, TM, Shorter, Date),
     get_standard_tags(Tags, StdTags, DisplayTagsWidth),
-    Line = index_line(Id, not_selected, Date, Authors, Subject, Tags, StdTags,
-        DisplayTagsWidth, Matched, Total).
+    Line = index_line(Id, not_selected, Date, make_presentable(Authors),
+        make_presentable(Subject), Tags, StdTags, DisplayTagsWidth,
+        Matched, Total).
 
 :- func default_max_threads = int.
 
@@ -1036,8 +1038,9 @@ skip_to_internal_search_2(Search, SearchDir, Start, WrapStart, WrapMessage,
 :- pred line_matches_internal_search(string::in, index_line::in) is semidet.
 
 line_matches_internal_search(Search, Line) :-
-    Line = index_line(_Id, _Selected, _Date, Authors, Subject, Tags, _StdTags,
-        _TagsWidth, _Matched, _Total),
+    Line = index_line(_Id, _Selected, _Date, presentable_string(Authors),
+        presentable_string(Subject), Tags, _StdTags, _TagsWidth,
+        _Matched, _Total),
     (
         strcase_str(Authors, Search)
     ;
@@ -1887,8 +1890,9 @@ get_author_width(Cols, AuthorWidth) :-
 
 draw_index_line(IAttrs, AuthorWidth, Screen, Panel, Line, _LineNr, IsCursor,
         !IO) :-
-    Line = index_line(_Id, Selected, Date, Authors, Subject, Tags, StdTags,
-        NonstdTagsWidth, Matched, Total),
+    Line = index_line(_Id, Selected, Date, presentable_string(Authors),
+        presentable_string(Subject), Tags, StdTags, NonstdTagsWidth,
+        Matched, Total),
     Attrs = IAttrs ^ i_generic,
     (
         IsCursor = yes,

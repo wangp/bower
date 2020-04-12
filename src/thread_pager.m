@@ -68,6 +68,7 @@
 :- import_module quote_arg.
 :- import_module recall.
 :- import_module resend.
+:- import_module sanitise.
 :- import_module scrollable.
 :- import_module shell_word.
 :- import_module string_util.
@@ -113,7 +114,7 @@
     --->    thread_line(
                 tp_message      :: message,
                 tp_parent       :: maybe(message_id),
-                tp_clean_from   :: string,
+                tp_clean_from   :: presentable_string,
                 tp_prev_tags    :: set(tag),
                 tp_curr_tags    :: set(tag),
                 tp_std_tags     :: standard_tags, % cached from tp_curr_tags
@@ -121,7 +122,7 @@
                 tp_selected     :: selected,
                 tp_graphics     :: maybe(list(graphic)),
                 tp_reldate      :: string,
-                tp_subject      :: maybe(header_value)
+                tp_subject      :: maybe(presentable_string)
             ).
 
 :- type selected
@@ -620,7 +621,8 @@ make_thread_line(Nowish, Message, MaybeParentId, MaybeGraphics,
         ->
             MaybeSubject = no
         ;
-            MaybeSubject = yes(CurSubject)
+            CurSubjectStr = header_value_string(CurSubject),
+            MaybeSubject = yes(make_presentable(CurSubjectStr))
         )
     ;
         MaybeHeaders = no,
@@ -634,7 +636,7 @@ make_thread_line(Nowish, Message, MaybeParentId, MaybeGraphics,
         Tags = set.init
     ),
     get_standard_tags(Tags, StdTags, NonstdTagsWidth),
-    Line = thread_line(Message, MaybeParentId, CleanFrom,
+    Line = thread_line(Message, MaybeParentId, make_presentable(CleanFrom),
         Tags, Tags, StdTags, NonstdTagsWidth,
         not_selected, MaybeGraphics, RelDate, MaybeSubject).
 
@@ -3083,8 +3085,9 @@ draw_sep(Screen, MaybeSepPanel, Attrs, Cols, !IO) :-
     thread_line::in, int::in, bool::in, io::di, io::uo) is det.
 
 draw_thread_line(TAttrs, Screen, Panel, Line, _LineNr, IsCursor, !IO) :-
-    Line = thread_line(Message, _ParentId, From, _PrevTags, CurrTags, StdTags,
-        NonstdTagsWidth, Selected, MaybeGraphics, RelDate, MaybeSubject),
+    Line = thread_line(Message, _ParentId, presentable_string(From),
+        _PrevTags, CurrTags, StdTags, NonstdTagsWidth,
+        Selected, MaybeGraphics, RelDate, MaybeSubject),
     Attrs = TAttrs ^ t_generic,
     (
         IsCursor = yes,
@@ -3162,10 +3165,10 @@ draw_thread_line(TAttrs, Screen, Panel, Line, _LineNr, IsCursor, !IO) :-
         unless(IsCursor, curs.(Attrs ^ author + Highlight)),
         From, !IO),
     (
-        MaybeSubject = yes(Subject),
+        MaybeSubject = yes(presentable_string(Subject)),
         draw(Screen, Panel, ". ", !IO),
         mattr_draw(Screen, Panel, unless(IsCursor, Attrs ^ subject),
-            header_value_string(Subject), !IO)
+            Subject, !IO)
     ;
         MaybeSubject = no
     ),

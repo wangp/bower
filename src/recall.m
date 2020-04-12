@@ -29,6 +29,7 @@
 :- import_module callout.
 :- import_module color.
 :- import_module maildir.
+:- import_module sanitise.
 :- import_module scrollable.
 :- import_module tags.
 :- import_module time_util.
@@ -47,8 +48,8 @@
     --->    recall_line(
                 r_message       :: message_for_recall,
                 r_reldate       :: string,
-                r_to            :: header_value,
-                r_subject       :: header_value,
+                r_to            :: presentable_string,
+                r_subject       :: presentable_string,
                 r_tags          :: set(tag)
             ).
 
@@ -94,12 +95,13 @@ make_recall_line(Config, Nowish, MessageId, MaybeLine, !IO) :-
     (
         Result = ok(Message),
         Message = message_for_recall(_Id, Timestamp, Headers, Tags),
-        To = Headers ^ h_to,
-        Subject = Headers ^ h_subject,
+        To = header_value_string(Headers ^ h_to),
+        Subject = header_value_string(Headers ^ h_subject),
         localtime(Timestamp, TM, !IO),
         Shorter = no,
         make_reldate(Nowish, TM, Shorter, RelDate),
-        Line = recall_line(Message, RelDate, To, Subject, Tags),
+        Line = recall_line(Message, RelDate, make_presentable(To),
+            make_presentable(Subject), Tags),
         MaybeLine = yes(Line)
     ;
         Result = error(Error),
@@ -252,7 +254,8 @@ draw_recall(Screen, Info, !IO) :-
     recall_line::in, int::in, bool::in, io::di, io::uo) is det.
 
 draw_recall_line(Attrs, Screen, Panel, Line, _LineNr, IsCursor, !IO) :-
-    Line = recall_line(_FileName, RelDate, To, Subject, Tags),
+    Line = recall_line(_FileName, RelDate, presentable_string(To),
+        presentable_string(Subject), Tags),
     (
         IsCursor = yes,
         RelDateAttr = Attrs ^ current
@@ -265,11 +268,10 @@ draw_recall_line(Attrs, Screen, Panel, Line, _LineNr, IsCursor, !IO) :-
     NameAttr = Attrs ^ field_name,
     BodyAttr = Attrs ^ field_body,
     mattr_draw(Screen, Panel, unless(IsCursor, NameAttr), "To: ", !IO),
-    mattr_draw_fixed(Screen, Panel, unless(IsCursor, BodyAttr),
-        25, header_value_string(To), ' ', !IO),
+    mattr_draw_fixed(Screen, Panel, unless(IsCursor, BodyAttr), 25, To, ' ',
+        !IO),
     mattr_draw(Screen, Panel, unless(IsCursor, NameAttr), " Subject: ", !IO),
-    mattr_draw(Screen, Panel, unless(IsCursor, BodyAttr),
-        header_value_string(Subject), !IO),
+    mattr_draw(Screen, Panel, unless(IsCursor, BodyAttr), Subject, !IO),
     attr(Screen, Panel, Attrs ^ other_tag, !IO),
     set.fold(draw_display_tag(Screen, Panel), Tags, !IO).
 

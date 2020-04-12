@@ -127,6 +127,7 @@
 :- import_module mime_type.
 :- import_module pager_text.
 :- import_module quote_arg.
+:- import_module sanitise.
 :- import_module size_util.
 :- import_module string_util.
 :- import_module time_util.
@@ -375,7 +376,9 @@ make_message_self_trees(Config, Cols, Message, NodeId, Trees, !Counter, !IO) :-
 add_header(StartMessage, Cols, Name, Value, !RevLines) :-
     % 2 extra columns for "Name: "
     RemainCols = max(0, Cols - string_wcwidth(Name) - 2),
-    get_spans_by_whitespace(header_value_string(Value), Spans),
+    ValueStr = header_value_string(Value),
+    make_presentable(ValueStr) = presentable_string(DisplayValue),
+    get_spans_by_whitespace(DisplayValue, Spans),
     fill_lines(RemainCols, Spans, Folded),
     (
         Folded = [],
@@ -696,15 +699,12 @@ make_encapsulated_message_tree(Config, Cols, EncapMessage, Tree, !Counter, !IO)
     list(pager_line)::in, list(pager_line)::out) is det.
 
 add_encapsulated_header(Header, Value, RevLines0, RevLines) :-
-    (
-        Value = header_value(ValueString)
-    ;
-        Value = decoded_unstructured(ValueString)
-    ),
-    ( ValueString = "" ->
+    ValueStr = header_value_string(Value),
+    make_presentable(ValueStr) = presentable_string(DisplayValue),
+    ( DisplayValue = "" ->
         RevLines = RevLines0
     ;
-        Line = text(pager_text(0, Header ++ ": " ++ ValueString, 0, plain)),
+        Line = text(pager_text(0, Header ++ ": " ++ DisplayValue, 0, plain)),
         RevLines = [Line | RevLines0]
     ).
 
