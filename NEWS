@@ -1,3 +1,13 @@
+Bower 0.12-unreleased
+=====================
+
+* Raise required Mercury version to 14.01 or above.
+* Clean up spaces and unprintable chars when displaying header values.
+* Fix display of future timestamps.
+* Handle screen resize in a few more places.
+* Change default cursor color.
+* Add make clean target.
+
 Bower 0.11 (2019-08-17)
 =======================
 
