@@ -321,7 +321,7 @@ colour("white", white).
 
 default_generic_attrs =
     generic_attrs(
-        bold(yellow, red),
+        normal(blue, white),
         bold(blue),
         bold(magenta),
         normal,
