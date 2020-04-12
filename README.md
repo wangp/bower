@@ -20,7 +20,7 @@ require some work to work on other systems.
 
 At compile time:
 
-* Mercury compiler (11.07 or later, including release-of-the-day);
+* Mercury compiler (14.01 or later, including release-of-the-day);
   currently available at <http://dl.mercurylang.org/index.html>
 
 At run time:
