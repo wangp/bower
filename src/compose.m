@@ -29,8 +29,8 @@
     history::in, history::out, io::di, io::uo) is det.
 
 :- pred start_reply(prog_config::in, crypto::in, screen::in,
-    message::in(message), reply_kind::in, screen_transition(sent)::out,
-    io::di, io::uo) is det.
+    message::in(message), reply_kind::in, part_visibility_map::in,
+    screen_transition(sent)::out, io::di, io::uo) is det.
 
 :- pred start_reply_to_message_id(prog_config::in, crypto::in, screen::in,
     message_id::in, reply_kind::in, screen_transition(sent)::out,
@@ -69,6 +69,7 @@
 :- import_module pair.
 :- import_module require.
 :- import_module set.
+:- import_module solutions.
 :- import_module string.
 
 :- import_module addressbook.
@@ -285,7 +286,8 @@ expand_aliases(Config, QuoteOpt, Input, Output, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-start_reply(Config, Crypto, Screen, Message, ReplyKind, Transition, !IO) :-
+start_reply(Config, Crypto, Screen, Message, ReplyKind, PartVisibilityMap,
+        Transition, !IO) :-
     Message ^ m_id = MessageId,
     WasEncrypted = contains(Message ^ m_tags, encrypted_tag),
     run_notmuch(Config,
@@ -298,7 +300,8 @@ start_reply(Config, Crypto, Screen, Message, ReplyKind, Transition, !IO) :-
         parse_reply, ResParse, !IO),
     (
         ResParse = ok(ReplyHeaders),
-        prepare_reply(Message, ReplyHeaders, Headers0, Body),
+        prepare_reply(Message, PartVisibilityMap, ReplyHeaders, Headers0,
+            Body),
         (
             ReplyKind = direct_reply,
             Headers = Headers0
@@ -407,8 +410,9 @@ start_reply_to_message_id(Config, Crypto, Screen, MessageId, ReplyKind,
         Res = ok(Message),
         (
             Message = message(_, _, _, _, _, _),
-            start_reply(Config, Crypto, Screen, Message, ReplyKind, Transition,
-                !IO)
+            PartVisibilityMap = map.init,
+            start_reply(Config, Crypto, Screen, Message, ReplyKind,
+                PartVisibilityMap, Transition, !IO)
         ;
             Message = excluded_message(_, _, _, _, _),
             Warning = "Excluded message.",
@@ -421,10 +425,11 @@ start_reply_to_message_id(Config, Crypto, Screen, MessageId, ReplyKind,
 
 %-----------------------------------------------------------------------------%
 
-:- pred prepare_reply(message::in(message), reply_headers::in, headers::out,
-    string::out) is det.
+:- pred prepare_reply(message::in(message), part_visibility_map::in,
+    reply_headers::in, headers::out, string::out) is det.
 
-prepare_reply(Message, ReplyHeaders0, ReplyHeaders, ReplyBody) :-
+prepare_reply(Message, PartVisibilityMap, ReplyHeaders0, ReplyHeaders,
+        ReplyBody) :-
     Message = message(_MessageId, _Timestamp, MessageHeaders, _Tags,
         Parts, _Replies),
     OrigDate = MessageHeaders ^ h_date,
@@ -473,7 +478,7 @@ prepare_reply(Message, ReplyHeaders0, ReplyHeaders, ReplyBody) :-
     % Efficiency could be better.
     make_attribution(OrigDate, OrigFrom, Attribution),
     RevLines0 = [Attribution],
-    list.foldl(add_reply_part, Parts, RevLines0, RevLines),
+    list.foldl(add_reply_part(PartVisibilityMap), Parts, RevLines0, RevLines),
     list.reverse(RevLines, Lines),
     ReplyBody = string.join_list("\n", Lines) ++ "\n".
 
@@ -484,9 +489,10 @@ make_attribution(Date, From, Line) :-
         [s(header_value_string(Date)), s(header_value_string(From))],
         Line).
 
-:- pred add_reply_part(part::in, list(string)::in, list(string)::out) is det.
+:- pred add_reply_part(part_visibility_map::in, part::in,
+    list(string)::in, list(string)::out) is det.
 
-add_reply_part(Part, !RevLines) :-
+add_reply_part(PartVisibilityMap, Part, !RevLines) :-
     Part = part(_MessageId, _PartId, ContentType, MaybeContentDisposition,
         PartContent, MaybeFileName,
         _MaybeContentLength, _MaybeContentTransferEncoding, _MaybeDecrypted),
@@ -500,19 +506,28 @@ add_reply_part(Part, !RevLines) :-
     ;
         PartContent = subparts(_Encryption, _Signatures, SubParts),
         ( is_multipart(ContentType) ->
-            % multipart_alternative
-            % multipart_mixed
-            % multipart_related
-            % multipart_signed
-            % XXX untested: multipart_encrypted
-            list.foldl(add_reply_part, SubParts, !RevLines)
+            (
+                ContentType = multipart_alternative,
+                reply_select_alternative(PartVisibilityMap, SubParts, SubPart)
+            ->
+                add_reply_part(PartVisibilityMap, SubPart, !RevLines)
+            ;
+                % multipart_alternative
+                % multipart_mixed
+                % multipart_related
+                % multipart_signed
+                % XXX untested: multipart_encrypted
+                list.foldl(add_reply_part(PartVisibilityMap), SubParts,
+                    !RevLines)
+            )
         ;
             % Is this possible?
             add_reply_non_text_part(ContentType, !RevLines)
         )
     ;
         PartContent = encapsulated_messages(EncapMessages),
-        foldl(add_reply_encapsulated_message, EncapMessages, !RevLines)
+        foldl(add_reply_encapsulated_message(PartVisibilityMap),
+            EncapMessages, !RevLines)
     ;
         PartContent = unsupported,
         ( reply_ignore_unsupported_part(ContentType) ->
@@ -526,10 +541,33 @@ add_reply_part(Part, !RevLines) :-
         )
     ).
 
-:- pred add_reply_encapsulated_message(encapsulated_message::in,
-    list(string)::in, list(string)::out) is det.
+:- pred reply_select_alternative(part_visibility_map::in, list(part)::in,
+    part::out) is semidet.
 
-add_reply_encapsulated_message(Message, !RevLines) :-
+reply_select_alternative(PartVisibilityMap, Parts, Part) :-
+    solutions(has_one_visible_alternative(PartVisibilityMap, Parts), [Part]).
+
+:- pred has_one_visible_alternative(part_visibility_map::in, list(part)::in,
+    part::out) is nondet.
+
+has_one_visible_alternative(PartVisibilityMap, Parts, Part) :-
+    list.delete(Parts, Part, OtherParts),
+    part_has_visibility(PartVisibilityMap, part_visible, Part),
+    all_true(part_has_visibility(PartVisibilityMap, part_hidden), OtherParts).
+
+:- pred part_has_visibility(part_visibility_map::in, part_visibility::in,
+    part::in) is semidet.
+
+part_has_visibility(Map, PartVisibility, Part) :-
+    MessageId = Part ^ pt_msgid,
+    MaybePartId = Part ^ pt_part,
+    MaybePartId = yes(PartId),
+    map.search(Map, message_part_id(MessageId, PartId), PartVisibility).
+
+:- pred add_reply_encapsulated_message(part_visibility_map::in,
+    encapsulated_message::in, list(string)::in, list(string)::out) is det.
+
+add_reply_encapsulated_message(PartVisibilityMap, Message, !RevLines) :-
     % Follows notmuch-reply.c
     Message = encapsulated_message(Headers, Parts),
     Headers = headers(
@@ -551,7 +589,7 @@ add_reply_encapsulated_message(Message, !RevLines) :-
     add_reply_encapsulated_message_header("Subject", Subject, !RevLines),
     add_reply_encapsulated_message_header("Date", Date, !RevLines),
     cons(">", !RevLines),
-    list.foldl(add_reply_part, Parts, !RevLines).
+    list.foldl(add_reply_part(PartVisibilityMap), Parts, !RevLines).
 
 :- pred add_reply_encapsulated_message_header(string::in, header_value::in,
     list(string)::in, list(string)::out) is det.

@@ -778,12 +778,14 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
     ;
         Action = start_reply(Message, ReplyKind),
         (
-            Message = message(_, _, _, _, _, _),
+            Message = message(MessageId, _, _, _, _, _),
             flush_async_with_progress(Screen, !IO),
             Config = !.Info ^ tp_config,
             Crypto = !.Info ^ tp_crypto,
-            start_reply(Config, Crypto, Screen, Message, ReplyKind, Transition,
-                !IO),
+            Pager = !.Info ^ tp_pager,
+            get_part_visibility_map(Pager, MessageId, PartVisibilityMap),
+            start_reply(Config, Crypto, Screen, Message, ReplyKind,
+                PartVisibilityMap, Transition, !IO),
             handle_screen_transition(Screen, Transition, Sent, !Info, !IO),
             (
                 Sent = sent,

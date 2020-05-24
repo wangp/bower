@@ -62,6 +62,9 @@
 :- type message_id
     --->    message_id(string).
 
+:- type message_part_id
+    --->    message_part_id(message_id, int).   % XXX bespoke type for part_id
+
 :- type headers
     --->    headers(
                 % Technically, header fields.
@@ -171,6 +174,12 @@
                 inreplyto       :: string,
                 references      :: string
             ).
+
+:- type part_visibility_map == map(message_part_id, part_visibility).
+
+:- type part_visibility
+    --->    part_visible
+    ;       part_hidden.
 
 %-----------------------------------------------------------------------------%
 

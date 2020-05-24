@@ -101,6 +101,9 @@
 :- pred get_percent_visible(pager_info::in, int::in, message_id::in, int::out)
     is semidet.
 
+:- pred get_part_visibility_map(pager_info::in, message_id::in,
+    part_visibility_map::out) is det.
+
 :- pred draw_pager_lines(screen::in, list(vpanel)::in, pager_attrs::in,
     pager_info::in, io::di, io::uo) is det.
 
@@ -1589,6 +1592,69 @@ get_percent_visible(Info, NumPagerRows, MessageId, Percent) :-
         % floor instead of round, otherwise we see 100% before end of message.
         I = floor_to_int(100.0 * F),
         Percent = max(0, min(I, 100))
+    ).
+
+%-----------------------------------------------------------------------------%
+
+get_part_visibility_map(Info, MessageId, Map) :-
+    Scrollable = Info ^ p_scrollable,
+    Extents = Info ^ p_extents,
+    ( map.search(Extents, MessageId, MessageExtents) ->
+        MessageExtents = message_extents(Start, EndExcl),
+        make_part_visibility_map_in_extents(Scrollable, Start, EndExcl,
+            map.init, Map)
+    ;
+        Map = map.init
+    ).
+
+:- pred make_part_visibility_map_in_extents(scrollable(id_pager_line)::in,
+    int::in, int::in, part_visibility_map::in, part_visibility_map::out)
+    is det.
+
+make_part_visibility_map_in_extents(Scrollable, Cur, EndExcl, !Map) :-
+    (
+        Cur < EndExcl,
+        get_line(Scrollable, Cur, Line)
+    ->
+        Line = _NodeId - PagerLine,
+        make_part_visibility_map_in_line(PagerLine, !Map),
+        make_part_visibility_map_in_extents(Scrollable, Cur + 1, EndExcl, !Map)
+    ;
+        true
+    ).
+
+:- pred make_part_visibility_map_in_line(pager_line::in,
+    part_visibility_map::in, part_visibility_map::out) is det.
+
+make_part_visibility_map_in_line(PagerLine, !Map) :-
+    (
+        PagerLine = part_head(Part, HiddenParts, _PartExpanded, _Importance),
+        add_part_visibility(part_visible, Part, !Map),
+        foldl(add_part_visibility(part_hidden), HiddenParts, !Map)
+    ;
+        PagerLine = fold_marker(PagerLines, _Expanded),
+        list.foldl(make_part_visibility_map_in_line, PagerLines, !Map)
+    ;
+        ( PagerLine = start_of_message_header(_, _, _)
+        ; PagerLine = subseq_message_header(_, _, _)
+        ; PagerLine = text(_)
+        ; PagerLine = signature(_)
+        ; PagerLine = message_separator
+        )
+    ).
+
+:- pred add_part_visibility(part_visibility::in, part::in,
+    part_visibility_map::in, part_visibility_map::out) is det.
+
+add_part_visibility(PartVisibility, Part, !Map) :-
+    MessageId = Part ^ pt_msgid,
+    MaybePartId = Part ^ pt_part,
+    (
+        MaybePartId = yes(PartId),
+        map.det_insert(message_part_id(MessageId, PartId), PartVisibility,
+            !Map)
+    ;
+        MaybePartId = no
     ).
 
 %-----------------------------------------------------------------------------%
