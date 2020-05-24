@@ -286,19 +286,19 @@ expand_aliases(Config, QuoteOpt, Input, Output, !IO) :-
 %-----------------------------------------------------------------------------%
 
 start_reply(Config, Crypto, Screen, Message, ReplyKind, Transition, !IO) :-
-    get_notmuch_command(Config, Notmuch),
     Message ^ m_id = MessageId,
     WasEncrypted = contains(Message ^ m_tags, encrypted_tag),
-    make_quoted_command(Notmuch, [
-        "reply", reply_to_arg(ReplyKind), decrypt_arg(WasEncrypted),
-        "--", message_id_to_search_term(MessageId)
-    ], redirect_input("/dev/null"), no_redirect, Command),
-    % Decryption may invoke pinentry-curses.
-    curs.soft_suspend(
-        call_system_capture_stdout(Command, no), CommandResult, !IO),
+    run_notmuch(Config,
+        [
+            "reply", "--format=json",
+            reply_to_arg(ReplyKind), decrypt_arg(WasEncrypted),
+            "--", message_id_to_search_term(MessageId)
+        ],
+        no_suspend_curses,
+        parse_reply, ResParse, !IO),
     (
-        CommandResult = ok(String),
-        parse_message(String, Headers0, Text),
+        ResParse = ok(ReplyHeaders),
+        prepare_reply(Message, ReplyHeaders, Headers0, Body),
         (
             ReplyKind = direct_reply,
             Headers = Headers0
@@ -313,12 +313,11 @@ start_reply(Config, Crypto, Screen, Message, ReplyKind, Transition, !IO) :-
         Attachments = [],
         MaybeOldDraft = no,
         SignInit = no,
-        create_edit_stage(Config, Crypto, Screen, Headers, Text, Attachments,
+        create_edit_stage(Config, Crypto, Screen, Headers, Body, Attachments,
             MaybeOldDraft, WasEncrypted, SignInit, Transition, !IO)
     ;
-        CommandResult = error(Error),
-        string.append_list(["Error running notmuch: ",
-            io.error_message(Error)], Warning),
+        ResParse = error(Error),
+        Warning = "Error parsing notmuch response: " ++ Error,
         Transition = screen_transition(not_sent, set_warning(Warning))
     ).
 
@@ -396,6 +395,7 @@ contains(Set, X) = pred_to_bool(contains(Set, X)).
 
 start_reply_to_message_id(Config, Crypto, Screen, MessageId, ReplyKind,
         Transition, !IO) :-
+    % XXX we could parse the message in notmuch reply --format=json now
     run_notmuch(Config,
         [
             "show", "--format=json", "--part=0", "--",
@@ -418,6 +418,206 @@ start_reply_to_message_id(Config, Crypto, Screen, MessageId, ReplyKind,
         Res = error(Error),
         unexpected($module, $pred, Error)
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred prepare_reply(message::in(message), reply_headers::in, headers::out,
+    string::out) is det.
+
+prepare_reply(Message, ReplyHeaders0, ReplyHeaders, ReplyBody) :-
+    Message = message(_MessageId, _Timestamp, MessageHeaders, _Tags,
+        Parts, _Replies),
+    OrigDate = MessageHeaders ^ h_date,
+    OrigFrom = MessageHeaders ^ h_from,
+    ReplyHeaders0 = reply_headers(
+        Subject,
+        From,
+        MaybeTo,
+        MaybeCc,
+        MaybeBcc,
+        InReplyTo,                      % note order
+        References                      % note order
+    ),
+    (
+        MaybeTo = yes(To)
+    ;
+        MaybeTo = no,
+        To = ""
+    ),
+    (
+        MaybeCc = yes(Cc)
+    ;
+        MaybeCc = no,
+        Cc = ""
+    ),
+    (
+        MaybeBcc = yes(Bcc)
+    ;
+        MaybeBcc = no,
+        Bcc = ""
+    ),
+    ReplyTo = "",
+    ReplyDate = "",                     % filled in later
+    ReplyHeaders = headers(
+        header_value(ReplyDate),
+        header_value(From),
+        header_value(To),
+        header_value(Cc),
+        header_value(Bcc),
+        decoded_unstructured(Subject),
+        header_value(ReplyTo),
+        header_value(References),       % note order
+        header_value(InReplyTo),        % note order
+        map.init
+    ),
+    % Efficiency could be better.
+    make_attribution(OrigDate, OrigFrom, Attribution),
+    RevLines0 = [Attribution],
+    list.foldl(add_reply_part, Parts, RevLines0, RevLines),
+    list.reverse(RevLines, Lines),
+    ReplyBody = string.join_list("\n", Lines) ++ "\n".
+
+:- pred make_attribution(header_value::in, header_value::in, string::out) is det.
+
+make_attribution(Date, From, Line) :-
+    string.format("On %s %s wrote:",
+        [s(header_value_string(Date)), s(header_value_string(From))],
+        Line).
+
+:- pred add_reply_part(part::in, list(string)::in, list(string)::out) is det.
+
+add_reply_part(Part, !RevLines) :-
+    Part = part(_MessageId, _PartId, ContentType, MaybeContentDisposition,
+        PartContent, MaybeFileName,
+        _MaybeContentLength, _MaybeContentTransferEncoding, _MaybeDecrypted),
+    (
+        PartContent = text(Text),
+        ( ContentType = text_html ->
+            add_reply_non_text_part(ContentType, !RevLines)
+        ;
+            add_reply_quoted_text(Text, !RevLines)
+        )
+    ;
+        PartContent = subparts(_Encryption, _Signatures, SubParts),
+        ( is_multipart(ContentType) ->
+            % multipart_alternative
+            % multipart_mixed
+            % multipart_related
+            % multipart_signed
+            % XXX untested: multipart_encrypted
+            list.foldl(add_reply_part, SubParts, !RevLines)
+        ;
+            % Is this possible?
+            add_reply_non_text_part(ContentType, !RevLines)
+        )
+    ;
+        PartContent = encapsulated_messages(EncapMessages),
+        foldl(add_reply_encapsulated_message, EncapMessages, !RevLines)
+    ;
+        PartContent = unsupported,
+        ( reply_ignore_unsupported_part(ContentType) ->
+            true
+        ;
+            MaybeContentDisposition = yes(content_disposition("attachment"))
+        ->
+            add_reply_attachment_part(ContentType, MaybeFileName, !RevLines)
+        ;
+            add_reply_non_text_part(ContentType, !RevLines)
+        )
+    ).
+
+:- pred add_reply_encapsulated_message(encapsulated_message::in,
+    list(string)::in, list(string)::out) is det.
+
+add_reply_encapsulated_message(Message, !RevLines) :-
+    % Follows notmuch-reply.c
+    Message = encapsulated_message(Headers, Parts),
+    Headers = headers(
+        Date,
+        From,
+        To,
+        Cc,
+        _Bcc,
+        Subject,
+        _ReplyTo,
+        _References,
+        _InReplyTo,
+        _Rest
+    ),
+    cons("", !RevLines),
+    add_reply_encapsulated_message_header("From", From, !RevLines),
+    maybe_add_reply_encapsulated_message_header("To", To, !RevLines),
+    maybe_add_reply_encapsulated_message_header("Cc", Cc, !RevLines),
+    add_reply_encapsulated_message_header("Subject", Subject, !RevLines),
+    add_reply_encapsulated_message_header("Date", Date, !RevLines),
+    cons(">", !RevLines),
+    list.foldl(add_reply_part, Parts, !RevLines).
+
+:- pred add_reply_encapsulated_message_header(string::in, header_value::in,
+    list(string)::in, list(string)::out) is det.
+
+add_reply_encapsulated_message_header(Name, Value, !RevLines) :-
+    ValueStr = header_value_string(Value),
+    Line = "> " ++ Name ++ ": " ++ ValueStr,
+    cons(Line, !RevLines).
+
+:- pred maybe_add_reply_encapsulated_message_header(string::in,
+    header_value::in, list(string)::in, list(string)::out) is det.
+
+maybe_add_reply_encapsulated_message_header(Name, Value, !RevLines) :-
+    ValueStr = header_value_string(Value),
+    ( ValueStr = "" ->
+        true
+    ;
+        add_reply_encapsulated_message_header(Name, Value, !RevLines)
+    ).
+
+:- pred reply_ignore_unsupported_part(mime_type::in) is semidet.
+
+reply_ignore_unsupported_part(application_pgp_encrypted).
+reply_ignore_unsupported_part(application_pgp_signature).
+reply_ignore_unsupported_part(application_pkcs7_mime).
+
+:- pred add_reply_quoted_text(string::in, list(string)::in, list(string)::out)
+    is det.
+
+add_reply_quoted_text(String, !RevLines) :-
+    Lines0 = string.split_at_char('\n', String),
+    ( split_last(Lines0, Lines1, "") ->
+        Lines = Lines1
+    ;
+        Lines = Lines0
+    ),
+    list.foldl(add_reply_quoted_line, Lines, !RevLines).
+
+:- pred add_reply_quoted_line(string::in, list(string)::in, list(string)::out)
+    is det.
+
+add_reply_quoted_line(Line, !RevLines) :-
+    QLine = "> " ++ Line,
+    cons(QLine, !RevLines).
+
+:- pred add_reply_attachment_part(mime_type::in, maybe(filename)::in,
+    list(string)::in, list(string)::out) is det.
+
+add_reply_attachment_part(ContentType, MaybeFileName, !RevLines) :-
+    (
+        MaybeFileName = yes(filename(FileName)),
+        FilenameSpc = FileName ++ " "
+    ;
+        MaybeFileName = no,
+        FilenameSpc = ""
+    ),
+    string.format("Attachment: %s(%s)",
+        [s(FilenameSpc), s(to_string(ContentType))], Line),
+    cons(Line, !RevLines).
+
+:- pred add_reply_non_text_part(mime_type::in,
+    list(string)::in, list(string)::out) is det.
+
+add_reply_non_text_part(ContentType, !RevLines) :-
+    Line = "Non-text part: " ++ to_string(ContentType),
+    cons(Line, !RevLines).
 
 %-----------------------------------------------------------------------------%
 

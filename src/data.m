@@ -160,6 +160,18 @@
     --->    not_decrypted
     ;       is_decrypted.
 
+:- type reply_headers
+    --->    reply_headers(
+                % The order matches notmuch/devel/schemata.
+                subject         :: string,
+                from            :: string,
+                to              :: maybe(string),
+                cc              :: maybe(string),
+                bcc             :: maybe(string),
+                inreplyto       :: string,
+                references      :: string
+            ).
+
 %-----------------------------------------------------------------------------%
 
 :- func thread_id_to_search_term(thread_id) = string.

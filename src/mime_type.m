@@ -27,6 +27,7 @@
 :- func multipart_encrypted = mime_type.
 :- func application_pgp_encrypted = mime_type.
 :- func application_pgp_signature = mime_type.
+:- func application_pkcs7_mime = mime_type.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -71,6 +72,7 @@ multipart_signed = mime_type("multipart/signed").
 multipart_encrypted = mime_type("multipart/encrypted").
 application_pgp_encrypted = mime_type("application/pgp-encrypted").
 application_pgp_signature = mime_type("application/pgp-signature").
+application_pkcs7_mime = mime_type("application/pkcs7-mime").
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
