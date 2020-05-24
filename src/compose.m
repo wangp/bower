@@ -254,8 +254,8 @@ extract_mailto(Input, !:Headers, Body) :-
         !Headers ^ h_cc := header_value(Cc),
         !Headers ^ h_bcc := header_value(Bcc),
         !Headers ^ h_subject := decoded_unstructured(Subject),
-        !Headers ^ h_replyto := header_value(ReplyTo),
-        !Headers ^ h_inreplyto := header_value(InReplyTo)
+        !Headers ^ h_inreplyto := header_value(InReplyTo),
+        !Headers ^ h_replyto := header_value(ReplyTo)
     ).
 
 :- pred lookup_header_field(assoc_list(hfname, hfvalue)::in, string::in,
@@ -435,8 +435,8 @@ prepare_reply(Message, ReplyHeaders0, ReplyHeaders, ReplyBody) :-
         MaybeTo,
         MaybeCc,
         MaybeBcc,
-        InReplyTo,                      % note order
-        References                      % note order
+        InReplyTo,
+        References
     ),
     (
         MaybeTo = yes(To)
@@ -466,8 +466,8 @@ prepare_reply(Message, ReplyHeaders0, ReplyHeaders, ReplyBody) :-
         header_value(Bcc),
         decoded_unstructured(Subject),
         header_value(ReplyTo),
-        header_value(References),       % note order
-        header_value(InReplyTo),        % note order
+        header_value(InReplyTo),
+        header_value(References),
         map.init
     ),
     % Efficiency could be better.
@@ -666,9 +666,9 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
         parse_message(String, HeadersB, _Body),
         some [!Headers] (
             !:Headers = Headers0,
-            !Headers ^ h_replyto := (HeadersB ^ h_replyto),
-            !Headers ^ h_references := (HeadersB ^ h_references),
-            !Headers ^ h_inreplyto := (HeadersB ^ h_inreplyto),
+            !Headers ^ h_replyto := HeadersB ^ h_replyto,
+            !Headers ^ h_inreplyto := HeadersB ^ h_inreplyto,
+            !Headers ^ h_references := HeadersB ^ h_references,
             Headers = !.Headers
         ),
         (
@@ -2251,7 +2251,7 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
 
 make_headers(Prepare, Headers, ParsedHeaders, Date, MessageId, WriteHeaders) :-
     Headers = headers(_Date, _From, _To, _Cc, _Bcc, Subject, _ReplyTo,
-        References, InReplyTo, RestHeaders),
+        InReplyTo, References, RestHeaders),
     ParsedHeaders = parsed_headers(From, To, Cc, Bcc, ReplyTo),
     some [!Acc] (
         !:Acc = [],

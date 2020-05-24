@@ -259,10 +259,10 @@ parse_header(Key, unesc_string(Value), !Headers) :-
         !Headers ^ h_subject := decoded_unstructured(Value)
     ; Key = "Reply-To" ->
         !Headers ^ h_replyto := header_value(Value)
-    ; Key = "References" ->
-        !Headers ^ h_references := header_value(Value)
     ; Key = "In-Reply-To" ->
         !Headers ^ h_inreplyto := header_value(Value)
+    ; Key = "References" ->
+        !Headers ^ h_references := header_value(Value)
     ;
         % Some other headers should be decoded_unstructured as well.
         Rest0 = !.Headers ^ h_rest,

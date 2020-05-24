@@ -181,10 +181,10 @@ add_standard_header(Name, Value, !Headers) :-
         !Headers ^ h_subject := Value
     ; strcase_equal(Name, "Reply-To") ->
         !Headers ^ h_replyto := Value
-    ; strcase_equal(Name, "References") ->
-        !Headers ^ h_references := Value
     ; strcase_equal(Name, "In-Reply-To") ->
         !Headers ^ h_inreplyto := Value
+    ; strcase_equal(Name, "References") ->
+        !Headers ^ h_references := Value
     ; strcase_equal(Name, "Date") ->
         % Ignore it.
         true

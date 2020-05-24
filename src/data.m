@@ -72,8 +72,8 @@
                 h_bcc           :: header_value,
                 h_subject       :: header_value,
                 h_replyto       :: header_value,
-                h_references    :: header_value,
                 h_inreplyto     :: header_value,
+                h_references    :: header_value,
                 % XXX should use a distinct type for header field names
                 % for they are case-insensitive
                 h_rest          :: map(string, header_value)
