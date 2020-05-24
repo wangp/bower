@@ -1628,8 +1628,15 @@ make_part_visibility_map_in_extents(Scrollable, Cur, EndExcl, !Map) :-
 
 make_part_visibility_map_in_line(PagerLine, !Map) :-
     (
-        PagerLine = part_head(Part, HiddenParts, _PartExpanded, _Importance),
-        add_part_visibility(part_visible, Part, !Map),
+        PagerLine = part_head(FirstPart, HiddenParts, PartExpanded, _Importance),
+        (
+            PartExpanded = part_expanded(_Filtered),
+            FirstPartVisibility = part_visible
+        ;
+            PartExpanded = part_not_expanded,
+            FirstPartVisibility = part_hidden
+        ),
+        add_part_visibility(FirstPartVisibility, FirstPart, !Map),
         foldl(add_part_visibility(part_hidden), HiddenParts, !Map)
     ;
         PagerLine = fold_marker(PagerLines, _Expanded),

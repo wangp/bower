@@ -76,6 +76,7 @@
 :- import_module call_system.
 :- import_module callout.
 :- import_module color.
+:- import_module copious_output.
 :- import_module detect_mime_type.
 :- import_module forward.
 :- import_module gpgme.
@@ -300,8 +301,8 @@ start_reply(Config, Crypto, Screen, Message, ReplyKind, PartVisibilityMap,
         parse_reply, ResParse, !IO),
     (
         ResParse = ok(ReplyHeaders),
-        prepare_reply(Message, PartVisibilityMap, ReplyHeaders, Headers0,
-            Body),
+        prepare_reply(Config, Message, PartVisibilityMap, ReplyHeaders,
+            Headers0, Body, !IO),
         (
             ReplyKind = direct_reply,
             Headers = Headers0
@@ -425,11 +426,12 @@ start_reply_to_message_id(Config, Crypto, Screen, MessageId, ReplyKind,
 
 %-----------------------------------------------------------------------------%
 
-:- pred prepare_reply(message::in(message), part_visibility_map::in,
-    reply_headers::in, headers::out, string::out) is det.
+:- pred prepare_reply(prog_config::in, message::in(message),
+    part_visibility_map::in, reply_headers::in, headers::out, string::out,
+    io::di, io::uo) is det.
 
-prepare_reply(Message, PartVisibilityMap, ReplyHeaders0, ReplyHeaders,
-        ReplyBody) :-
+prepare_reply(Config, Message, PartVisibilityMap, ReplyHeaders0, ReplyHeaders,
+        ReplyBody, !IO) :-
     Message = message(_MessageId, _Timestamp, MessageHeaders, _Tags,
         Parts, _Replies),
     OrigDate = MessageHeaders ^ h_date,
@@ -477,10 +479,10 @@ prepare_reply(Message, PartVisibilityMap, ReplyHeaders0, ReplyHeaders,
     ),
     % Efficiency could be better.
     make_attribution(OrigDate, OrigFrom, Attribution),
-    RevLines0 = [Attribution],
-    list.foldl(add_reply_part(PartVisibilityMap), Parts, RevLines0, RevLines),
+    list.foldl2(add_reply_part(Config, PartVisibilityMap), Parts,
+        [], RevLines, !IO),
     list.reverse(RevLines, Lines),
-    ReplyBody = string.join_list("\n", Lines) ++ "\n".
+    ReplyBody = string.join_list("\n", [Attribution | Lines]) ++ "\n".
 
 :- pred make_attribution(header_value::in, header_value::in, string::out) is det.
 
@@ -489,13 +491,12 @@ make_attribution(Date, From, Line) :-
         [s(header_value_string(Date)), s(header_value_string(From))],
         Line).
 
-:- pred add_reply_part(part_visibility_map::in, part::in,
-    list(string)::in, list(string)::out) is det.
+:- pred add_reply_part(prog_config::in, part_visibility_map::in, part::in,
+    list(string)::in, list(string)::out, io::di, io::uo) is det.
 
-add_reply_part(PartVisibilityMap, Part, !RevLines) :-
-    Part = part(_MessageId, _PartId, ContentType, MaybeContentDisposition,
-        PartContent, MaybeFileName,
-        _MaybeContentLength, _MaybeContentTransferEncoding, _MaybeDecrypted),
+add_reply_part(Config, PartVisibilityMap, Part, !RevLines, !IO) :-
+    ContentType = Part ^ pt_content_type,
+    PartContent = Part ^ pt_content,
     (
         PartContent = text(Text),
         ( ContentType = text_html ->
@@ -510,15 +511,16 @@ add_reply_part(PartVisibilityMap, Part, !RevLines) :-
                 ContentType = multipart_alternative,
                 reply_select_alternative(PartVisibilityMap, SubParts, SubPart)
             ->
-                add_reply_part(PartVisibilityMap, SubPart, !RevLines)
+                add_reply_part(Config, PartVisibilityMap, SubPart,
+                    !RevLines, !IO)
             ;
                 % multipart_alternative
                 % multipart_mixed
                 % multipart_related
                 % multipart_signed
                 % XXX untested: multipart_encrypted
-                list.foldl(add_reply_part(PartVisibilityMap), SubParts,
-                    !RevLines)
+                list.foldl2(add_reply_part(Config, PartVisibilityMap),
+                    SubParts, !RevLines, !IO)
             )
         ;
             % Is this possible?
@@ -526,19 +528,11 @@ add_reply_part(PartVisibilityMap, Part, !RevLines) :-
         )
     ;
         PartContent = encapsulated_messages(EncapMessages),
-        foldl(add_reply_encapsulated_message(PartVisibilityMap),
-            EncapMessages, !RevLines)
+        list.foldl2(add_reply_encapsulated_message(Config, PartVisibilityMap),
+            EncapMessages, !RevLines, !IO)
     ;
         PartContent = unsupported,
-        ( reply_ignore_unsupported_part(ContentType) ->
-            true
-        ;
-            MaybeContentDisposition = yes(content_disposition("attachment"))
-        ->
-            add_reply_attachment_part(ContentType, MaybeFileName, !RevLines)
-        ;
-            add_reply_non_text_part(ContentType, !RevLines)
-        )
+        add_reply_unsupported_part(Config, PartVisibilityMap, Part, !RevLines, !IO)
     ).
 
 :- pred reply_select_alternative(part_visibility_map::in, list(part)::in,
@@ -564,10 +558,12 @@ part_has_visibility(Map, PartVisibility, Part) :-
     MaybePartId = yes(PartId),
     map.search(Map, message_part_id(MessageId, PartId), PartVisibility).
 
-:- pred add_reply_encapsulated_message(part_visibility_map::in,
-    encapsulated_message::in, list(string)::in, list(string)::out) is det.
+:- pred add_reply_encapsulated_message(prog_config::in,
+    part_visibility_map::in, encapsulated_message::in,
+    list(string)::in, list(string)::out, io::di, io::uo) is det.
 
-add_reply_encapsulated_message(PartVisibilityMap, Message, !RevLines) :-
+add_reply_encapsulated_message(Config, PartVisibilityMap, Message,
+        !RevLines, !IO) :-
     % Follows notmuch-reply.c
     Message = encapsulated_message(Headers, Parts),
     Headers = headers(
@@ -589,7 +585,8 @@ add_reply_encapsulated_message(PartVisibilityMap, Message, !RevLines) :-
     add_reply_encapsulated_message_header("Subject", Subject, !RevLines),
     add_reply_encapsulated_message_header("Date", Date, !RevLines),
     cons(">", !RevLines),
-    list.foldl(add_reply_part(PartVisibilityMap), Parts, !RevLines).
+    list.foldl2(add_reply_part(Config, PartVisibilityMap), Parts,
+        !RevLines, !IO).
 
 :- pred add_reply_encapsulated_message_header(string::in, header_value::in,
     list(string)::in, list(string)::out) is det.
@@ -610,11 +607,6 @@ maybe_add_reply_encapsulated_message_header(Name, Value, !RevLines) :-
         add_reply_encapsulated_message_header(Name, Value, !RevLines)
     ).
 
-:- pred reply_ignore_unsupported_part(mime_type::in) is semidet.
-
-reply_ignore_unsupported_part(application_pgp_encrypted).
-reply_ignore_unsupported_part(application_pgp_signature).
-reply_ignore_unsupported_part(application_pkcs7_mime).
 
 :- pred add_reply_quoted_text(string::in, list(string)::in, list(string)::out)
     is det.
@@ -634,6 +626,59 @@ add_reply_quoted_text(String, !RevLines) :-
 add_reply_quoted_line(Line, !RevLines) :-
     QLine = "> " ++ Line,
     cons(QLine, !RevLines).
+
+:- pred add_reply_unsupported_part(prog_config::in, part_visibility_map::in,
+    part::in, list(string)::in, list(string)::out, io::di, io::uo) is det.
+
+add_reply_unsupported_part(Config, PartVisibilityMap, Part, !RevLines, !IO) :-
+    MessageId = Part ^ pt_msgid,
+    MaybePartId = Part ^ pt_part,
+    ContentType = Part ^ pt_content_type,
+    ( reply_ignore_unsupported_part(ContentType) ->
+        true
+    ;
+        maybe_add_reply_blank_line(!RevLines),
+        (
+            part_has_visibility(PartVisibilityMap, part_visible, Part),
+            MaybePartId = yes(PartId)
+        ->
+            ( get_text_filter_command(Config, ContentType, FilterCommand) ->
+                MaybeFilterCommand = yes(FilterCommand)
+            ;
+                MaybeFilterCommand = no
+            ),
+            expand_part(Config, MessageId, PartId, MaybeFilterCommand,
+                MaybeText, !IO),
+            (
+                MaybeText = ok(Text),
+                add_reply_quoted_text(Text, !RevLines)
+            ;
+                MaybeText = error(_Error),
+                add_reply_unsupported_part_stub(Part, !RevLines)
+            )
+        ;
+            add_reply_unsupported_part_stub(Part, !RevLines)
+        )
+    ).
+
+:- pred add_reply_unsupported_part_stub(part::in,
+    list(string)::in, list(string)::out) is det.
+
+add_reply_unsupported_part_stub(Part, !RevLines) :-
+    ContentType = Part ^ pt_content_type,
+    MaybeContentDisposition = Part ^ pt_content_disposition,
+    MaybeFileName = Part ^ pt_filename,
+    ( MaybeContentDisposition = yes(content_disposition("attachment")) ->
+        add_reply_attachment_part(ContentType, MaybeFileName, !RevLines)
+    ;
+        add_reply_non_text_part(ContentType, !RevLines)
+    ).
+
+:- pred reply_ignore_unsupported_part(mime_type::in) is semidet.
+
+reply_ignore_unsupported_part(application_pgp_encrypted).
+reply_ignore_unsupported_part(application_pgp_signature).
+reply_ignore_unsupported_part(application_pkcs7_mime).
 
 :- pred add_reply_attachment_part(mime_type::in, maybe(filename)::in,
     list(string)::in, list(string)::out) is det.
@@ -656,6 +701,18 @@ add_reply_attachment_part(ContentType, MaybeFileName, !RevLines) :-
 add_reply_non_text_part(ContentType, !RevLines) :-
     Line = "Non-text part: " ++ to_string(ContentType),
     cons(Line, !RevLines).
+
+:- pred maybe_add_reply_blank_line(list(string)::in, list(string)::out) is det.
+
+maybe_add_reply_blank_line(!RevLines) :-
+    (
+        !.RevLines = [Line | _],
+        Line \= ""
+    ->
+        cons("", !RevLines)
+    ;
+        true
+    ).
 
 %-----------------------------------------------------------------------------%
 
