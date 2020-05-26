@@ -89,6 +89,9 @@ nondisplay_tag(tag("sent")).
 nondisplay_tag(tag("signed")).
 nondisplay_tag(tag("unread")).
 
+nondisplay_tag(tag(String)) :-
+    string.remove_prefix(".", String, _).
+
 %-----------------------------------------------------------------------------%
 
 get_standard_tags(Tags, StdTags, DisplayTagsWidth) :-
