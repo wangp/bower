@@ -88,9 +88,8 @@ nondisplay_tag(tag("replied")).
 nondisplay_tag(tag("sent")).
 nondisplay_tag(tag("signed")).
 nondisplay_tag(tag("unread")).
-
 nondisplay_tag(tag(String)) :-
-    string.remove_prefix(".", String, _).
+    string.prefix(String, ".").
 
 %-----------------------------------------------------------------------------%
 
