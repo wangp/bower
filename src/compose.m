@@ -539,7 +539,19 @@ add_reply_part(Config, PartVisibilityMap, Part, !RevLines, !IO) :-
     part::out) is semidet.
 
 reply_select_alternative(PartVisibilityMap, Parts, Part) :-
-    solutions(has_one_visible_alternative(PartVisibilityMap, Parts), [Part]).
+    % If exactly one part visible then select that part.
+    % If all parts are hidden then select the first part. This may be a bit
+    % unintuitive if the user is expecting to not quote the part at all,
+    % but at least should be more intuitive than quoting all alternatives.
+    (
+        solutions(has_one_visible_alternative(PartVisibilityMap, Parts),
+            [VisiblePart])
+    ->
+        Part = VisiblePart
+    ;
+        all_true(part_has_visibility(PartVisibilityMap, part_hidden), Parts),
+        Parts = [Part | _]
+    ).
 
 :- pred has_one_visible_alternative(part_visibility_map::in, list(part)::in,
     part::out) is nondet.
