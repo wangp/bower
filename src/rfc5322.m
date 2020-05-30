@@ -70,6 +70,8 @@
 
 :- pred nonascii(char::in) is semidet.
 
+:- pred header_name_char(char::in) is semidet.
+
 :- pred atext(char::in) is semidet.
 
 :- pred atext_or_nonascii(char::in) is semidet.
@@ -103,6 +105,15 @@ ascii(C) :-
 nonascii(C) :-
     char.to_int(C, I),
     I > 0x7f.
+
+%-----------------------------------------------------------------------------%
+
+% 2.2. Header Fields
+
+header_name_char(C) :-
+    char.to_int(C, I),
+    I >= 33,
+    I =< 126.
 
 %-----------------------------------------------------------------------------%
 

@@ -29,6 +29,7 @@
 
 :- import_module rfc2047.
 :- import_module rfc2047.decoder.
+:- import_module rfc5322.
 :- import_module string_util.
 
 %-----------------------------------------------------------------------------%
@@ -53,17 +54,15 @@ parse_message_file(Filename, Res, !IO) :-
     ).
 
 parse_message(String, Headers, Body) :-
-    read_headers(String, 0, PosBody, init_headers, Headers),
-    string.unsafe_between(String, PosBody, count_code_units(String), Body).
+    read_headers(String, 0, Pos0, init_headers, Headers),
+    skip_blank_line(String, Pos0, Pos1),
+    string.unsafe_between(String, Pos1, count_code_units(String), Body).
 
 :- pred read_headers(string::in, int::in, int::out, headers::in, headers::out)
     is det.
 
-read_headers(String, Pos0, Pos, !Headers) :-
-    unfolded_line(String, Pos0, Pos1, Line),
-    ( Line = "" ->
-        Pos = Pos1
-    ; is_header_line(Line, Name, RawValue) ->
+read_headers(String, !Pos, !Headers) :-
+    ( read_header_field(String, !Pos, Name, RawValue) ->
         % Other headers should be decoded as well.
         ( strcase_equal(Name, "Subject") ->
             decode_unstructured(RawValue, Decoded),
@@ -72,10 +71,27 @@ read_headers(String, Pos0, Pos, !Headers) :-
             Value = header_value(RawValue)
         ),
         add_header(Name, Value, !Headers),
-        read_headers(String, Pos1, Pos, !Headers)
+        read_headers(String, !Pos, !Headers)
     ;
-        Pos = Pos0
+        true
     ).
+
+:- pred read_header_field(string::in, int::in, int::out,
+    string::out, string::out) is semidet.
+
+read_header_field(String, !Pos, Name, Value) :-
+    string.unsafe_index(String, !.Pos, Char0),
+    rfc5322.header_name_char(Char0),
+    unfolded_line(String, !Pos, Line),
+    string.sub_string_search(Line, ":", Colon),
+    require_det (
+        End = string.count_code_units(Line),
+        string.unsafe_between(Line, 0, Colon, Name0),
+        Name = string.rstrip(Name0),
+        string.unsafe_between(Line, Colon + 1, End, Value0),
+        Value = string.strip(Value0)
+    ),
+    string.all_match(rfc5322.header_name_char, Name).
 
 :- pred unfolded_line(string::in, int::in, int::out, string::out) is det.
 
@@ -89,17 +105,7 @@ unfolded_line(String, Start, End, Line) :-
 
 unfolded_line_2(String, Start, Pos0, LineEnd, !Acc) :-
     ( string.unsafe_index_next(String, Pos0, Pos1, Char0) ->
-        (
-            (
-                % CR LF
-                Char0 = '\r',
-                skip_lf(String, Pos1, Pos2)
-            ;
-                % LF
-                Char0 = '\n',
-                Pos2 = Pos1
-            )
-        ->
+        ( is_lf_or_skip_crlf(String, Char0, Pos1, Pos2) ->
             % Drop the CRLF / LF.
             string.unsafe_between(String, Start, Pos0, Piece),
             cons(Piece, !Acc),
@@ -123,6 +129,16 @@ unfolded_line_2(String, Start, Pos0, LineEnd, !Acc) :-
         cons(Piece, !Acc)
     ).
 
+:- pred is_lf_or_skip_crlf(string::in, char::in, int::in, int::out) is semidet.
+
+is_lf_or_skip_crlf(String, Char0, !Pos) :-
+    (
+        Char0 = '\n'
+    ;
+        Char0 = '\r',
+        skip_lf(String, !Pos)
+    ).
+
 :- pred skip_lf(string::in, int::in, int::out) is det.
 
 skip_lf(String, Pos0, Pos) :-
@@ -136,18 +152,6 @@ skip_lf(String, Pos0, Pos) :-
 
 lwsp(' ').
 lwsp('\t').
-
-:- pred is_header_line(string::in, string::out, string::out) is semidet.
-
-is_header_line(Line, Name, Value) :-
-    string.sub_string_search(Line, ":", Colon),
-    require_det (
-        End = string.count_code_units(Line),
-        string.unsafe_between(Line, 0, Colon, Name0),
-        string.unsafe_between(Line, Colon + 1, End, Value0),
-        Name = string.strip(Name0),
-        Value = string.strip(Value0)
-    ).
 
 :- pred add_header(string::in, header_value::in, headers::in, headers::out)
     is det.
@@ -189,6 +193,18 @@ add_standard_header(Name, Value, !Headers) :-
         true
     ;
         fail
+    ).
+
+:- pred skip_blank_line(string::in, int::in, int::out) is det.
+
+skip_blank_line(String, !Pos) :-
+    (
+        string.unsafe_index_next(String, !Pos, Char0),
+        is_lf_or_skip_crlf(String, Char0, !Pos)
+    ->
+        true
+    ;
+        true
     ).
 
 %-----------------------------------------------------------------------------%
