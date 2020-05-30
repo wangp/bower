@@ -4,31 +4,38 @@
 :- module forward.
 :- interface.
 
+:- import_module io.
 :- import_module list.
+:- import_module maybe.
 
 :- import_module data.
+:- import_module prog_config.
 
-:- pred prepare_forward_message(message::in(message), string::in,
-    headers::out, string::out, list(part)::out) is det.
+:- pred prepare_forward_message(prog_config::in, message::in(message),
+    part_visibility_map::in, string::in, headers::out, string::out,
+    list(part)::out, io::di, io::uo) is det.
 
-:- pred select_body_text_and_attachments(list(part)::in, string::out,
-    list(part)::out) is det.
+:- pred select_main_part_and_attachments(part_visibility_map::in,
+    list(part)::in, maybe(part)::out, list(part)::out) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
-:- import_module maybe.
 :- import_module string.
 
 :- import_module fold_lines.
+:- import_module message_template.
 :- import_module mime_type.
 
 %-----------------------------------------------------------------------------%
 
-prepare_forward_message(OrigMessage, From, Headers, Body, AttachmentParts) :-
-    OrigHeaders = OrigMessage ^ m_headers,
+prepare_forward_message(Config, OrigMessage, PartVisibilityMap, From,
+        Headers, BodyText, AttachmentParts, !IO) :-
+    OrigMessage = message(_MessageId, _Timestamp, OrigHeaders, _Tags,
+        OrigBody, _Replies),
+
     OrigSubject = header_value_string(OrigHeaders ^ h_subject),
     OrigDate = header_value_string(OrigHeaders ^ h_date),
     OrigFrom = header_value_string(OrigHeaders ^ h_from),
@@ -42,10 +49,18 @@ prepare_forward_message(OrigMessage, From, Headers, Body, AttachmentParts) :-
         Headers = !.Headers
     ),
 
-    OrigBody = OrigMessage ^ m_body,
-    select_body_text_and_attachments(OrigBody, Text, AttachmentParts),
+    select_main_part_and_attachments(PartVisibilityMap, OrigBody,
+        MaybeMainPart, AttachmentParts),
+    (
+        MaybeMainPart = yes(MainPart),
+        render_part_to_text(Config, PartVisibilityMap, no_quote_marker,
+            MainPart, MainText, !IO)
+    ;
+        MaybeMainPart = no,
+        MainText = ""
+    ),
 
-    Body = append_list([
+    BodyText = append_list([
         "-------- Forwarded message --------\n",
         maybe_header("Subject: ", OrigSubject),
         maybe_header("Date: ", OrigDate),
@@ -53,8 +68,7 @@ prepare_forward_message(OrigMessage, From, Headers, Body, AttachmentParts) :-
         maybe_header("To: ", OrigTo),
         maybe_header("Cc: ", OrigCc),
         "\n",
-        Text,
-        "\n",
+        MainText, % should be empty or end with newline
         "-------- End forwarded message --------\n"
     ]).
 
@@ -83,34 +97,42 @@ soft_line_length = 78.
 
 %-----------------------------------------------------------------------------%
 
-select_body_text_and_attachments(Body, Text, AttachmentParts) :-
-    ( find_body_text(Body, Text0, PathToText0) ->
-        Text = Text0,
-        PathToText = PathToText0
+select_main_part_and_attachments(PartVisibilityMap, Body, MaybeMainPart,
+        AttachmentParts) :-
+    ( find_main_part(PartVisibilityMap, Body, MainPart, PathToMain0) ->
+        MaybeMainPart = yes(MainPart),
+        PathToMain = PathToMain0
     ;
-        Text = "",
-        PathToText = []
+        MaybeMainPart = no,
+        PathToMain = []
     ),
-    foldl(select_attachments(PathToText), Body, [], RevAttachmentParts),
+    foldl(select_attachments(PathToMain), Body, [], RevAttachmentParts),
     reverse(RevAttachmentParts, AttachmentParts).
 
 %-----------------------------------------------------------------------------%
 
-:- pred find_body_text(list(part)::in, string::out, list(int)::out) is semidet.
+    % This is similar but different to message_template.add_reply_part.
+    % Perhaps the similarity should run deeper...
+    %
+:- pred find_main_part(part_visibility_map::in, list(part)::in,
+    part::out, list(int)::out) is semidet.
 
-find_body_text([Part | _Parts], Text, PathToText) :-
+find_main_part(PartVisibilityMap, [Part | _Parts], MainPart, PathToMain) :-
     Part = part(_MessageId, PartId, ContentType, MaybeContentDisposition,
         Content, _MaybeFileName, _MaybeContentLength, _MaybeCTE, _IsDecrypted),
     require_complete_switch [Content]
     (
-        Content = text(PartText),
+        Content = text(_PartText),
         ContentType = text_plain,
         MaybeContentDisposition \= yes(content_disposition_attachment),
-        Text = PartText,
-        PathToText = maybe_cons(PartId, [])
+        MainPart = Part,
+        PathToMain = maybe_cons(PartId, [])
     ;
         Content = unsupported,
-        fail
+        ContentType = text_html,
+        part_has_visibility(PartVisibilityMap, part_visible, Part),
+        MainPart = Part,
+        PathToMain = maybe_cons(PartId, [])
     ;
         Content = subparts(Encryption, _Signatures, SubParts0),
         filter_subparts(ContentType, SubParts0, SubParts),
@@ -119,9 +141,8 @@ find_body_text([Part | _Parts], Text, PathToText) :-
             ; Encryption = decryption_good
             ),
             ( ContentType = multipart_alternative ->
-                % We're supposed to select the LAST part that we can.
-                find_body_text_in_alternatives(reverse(SubParts),
-                    Text, PathToText0)
+                find_main_part_in_alternatives(PartVisibilityMap, SubParts,
+                    MainPart, PathToMain0)
             ;
                 % Types we may have to deal with:
                 %   multipart/mixed
@@ -130,9 +151,10 @@ find_body_text([Part | _Parts], Text, PathToText) :-
                 %   multipart/parallel
                 %   multipart/signed
                 %   multipart/encrypted
-                find_body_text(SubParts, Text, PathToText0)
+                find_main_part(PartVisibilityMap, SubParts,
+                    MainPart, PathToMain0)
             ),
-            PathToText = maybe_cons(PartId, PathToText0)
+            PathToMain = maybe_cons(PartId, PathToMain0)
         ;
             Encryption = encrypted,
             % XXX Parts manually decrypted in the thread/pager view will be
@@ -147,19 +169,17 @@ find_body_text([Part | _Parts], Text, PathToText) :-
         fail
     ),
     % We search for the main body text down the left spine of the tree
-    % (except in multipart/alternative parts).
+    % (except in multipart/alternative parts) hence ignore later parts.
     true.
 
-:- pred find_body_text_in_alternatives(list(part)::in, string::out,
-    list(int)::out) is semidet.
+:- pred find_main_part_in_alternatives(part_visibility_map::in, list(part)::in,
+    part::out, list(int)::out) is semidet.
 
-find_body_text_in_alternatives([Part | AltParts], Text, PathToText) :-
-    ( find_body_text([Part], Text0, PathToText0) ->
-        Text = Text0,
-        PathToText = PathToText0
-    ;
-        find_body_text_in_alternatives(AltParts, Text, PathToText)
-    ).
+find_main_part_in_alternatives(PartVisibilityMap, Parts, MainPart, PathToMain)
+        :-
+    select_alternative_by_visibility(PartVisibilityMap, Parts, MainPart),
+    PartId = MainPart ^ pt_part,
+    PathToMain = maybe_cons(PartId, []).
 
 :- func content_disposition_attachment = content_disposition.
 
@@ -175,7 +195,7 @@ maybe_cons(yes(X), Xs) = [X | Xs].
 :- pred select_attachments(list(int)::in, part::in,
     list(part)::in, list(part)::out) is det.
 
-select_attachments(PathToText, Part, !RevAttachmentParts) :-
+select_attachments(PathToMain, Part, !RevAttachmentParts) :-
     Part = part(_MessageId, PartId, ContentType, _MaybeContentDisposition,
         Content, MaybeFileName, _MaybeContentLength, _MaybeCTE, _IsDecrypted),
     (
@@ -184,7 +204,7 @@ select_attachments(PathToText, Part, !RevAttachmentParts) :-
         ),
         (
             MaybeFileName = yes(_),
-            not path_to_text_contains(PathToText, PartId)
+            not path_to_text_contains(PathToMain, PartId)
         ->
             cons(Part, !RevAttachmentParts)
         ;
@@ -199,12 +219,12 @@ select_attachments(PathToText, Part, !RevAttachmentParts) :-
             ),
             ( ContentType = multipart_alternative ->
                 % Follow only the alternative with the chosen text.
-                list.filter(path_to_text_contains_part(PathToText),
+                list.filter(path_to_text_contains_part(PathToMain),
                     SubParts, SubPartsToConsider)
             ;
                 SubPartsToConsider = SubParts
             ),
-            foldl(select_attachments(PathToText), SubPartsToConsider,
+            foldl(select_attachments(PathToMain), SubPartsToConsider,
                 !RevAttachmentParts)
         ;
             Encryption = encrypted
@@ -220,13 +240,13 @@ select_attachments(PathToText, Part, !RevAttachmentParts) :-
 
 :- pred path_to_text_contains(list(int)::in, maybe(int)::in) is semidet.
 
-path_to_text_contains(PathToText, yes(PartId)) :-
-    list.contains(PathToText, PartId).
+path_to_text_contains(PathToMain, yes(PartId)) :-
+    list.contains(PathToMain, PartId).
 
 :- pred path_to_text_contains_part(list(int)::in, part::in) is semidet.
 
-path_to_text_contains_part(PathToText, Part) :-
-    path_to_text_contains(PathToText, Part ^ pt_part).
+path_to_text_contains_part(PathToMain, Part) :-
+    path_to_text_contains(PathToMain, Part ^ pt_part).
 
 %-----------------------------------------------------------------------------%
 

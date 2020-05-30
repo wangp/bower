@@ -903,8 +903,9 @@ handle_recall(Screen, Sent, !IndexInfo, !IO) :-
         MaybeSelected = yes(Message),
         (
             Message = message(_, _, _, _, _, _),
+            PartVisibilityMap = map.init,
             continue_from_message(Config, Crypto, Screen, postponed_message,
-                Message, TransitionB, !IO),
+                Message, PartVisibilityMap, TransitionB, !IO),
             handle_screen_transition(Screen, TransitionB, Sent, !IndexInfo,
                 !IO)
         ;

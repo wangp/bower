@@ -803,11 +803,14 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
     ;
         Action = start_forward(Message),
         (
-            Message = message(_, _, _, _, _, _),
+            Message = message(MessageId, _, _, _, _, _),
             flush_async_with_progress(Screen, !IO),
             Config = !.Info ^ tp_config,
             Crypto = !.Info ^ tp_crypto,
-            start_forward(Config, Crypto, Screen, Message, Transition, !IO),
+            Pager = !.Info ^ tp_pager,
+            get_part_visibility_map(Pager, MessageId, PartVisibilityMap),
+            start_forward(Config, Crypto, Screen, Message, PartVisibilityMap,
+                Transition, !IO),
             handle_screen_transition(Screen, Transition, _Sent, !Info, !IO)
         ;
             Message = excluded_message(_, _, _, _, _)
@@ -2779,8 +2782,9 @@ handle_recall(Screen, ThreadId, Sent, !Info, !IO) :-
         MaybeSelected = yes(Message),
         (
             Message = message(_, _, _, _, _, _),
+            PartVisibilityMap = map.init,
             continue_from_message(Config, Crypto, Screen, postponed_message,
-                Message, TransitionB, !IO),
+                Message, PartVisibilityMap, TransitionB, !IO),
             handle_screen_transition(Screen, TransitionB, Sent, !Info, !IO)
         ;
             Message = excluded_message(_, _, _, _, _),
@@ -2812,10 +2816,12 @@ edit_as_template(Info, Action, MessageUpdate) :-
 handle_edit_as_template(Screen, Message, Sent, !Info, !IO) :-
     Config = !.Info ^ tp_config,
     Crypto = !.Info ^ tp_crypto,
+    Pager = !.Info ^ tp_pager,
     (
-        Message = message(_, _, _, _, _, _),
+        Message = message(MessageId, _, _, _, _, _),
+        get_part_visibility_map(Pager, MessageId, PartVisibilityMap),
         continue_from_message(Config, Crypto, Screen, arbitrary_message,
-            Message, Transition, !IO),
+            Message, PartVisibilityMap, Transition, !IO),
         handle_screen_transition(Screen, Transition, Sent, !Info, !IO)
     ;
         Message = excluded_message(_, _, _, _, _),

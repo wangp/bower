@@ -37,15 +37,16 @@
     io::di, io::uo) is det.
 
 :- pred start_forward(prog_config::in, crypto::in, screen::in,
-    message::in(message), screen_transition(sent)::out, io::di, io::uo) is det.
+    message::in(message), part_visibility_map::in,
+    screen_transition(sent)::out, io::di, io::uo) is det.
 
 :- type continue_base
     --->    postponed_message
     ;       arbitrary_message.
 
 :- pred continue_from_message(prog_config::in, crypto::in, screen::in,
-    continue_base::in, message::in(message), screen_transition(sent)::out,
-    io::di, io::uo) is det.
+    continue_base::in, message::in(message), part_visibility_map::in,
+    screen_transition(sent)::out, io::di, io::uo) is det.
 
     % Exported for resend.
     %
@@ -427,7 +428,8 @@ start_reply_to_message_id(Config, Crypto, Screen, MessageId, ReplyKind,
 
 %-----------------------------------------------------------------------------%
 
-start_forward(Config, Crypto, Screen, Message, Transition, !IO) :-
+start_forward(Config, Crypto, Screen, Message, PartVisibilityMap, Transition,
+        !IO) :-
     get_default_account(Config, MaybeAccount),
     (
         MaybeAccount = yes(Account),
@@ -436,7 +438,8 @@ start_forward(Config, Crypto, Screen, Message, Transition, !IO) :-
         MaybeAccount = no,
         From = ""
     ),
-    prepare_forward_message(Message, From, Headers, Body, AttachmentParts),
+    prepare_forward_message(Config, Message, PartVisibilityMap, From,
+        Headers, Body, AttachmentParts, !IO),
     list.map(to_old_attachment, AttachmentParts, Attachments),
     MaybeOldDraft = no,
     WasEncrypted = contains(Message ^ m_tags, encrypted_tag),
@@ -447,12 +450,18 @@ start_forward(Config, Crypto, Screen, Message, Transition, !IO) :-
 %-----------------------------------------------------------------------------%
 
 continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
-        Transition, !IO) :-
-    MessageId = Message ^ m_id,
-    Headers0 = Message ^ m_headers,
-    Tags0 = Message ^ m_tags,
-    Body0 = Message ^ m_body,
-    select_body_text_and_attachments(Body0, Text, AttachmentParts),
+        PartVisibilityMap, Transition, !IO) :-
+    Message = message(MessageId, _Timestamp, Headers0, Tags0, Body0, _Replies0),
+    select_main_part_and_attachments(PartVisibilityMap, Body0, MaybeMainPart,
+        AttachmentParts),
+    (
+        MaybeMainPart = yes(MainPart),
+        render_part_to_text(Config, PartVisibilityMap, no_quote_marker,
+            MainPart, Text, !IO)
+    ;
+        MaybeMainPart = no,
+        Text = ""
+    ),
     list.map(to_old_attachment, AttachmentParts, Attachments),
     WasEncrypted = contains(Tags0, encrypted_tag),
     DraftSign = contains(Tags0, draft_sign_tag),
