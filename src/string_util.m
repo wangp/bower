@@ -44,6 +44,8 @@
 
 :- pred string_from_rev_pieces(pieces::in, string::out) is det.
 
+:- func unlines(list(string)) = string.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -266,6 +268,17 @@ copy_rev_pieces(Pieces, EndPos, !String) :-
     memcpy(Dest0 + DestStart, Src + SrcStart, SrcLength);
     Dest = Dest0;
 ").
+
+%-----------------------------------------------------------------------------%
+
+unlines(Lines) = String :-
+    list.foldl(make_unlines_pieces, Lines, empty, RevPieces),
+    string_from_rev_pieces(RevPieces, String).
+
+:- pred make_unlines_pieces(string::in, pieces::in, pieces::out) is det.
+
+make_unlines_pieces(Line, RevPieces0, RevPieces) :-
+    RevPieces = literal("\n", literal(Line, RevPieces0)).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
