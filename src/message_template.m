@@ -40,6 +40,7 @@
 
 :- import_module copious_output.
 :- import_module mime_type.
+:- import_module string_util.
 
 %-----------------------------------------------------------------------------%
 
@@ -95,7 +96,7 @@ prepare_reply(Config, OrigMessage, PartVisibilityMap, ReplyHeaders0,
     list.foldl2(add_part(Config, PartVisibilityMap, yes_quote_marker),
         Parts, [], RevLines, !IO),
     list.reverse(RevLines, Lines),
-    ReplyBody = string.join_list("\n", [Attribution | Lines]) ++ "\n".
+    ReplyBody = unlines([Attribution | Lines]).
 
 :- pred make_attribution(header_value::in, header_value::in, string::out) is det.
 
@@ -111,7 +112,7 @@ render_part_to_text(Config, PartVisibilityMap, MaybeQuoteMarker, Part, Text,
     add_part(Config, PartVisibilityMap, MaybeQuoteMarker, Part, [], RevLines,
         !IO),
     list.reverse(RevLines, Lines),
-    Text = string.join_list("\n", Lines) ++ "\n".
+    Text = unlines(Lines).
 
 :- pred add_part(prog_config::in, part_visibility_map::in,
     maybe_quote_marker::in, part::in, list(string)::in, list(string)::out,

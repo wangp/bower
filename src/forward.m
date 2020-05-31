@@ -28,6 +28,7 @@
 :- import_module fold_lines.
 :- import_module message_template.
 :- import_module mime_type.
+:- import_module string_util.
 
 %-----------------------------------------------------------------------------%
 
@@ -88,7 +89,7 @@ maybe_header(FieldColonSp, Value) = S :-
         Spans = [Head | Tail],
 
         fill_lines(soft_line_length, Spans, Lines),
-        S = join_list("\n ", Lines) ++ "\n"
+        S = unlines(Lines)
     ).
 
 :- func soft_line_length = int.
