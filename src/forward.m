@@ -58,38 +58,35 @@ prepare_forward_message(Config, OrigMessage, PartVisibilityMap, From,
             MainPart, MainText, !IO)
     ;
         MaybeMainPart = no,
-        MainText = ""
+        MainText = []
     ),
 
-    BodyText = append_list([
-        "-------- Forwarded message --------\n",
-        maybe_header("Subject: ", OrigSubject),
-        maybe_header("Date: ", OrigDate),
-        maybe_header("From: ", OrigFrom),
-        maybe_header("To: ", OrigTo),
-        maybe_header("Cc: ", OrigCc),
-        "\n",
-        MainText, % should be empty or end with newline
-        "-------- End forwarded message --------\n"
-    ]).
+    BodyText = unlines(
+        ["-------- Forwarded message --------"] ++
+        maybe_header("Subject: ", OrigSubject) ++
+        maybe_header("Date: ", OrigDate) ++
+        maybe_header("From: ", OrigFrom) ++
+        maybe_header("To: ", OrigTo) ++
+        maybe_header("Cc: ", OrigCc) ++
+        ["" | MainText] ++
+        ["-------- End forwarded message --------"]
+    ).
 
 %---------------------------------------------------------------------------%
 
-:- func maybe_header(string, string) = string.
+:- func maybe_header(string, string) = list(string).
 
-maybe_header(FieldColonSp, Value) = S :-
+maybe_header(FieldColonSp, Value) = Lines :-
     get_spans_by_whitespace(Value, Spans0),
     (
         Spans0 = [],
-        S = ""
+        Lines = []
     ;
         Spans0 = [Head0 | Tail],
         Head0 = span(Mandatory, Trailer),
         Head = span(FieldColonSp ++ lstrip(Mandatory), Trailer),
         Spans = [Head | Tail],
-
-        fill_lines(soft_line_length, Spans, Lines),
-        S = unlines(Lines)
+        fill_lines(soft_line_length, Spans, Lines)
     ).
 
 :- func soft_line_length = int.

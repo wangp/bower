@@ -18,9 +18,9 @@
     --->    yes_quote_marker
     ;       no_quote_marker.
 
-    % XXX better to return list of string
 :- pred render_part_to_text(prog_config::in, part_visibility_map::in,
-    maybe_quote_marker::in, part::in, string::out, io::di, io::uo) is det.
+    maybe_quote_marker::in, part::in, list(string)::out, io::di, io::uo)
+    is det.
 
 :- pred select_alternative_by_visibility(part_visibility_map::in,
     list(part)::in, part::out) is semidet.
@@ -107,12 +107,11 @@ make_attribution(Date, From, Line) :-
 
 %-----------------------------------------------------------------------------%
 
-render_part_to_text(Config, PartVisibilityMap, MaybeQuoteMarker, Part, Text,
+render_part_to_text(Config, PartVisibilityMap, MaybeQuoteMarker, Part, Lines,
         !IO) :-
     add_part(Config, PartVisibilityMap, MaybeQuoteMarker, Part, [], RevLines,
         !IO),
-    list.reverse(RevLines, Lines),
-    Text = unlines(Lines).
+    list.reverse(RevLines, Lines).
 
 :- pred add_part(prog_config::in, part_visibility_map::in,
     maybe_quote_marker::in, part::in, list(string)::in, list(string)::out,

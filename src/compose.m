@@ -457,7 +457,8 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
     (
         MaybeMainPart = yes(MainPart),
         render_part_to_text(Config, PartVisibilityMap, no_quote_marker,
-            MainPart, Text, !IO)
+            MainPart, TextLines, !IO),
+        Text = unlines(TextLines)
     ;
         MaybeMainPart = no,
         Text = ""
