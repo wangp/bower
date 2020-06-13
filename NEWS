@@ -1,7 +1,10 @@
 Bower 0.12-unreleased
 =====================
+This release requires Mercury version 14.04 or above.
 
-* Raise required Mercury version to 14.01 or above.
+* Create reply templates in bower instead of using notmuch reply output.
+* The visibility of parts in the pager determines which parts are included
+  in the reply, forward and edit-as-new message templates.
 * Clean up spaces and unprintable chars when displaying header values.
 * Fix display of future timestamps.
 * Handle screen resize in a few more places.
