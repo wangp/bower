@@ -42,7 +42,8 @@
 %-----------------------------------------------------------------------------%
 
 call_system_capture_stdout(Command, ErrorLimit, Res, !IO) :-
-    posix_spawn_get_stdout("/bin/sh", ["-c", Command], SpawnRes, !IO),
+    posix_spawn_get_stdout("/bin/sh", ["-c", Command], environ([]),
+        SpawnRes, !IO),
     (
         SpawnRes = ok({Pid, PipeRead}),
         drain_pipe(PipeRead, DrainRes, Buffers, !IO),
@@ -73,7 +74,8 @@ call_system_capture_stdout(Command, ErrorLimit, Res, !IO) :-
 %-----------------------------------------------------------------------------%
 
 call_system_write_to_stdin(Command, Input, Res, !IO) :-
-    posix_spawn_get_stdin("/bin/sh", ["-c", Command], SpawnRes, !IO),
+    posix_spawn_get_stdin("/bin/sh", ["-c", Command], environ([]),
+        SpawnRes, !IO),
     (
         SpawnRes = ok({Pid, PipeWrite}),
         write_string_to_pipe(PipeWrite, Input, WriteRes, !IO),
@@ -103,7 +105,8 @@ call_system_write_to_stdin(Command, Input, Res, !IO) :-
 %-----------------------------------------------------------------------------%
 
 call_system_filter(Command, Input, ErrorLimit, Res, !IO) :-
-    posix_spawn_get_stdin_stdout("/bin/sh", ["-c", Command], SpawnRes, !IO),
+    posix_spawn_get_stdin_stdout("/bin/sh", ["-c", Command], environ([]),
+        SpawnRes, !IO),
     (
         SpawnRes = ok({Pid, PipeWrite, PipeRead}),
         write_and_read_concurrently_and_close_both(PipeWrite, Input,

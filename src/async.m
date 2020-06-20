@@ -329,7 +329,7 @@ spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO) :-
     Op = async_shell_command(CommandPrefix, UnquotedArgs, _RemainingAttempts),
     shell_and_args(CommandPrefix, UnquotedArgs, redirect_input("/dev/null"),
         Shell, ShellArgs),
-    posix_spawn(Shell, ShellArgs, SpawnRes, !IO),
+    posix_spawn(Shell, ShellArgs, environ([]), SpawnRes, !IO),
     (
         SpawnRes = ok(Pid),
         Child = current_child(Op, Pid, no, PreSigchldCount),
@@ -345,7 +345,7 @@ spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO) :-
         MaybeStdinContents = no,
         shell_and_args(CommandPrefix, UnquotedArgs,
             redirect_input("/dev/null"), Shell, ShellArgs),
-        posix_spawn_get_stdout(Shell, ShellArgs, SpawnRes, !IO),
+        posix_spawn_get_stdout(Shell, ShellArgs, environ([]), SpawnRes, !IO),
         (
             SpawnRes = ok({Pid, StdoutPipe}),
             Child = current_child(Op, Pid, yes(StdoutPipe), PreSigchldCount),
@@ -358,7 +358,8 @@ spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO) :-
         MaybeStdinContents = yes(Contents),
         shell_and_args(CommandPrefix, UnquotedArgs, no_redirect,
             Shell, ShellArgs),
-        posix_spawn_get_stdin_stdout(Shell, ShellArgs, SpawnRes, !IO),
+        posix_spawn_get_stdin_stdout(Shell, ShellArgs, environ([]),
+            SpawnRes, !IO),
         (
             SpawnRes = ok({Pid, StdinPipe, StdoutPipe}),
             % This depends on Contents fitting within the pipe buffer all at

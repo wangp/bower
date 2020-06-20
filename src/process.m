@@ -16,13 +16,21 @@
 :- type pipe_read.
 :- type pipe_write.
 
-:- pred posix_spawn(string::in, list(string)::in, io.res(pid)::out,
-    io::di, io::uo) is det.
+:- type spawn_env
+    --->    environ(list(env_modification)).
+    %       reset(list(env_modification))
 
-:- pred posix_spawn_get_stdin(string::in, list(string)::in,
+:- type env_modification
+    --->    set_var(string, string)
+    ;       delete_var(string).
+
+:- pred posix_spawn(string::in, list(string)::in, spawn_env::in,
+    io.res(pid)::out, io::di, io::uo) is det.
+
+:- pred posix_spawn_get_stdin(string::in, list(string)::in, spawn_env::in,
     io.res({pid, pipe_write})::out, io::di, io::uo) is det.
 
-:- pred posix_spawn_get_stdout(string::in, list(string)::in,
+:- pred posix_spawn_get_stdout(string::in, list(string)::in, spawn_env::in,
     io.res({pid, pipe_read})::out, io::di, io::uo) is det.
 
     % Warning: remember to avoid deadlocks due to a full pipe buffer.
@@ -31,7 +39,7 @@
     % O_NONBLOCK set so that write(2) will perform a partial write instead of
     % blocking if the pipe is full.
     %
-:- pred posix_spawn_get_stdin_stdout(string::in, list(string)::in,
+:- pred posix_spawn_get_stdin_stdout(string::in, list(string)::in, spawn_env::in,
     io.res({pid, pipe_write, pipe_read})::out, io::di, io::uo) is det.
 
 :- type wait_pid_blocking
@@ -89,6 +97,9 @@
 :- import_module byte_array.
 :- import_module make_utf8.
 
+:- type env.
+:- pragma foreign_type("C", env, "char **").
+
 :- type pipe_read
     --->    pipe_read(read_fd :: int).
 
@@ -129,11 +140,12 @@ static int do_close(int fd)
 
 %-----------------------------------------------------------------------------%
 
-posix_spawn(Prog, Args, Res, !IO) :-
+posix_spawn(Prog, Args, SpawnEnv, Res, !IO) :-
     list.length(Args, NumArgs),
+    get_spawn_env(SpawnEnv, Env, !IO),
     GetStdin = no,
     GetStdout = no,
-    posix_spawn_2(Prog, Args, NumArgs, GetStdin, GetStdout, Pid,
+    posix_spawn_2(Prog, Args, NumArgs, Env, GetStdin, GetStdout, Pid,
         _StdinFd, _StdoutFd, !IO),
     ( Pid >= 0 ->
         Res = ok(pid(Pid))
@@ -141,11 +153,12 @@ posix_spawn(Prog, Args, Res, !IO) :-
         Res = error(io.make_io_error("posix_spawn failed"))
     ).
 
-posix_spawn_get_stdin(Prog, Args, Res, !IO) :-
+posix_spawn_get_stdin(Prog, Args, SpawnEnv, Res, !IO) :-
     list.length(Args, NumArgs),
+    get_spawn_env(SpawnEnv, Env, !IO),
     GetStdin = yes,
     GetStdout = no,
-    posix_spawn_2(Prog, Args, NumArgs, GetStdin, GetStdout, Pid,
+    posix_spawn_2(Prog, Args, NumArgs, Env, GetStdin, GetStdout, Pid,
         StdinFd, _StdoutFd, !IO),
     ( Pid >= 0 ->
         Res = ok({pid(Pid), pipe_write(StdinFd)})
@@ -153,11 +166,12 @@ posix_spawn_get_stdin(Prog, Args, Res, !IO) :-
         Res = error(io.make_io_error("posix_spawn failed"))
     ).
 
-posix_spawn_get_stdout(Prog, Args, Res, !IO) :-
+posix_spawn_get_stdout(Prog, Args, SpawnEnv, Res, !IO) :-
     list.length(Args, NumArgs),
+    get_spawn_env(SpawnEnv, Env, !IO),
     GetStdin = no,
     GetStdout = yes,
-    posix_spawn_2(Prog, Args, NumArgs, GetStdin, GetStdout, Pid,
+    posix_spawn_2(Prog, Args, NumArgs, Env, GetStdin, GetStdout, Pid,
         _StdinFd, StdoutFd, !IO),
     ( Pid >= 0 ->
         Res = ok({pid(Pid), pipe_read(StdoutFd)})
@@ -165,11 +179,12 @@ posix_spawn_get_stdout(Prog, Args, Res, !IO) :-
         Res = error(io.make_io_error("posix_spawn failed"))
     ).
 
-posix_spawn_get_stdin_stdout(Prog, Args, Res, !IO) :-
+posix_spawn_get_stdin_stdout(Prog, Args, SpawnEnv, Res, !IO) :-
     list.length(Args, NumArgs),
+    get_spawn_env(SpawnEnv, Env, !IO),
     GetStdin = yes,
     GetStdout = yes,
-    posix_spawn_2(Prog, Args, NumArgs, GetStdin, GetStdout, Pid,
+    posix_spawn_2(Prog, Args, NumArgs, Env, GetStdin, GetStdout, Pid,
         StdinFd, StdoutFd, !IO),
     ( Pid >= 0 ->
         Res = ok({pid(Pid), pipe_write(StdinFd), pipe_read(StdoutFd)})
@@ -177,12 +192,13 @@ posix_spawn_get_stdin_stdout(Prog, Args, Res, !IO) :-
         Res = error(io.make_io_error("posix_spawn failed"))
     ).
 
-:- pred posix_spawn_2(string::in, list(string)::in, int::in, bool::in, bool::in,
-    int::out, int::out, int::out, io::di, io::uo) is det.
+:- pred posix_spawn_2(string::in, list(string)::in, int::in, env::in,
+    bool::in, bool::in, int::out, int::out, int::out, io::di, io::uo) is det.
 
 :- pragma foreign_proc("C",
-    posix_spawn_2(Prog::in, Args::in, NumArgs::in, GetStdin::in, GetStdout::in,
-        Pid::out, StdinFd::out, StdoutFd::out, _IO0::di, _IO::uo),
+    posix_spawn_2(Prog::in, Args::in, NumArgs::in, Env::in,
+        GetStdin::in, GetStdout::in, Pid::out, StdinFd::out, StdoutFd::out,
+        _IO0::di, _IO::uo),
     [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
         may_not_duplicate],
 "
@@ -213,7 +229,7 @@ posix_spawn_get_stdin_stdout(Prog, Args, Res, !IO) :-
     }
 
     if (rc == 0) {
-        rc = do_posix_spawn(&pid, Prog, argv, stdin_pipe, stdout_pipe);
+        rc = do_posix_spawn(&pid, Prog, argv, Env, stdin_pipe, stdout_pipe);
     }
 
     if (rc == 0) {
@@ -238,21 +254,8 @@ posix_spawn_get_stdin_stdout(Prog, Args, Res, !IO) :-
 ").
 
 :- pragma foreign_decl("C", local, "
-#if defined(__APPLE__) && defined(__MACH__)
-    /*
-    ** On Darwin, shared libraries and bundles don't have direct access to
-    ** environ.
-    */
-    #include <crt_externs.h>
-    #define ENVIRON (*_NSGetEnviron())
-#else
-    /* POSIX does not require environ to be declared. */
-    extern char **environ;
-    #define ENVIRON (environ)
-#endif
-
 static int
-do_posix_spawn(pid_t *pid_ptr, const char *Prog, char *argv[],
+do_posix_spawn(pid_t *pid_ptr, const char *Prog, char *argv[], char *envp[],
     int stdin_pipe[2], int stdout_pipe[2])
 {
     posix_spawn_file_actions_t file_actions;
@@ -298,7 +301,7 @@ do_posix_spawn(pid_t *pid_ptr, const char *Prog, char *argv[],
     posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK);
     posix_spawnattr_setsigmask(&attr, &sigmask);
 
-    rc = posix_spawnp(pid_ptr, Prog, &file_actions, &attr, argv, ENVIRON);
+    rc = posix_spawnp(pid_ptr, Prog, &file_actions, &attr, argv, envp);
 
     posix_spawnattr_destroy(&attr);
     posix_spawn_file_actions_destroy(&file_actions);
@@ -306,6 +309,126 @@ do_posix_spawn(pid_t *pid_ptr, const char *Prog, char *argv[],
     return rc;
 }
 ").
+
+%-----------------------------------------------------------------------------%
+
+:- pragma foreign_decl("C", local, "
+#if defined(__APPLE__) && defined(__MACH__)
+    /*
+    ** On Darwin, shared libraries and bundles don't have direct access to
+    ** environ.
+    */
+    #include <crt_externs.h>
+    #define ENVIRON (*_NSGetEnviron())
+#else
+    /* POSIX does not require environ to be declared. */
+    extern char **environ;
+    #define ENVIRON (environ)
+#endif
+").
+
+:- pred get_spawn_env(spawn_env::in, env::out, io::di, io::uo) is det.
+
+get_spawn_env(SpawnEnv, Env, !IO) :-
+    SpawnEnv = environ(Modifications),
+    (
+        Modifications = [],
+        get_environ(Env, !IO)
+    ;
+        Modifications = [_ | _],
+        get_environ_list(List0, !IO),
+        foldl(apply_env_modification, Modifications, List0, List),
+        make_env_array(List, Env)
+    ).
+
+:- pred get_environ(env::out, io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    get_environ(Env::out, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, tabled_for_io, may_not_duplicate],
+"
+    Env = ENVIRON;
+").
+
+:- pred get_environ_list(list(string)::out, io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    get_environ_list(Env::out, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, tabled_for_io, may_not_duplicate],
+"
+    char **envp = ENVIRON;
+    int i;
+
+    Env = MR_list_empty();
+    for (i = 0; envp[i] != NULL; i++) {
+    }
+    while (--i >= 0) {
+        MR_String s = MR_make_string(MR_ALLOC_ID, ""%s"", envp[i]);
+        Env = MR_list_cons((MR_Word) s, Env);
+    }
+").
+
+:- pred make_env_array(list(string)::in, env::out) is det.
+
+:- pragma foreign_proc("C",
+    make_env_array(List::in, Array::out),
+    [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
+"
+    MR_Word xs;
+    int length = 0;
+    int i;
+
+    for (xs = List; !MR_list_is_empty(xs); xs = MR_list_tail(xs)) {
+        length++;
+    }
+    Array = MR_GC_NEW_ARRAY(char *, length + 1);
+    for (xs = List; !MR_list_is_empty(xs); xs = MR_list_tail(xs)) {
+        Array[i] = (char *) MR_list_head(xs);
+        i++;
+    }
+    Array[i] = NULL;
+").
+
+:- pred apply_env_modification(env_modification::in,
+    list(string)::in, list(string)::out) is det.
+
+apply_env_modification(Modification, !List) :-
+    (
+        Modification = set_var(Var, Value),
+        VarEquals = Var ++ "=",
+        ( replace_env_var(VarEquals, Value, !List) ->
+            true
+        ;
+            !:List = !.List ++ [VarEquals ++ Value]
+        )
+    ;
+        Modification = delete_var(Var),
+        VarEquals = Var ++ "=",
+        delete_env_var(VarEquals, !List)
+    ).
+
+:- pred replace_env_var(string::in, string::in, list(string)::in,
+    list(string)::out) is semidet.
+
+replace_env_var(VarEquals, Value, List0, List) :-
+    List0 = [Head0 | Tail0],
+    ( string.prefix(Head0, VarEquals) ->
+        List = [VarEquals ++ Value | Tail0]
+    ;
+        replace_env_var(VarEquals, Value, Tail0, Tail),
+        List = [Head0 | Tail]
+    ).
+
+:- pred delete_env_var(string::in, list(string)::in, list(string)::out) is det.
+
+delete_env_var(_VarEquals, [], []).
+delete_env_var(VarEquals, [Head0 | Tail0], List) :-
+    ( string.prefix(Head0, VarEquals) ->
+        List = Tail0
+    ;
+        delete_env_var(VarEquals, Tail0, Tail),
+        List = [Head0 | Tail]
+    ).
 
 %-----------------------------------------------------------------------------%
 
