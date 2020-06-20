@@ -92,11 +92,14 @@
 :- type tag
     --->    tag(string).
 
-:- type filename
-    --->    filename(string).
+:- type content_charset
+    --->    content_charset(string).
 
 :- type content_disposition
     --->    content_disposition(string).
+
+:- type filename
+    --->    filename(string).
 
 :- type content_length
     --->    content_length(int).
@@ -109,6 +112,7 @@
                 pt_msgid                :: message_id,
                 pt_part                 :: maybe(int), % XXX use bespoke type
                 pt_content_type         :: mime_type,
+                pt_content_charset      :: maybe(content_charset),
                 pt_content_disposition  :: maybe(content_disposition),
                 pt_content              :: part_content,
                 pt_filename             :: maybe(filename),

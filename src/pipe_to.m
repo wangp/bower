@@ -23,6 +23,7 @@
 :- import_module string.
 
 :- import_module call_system.
+:- import_module process.
 :- import_module prog_config.
 :- import_module quote_arg.
 :- import_module shell_word.
@@ -83,7 +84,8 @@ pipe_to_command(Command, Strings, MaybeError, !IO) :-
 pipe_to_command_2(CommandWords, Strings, MaybeError, !IO) :-
     make_pipe_to_command(CommandWords, Command),
     Input = string.join_list(" ", Strings),
-    curs.suspend(call_system_write_to_stdin(Command, Input), CallRes, !IO),
+    curs.suspend(call_system_write_to_stdin(Command, environ([]), Input),
+        CallRes, !IO),
     (
         CallRes = ok,
         MaybeError = ok

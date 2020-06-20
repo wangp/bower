@@ -247,6 +247,7 @@ add_unsupported_part(Config, PartVisibilityMap, MaybeQuoteMarker, Part,
     MessageId = Part ^ pt_msgid,
     MaybePartId = Part ^ pt_part,
     ContentType = Part ^ pt_content_type,
+    MaybeContentCharset = Part ^ pt_content_charset,
     ( ignore_unsupported_part(ContentType) ->
         true
     ;
@@ -260,8 +261,8 @@ add_unsupported_part(Config, PartVisibilityMap, MaybeQuoteMarker, Part,
             ;
                 MaybeFilterCommand = no
             ),
-            expand_part(Config, MessageId, PartId, MaybeFilterCommand,
-                MaybeText, !IO),
+            expand_part(Config, MessageId, PartId, ContentType,
+                MaybeContentCharset, MaybeFilterCommand, MaybeText, !IO),
             (
                 MaybeText = ok(Text),
                 add_quoted_text(MaybeQuoteMarker, Text, !RevLines)

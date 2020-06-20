@@ -116,8 +116,9 @@ select_main_part_and_attachments(PartVisibilityMap, Body, MaybeMainPart,
     part::out, list(int)::out) is semidet.
 
 find_main_part(PartVisibilityMap, [Part | _Parts], MainPart, PathToMain) :-
-    Part = part(_MessageId, PartId, ContentType, MaybeContentDisposition,
-        Content, _MaybeFileName, _MaybeContentLength, _MaybeCTE, _IsDecrypted),
+    Part = part(_MessageId, PartId, ContentType, _MaybeContentCharset,
+        MaybeContentDisposition, Content, _MaybeFileName, _MaybeContentLength,
+        _MaybeCTE, _IsDecrypted),
     require_complete_switch [Content]
     (
         Content = text(_PartText),
@@ -194,8 +195,9 @@ maybe_cons(yes(X), Xs) = [X | Xs].
     list(part)::in, list(part)::out) is det.
 
 select_attachments(PathToMain, Part, !RevAttachmentParts) :-
-    Part = part(_MessageId, PartId, ContentType, _MaybeContentDisposition,
-        Content, MaybeFileName, _MaybeContentLength, _MaybeCTE, _IsDecrypted),
+    Part = part(_MessageId, PartId, ContentType, _MaybeContentCharset,
+        _MaybeContentDisposition, Content, MaybeFileName, _MaybeContentLength,
+        _MaybeCTE, _IsDecrypted),
     (
         ( Content = text(_)
         ; Content = unsupported     % includes text/html

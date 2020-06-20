@@ -8,15 +8,17 @@
 :- import_module maybe.
 
 :- import_module data.
+:- import_module mime_type.
 :- import_module prog_config.
 :- import_module quote_arg.
 
-:- pred expand_part(prog_config::in, message_id::in, int::in,
-    maybe(command_prefix)::in, maybe_error(string)::out, io::di, io::uo)
-    is det.
-
-:- pred filter_text_part(command_prefix::in, string::in,
+:- pred expand_part(prog_config::in, message_id::in, int::in, mime_type::in,
+    maybe(content_charset)::in, maybe(command_prefix)::in,
     maybe_error(string)::out, io::di, io::uo) is det.
+
+:- pred filter_text_part(command_prefix::in, mime_type::in,
+    maybe(content_charset)::in, string::in, maybe_error(string)::out,
+    io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -27,10 +29,12 @@
 :- import_module string.
 
 :- import_module call_system.
+:- import_module process.
 
 %-----------------------------------------------------------------------------%
 
-expand_part(ProgConfig, MessageId, PartId, MaybeFilterCommand, Res, !IO) :-
+expand_part(ProgConfig, MessageId, PartId, ContentType, MaybeContentCharset,
+        MaybeFilterCommand, Res, !IO) :-
     get_notmuch_command(ProgConfig, Notmuch),
     make_quoted_command(Notmuch, [
         "show", "--format=raw", "--part=" ++ from_int(PartId),
@@ -45,10 +49,13 @@ expand_part(ProgConfig, MessageId, PartId, MaybeFilterCommand, Res, !IO) :-
         MaybeFilterCommand = no,
         Command = ShowCommand
     ),
+    % The notmuch command will inherit these environment variables as well,
+    % which is not really intended but also not problematic.
+    make_part_spawn_env(ContentType, MaybeContentCharset, SpawnEnv),
     ErrorLimit = yes(100),
     % If decryption is enabled then we should run curs.pause
     % in case pinentry-curses is called.
-    call_system_capture_stdout(Command, ErrorLimit, CallRes, !IO),
+    call_system_capture_stdout(Command, SpawnEnv, ErrorLimit, CallRes, !IO),
     (
         CallRes = ok(Output),
         Res = ok(Output)
@@ -59,11 +66,13 @@ expand_part(ProgConfig, MessageId, PartId, MaybeFilterCommand, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-filter_text_part(CommandPrefix, Input, Res, !IO) :-
+filter_text_part(CommandPrefix, ContentType, MaybeContentCharset, Input, Res,
+        !IO) :-
     % We don't really need to invoke the shell but this is easier for now.
     make_quoted_command(CommandPrefix, [], no_redirect, no_redirect, Command),
+    make_part_spawn_env(ContentType, MaybeContentCharset, SpawnEnv),
     ErrorLimit = yes(100),
-    call_system_filter(Command, Input, ErrorLimit, CallRes, !IO),
+    call_system_filter(Command, SpawnEnv, Input, ErrorLimit, CallRes, !IO),
     (
         CallRes = ok(Output),
         Res = ok(Output)
@@ -71,6 +80,26 @@ filter_text_part(CommandPrefix, Input, Res, !IO) :-
         CallRes = error(Error),
         Res = error(io.error_message(Error))
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred make_part_spawn_env(mime_type::in, maybe(content_charset)::in,
+    spawn_env::out) is det.
+
+make_part_spawn_env(ContentType, MaybeContentCharset, SpawnEnv) :-
+    VarContentType =
+        set_var("PART_CONTENT_TYPE", mime_type.to_string(ContentType)),
+    (
+        MaybeContentCharset = yes(content_charset(Charset)),
+        VarCharset = set_var("PART_CHARSET", Charset)
+    ;
+        MaybeContentCharset = no,
+        VarCharset = delete_var("PART_CHARSET")
+    ),
+    SpawnEnv = environ([
+        VarContentType,
+        VarCharset
+    ]).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

@@ -67,7 +67,10 @@
 #-----------------------------------------------------------------------------#
 
 # How to convert non-text parts to text using external commands.
-# Each command should take input on standard input and output UTF-8.
+# Each command receives input on standard input and must output UTF-8.
+# The process will inherit these environment variables:
+#   PART_CONTENT_TYPE - content type of the part being filtered
+#   PART_CHARSET - charset of the part being filtered (if available)
 
 [filter]
 

@@ -71,6 +71,7 @@
 
 :- import_module call_system.
 :- import_module mime_type.
+:- import_module process.
 :- import_module time_util.
 
 :- use_module curs.
@@ -82,7 +83,7 @@ get_notmuch_config(Config, Key, Res, !IO) :-
     make_quoted_command(Notmuch, ["config", "get", Key],
         redirect_input("/dev/null"), no_redirect, redirect_stderr("/dev/null"),
         run_in_foreground, Command),
-    call_system_capture_stdout(Command, no, Res0, !IO),
+    call_system_capture_stdout(Command, environ([]), no, Res0, !IO),
     (
         Res0 = ok(Value0),
         Value = string.strip(Value0),
@@ -121,10 +122,12 @@ call_command_parse_json(Command, SuspendCurs, Parser, Result, !IO) :-
     (
         SuspendCurs = soft_suspend_curses,
         curs.soft_suspend(
-            call_system_capture_stdout(Command, no), CommandResult, !IO)
+            call_system_capture_stdout(Command, environ([]), no),
+            CommandResult, !IO)
     ;
         SuspendCurs = no_suspend_curses,
-        call_system_capture_stdout(Command, no, CommandResult, !IO)
+        call_system_capture_stdout(Command, environ([]), no,
+            CommandResult, !IO)
     ),
     (
         CommandResult = ok(String),
@@ -287,6 +290,11 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
         JSON/"content-type" = unesc_string(ContentTypeString)
     ->
         ContentType = make_mime_type(ContentTypeString),
+        ( JSON/"content-charset" = unesc_string(Charset) ->
+            MaybeContentCharset = yes(content_charset(Charset))
+        ;
+            MaybeContentCharset = no
+        ),
         ( JSON/"content-disposition" = unesc_string(Disposition) ->
             MaybeContentDisposition = yes(content_disposition(Disposition))
         ;
@@ -362,13 +370,6 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
             ;
                 MaybeFilename = no
             ),
-            /*
-            ( JSON/"content-charset" = unesc_string(Charset) ->
-                MaybeContentCharset = yes(content_charset(Charset))
-            ;
-                MaybeContentCharset = no
-            ),
-            */
             ( JSON/"content-length" = int(Length) ->
                 MaybeContentLength = yes(content_length(Length))
             ;
@@ -382,7 +383,7 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
             ),
             IsDecrypted = IsDecrypted0
         ),
-        Part = part(MessageId, yes(PartId), ContentType,
+        Part = part(MessageId, yes(PartId), ContentType, MaybeContentCharset,
             MaybeContentDisposition, Content, MaybeFilename,
             MaybeContentLength, MaybeContentTransferEncoding, IsDecrypted)
     ;

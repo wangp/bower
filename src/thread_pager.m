@@ -1922,9 +1922,9 @@ save_part(Action, MessageUpdate, !Info) :-
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
-    Part = part(MessageId, MaybePartId, _Type, _MaybeContentDisposition,
-        _Content, MaybePartFilename, _MaybeContentLength, _MaybeCTE,
-        IsDecrypted),
+    Part = part(MessageId, MaybePartId, _Type, _MaybeContentCharset,
+        _MaybeContentDisposition, _Content, MaybePartFilename,
+        _MaybeContentLength, _MaybeCTE, IsDecrypted),
     (
         MaybePartFilename = yes(filename(PartFilename))
     ;
@@ -2145,9 +2145,9 @@ do_open_part(Config, Screen, Part, Command, MessageUpdate, MaybeNextKey,
 
 do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, MaybeNextKey,
         !Info, !IO) :-
-    Part = part(MessageId, MaybePartId, _ContentType, _MaybeContentDisposition,
-        _Content, MaybePartFileName, _MaybeContentLength, _MaybeCTE,
-        IsDecrypted),
+    Part = part(MessageId, MaybePartId, _ContentType, _MaybeContentCharset,
+        _MaybeContentDisposition, _Content, MaybePartFileName,
+        _MaybeContentLength, _MaybeCTE, IsDecrypted),
     (
         MaybePartFileName = yes(filename(PartFilename)),
         get_extension(PartFilename, Ext)
@@ -2516,8 +2516,8 @@ verify_part(Screen, !Info, !IO) :-
 
 do_verify_part(Screen, Part0, MessageUpdate, !Info, !IO) :-
     Part0 = part(MessageId, MaybePartId, Type, _MaybeContentDisposition0,
-        _Content0, _MaybeFilename0, _MaybeContentLength, _MaybeCTE,
-        IsDecrypted),
+        _Content0, _MaybeFilename0, _MaybeContentCharset, _MaybeContentLength,
+        _MaybeCTE, IsDecrypted),
     (
         MaybePartId = yes(PartId),
         Config = !.Info ^ tp_config,
@@ -2536,11 +2536,11 @@ do_verify_part(Screen, Part0, MessageUpdate, !Info, !IO) :-
         (
             ParseResult = ok(Part1),
             (
-                Part1 = part(MessageId, MaybePartId, Type,
+                Part1 = part(MessageId, MaybePartId, Type, MaybeContentCharset,
                     MaybeContentDisposition, Content, MaybeFilename,
                     MaybeContentLength, MaybeCTE, _IsDecrypted1)
             ->
-                Part = part(MessageId, MaybePartId, Type,
+                Part = part(MessageId, MaybePartId, Type, MaybeContentCharset,
                     MaybeContentDisposition, Content, MaybeFilename,
                     MaybeContentLength, MaybeCTE, IsDecrypted),
 

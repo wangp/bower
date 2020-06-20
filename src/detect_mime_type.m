@@ -27,6 +27,7 @@
 :- import_module string.
 
 :- import_module call_system.
+:- import_module process.
 :- import_module quote_arg.
 
 %-----------------------------------------------------------------------------%
@@ -34,7 +35,7 @@
 detect_mime_type(FileName, Res, !IO) :-
     make_quoted_command(file_command, ["--brief", "--mime", FileName],
         redirect_input("/dev/null"), no_redirect, Command),
-    call_system_capture_stdout(Command, no, CallRes, !IO),
+    call_system_capture_stdout(Command, environ([]), no, CallRes, !IO),
     (
         CallRes = ok(String0),
         String = string.chomp(String0),

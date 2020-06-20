@@ -144,6 +144,7 @@
 
 :- import_module base64.
 :- import_module call_system.
+:- import_module process.
 :- import_module quote_arg.
 :- import_module rfc2045.
 :- import_module rfc2231.
@@ -486,7 +487,7 @@ write_mime_part_body(Stream, Config, TransferEncoding, Body, PausedCurs,
     i_paused_curses::in, io::di, io::uo) is det.
 
 get_external_part_base64(Config, Part, Content, PausedCurs, !IO) :-
-    Part = part(MessageId, MaybePartId, _, _, _, _, _, _, IsDecrypted),
+    Part = part(MessageId, MaybePartId, _, _, _, _, _, _, _, IsDecrypted),
     (
         MaybePartId = yes(PartId),
         get_notmuch_command(Config, Notmuch),
@@ -498,7 +499,8 @@ get_external_part_base64(Config, Part, Content, PausedCurs, !IO) :-
         ], redirect_input("/dev/null"), no_redirect, Command),
         % Decryption may invoke pinentry-curses.
         PausedCurs = i_paused_curses,
-        call_system_capture_stdout(Command ++ " |base64", no, CallRes, !IO)
+        call_system_capture_stdout(Command ++ " |base64", environ([]), no,
+            CallRes, !IO)
     ;
         MaybePartId = no,
         CallRes = error(io.make_io_error("no part id"))

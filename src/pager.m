@@ -430,13 +430,15 @@ make_part_tree(Config, Cols, Part, Tree, !ElideInitialHeadLine, !Counter, !IO)
 
 make_part_tree_with_alts(Config, Cols, AltParts, Part, HandleUnsupported, Tree,
         !ElideInitialHeadLine, !Counter, !IO) :-
-    Part = part(_MessageId, _PartId, PartType, _MaybeContentDisposition,
-        Content, _MaybeFilename, _MaybeContentLength, _MaybeCTE, _IsDecrypted),
+    Part = part(_MessageId, _PartId, PartType, MaybeContentCharset,
+        _MaybeContentDisposition, Content, _MaybeFilename, _MaybeContentLength,
+        _MaybeCTE, _IsDecrypted),
     allocate_node_id(PartNodeId, !Counter),
     (
         Content = text(InlineText),
         ( get_text_filter_command(Config, PartType, FilterCommand) ->
-            filter_text_part(FilterCommand, InlineText, FilterRes, !IO),
+            filter_text_part(FilterCommand, PartType, MaybeContentCharset,
+                InlineText, FilterRes, !IO),
             (
                 FilterRes = ok(Text)
             ;
@@ -724,9 +726,9 @@ add_encapsulated_header(Header, Value, RevLines0, RevLines) :-
 
 make_unsupported_part_tree(Config, Cols, PartNodeId, Part, HandleUnsupported,
         AltParts, Tree, !IO) :-
-    Part = part(MessageId, MaybePartId, PartType, _MaybeContentDisposition,
-        _Content, _MaybeFilename, _MaybeContentLength, _MaybeCTE,
-        _IsDecrypted),
+    Part = part(MessageId, MaybePartId, PartType, MaybeContentCharset,
+        _MaybeContentDisposition, _Content, _MaybeFilename,
+        _MaybeContentLength, _MaybeCTE, _IsDecrypted),
     (
         HandleUnsupported = default,
         DoExpand = ( if PartType = mime_type.text_html then yes else no )
@@ -747,8 +749,8 @@ make_unsupported_part_tree(Config, Cols, PartNodeId, Part, HandleUnsupported,
             MaybeFilterCommand = no,
             Filtered = part_not_filtered
         ),
-        expand_part(Config, MessageId, PartId, MaybeFilterCommand,
-            MaybeText, !IO),
+        expand_part(Config, MessageId, PartId, PartType, MaybeContentCharset,
+            MaybeFilterCommand, MaybeText, !IO),
         (
             MaybeText = ok(Text),
             get_wrap_width(Config, Cols, WrapWidth),
@@ -1324,7 +1326,7 @@ get_highlighted_thing(Info, Thing) :-
         Subject = Message ^ m_headers ^ h_subject,
         PartId = 0,
         % Hmm.
-        Part = part(MessageId, yes(PartId), mime_type.text_plain,
+        Part = part(MessageId, yes(PartId), mime_type.text_plain, no,
             no, unsupported, no, no, no, not_decrypted),
         MaybeSubject = yes(Subject),
         Thing = highlighted_part(Part, MaybeSubject)
@@ -1750,9 +1752,9 @@ draw_pager_line(Attrs, Screen, Panel, Line, IsCursor, !IO) :-
         )
     ;
         Line = part_head(Part, HiddenParts, Expanded, Importance),
-        Part = part(_MessageId, _Part, ContentType, _MaybeContentDisposition,
-            _Content, MaybeFilename, MaybeContentLength, MaybeCTE,
-            _IsDecrypted),
+        Part = part(_MessageId, _Part, ContentType, _MaybeContentCharset,
+            _MaybeContentDisposition, _Content, MaybeFilename,
+            MaybeContentLength, MaybeCTE, _IsDecrypted),
         (
             Importance = importance_normal,
             Attr0 = Attrs ^ p_part_head

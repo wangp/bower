@@ -7,6 +7,8 @@
 :- import_module io.
 :- import_module maybe.
 
+:- import_module process.
+
     % Execute a shell command as a subprocess, read the contents of the
     % standard output as a string. The output is expected to be UTF-8 encoded;
     % the provisions for wrong encodings are given by make_utf8_string.
@@ -14,20 +16,20 @@
     % This started as a replacement for popen() that would block SIGWINCH in
     % the child. Ideally we would not invoke the shell in most cases.
     %
-:- pred call_system_capture_stdout(string::in, maybe(int)::in,
+:- pred call_system_capture_stdout(string::in, spawn_env::in, maybe(int)::in,
     io.res(string)::out, io::di, io::uo) is det.
 
     % Execute a shell command as a subprocess, and write a string to the
     % standard input of the subprocess.
     %
-:- pred call_system_write_to_stdin(string::in, string::in, io.res::out,
-    io::di, io::uo) is det.
+:- pred call_system_write_to_stdin(string::in, spawn_env::in, string::in,
+    io.res::out, io::di, io::uo) is det.
 
     % As above, but concurrently writes to the standard input of the subprocess
     % and reads from the standard output of the subprocess.
     %
-:- pred call_system_filter(string::in, string::in, maybe(int)::in,
-    io.res(string)::out, io::di, io::uo) is det.
+:- pred call_system_filter(string::in, spawn_env::in, string::in,
+    maybe(int)::in, io.res(string)::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -37,12 +39,10 @@
 :- import_module list.
 :- import_module string.
 
-:- import_module process.
-
 %-----------------------------------------------------------------------------%
 
-call_system_capture_stdout(Command, ErrorLimit, Res, !IO) :-
-    posix_spawn_get_stdout("/bin/sh", ["-c", Command], environ([]),
+call_system_capture_stdout(Command, SpawnEnv, ErrorLimit, Res, !IO) :-
+    posix_spawn_get_stdout("/bin/sh", ["-c", Command], SpawnEnv,
         SpawnRes, !IO),
     (
         SpawnRes = ok({Pid, PipeRead}),
@@ -73,8 +73,8 @@ call_system_capture_stdout(Command, ErrorLimit, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-call_system_write_to_stdin(Command, Input, Res, !IO) :-
-    posix_spawn_get_stdin("/bin/sh", ["-c", Command], environ([]),
+call_system_write_to_stdin(Command, SpawnEnv, Input, Res, !IO) :-
+    posix_spawn_get_stdin("/bin/sh", ["-c", Command], SpawnEnv,
         SpawnRes, !IO),
     (
         SpawnRes = ok({Pid, PipeWrite}),
@@ -104,8 +104,8 @@ call_system_write_to_stdin(Command, Input, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-call_system_filter(Command, Input, ErrorLimit, Res, !IO) :-
-    posix_spawn_get_stdin_stdout("/bin/sh", ["-c", Command], environ([]),
+call_system_filter(Command, SpawnEnv, Input, ErrorLimit, Res, !IO) :-
+    posix_spawn_get_stdin_stdout("/bin/sh", ["-c", Command], SpawnEnv,
         SpawnRes, !IO),
     (
         SpawnRes = ok({Pid, PipeWrite, PipeRead}),

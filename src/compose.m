@@ -90,6 +90,7 @@
 :- import_module notmuch_config.
 :- import_module pager.
 :- import_module path_expand.
+:- import_module process.
 :- import_module quote_arg.
 :- import_module rfc2047.
 :- import_module rfc2047.decoder.
@@ -476,7 +477,8 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
         "--", message_id_to_search_term(MessageId)
     ], redirect_input("/dev/null"), no_redirect, Command),
     % Decryption may invoke pinentry-curses.
-    curs.soft_suspend(call_system_capture_stdout(Command, no), CallRes, !IO),
+    curs.soft_suspend(call_system_capture_stdout(Command, environ([]), no),
+        CallRes, !IO),
     (
         CallRes = ok(String),
         parse_message(String, HeadersB, _Body),
@@ -1197,7 +1199,7 @@ do_attach_file_with_base64_encoding(FileName, BaseName, Type, NumRows,
         MessageUpdate, !AttachInfo, !IO) :-
     make_quoted_command(base64_command, [FileName],
         redirect_input("/dev/null"), no_redirect, Command),
-    call_system_capture_stdout(Command, no, CallRes, !IO),
+    call_system_capture_stdout(Command, environ([]), no, CallRes, !IO),
     (
         CallRes = ok(Content),
         string.length(Content, Size),
@@ -1624,9 +1626,9 @@ draw_attachment_line(Attrs, Screen, Panel, Attachment, LineNr, IsCursor, !IO)
         :-
     (
         Attachment = old_attachment(Part),
-        Part = part(_MessageId, _PartId, ContentType, MaybeContentDisposition,
-            _Content, MaybeFilename, MaybeContentLength, _MaybeCTE,
-            _IsDecrypted),
+        Part = part(_MessageId, _PartId, ContentType, _MaybeContentCharset,
+            MaybeContentDisposition, _Content, MaybeFilename,
+            MaybeContentLength, _MaybeCTE, _IsDecrypted),
         (
             MaybeFilename = yes(filename(Filename))
         ;
@@ -2185,9 +2187,10 @@ make_text_mime_part(Disposition, TextCTE, Text, MimePart) :-
 make_attachment_mime_part(TextCTE, Attachment, MimePart) :-
     (
         Attachment = old_attachment(OldPart),
+        % XXX charset
         OldPart = part(_MessageId, _OldPartId, OldContentType,
-            OldContentDisposition, OldContent, OldFileName, _OldContentLength,
-            _OldCTE, _IsDecrypted),
+            _OldContentCharset, OldContentDisposition, OldContent, OldFileName,
+            _OldContentLength, _OldCTE, _IsDecrypted),
         ContentType = content_type(mime_type.to_string(OldContentType)),
         convert_old_content_disposition(OldContentDisposition, OldFileName,
             MaybeWriteContentDisposition),

@@ -74,6 +74,7 @@
 :- import_module call_system.
 :- import_module list_util.
 :- import_module notmuch_config.
+:- import_module process.
 :- import_module quote_arg.
 :- import_module string_util.
 
@@ -938,7 +939,7 @@ get_notmuch_all_tags(Config, TagsList, !IO) :-
     make_quoted_command(Notmuch, [
         "search", "--output=tags", "--exclude=all", "--", "*"
     ], redirect_input("/dev/null"), no_redirect, Command),
-    call_system_capture_stdout(Command, no, CallRes, !IO),
+    call_system_capture_stdout(Command, environ([]), no, CallRes, !IO),
     (
         CallRes = ok(TagListString),
         % The empty string following the final newline is not a tag.
