@@ -1626,7 +1626,7 @@ draw_attachment_line(Attrs, Screen, Panel, Attachment, LineNr, IsCursor, !IO)
         :-
     (
         Attachment = old_attachment(Part),
-        Part = part(_MessageId, _PartId, ContentType, _MaybeContentCharset,
+        Part = part(_MessageId, _PartId, ContentType, MaybeContentCharset,
             MaybeContentDisposition, _Content, MaybeFilename,
             MaybeContentLength, _MaybeCTE, _IsDecrypted),
         (
@@ -1637,6 +1637,7 @@ draw_attachment_line(Attrs, Screen, Panel, Attachment, LineNr, IsCursor, !IO)
         )
     ;
         Attachment = new_attachment(ContentType, _, Filename, Size),
+        MaybeContentCharset = no,
         MaybeContentDisposition = no,
         MaybeContentLength = yes(content_length(Size))
     ),
@@ -1654,14 +1655,14 @@ draw_attachment_line(Attrs, Screen, Panel, Attachment, LineNr, IsCursor, !IO)
     draw(Screen, Panel, FilenameAttr, Filename, !IO),
     draw(Screen, Panel, Attr, " (", !IO),
     draw(Screen, Panel, Attr, mime_type.to_string(ContentType), !IO),
-    /*
     (
         MaybeContentCharset = yes(content_charset(Charset)),
-        draw(Panel, Attr, "; charset=" ++ Charset, !IO)
+        Charset \= "binary"
+    ->
+        draw(Screen, Panel, Attr, "; charset=" ++ Charset, !IO)
     ;
-        MaybeContentCharset = no
+        true
     ),
-    */
     (
         MaybeContentDisposition = yes(content_disposition(Disposition)),
         Disposition \= "attachment"

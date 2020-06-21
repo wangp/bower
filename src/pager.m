@@ -1752,7 +1752,7 @@ draw_pager_line(Attrs, Screen, Panel, Line, IsCursor, !IO) :-
         )
     ;
         Line = part_head(Part, HiddenParts, Expanded, Importance),
-        Part = part(_MessageId, _Part, ContentType, _MaybeContentCharset,
+        Part = part(_MessageId, _Part, ContentType, MaybeContentCharset,
             _MaybeContentDisposition, _Content, MaybeFilename,
             MaybeContentLength, MaybeCTE, _IsDecrypted),
         (
@@ -1772,6 +1772,15 @@ draw_pager_line(Attrs, Screen, Panel, Line, IsCursor, !IO) :-
         draw(Screen, Panel, Attr, "[-- ", !IO),
         draw(Screen, Panel, mime_type.to_string(ContentType), !IO),
         (
+            MaybeContentCharset = yes(content_charset(Charset)),
+            Charset \= "binary"
+        ->
+            draw(Screen, Panel, "; charset=", !IO),
+            draw(Screen, Panel, Charset, !IO)
+        ;
+            true
+        ),
+        (
             MaybeFilename = yes(filename(Filename)),
             draw(Screen, Panel, "; ", !IO),
             draw(Screen, Panel, Filename, !IO)
@@ -1785,13 +1794,6 @@ draw_pager_line(Attrs, Screen, Panel, Line, IsCursor, !IO) :-
             draw(Screen, Panel, Disposition, !IO)
         ;
             MaybeContentDisposition = no
-        ),
-        (
-            MaybeContentCharset = yes(content_charset(Charset)),
-            draw(Screen, Panel, "; charset=", !IO),
-            draw(Screen, Panel, Charset, !IO)
-        ;
-            MaybeContentCharset = no
         ),
         */
         (
