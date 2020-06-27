@@ -1277,8 +1277,8 @@ delete_attachment(Screen, !AttachInfo, !IO) :-
 edit_attachment_type(Screen, !AttachInfo, !IO) :-
     ( scrollable.get_cursor_line(!.AttachInfo, _Line, Attachment0) ->
         (
-            Attachment0 = new_attachment(Type0, Charset, Content, FileName,
-                Size),
+            Attachment0 = new_attachment(Type0, MaybeCharset0, Content,
+                FileName, Size),
             % Supply some useful media types.
             History0 = init_history,
             add_history_nodup("application/octet-stream", History0, History1),
@@ -1291,7 +1291,12 @@ edit_attachment_type(Screen, !AttachInfo, !IO) :-
                 TypeString \= ""
             ->
                 ( accept_media_type(TypeString, Type) ->
-                    Attachment = new_attachment(Type, Charset, Content,
+                    ( is_text(Type) ->
+                        MaybeCharset = MaybeCharset0
+                    ;
+                        MaybeCharset = no
+                    ),
+                    Attachment = new_attachment(Type, MaybeCharset, Content,
                         FileName, Size),
                     scrollable.set_cursor_line(Attachment, !AttachInfo),
                     MessageUpdate = clear_message
