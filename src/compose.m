@@ -2215,9 +2215,8 @@ maybe_cons_unstructured(SkipEmpty, Options, FieldName, Value, !Acc) :-
 
 make_text_and_attachments_mime_part(TextCTE, Text, Attachments, MixedBoundary,
         MimePart) :-
-    MaybeCharset = yes("utf-8"),
-    make_text_mime_part(MaybeCharset, write_content_disposition(inline, no),
-        TextCTE, Text, TextPart),
+    TextPart = discrete(text_plain, yes("utf-8"),
+        yes(write_content_disposition(inline, no)), yes(TextCTE), text(Text)),
     (
         Attachments = [],
         MimePart = TextPart
@@ -2230,34 +2229,33 @@ make_text_and_attachments_mime_part(TextCTE, Text, Attachments, MixedBoundary,
             AttachmentParts)
     ).
 
-:- pred make_text_mime_part(maybe(string)::in, write_content_disposition::in,
-    write_content_transfer_encoding::in, string::in, mime_part::out) is det.
-
-make_text_mime_part(MaybeCharset, Disposition, TextCTE, Text, MimePart) :-
-    MimePart = discrete(text_plain(MaybeCharset), yes(Disposition),
-        yes(TextCTE), text(Text)).
-
 :- pred make_attachment_mime_part(write_content_transfer_encoding::in,
     attachment::in, mime_part::out) is det.
 
 make_attachment_mime_part(TextCTE, Attachment, MimePart) :-
     (
         Attachment = old_attachment(OldPart),
-        OldPart = part(_MessageId, _OldPartId, OldContentType,
+        OldPart = part(_MessageId, _OldPartId, ContentType,
             OldContentCharset, OldContentDisposition, OldContent, OldFileName,
             _OldContentLength, _OldCTE, _IsDecrypted),
-        convert_old_content_type(OldContentType, OldContentCharset,
-            ContentType),
+        (
+            OldContentCharset = yes(content_charset(Charset)),
+            MaybeCharset = yes(Charset)
+        ;
+            OldContentCharset = no,
+            MaybeCharset = no
+        ),
         convert_old_content_disposition(OldContentDisposition, OldFileName,
             MaybeWriteContentDisposition),
         (
             OldContent = text(Text),
-            MimePart = discrete(ContentType, MaybeWriteContentDisposition,
-                yes(cte_8bit), text(Text))
+            MimePart = discrete(ContentType, MaybeCharset,
+                MaybeWriteContentDisposition, yes(cte_8bit), text(Text))
         ;
             OldContent = unsupported,
-            MimePart = discrete(ContentType, MaybeWriteContentDisposition,
-                yes(cte_base64), external(OldPart))
+            MimePart = discrete(ContentType, MaybeCharset,
+                MaybeWriteContentDisposition, yes(cte_base64),
+                external(OldPart))
         ;
             OldContent = subparts(_, _, _),
             unexpected($module, $pred, "nested part")
@@ -2279,30 +2277,14 @@ make_attachment_mime_part(TextCTE, Attachment, MimePart) :-
             yes(filename(FileName))),
         (
             Content = text_content(Text),
-            make_text_mime_part(MaybeCharset, WriteContentDisposition,
-                TextCTE, Text, MimePart)
+            MimePart = discrete(text_plain, MaybeCharset,
+                yes(WriteContentDisposition), yes(TextCTE), text(Text))
         ;
             Content = base64_encoded(Base64),
-            TypeString = mime_type.to_string(Type),
-            ContentType = content_type(TypeString, MaybeCharset),
-            MimePart = discrete(ContentType, yes(WriteContentDisposition),
-                yes(cte_base64), base64(Base64))
+            MimePart = discrete(Type, MaybeCharset,
+                yes(WriteContentDisposition), yes(cte_base64), base64(Base64))
         )
     ).
-
-:- pred convert_old_content_type(mime_type::in, maybe(content_charset)::in,
-    discrete_content_type::out) is det.
-
-convert_old_content_type(OldContentType, OldContentCharset, ContentType) :-
-    ContentTypeStr = mime_type.to_string(OldContentType),
-    (
-        OldContentCharset = yes(content_charset(CharsetStr)),
-        MaybeCharset = yes(CharsetStr)
-    ;
-        OldContentCharset = no,
-        MaybeCharset = no
-    ),
-    ContentType = content_type(ContentTypeStr, MaybeCharset).
 
 :- pred convert_old_content_disposition(maybe(content_disposition)::in,
     maybe(filename)::in, maybe(write_content_disposition)::out) is det.
@@ -2392,9 +2374,10 @@ make_multipart_encrypted_mime_part(Cipher, Boundary, MultiPart) :-
     % RFC 3156
     MultiPart = composite(multipart_encrypted(application_pgp_encrypted),
         Boundary, no, no, [SubPartA, SubPartB]),
-    SubPartA = discrete(application_pgp_encrypted, no, no,
+    SubPartA = discrete(application_pgp_encrypted, no, no, no,
         text("Version: 1\n")),
-    SubPartB = discrete(application_octet_stream, no, no, text(Cipher)).
+    SubPartB = discrete(application_octet_stream, no, no, no,
+        text(Cipher)).
 
 :- pred make_multipart_signed_mime_part(mime_part::in, string::in, micalg::in,
     boundary::in, mime_part::out) is det.
@@ -2403,7 +2386,7 @@ make_multipart_signed_mime_part(SignedPart, Sig, MicAlg, Boundary, MultiPart) :-
     % RFC 3156
     MultiPart = composite(multipart_signed(MicAlg, application_pgp_signature),
         Boundary, no, no, [SignedPart, SignaturePart]),
-    SignaturePart = discrete(application_pgp_signature, no, no, text(Sig)).
+    SignaturePart = discrete(application_pgp_signature, no, no, no, text(Sig)).
 
 %-----------------------------------------------------------------------------%
 

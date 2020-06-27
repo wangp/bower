@@ -12,6 +12,7 @@
 :- import_module stream.
 
 :- import_module data.
+:- import_module mime_type.
 :- import_module prog_config.
 :- import_module rfc5322.
 :- import_module send_util.
@@ -44,7 +45,8 @@
 
 :- type mime_part
     --->    discrete(
-                discrete_content_type,
+                mime_type,
+                maybe(string),  % charset
                 maybe(write_content_disposition),
                 maybe(write_content_transfer_encoding),
                 mime_part_body
@@ -59,13 +61,6 @@
 
 :- type mime_version
     --->    mime_version_1_0.
-
-:- type discrete_content_type
-    --->    text_plain(maybe(string))               % charset
-    ;       application_octet_stream
-    ;       application_pgp_encrypted
-    ;       application_pgp_signature
-    ;       content_type(string, maybe(string)).    % content-type, charset
 
 :- type composite_content_type
     --->    multipart_mixed
@@ -283,9 +278,9 @@ write_mime_part(Stream, Config, MimePart, PausedCurs, Res, !IO) :-
 
 write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, !IO) :-
     (
-        MimePart = discrete(ContentType, MaybeContentDisposition,
+        MimePart = discrete(ContentType, MaybeCharset, MaybeContentDisposition,
             MaybeTransferEncoding, Body),
-        write_discrete_content_type(Stream, ContentType, !IO),
+        write_discrete_content_type(Stream, ContentType, MaybeCharset, !IO),
         fold_maybe(write_content_disposition(Stream),
             MaybeContentDisposition, !IO),
         fold_maybe(write_content_transfer_encoding(Stream),
@@ -315,30 +310,12 @@ write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, !IO) :-
         write_mime_final_boundary(Stream, Boundary, !IO)
     ).
 
-:- pred write_discrete_content_type(Stream::in, discrete_content_type::in,
-    io::di, io::uo) is det <= writer(Stream).
+:- pred write_discrete_content_type(Stream::in, mime_type::in,
+    maybe(string)::in, io::di, io::uo) is det <= writer(Stream).
 
-write_discrete_content_type(Stream, ContentType, !IO) :-
-    (
-        ContentType = text_plain(MaybeCharset),
-        ContentTypeStr = "text/plain"
-    ;
-        ContentType = application_octet_stream,
-        ContentTypeStr = "application/octet-stream",
-        MaybeCharset = no
-    ;
-        ContentType = application_pgp_encrypted,
-        ContentTypeStr = "application/pgp-encrypted",
-        MaybeCharset = no
-    ;
-        ContentType = application_pgp_signature,
-        ContentTypeStr = "application/pgp-signature; name=""signature.asc""",
-        MaybeCharset = no
-    ;
-        ContentType = content_type(ContentTypeStr, MaybeCharset)
-    ),
+write_discrete_content_type(Stream, ContentType, MaybeCharset, !IO) :-
     put(Stream, "Content-Type: ", !IO),
-    put(Stream, ContentTypeStr, !IO),
+    put(Stream, mime_type.to_string(ContentType), !IO),
     (
         MaybeCharset = yes(Charset),
         put(Stream, "; charset=", !IO),
