@@ -15,6 +15,7 @@
 :- pred parse_mime_type(string, mime_type, string, string).
 :- mode parse_mime_type(in, out, out, out) is semidet.
 
+:- pred is_text(mime_type::in) is semidet.
 :- pred is_multipart(mime_type::in) is semidet.
 
 :- func text_plain = mime_type.
@@ -58,6 +59,9 @@ parse_mime_type(String, MimeType, Type, SubType) :-
     MimeType = mime_type(LowerString).
 
 %-----------------------------------------------------------------------------%
+
+is_text(mime_type(Type)) :-
+    string.prefix(Type, "text/").
 
 is_multipart(mime_type(Type)) :-
     string.prefix(Type, "multipart/").

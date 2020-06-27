@@ -144,13 +144,17 @@
     --->    old_attachment(part)
     ;       new_attachment(
                 att_type        :: mime_type,
+                att_charset     :: maybe(attachment_charset),
                 att_content     :: attachment_content,
                 att_filename    :: string,
                 att_size        :: int
             ).
 
+:- type attachment_charset
+    --->    attachment_charset(string).
+
 :- type attachment_content
-    --->    text(string)
+    --->    text_content(string)    % UTF-8 compatible content
     ;       base64_encoded(string).
 
 :- type staging_screen_action
@@ -1140,12 +1144,21 @@ do_attach_file_2(FileName, NumRows, MessageUpdate, !AttachInfo, !IO) :-
         ;
             BaseName = FileName
         ),
-        ( acceptable_charset(Charset) ->
-            do_attach_text_file(FileName, BaseName, Type, NumRows,
-                MessageUpdate, !AttachInfo, !IO)
+        ( is_utf8_compatible(Charset) ->
+            MaybeAttachmentCharset = yes(attachment_charset(Charset)),
+            do_attach_text_file(FileName, BaseName, Type,
+                MaybeAttachmentCharset, NumRows, MessageUpdate,
+                !AttachInfo, !IO)
         ;
+            ( is_text(Type) ->
+                MaybeAttachmentCharset = yes(attachment_charset(Charset))
+            ;
+                % Probably just binary?
+                MaybeAttachmentCharset = no
+            ),
             do_attach_file_with_base64_encoding(FileName, BaseName, Type,
-                NumRows, MessageUpdate, !AttachInfo, !IO)
+                MaybeAttachmentCharset, NumRows, MessageUpdate,
+                !AttachInfo, !IO)
         )
     ;
         ResDetect = error(Error),
@@ -1153,19 +1166,19 @@ do_attach_file_2(FileName, NumRows, MessageUpdate, !AttachInfo, !IO) :-
         MessageUpdate = set_warning(Msg)
     ).
 
-:- pred acceptable_charset(string::in) is semidet.
+:- pred is_utf8_compatible(string::in) is semidet.
 
-acceptable_charset(Charset) :-
+is_utf8_compatible(Charset) :-
     ( strcase_equal(Charset, "us-ascii")
     ; strcase_equal(Charset, "utf-8")
     ).
 
-:- pred do_attach_text_file(string::in, string::in, mime_type::in, int::in,
-    message_update::out, attach_info::in, attach_info::out, io::di, io::uo)
-    is det.
+:- pred do_attach_text_file(string::in, string::in, mime_type::in,
+    maybe(attachment_charset)::in, int::in, message_update::out,
+    attach_info::in, attach_info::out, io::di, io::uo) is det.
 
-do_attach_text_file(FileName, BaseName, Type, NumRows, MessageUpdate,
-        !AttachInfo, !IO) :-
+do_attach_text_file(FileName, BaseName, Type, MaybeCharset, NumRows,
+        MessageUpdate, !AttachInfo, !IO) :-
     io.open_input(FileName, ResOpen, !IO),
     (
         ResOpen = ok(Input),
@@ -1174,8 +1187,8 @@ do_attach_text_file(FileName, BaseName, Type, NumRows, MessageUpdate,
         (
             ResRead = ok(Content),
             string.length(Content, Size),
-            NewAttachment = new_attachment(Type, text(Content), BaseName,
-                Size),
+            NewAttachment = new_attachment(Type, MaybeCharset,
+                text_content(Content), BaseName, Size),
             append_attachment(NewAttachment, NumRows, !AttachInfo),
             MessageUpdate = clear_message
         ;
@@ -1192,19 +1205,19 @@ do_attach_text_file(FileName, BaseName, Type, NumRows, MessageUpdate,
     ).
 
 :- pred do_attach_file_with_base64_encoding(string::in, string::in,
-    mime_type::in, int::in, message_update::out,
+    mime_type::in, maybe(attachment_charset)::in, int::in, message_update::out,
     attach_info::in, attach_info::out, io::di, io::uo) is det.
 
-do_attach_file_with_base64_encoding(FileName, BaseName, Type, NumRows,
-        MessageUpdate, !AttachInfo, !IO) :-
+do_attach_file_with_base64_encoding(FileName, BaseName, Type,
+        MaybeCharset, NumRows, MessageUpdate, !AttachInfo, !IO) :-
     make_quoted_command(base64_command, [FileName],
         redirect_input("/dev/null"), no_redirect, Command),
     call_system_capture_stdout(Command, environ([]), no, CallRes, !IO),
     (
         CallRes = ok(Content),
         string.length(Content, Size),
-        NewAttachment = new_attachment(Type, base64_encoded(Content), BaseName,
-            Size),
+        NewAttachment = new_attachment(Type, MaybeCharset,
+            base64_encoded(Content), BaseName, Size),
         append_attachment(NewAttachment, NumRows, !AttachInfo),
         MessageUpdate = clear_message
     ;
@@ -1243,7 +1256,8 @@ delete_attachment(Screen, !AttachInfo, !IO) :-
 edit_attachment_type(Screen, !AttachInfo, !IO) :-
     ( scrollable.get_cursor_line(!.AttachInfo, _Line, Attachment0) ->
         (
-            Attachment0 = new_attachment(Type0, Content, FileName, Size),
+            Attachment0 = new_attachment(Type0, Charset, Content, FileName,
+                Size),
             % Supply some useful media types.
             History0 = init_history,
             add_history_nodup("application/octet-stream", History0, History1),
@@ -1256,7 +1270,8 @@ edit_attachment_type(Screen, !AttachInfo, !IO) :-
                 TypeString \= ""
             ->
                 ( accept_media_type(TypeString, Type) ->
-                    Attachment = new_attachment(Type, Content, FileName, Size),
+                    Attachment = new_attachment(Type, Charset, Content,
+                        FileName, Size),
                     scrollable.set_cursor_line(Attachment, !AttachInfo),
                     MessageUpdate = clear_message
                 ;
@@ -1630,14 +1645,33 @@ draw_attachment_line(Attrs, Screen, Panel, Attachment, LineNr, IsCursor, !IO)
             MaybeContentDisposition, _Content, MaybeFilename,
             MaybeContentLength, _MaybeCTE, _IsDecrypted),
         (
+            MaybeContentCharset = yes(content_charset(DrawCharset))
+        ;
+            MaybeContentCharset = no,
+            % XXX notmuch show --format=json never supplies the charset for
+            % text/plain attachments because it is supposed to convert text
+            % content to UTF-8, but that does not appear to happen.
+            ( is_text(ContentType) ->
+                DrawCharset = "(none)"
+            ;
+                DrawCharset = ""
+            )
+        ),
+        (
             MaybeFilename = yes(filename(Filename))
         ;
             MaybeFilename = no,
             Filename = "(no filename)"
         )
     ;
-        Attachment = new_attachment(ContentType, _, Filename, Size),
-        MaybeContentCharset = no,
+        Attachment = new_attachment(ContentType, MaybeAttachmentCharset,
+            _Content, Filename, Size),
+        (
+            MaybeAttachmentCharset = yes(attachment_charset(DrawCharset))
+        ;
+            MaybeAttachmentCharset = no,
+            DrawCharset = ""
+        ),
         MaybeContentDisposition = no,
         MaybeContentLength = yes(content_length(Size))
     ),
@@ -1656,10 +1690,10 @@ draw_attachment_line(Attrs, Screen, Panel, Attachment, LineNr, IsCursor, !IO)
     draw(Screen, Panel, Attr, " (", !IO),
     draw(Screen, Panel, Attr, mime_type.to_string(ContentType), !IO),
     (
-        MaybeContentCharset = yes(content_charset(Charset)),
-        Charset \= "binary"
+        DrawCharset \= "",
+        DrawCharset \= "binary"
     ->
-        draw(Screen, Panel, Attr, "; charset=" ++ Charset, !IO)
+        draw(Screen, Panel, Attr, "; charset=" ++ DrawCharset, !IO)
     ;
         true
     ),
@@ -2160,8 +2194,9 @@ maybe_cons_unstructured(SkipEmpty, Options, FieldName, Value, !Acc) :-
 
 make_text_and_attachments_mime_part(TextCTE, Text, Attachments, MixedBoundary,
         MimePart) :-
-    make_text_mime_part(write_content_disposition(inline, no), TextCTE, Text,
-        TextPart),
+    MaybeCharset = yes("utf-8"),
+    make_text_mime_part(MaybeCharset, write_content_disposition(inline, no),
+        TextCTE, Text, TextPart),
     (
         Attachments = [],
         MimePart = TextPart
@@ -2174,13 +2209,12 @@ make_text_and_attachments_mime_part(TextCTE, Text, Attachments, MixedBoundary,
             AttachmentParts)
     ).
 
-:- pred make_text_mime_part(write_content_disposition::in,
+:- pred make_text_mime_part(maybe(string)::in, write_content_disposition::in,
     write_content_transfer_encoding::in, string::in, mime_part::out) is det.
 
-make_text_mime_part(Disposition, TextCTE, Text, MimePart) :-
-    % XXX detect charset
-    MimePart = discrete(text_plain(yes(utf8)), yes(Disposition), yes(TextCTE),
-        text(Text)).
+make_text_mime_part(MaybeCharset, Disposition, TextCTE, Text, MimePart) :-
+    MimePart = discrete(text_plain(MaybeCharset), yes(Disposition),
+        yes(TextCTE), text(Text)).
 
 :- pred make_attachment_mime_part(write_content_transfer_encoding::in,
     attachment::in, mime_part::out) is det.
@@ -2188,11 +2222,11 @@ make_text_mime_part(Disposition, TextCTE, Text, MimePart) :-
 make_attachment_mime_part(TextCTE, Attachment, MimePart) :-
     (
         Attachment = old_attachment(OldPart),
-        % XXX charset
         OldPart = part(_MessageId, _OldPartId, OldContentType,
-            _OldContentCharset, OldContentDisposition, OldContent, OldFileName,
+            OldContentCharset, OldContentDisposition, OldContent, OldFileName,
             _OldContentLength, _OldCTE, _IsDecrypted),
-        ContentType = content_type(mime_type.to_string(OldContentType)),
+        convert_old_content_type(OldContentType, OldContentCharset,
+            ContentType),
         convert_old_content_disposition(OldContentDisposition, OldFileName,
             MaybeWriteContentDisposition),
         (
@@ -2211,20 +2245,43 @@ make_attachment_mime_part(TextCTE, Attachment, MimePart) :-
             unexpected($module, $pred, "encapsulated_messages")
         )
     ;
-        Attachment = new_attachment(Type, Content, FileName, _Size),
+        Attachment = new_attachment(Type, MaybeAttachmentCharset, Content,
+            FileName, _Size),
+        (
+            MaybeAttachmentCharset = yes(attachment_charset(Charset)),
+            MaybeCharset = yes(Charset)
+        ;
+            MaybeAttachmentCharset = no,
+            MaybeCharset = no
+        ),
         WriteContentDisposition = write_content_disposition(attachment,
             yes(filename(FileName))),
         (
-            Content = text(Text),
-            make_text_mime_part(WriteContentDisposition, TextCTE, Text,
-                MimePart)
+            Content = text_content(Text),
+            make_text_mime_part(MaybeCharset, WriteContentDisposition,
+                TextCTE, Text, MimePart)
         ;
             Content = base64_encoded(Base64),
             TypeString = mime_type.to_string(Type),
-            MimePart = discrete(content_type(TypeString),
-                yes(WriteContentDisposition), yes(cte_base64), base64(Base64))
+            ContentType = content_type(TypeString, MaybeCharset),
+            MimePart = discrete(ContentType, yes(WriteContentDisposition),
+                yes(cte_base64), base64(Base64))
         )
     ).
+
+:- pred convert_old_content_type(mime_type::in, maybe(content_charset)::in,
+    discrete_content_type::out) is det.
+
+convert_old_content_type(OldContentType, OldContentCharset, ContentType) :-
+    ContentTypeStr = mime_type.to_string(OldContentType),
+    (
+        OldContentCharset = yes(content_charset(CharsetStr)),
+        MaybeCharset = yes(CharsetStr)
+    ;
+        OldContentCharset = no,
+        MaybeCharset = no
+    ),
+    ContentType = content_type(ContentTypeStr, MaybeCharset).
 
 :- pred convert_old_content_disposition(maybe(content_disposition)::in,
     maybe(filename)::in, maybe(write_content_disposition)::out) is det.

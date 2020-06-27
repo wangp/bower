@@ -45,7 +45,6 @@
 :- type mime_part
     --->    discrete(
                 discrete_content_type,
-                % maybe(content_charset)?
                 maybe(write_content_disposition),
                 maybe(write_content_transfer_encoding),
                 mime_part_body
@@ -62,19 +61,16 @@
     --->    mime_version_1_0.
 
 :- type discrete_content_type
-    --->    text_plain(maybe(charset))
+    --->    text_plain(maybe(string))               % charset
     ;       application_octet_stream
     ;       application_pgp_encrypted
     ;       application_pgp_signature
-    ;       content_type(string).
+    ;       content_type(string, maybe(string)).    % content-type, charset
 
 :- type composite_content_type
     --->    multipart_mixed
     ;       multipart_encrypted(protocol)
     ;       multipart_signed(micalg, protocol).
-
-:- type charset
-    --->    utf8.
 
 :- type boundary
     --->    boundary(string).
@@ -325,27 +321,31 @@ write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, !IO) :-
 write_discrete_content_type(Stream, ContentType, !IO) :-
     (
         ContentType = text_plain(MaybeCharset),
-        (
-            MaybeCharset = yes(utf8),
-            Value = "text/plain; charset=utf-8"
-        ;
-            MaybeCharset = no,
-            Value = "text/plain"
-        )
+        ContentTypeStr = "text/plain"
     ;
         ContentType = application_octet_stream,
-        Value = "application/octet-stream"
+        ContentTypeStr = "application/octet-stream",
+        MaybeCharset = no
     ;
         ContentType = application_pgp_encrypted,
-        Value = "application/pgp-encrypted"
+        ContentTypeStr = "application/pgp-encrypted",
+        MaybeCharset = no
     ;
         ContentType = application_pgp_signature,
-        Value = "application/pgp-signature; name=""signature.asc"""
+        ContentTypeStr = "application/pgp-signature; name=""signature.asc""",
+        MaybeCharset = no
     ;
-        ContentType = content_type(Value)
+        ContentType = content_type(ContentTypeStr, MaybeCharset)
     ),
     put(Stream, "Content-Type: ", !IO),
-    put(Stream, Value, !IO),
+    put(Stream, ContentTypeStr, !IO),
+    (
+        MaybeCharset = yes(Charset),
+        put(Stream, "; charset=", !IO),
+        put(Stream, Charset, !IO)
+    ;
+        MaybeCharset = no
+    ),
     put(Stream, "\n", !IO).
 
 :- pred write_composite_content_type(Stream::in, composite_content_type::in,
