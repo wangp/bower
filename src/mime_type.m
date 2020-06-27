@@ -26,6 +26,7 @@
 :- func multipart_related = mime_type.
 :- func multipart_signed = mime_type.
 :- func multipart_encrypted = mime_type.
+:- func application_octet_stream = mime_type.
 :- func application_pgp_encrypted = mime_type.
 :- func application_pgp_signature = mime_type.
 :- func application_pkcs7_mime = mime_type.
@@ -74,6 +75,7 @@ multipart_mixed = mime_type("multipart/mixed").
 multipart_related = mime_type("multipart/related").
 multipart_signed = mime_type("multipart/signed").
 multipart_encrypted = mime_type("multipart/encrypted").
+application_octet_stream = mime_type("application/octet-stream").
 application_pgp_encrypted = mime_type("application/pgp-encrypted").
 application_pgp_signature = mime_type("application/pgp-signature").
 application_pkcs7_mime = mime_type("application/pkcs7-mime").

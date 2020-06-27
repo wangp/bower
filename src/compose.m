@@ -1136,26 +1136,47 @@ do_attach_file(FileName, NumRows, MessageUpdate, !AttachInfo, !IO) :-
     attach_info::in, attach_info::out, io::di, io::uo) is det.
 
 do_attach_file_2(FileName, NumRows, MessageUpdate, !AttachInfo, !IO) :-
+    ( dir.basename(FileName, BaseName0) ->
+        BaseName = BaseName0
+    ;
+        BaseName = FileName
+    ),
     detect_mime_type(FileName, ResDetect, !IO),
     (
-        ResDetect = ok(mime_type_with_charset(Type, Charset)),
-        ( dir.basename(FileName, BaseName0) ->
-            BaseName = BaseName0
+        ResDetect = ok(Detected),
+        Detected = mime_type_with_charset(DetectedType, DetectedCharset),
+        ( is_text(DetectedType) ->
+            ( is_utf8_compatible(DetectedCharset) ->
+                Type = DetectedType,
+                MaybeAttachmentCharset =
+                    yes(attachment_charset(DetectedCharset)),
+                Base64Encode = no
+            ;
+                % If we resume a postponed message containing a text/* part
+                % then notmuch show --format=json is supposed to convert the
+                % content to UTF-8 but it does not (always) do so, leaving
+                % broken JSON output and no idea of the correct charset.
+                % As a workaround, force text attachments with non UTF-8
+                % compatible charset to have media type
+                % application/octet-stream instead.
+                % (The user may still manually change the media type thus
+                % exposing the original problem.)
+                Type = application_octet_stream,
+                MaybeAttachmentCharset = no,
+                Base64Encode = yes
+            )
         ;
-            BaseName = FileName
+            Type = DetectedType,
+            MaybeAttachmentCharset = no,
+            Base64Encode = yes
         ),
-        ( is_utf8_compatible(Charset) ->
-            MaybeAttachmentCharset = yes(attachment_charset(Charset)),
-            do_attach_text_file(FileName, BaseName, Type,
+        (
+            Base64Encode = bool.no,
+            do_attach_file_without_base64_encoding(FileName, BaseName, Type,
                 MaybeAttachmentCharset, NumRows, MessageUpdate,
                 !AttachInfo, !IO)
         ;
-            ( is_text(Type) ->
-                MaybeAttachmentCharset = yes(attachment_charset(Charset))
-            ;
-                % Probably just binary?
-                MaybeAttachmentCharset = no
-            ),
+            Base64Encode = bool.yes,
             do_attach_file_with_base64_encoding(FileName, BaseName, Type,
                 MaybeAttachmentCharset, NumRows, MessageUpdate,
                 !AttachInfo, !IO)
@@ -1173,12 +1194,12 @@ is_utf8_compatible(Charset) :-
     ; strcase_equal(Charset, "utf-8")
     ).
 
-:- pred do_attach_text_file(string::in, string::in, mime_type::in,
-    maybe(attachment_charset)::in, int::in, message_update::out,
+:- pred do_attach_file_without_base64_encoding(string::in, string::in,
+    mime_type::in, maybe(attachment_charset)::in, int::in, message_update::out,
     attach_info::in, attach_info::out, io::di, io::uo) is det.
 
-do_attach_text_file(FileName, BaseName, Type, MaybeCharset, NumRows,
-        MessageUpdate, !AttachInfo, !IO) :-
+do_attach_file_without_base64_encoding(FileName, BaseName, Type, MaybeCharset,
+        NumRows, MessageUpdate, !AttachInfo, !IO) :-
     io.open_input(FileName, ResOpen, !IO),
     (
         ResOpen = ok(Input),
