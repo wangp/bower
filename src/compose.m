@@ -70,14 +70,12 @@
 :- import_module pair.
 :- import_module require.
 :- import_module set.
-:- import_module solutions.
 :- import_module string.
 
 :- import_module addressbook.
 :- import_module call_system.
 :- import_module callout.
 :- import_module color.
-:- import_module copious_output.
 :- import_module detect_mime_type.
 :- import_module forward.
 :- import_module gpgme.
