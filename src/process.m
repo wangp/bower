@@ -365,7 +365,8 @@ get_spawn_env(SpawnEnv, Env, !IO) :-
     for (i = 0; envp[i] != NULL; i++) {
     }
     while (--i >= 0) {
-        MR_String s = MR_make_string(MR_ALLOC_ID, ""%s"", envp[i]);
+        MR_String s;
+        MR_make_aligned_string_copy_msg(s, envp[i], MR_ALLOC_ID);
         Env = MR_list_cons((MR_Word) s, Env);
     }
 ").
