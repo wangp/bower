@@ -246,6 +246,8 @@ posix_spawn_get_stdin_stdout(Prog, Args, SpawnEnv, Res, !IO) :-
         fcntl(StdinFd, F_SETFL, flags | O_NONBLOCK);
     } else {
         Pid = -1;
+        StdinFd = -1;
+        StdoutFd = -1;
         do_close(stdin_pipe[0]);
         do_close(stdin_pipe[1]);
         do_close(stdout_pipe[0]);
@@ -486,6 +488,7 @@ wait_pid(pid(Pid), Blocking, Res, !IO) :-
         Signal = -1;
     } else if (WIFSIGNALED(status)) {
         Exited = MR_NO;
+        ExitStatus = -1;
         Signal = WTERMSIG(status);
     } else {
         Exited = MR_NO;
