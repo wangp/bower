@@ -376,7 +376,7 @@ get_spawn_env(SpawnEnv, Env, !IO) :-
 "
     MR_Word xs;
     int length = 0;
-    int i;
+    int i = 0;
 
     for (xs = List; !MR_list_is_empty(xs); xs = MR_list_tail(xs)) {
         length++;
