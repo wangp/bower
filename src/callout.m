@@ -37,6 +37,9 @@
 :- mode run_notmuch(in, in, in, in,
     in(pred(in, out) is det), out, di, uo) is det.
 
+% NOTE: these parser predicates may throw notmuch_json_errors
+% which are intended to be caught by run_notmuch.
+
 :- pred parse_messages_list(maybe(set(tag))::in, json::in, list(message)::out)
     is det.
 
@@ -62,11 +65,11 @@
 :- implementation.
 
 :- import_module bool.
+:- import_module exception.
 :- import_module float.
 :- import_module integer.
 :- import_module map.
 :- import_module parsing_utils.
-:- import_module require.
 :- import_module string.
 
 :- import_module call_system.
@@ -75,6 +78,9 @@
 :- import_module time_util.
 
 :- use_module curs.
+
+:- type notmuch_json_error
+    --->    notmuch_json_error(string).
 
 %-----------------------------------------------------------------------------%
 
@@ -134,8 +140,13 @@ call_command_parse_json(Command, SuspendCurs, Parser, Result, !IO) :-
         parse_json(String, ParseResult),
         (
             ParseResult = ok(JSON),
-            Parser(JSON, T),
-            Result = ok(T)
+            ( try []
+                Parser(JSON, T)
+            then
+                Result = ok(T)
+            catch notmuch_json_error(Error) ->
+                Result = error(Error)
+            )
         ;
             ParseResult = error(yes(Msg), Line, Column),
             string.format("line %d, column %d: %s",
@@ -160,7 +171,8 @@ parse_messages_list(CustomExcludeTags, JSON, Messages) :-
     ; JSON = list([]) ->
         Messages = []
     ;
-        notmuch_json_error
+        throw(notmuch_json_error(
+            "parse_messages_list: expected empty or singleton list"))
     ).
 
 parse_top_message(JSON, Message) :-
@@ -174,7 +186,7 @@ parse_inner_message_list(CustomExcludeTags, JSON, Messages) :-
         list.map(parse_message(CustomExcludeTags), Array, Messagess),
         list.condense(Messagess, Messages)
     ;
-        notmuch_json_error
+        throw(notmuch_json_error("parse_inner_message_list: expected list"))
     ).
 
 :- pred parse_message(maybe(set(tag))::in, json::in, list(message)::out)
@@ -195,7 +207,7 @@ parse_message(CustomExcludeTags, JSON, Messages) :-
             Messages = [Message]
         )
     ;
-        notmuch_json_error
+        throw(notmuch_json_error("parse_message: expected list (2 elements)"))
     ).
 
 :- pred parse_message_details(maybe(set(tag))::in, json::in,
@@ -241,7 +253,7 @@ parse_message_for_recall(JSON, Message) :-
         TagSet = set.from_list(Tags),
         Message = message_for_recall(MessageId, Timestamp, Headers, TagSet)
     ;
-        notmuch_json_error
+        throw(notmuch_json_error("parse_message_for_recall"))
     ).
 
 :- pred parse_header(string::in, json::in, headers::in, headers::out) is semidet.
@@ -280,7 +292,7 @@ parse_body(JSON, MessageId, Body) :-
         IsDecrypted = not_decrypted,
         list.map(parse_part(MessageId, IsDecrypted), BodyList, Body)
     ;
-        notmuch_json_error
+        throw(notmuch_json_error("parse_body"))
     ).
 
 parse_part(MessageId, IsDecrypted0, JSON, Part) :-
@@ -308,7 +320,8 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
                         ( parse_encstatus(EncStatus, Encryption0) ->
                             Encryption = Encryption0
                         ;
-                            notmuch_json_error
+                            throw(notmuch_json_error(
+                                "parse_part: expected encstatus"))
                         )
                     ;
                         Encryption = encrypted
@@ -331,7 +344,8 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
                     ( parse_sigstatus(SigStatus, Signatures0) ->
                         Signatures = Signatures0
                     ;
-                        notmuch_json_error
+                        throw(notmuch_json_error(
+                            "parse_part: expected sigstatus"))
                     )
                 ;
                     Signatures = []
@@ -342,7 +356,8 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
                 MaybeContentLength = no,
                 MaybeContentTransferEncoding = no
             ;
-                notmuch_json_error
+                throw(notmuch_json_error(
+                    "parse_part: expected content for multipart"))
             )
         ; ContentType = mime_type.message_rfc822 ->
             ( JSON/"content" = list(List) ->
@@ -354,7 +369,8 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
                 MaybeContentTransferEncoding = no,
                 IsDecrypted = IsDecrypted0
             ;
-                notmuch_json_error
+                throw(notmuch_json_error(
+                    "parse_part: expected content for message/rfc822"))
             )
         ;
             % Leaf part.
@@ -387,7 +403,7 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
             MaybeContentDisposition, Content, MaybeFilename,
             MaybeContentLength, MaybeContentTransferEncoding, IsDecrypted)
     ;
-        notmuch_json_error
+        throw(notmuch_json_error("parse_part: expected id and content-type"))
     ).
 
 :- pred parse_encstatus(json::in, encryption::out) is semidet.
@@ -483,7 +499,8 @@ parse_encapsulated_message(MessageId, IsDecrypted0, JSON, EncapMessage) :-
     ->
         EncapMessage = encapsulated_message(Headers, Body)
     ;
-        notmuch_json_error
+        throw(notmuch_json_error(
+            "parse_encapsulated_message: expected headers and body"))
     ).
 
 %-----------------------------------------------------------------------------%
@@ -492,7 +509,7 @@ parse_threads_list(Json, Threads) :-
     ( Json = list(List) ->
         list.map(parse_thread, List, Threads)
     ;
-        notmuch_json_error
+        throw(notmuch_json_error("parse_threads_list"))
     ).
 
 :- pred parse_thread(json::in, thread::out) is det.
@@ -513,7 +530,7 @@ parse_thread(Json, Thread) :-
         Thread = thread(thread_id(Id), Timestamp, Authors, Subject, TagSet,
             Matched, Total)
     ;
-        notmuch_json_error
+        throw(notmuch_json_error("parse_thread"))
     ).
 
 :- pred parse_tag(json::in, tag::out) is semidet.
@@ -530,7 +547,7 @@ parse_message_id_list(JSON, MessageId) :-
     ->
         MessageId = MessageId0
     ;
-        notmuch_json_error
+        throw(notmuch_json_error("parse_message_id_list"))
     ).
 
 :- pred parse_message_id(json::in, message_id::out) is semidet.
@@ -543,7 +560,7 @@ parse_address_count_list(Json, AddressCounts) :-
     ( Json = list(List) ->
         list.map(parse_address_count, List, AddressCounts)
     ;
-        notmuch_json_error
+        throw(notmuch_json_error("parse_address_count_list"))
     ).
 
 :- pred parse_address_count(json::in, pair(int, string)::out) is det.
@@ -555,7 +572,7 @@ parse_address_count(Json, Result) :-
     ->
         Result = Count - NameAddr
     ;
-        notmuch_json_error
+        throw(notmuch_json_error("parse_address_count"))
     ).
 
 %-----------------------------------------------------------------------------%
@@ -587,7 +604,7 @@ parse_reply(Json, Res) :-
     ->
         Res = ReplyHeaders
     ;
-        notmuch_json_error
+        throw(notmuch_json_error("parse_reply expected reply-headers"))
     ).
 
 :- pred parse_reply_headers(json::in, reply_headers::out) is semidet.
@@ -628,11 +645,6 @@ map(Map) / Key = Value :-
 :- func unesc_string(string::out) = (json::in) is semidet.
 
 unesc_string(unescape(EscString)) = string(EscString).
-
-:- pred notmuch_json_error is erroneous.
-
-notmuch_json_error :-
-    error("notmuch_json_error").
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
