@@ -23,7 +23,7 @@
 main(!IO) :-
     % Send input through rev(1). At least the util-linux version will deadlock
     % if we do not interleave reading and writing.
-    posix_spawn_get_stdin_stdout("rev", [], SpawnRes, !IO),
+    posix_spawn_get_stdin_stdout("rev", [], environ([]), SpawnRes, !IO),
     (
         SpawnRes = ok({Pid, StdinPipe, StdoutPipe}),
         write_and_read_concurrently_and_close_both(StdinPipe, input,
