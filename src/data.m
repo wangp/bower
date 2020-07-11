@@ -136,7 +136,7 @@
 :- type signature
     --->    signature(
                 signature_status :: signature_status,
-                signature_errors :: int
+                signature_errors :: maybe(sig_errors)
             ).
 
 :- type signature_status
@@ -156,6 +156,13 @@
     --->    bad
     ;       error
     ;       unknown.
+
+:- type sig_errors
+    --->    sig_errors_v3(int)
+    ;       sig_errors_v4(list(sig_error)).
+
+:- type sig_error
+    --->    sig_error(string).
 
 :- type encapsulated_message
     --->    encapsulated_message(

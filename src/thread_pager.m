@@ -2596,8 +2596,17 @@ post_verify_message_update(Content, MessageUpdate) :-
 :- pred good_signature(signature::in) is semidet.
 
 good_signature(Signature) :-
-    Signature = signature(Status, Errors),
-    Errors = 0,
+    Signature = signature(Status, MaybeSigErrors),
+    require_complete_switch [MaybeSigErrors]
+    (
+        MaybeSigErrors = no
+    ;
+        MaybeSigErrors = yes(sig_errors_v3(NumErrors)),
+        NumErrors = 0
+    ;
+        MaybeSigErrors = yes(sig_errors_v4(SigErrors)),
+        SigErrors = []
+    ),
     require_complete_switch [Status]
     (
         Status = good(_, _, _, _)

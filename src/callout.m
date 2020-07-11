@@ -536,14 +536,56 @@ parse_signature(JSON, Signature) :-
         ),
         SigStatus = not_good(Status1, MaybeKeyId)
     ),
-    ( JSON/"errors" = int(Errors0) ->
-        Errors = Errors0
+    ( JSON/"errors" = SigErrorsObj ->
+        ( SigErrorsObj = int(NumErrors) ->
+            SigErrors = sig_errors_v3(NumErrors)
+        ;
+            parse_sig_errors_v4(SigErrorsObj, SigErrorsV4),
+            SigErrors = sig_errors_v4(SigErrorsV4)
+        ),
+        MaybeSigErrors = yes(SigErrors)
     ;
-        % XXX sig_errors replaced with human readable flags in v4
-        % (commit 9eacd7d3)
-        Errors = 0
+        MaybeSigErrors = no
     ),
-    Signature = signature(SigStatus, Errors).
+    Signature = signature(SigStatus, MaybeSigErrors).
+
+    % notmuch/devel/schemata: sig_errors
+    %
+:- pred parse_sig_errors_v4(json::in, list(sig_error)::out) is semidet.
+
+parse_sig_errors_v4(JSON, Errors) :-
+    % Maybe should just accept any name we find?
+    Flags = [
+        "key-revoked",
+        "key-expired",
+        "sig-expired",
+        "key-missing",
+        "alt-unsupported",
+        "crl-missing",
+        "crl-too-old",
+        "bad-policy",
+        "sys-error",
+        "tofu-conflict"
+    ],
+    map(parse_sig_error(JSON), Flags, MaybeErrors),
+    filter_map(maybe_is_yes, MaybeErrors, Errors).
+
+:- pred parse_sig_error(json::in, string::in, maybe(sig_error)::out)
+    is semidet.
+
+parse_sig_error(JSON, Name, MaybeError) :-
+    ( JSON/Name = Value ->
+        Value = bool(Bool),
+        (
+            Bool = yes,
+            MaybeError = yes(sig_error(Name))
+        ;
+            Bool = no,
+            MaybeError = no
+        )
+    ;
+        MaybeError = no
+    ).
 
     % The content of a 'part' when content-type is "message/rfc822"
     %
