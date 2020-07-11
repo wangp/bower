@@ -17,8 +17,8 @@
 :- import_module int.
 :- import_module list.
 :- import_module pair.
-:- import_module require.
 :- import_module string.
+:- use_module require.
 
 :- import_module rfc5234.
 :- import_module rfc5322.
@@ -75,7 +75,7 @@ encode_octet(Octet, TokenChars0, TokenChars) :-
         ->
             TokenChars = ['%', HiChar, LoChar | TokenChars0]
         ;
-            unexpected($module, $pred, "char.int_to_hex_char failed")
+            require.unexpected($module, $pred, "char.int_to_hex_char failed")
         )
     ).
 

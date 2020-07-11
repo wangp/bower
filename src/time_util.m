@@ -49,8 +49,8 @@
 :- import_module int.
 :- import_module list.
 :- import_module maybe.
-:- import_module require.
 :- import_module string.
+:- use_module require.
 
 :- pragma foreign_decl("C", local,
 "
@@ -213,7 +213,7 @@ reldate_weekday(Wday, Hour, Min) = String :-
     ( weekday_short_name(Wday, WdayName) ->
         String = string.format("%s %02d:%02d", [s(WdayName), i(Hour), i(Min)])
     ;
-        unexpected($module, $pred, "bad weekday")
+        require.unexpected($module, $pred, "bad weekday")
     ).
 
 :- func reldate_month_day(bool, int, int, int, int) = string.
@@ -229,7 +229,7 @@ reldate_month_day(Shorter, Month, Day, Hour, Min) = String :-
                 [i(Day), s(MonthName), i(Hour), i(Min)])
         )
     ;
-        unexpected($module, $pred, "bad month")
+        require.unexpected($module, $pred, "bad month")
     ).
 
 %-----------------------------------------------------------------------------%

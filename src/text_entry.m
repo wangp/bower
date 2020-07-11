@@ -67,8 +67,8 @@
 :- import_module char.
 :- import_module dir.
 :- import_module int.
-:- import_module require.
 :- import_module string.
+:- use_module require.
 
 :- import_module addressbook.
 :- import_module call_system.
@@ -1022,7 +1022,7 @@ det_take(N, List, Start) :-
     ( list.take(N, List, StartPrime) ->
         Start = StartPrime
     ;
-        unexpected($module, $pred, "not enough elements")
+        require.unexpected($module, $pred, "not enough elements")
     ).
 
 :- pred det_take_tail(int::in, list(char)::in, list(char)::out) is det.

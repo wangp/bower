@@ -20,8 +20,8 @@
 :- import_module int.
 :- import_module list.
 :- import_module maybe.
-:- import_module require.
 :- import_module string.
+:- use_module require.
 
 :- import_module base64.
 :- import_module list_util.
@@ -351,7 +351,7 @@ make_b_encoded_word(String, EncodedWord) :-
     ( string.from_code_unit_list(CodeUnits, Base64) ->
         EncodedWord = "=?UTF-8?B?" ++ Base64 ++ "?="
     ;
-        unexpected($module, $pred, "string.from_code_unit_list failed")
+        require.unexpected($module, $pred, "string.from_code_unit_list failed")
     ).
 
 %-----------------------------------------------------------------------------%
@@ -403,7 +403,7 @@ q_encode_octet(Context, Octet, CodeChars0, CodeChars) :-
         ->
             CodeChars = ['=', HiChar, LoChar | CodeChars0]
         ;
-            unexpected($module, $pred, "char.int_to_hex_char failed")
+            require.unexpected($module, $pred, "char.int_to_hex_char failed")
         )
     ).
 

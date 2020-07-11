@@ -100,7 +100,7 @@
 
 :- import_module int.
 :- import_module maybe.
-:- import_module require.
+:- use_module require.
 
 :- type scrollable(T)
     --->    scrollable(
@@ -176,7 +176,7 @@ set_lines_list(List, !Scrollable) :-
     ( version_array.size(OldArray) = version_array.size(NewArray) ->
         !Scrollable ^ s_lines := NewArray
     ;
-        unexpected($module, $pred, "changed size")
+        require.unexpected($module, $pred, "changed size")
     ).
 
 get_top(Scrollable) = Scrollable ^ s_top.
@@ -223,7 +223,7 @@ set_cursor_line(Line, !Scrollable) :-
         version_array.set(Cursor, Line, Lines0, Lines),
         !Scrollable ^ s_lines := Lines
     ;
-        unexpected($module, $pred, "failed")
+        require.unexpected($module, $pred, "failed")
     ).
 
 map_lines(P, !Scrollable) :-

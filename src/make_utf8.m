@@ -30,8 +30,8 @@
 
 :- import_module char.
 :- import_module int.
-:- import_module require.
 :- import_module string.
+:- use_module require.
 
 :- typeclass encode(T) where [
     pred set_byte(int::in, int::in, T::di, T::uo) is det,
@@ -62,8 +62,8 @@ make_utf8_string(ErrorLimit, Buffers0, String) :-
     % Add 1 for NUL terminator.
     allocate(TotalLength + 1, Enc0),
     second_pass(BuffersWithMargins, 0, FirstBads, 0, EncPos, Enc0, Enc),
-    expect(unify(EncPos, TotalLength), $module, $pred, "wrong length: " ++
-        from_int(EncPos) ++ " != " ++ from_int(TotalLength)),
+    require.expect(unify(EncPos, TotalLength), $module, $pred,
+        "wrong length: " ++ from_int(EncPos) ++ " != " ++ from_int(TotalLength)),
     make_string(Enc, String).
 
 %-----------------------------------------------------------------------------%
@@ -87,7 +87,7 @@ preflight([Buf0 | Bufs0], [Buf | Bufs], BufPos0, [FirstBad | FirstBads],
 
     scan(Buf, BufPos0, BufPos1, MarginPos, -1, FirstBad, 0, Errors,
         !TotalLength, preflight, _),
-    expect(FirstBad >= 0, $module, $pred, "FirstBad < 0"),
+    require.expect(FirstBad >= 0, $module, $pred, "FirstBad < 0"),
 
     !:Errors = !.Errors + Errors,
     (
@@ -124,7 +124,7 @@ make_filled_margin(Src, !Dest) :-
     int::in, int::out, T::di, T::uo) is det <= encode(T).
 
 second_pass([], BufPos0, [], !EncPos, !Enc) :-
-    expect(unify(BufPos0, 0), $module, $pred, "BufPos0 != 0").
+    require.expect(unify(BufPos0, 0), $module, $pred, "BufPos0 != 0").
 
 second_pass([BufWithMargin | BufsWithMargins], BufPos0, [FirstBad | FirstBads],
         !EncPos, !Enc) :-
@@ -134,7 +134,7 @@ second_pass([BufWithMargin | BufsWithMargins], BufPos0, [FirstBad | FirstBads],
     % point, directly into the target string.  If the buffer really contains
     % text, most or all of the buffer will be valid so we avoid scanning the
     % buffer again.
-    expect(FirstBad >= BufPos0, $module, $pred, "FirstBad < BufPos0"),
+    require.expect(FirstBad >= BufPos0, $module, $pred, "FirstBad < BufPos0"),
     BufPos1 = FirstBad,
     add_run(BufWithMargin, BufPos0, BufPos1, !EncPos, !Enc),
 
@@ -147,10 +147,10 @@ second_pass([BufWithMargin | BufsWithMargins], BufPos0, [FirstBad | FirstBads],
     second_pass(BufsWithMargins, NextBufPos, FirstBads, !EncPos, !Enc).
 
 second_pass([_ | _], _, [], !EncPos, !Enc) :-
-    unexpected($module, $pred, "list length mismatch").
+    require.unexpected($module, $pred, "list length mismatch").
 
 second_pass([], _, [_ | _], !EncPos, !Enc) :-
-    unexpected($module, $pred, "list length mismatch").
+    require.unexpected($module, $pred, "list length mismatch").
 
 %-----------------------------------------------------------------------------%
 

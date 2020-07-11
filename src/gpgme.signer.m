@@ -14,7 +14,7 @@
 
 :- implementation.
 
-:- import_module require.
+:- use_module require.
 
 %-----------------------------------------------------------------------------%
 
@@ -43,7 +43,7 @@ gpgme_signers_add(Ctx, Key, Res, !IO) :-
         )
     ;
         MaybeKey = no,
-        unexpected($module, $pred, "key already unref'd")
+        require.unexpected($module, $pred, "key already unref'd")
     ).
 
 :- pred gpgme_signers_add_2(ctx::in, gpgme_key::in, bool::out, string::out,

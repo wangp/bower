@@ -48,10 +48,10 @@
 :- import_module float.
 :- import_module int.
 :- import_module parsing_utils.
-:- import_module require.
 :- import_module string.
 :- import_module time.
 :- import_module version_array.
+:- use_module require.
 
 :- import_module addressbook.
 :- import_module async.
@@ -512,7 +512,7 @@ append_threaded_messages(Nowish, Above0, Below0, MaybeParentId,
                 Below1 = []
             )
         ;
-            unexpected($module, $pred, "empty cord")
+            require.unexpected($module, $pred, "empty cord")
         )
     ),
     ( not_blank_at_column(Below1, length(Above0)) ->

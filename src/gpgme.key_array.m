@@ -16,7 +16,7 @@
 
 :- import_module exception.
 :- import_module int.
-:- import_module require.
+:- use_module require.
 
 :- pragma foreign_type("C", gpgme_key_array, "gpgme_key_t *").
 
@@ -73,7 +73,7 @@ fill_key_array(Index, [Key | Keys], !KeyArray, !IO) :-
         fill_key_array(Index + 1, Keys, !KeyArray, !IO)
     ;
         MaybeKey = no,
-        unexpected($module, $pred, "key already unref'd")
+        require.unexpected($module, $pred, "key already unref'd")
     ).
 
 :- pred set_key_array(int::in, gpgme_key::in,

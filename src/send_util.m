@@ -42,9 +42,9 @@
 :- import_module char.
 :- import_module int.
 :- import_module list.
-:- import_module require.
 :- import_module string.
 :- import_module time.
+:- use_module require.
 
 :- import_module fold_lines.
 :- import_module rfc2047.
@@ -75,7 +75,7 @@ generate_date_msg_id(RightPart, header_value(Date), header_value(MessageId),
         WdayName = WdayName0,
         MonthName = MonthName0
     ;
-        unexpected($module, $pred, "bad weekday or month")
+        require.unexpected($module, $pred, "bad weekday or month")
     ),
     GMTOffMins = GMTOffSecs // 60,
     TzHour = GMTOffMins // 60, % include sign

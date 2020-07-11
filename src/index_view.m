@@ -30,10 +30,10 @@
 :- import_module list.
 :- import_module map.
 :- import_module maybe.
-:- import_module require.
 :- import_module set.
 :- import_module string.
 :- import_module time.
+:- use_module require.
 
 :- import_module addressbook.
 :- import_module async.
@@ -761,7 +761,7 @@ skip_to_unread(NumRows, MessageUpdate, !Info) :-
             MessageUpdate = set_warning("No unread messages.")
         )
     ;
-        unexpected($module, $pred, "no cursor")
+        require.unexpected($module, $pred, "no cursor")
     ),
     !Info ^ i_scrollable := Scrollable.
 
@@ -801,7 +801,7 @@ effect_thread_pager_changes(Effects, !Info, !IO) :-
         Config = !.Info ^ i_config,
         map.foldl(async_tag_messages(Config), TagGroups, !IO)
     ;
-        unexpected($module, $pred, "cursor not on expected line")
+        require.unexpected($module, $pred, "cursor not on expected line")
     ).
 
 %-----------------------------------------------------------------------------%

@@ -83,7 +83,7 @@
 
 :- import_module int.
 :- import_module queue.
-:- import_module require.
+:- use_module require.
 
 :- import_module process.
 
@@ -309,7 +309,7 @@ start_next_op(Return, !Info, !IO) :-
 
 start_op(Op, Return, !Info, !IO) :-
     MaybeChild0 = !.Info ^ ai_maybe_child,
-    expect(unify(MaybeChild0, no), $module, $pred,
+    require.expect(unify(MaybeChild0, no), $module, $pred,
         "already have child process"),
     get_sigchld_count(PreSigchldCount, !IO),
     spawn_process_for_op(Op, PreSigchldCount, Res, !Info, !IO),

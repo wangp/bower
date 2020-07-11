@@ -52,9 +52,9 @@
 :- implementation.
 
 :- import_module int.
-:- import_module require.
 :- import_module std_util.
 :- import_module string.
+:- use_module require.
 
 %-----------------------------------------------------------------------------%
 
@@ -220,7 +220,7 @@ pieces_length(Pieces, Length0, Length) :-
         Pieces = substring(_BaseString, Start, End, Rest),
         % We trust that PieceLength =< length(BaseString).
         PieceLength = End - Start,
-        expect(PieceLength >= 0, $module, $pred,
+        require.expect(PieceLength >= 0, $module, $pred,
             "substring has negative length"),
         pieces_length(Rest, Length0 + PieceLength, Length)
     ).
@@ -240,19 +240,19 @@ pieces_length(Pieces, Length0, Length) :-
 copy_rev_pieces(Pieces, EndPos, !String) :-
     (
         Pieces = empty,
-        expect(unify(EndPos, 0), $module, $pred, "EndPos != 0")
+        require.expect(unify(EndPos, 0), $module, $pred, "EndPos != 0")
     ;
         Pieces = literal(Literal, RestPieces),
         PieceLength = length(Literal),
         StartPos = EndPos - PieceLength,
-        expect(StartPos >= 0, $module, $pred, "StartPos < 0"),
+        require.expect(StartPos >= 0, $module, $pred, "StartPos < 0"),
         do_copy(Literal, 0, PieceLength, StartPos, !String),
         copy_rev_pieces(RestPieces, StartPos, !String)
     ;
         Pieces = substring(BaseString, BaseStart, BaseEnd, RestPieces),
         PieceLength = BaseEnd - BaseStart,
         StartPos = EndPos - PieceLength,
-        expect(StartPos >= 0, $module, $pred, "StartPos < 0"),
+        require.expect(StartPos >= 0, $module, $pred, "StartPos < 0"),
         do_copy(BaseString, BaseStart, PieceLength, StartPos, !String),
         copy_rev_pieces(RestPieces, StartPos, !String)
     ).

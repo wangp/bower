@@ -34,9 +34,9 @@
 :- import_module char.
 :- import_module int.
 :- import_module parsing_utils.
-:- import_module require.
 :- import_module set.
 :- import_module string.
+:- use_module require.
 
 :- type token
     --->    literal(string)             % pass through to notmuch
@@ -354,7 +354,7 @@ token_to_search_term(Token, Term, !IO) :-
     ;
         Token = macro(_),
         % At this stage all macros have been expanded out.
-        unexpected($module, $pred, "macro should have been expanded")
+        require.unexpected($module, $pred, "macro should have been expanded")
     ).
 
 %-----------------------------------------------------------------------------%
