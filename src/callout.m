@@ -243,9 +243,9 @@ parse_message_maybe_exclude(CustomExcludeTags, JSON, Replies, Message) :-
         Message = excluded_message(yes(MessageId), yes(Timestamp),
             yes(Headers), yes(TagSet), Replies)
     ;
-        ( JSON/"body" = list(BodyList) ->
+        ( JSON/"body" = list([BodyObj]) ->
             IsDecrypted = not_decrypted,
-            list.map(parse_part(MessageId, IsDecrypted), BodyList, Body)
+            parse_part(MessageId, IsDecrypted, BodyObj, Body)
         ;
             throw(notmuch_json_error(
                 "parse_message_maybe_exclude: expected body"))
@@ -559,12 +559,8 @@ parse_message_rfc822_content(MessageId, IsDecrypted0, JSON, EncapMessage) :-
     ;
         throw(notmuch_json_error("parse_encapsulated_message: expected headers"))
     ),
-    (
-        JSON/"body" = list(BodyList),
-        % XXX body should be a single part only
-        list.map(parse_part(MessageId, IsDecrypted0), BodyList, Body0)
-    ->
-        Body = Body0
+    ( JSON/"body" = list([BodyObj]) ->
+        parse_part(MessageId, IsDecrypted0, BodyObj, Body)
     ;
         throw(notmuch_json_error("parse_encapsulated_message: expected body"))
     ),

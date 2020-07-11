@@ -34,7 +34,7 @@
                 m_timestamp     :: timestamp,
                 m_headers       :: headers,
                 m_tags          :: set(tag),
-                m_body          :: list(part),
+                m_body          :: part,
                 m_replies       :: list(message)
             )
     ;       excluded_message(
@@ -160,7 +160,7 @@
 :- type encapsulated_message
     --->    encapsulated_message(
                 encap_headers   :: headers,
-                encap_body      :: list(part)
+                encap_body      :: part
             ).
 
 :- type maybe_decrypted

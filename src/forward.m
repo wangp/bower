@@ -50,7 +50,7 @@ prepare_forward_message(Config, OrigMessage, PartVisibilityMap, From,
         Headers = !.Headers
     ),
 
-    select_main_part_and_attachments(PartVisibilityMap, OrigBody,
+    select_main_part_and_attachments(PartVisibilityMap, [OrigBody],
         MaybeMainPart, AttachmentParts),
     (
         MaybeMainPart = yes(MainPart),

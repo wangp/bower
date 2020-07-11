@@ -47,7 +47,7 @@
 prepare_reply(Config, OrigMessage, PartVisibilityMap, ReplyHeaders0,
         ReplyHeaders, ReplyBody, !IO) :-
     OrigMessage = message(_MessageId, _Timestamp, OrigMessageHeaders, _Tags,
-        Parts, _Replies),
+        Body, _Replies),
     OrigDate = OrigMessageHeaders ^ h_date,
     OrigFrom = OrigMessageHeaders ^ h_from,
     ReplyHeaders0 = reply_headers(
@@ -93,8 +93,8 @@ prepare_reply(Config, OrigMessage, PartVisibilityMap, ReplyHeaders0,
     ),
     % Efficiency could be better.
     make_attribution(OrigDate, OrigFrom, Attribution),
-    list.foldl2(add_part(Config, PartVisibilityMap, yes_quote_marker),
-        Parts, [], RevLines, !IO),
+    add_part(Config, PartVisibilityMap, yes_quote_marker, Body,
+        [], RevLines, !IO),
     list.reverse(RevLines, Lines),
     ReplyBody = unlines([Attribution | Lines]).
 
@@ -169,7 +169,7 @@ add_part(Config, PartVisibilityMap, MaybeQuoteMarker, Part, !RevLines, !IO) :-
 add_encapsulated_message(Config, PartVisibilityMap, MaybeQuoteMarker, Message,
         !RevLines, !IO) :-
     % Follows notmuch-reply.c
-    Message = encapsulated_message(Headers, Parts),
+    Message = encapsulated_message(Headers, Body),
     Headers = headers(
         Date,
         From,
@@ -189,8 +189,8 @@ add_encapsulated_message(Config, PartVisibilityMap, MaybeQuoteMarker, Message,
     add_encapsulated_message_header("Subject", Subject, !RevLines),
     add_encapsulated_message_header("Date", Date, !RevLines),
     cons(">", !RevLines),
-    list.foldl2(add_part(Config, PartVisibilityMap, MaybeQuoteMarker),
-        Parts, !RevLines, !IO).
+    add_part(Config, PartVisibilityMap, MaybeQuoteMarker, Body,
+        !RevLines, !IO).
 
 :- pred add_encapsulated_message_header(string::in, header_value::in,
     list(string)::in, list(string)::out) is det.

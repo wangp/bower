@@ -361,9 +361,9 @@ make_message_self_trees(Config, Cols, Message, NodeId, Trees, !Counter, !IO) :-
         HeaderTree = leaf(list.reverse(!.RevLines))
     ),
 
-    list.map_foldl3(make_part_tree(Config, Cols), Body, BodyTrees,
-        yes, _ElideInitialHeadLine, !Counter, !IO),
-    BodyTree = node(NodeId, BodyTrees, no),
+    make_part_tree(Config, Cols, Body, BodyTree0, yes, _ElideInitialHeadLine,
+        !Counter, !IO),
+    BodyTree = node(NodeId, [BodyTree0], no),
 
     Separators = leaf([
         message_separator,
@@ -694,9 +694,9 @@ make_encapsulated_message_tree(Config, Cols, EncapMessage, Tree, !Counter, !IO)
         cons(blank_line, !RevLines),
         list.reverse(!.RevLines, HeaderLines)
     ),
-    list.map_foldl3(make_part_tree(Config, Cols), Body, PartTrees,
+    make_part_tree(Config, Cols, Body, BodyTree,
         yes, _ElideInitialHeadLine, !Counter, !IO),
-    SubTrees = [leaf(HeaderLines) | PartTrees],
+    SubTrees = [leaf(HeaderLines), BodyTree],
     PreBlank = no,
     Tree = node(NodeId, SubTrees, PreBlank).
 

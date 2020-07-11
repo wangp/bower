@@ -455,7 +455,7 @@ start_forward(Config, Crypto, Screen, Message, PartVisibilityMap, Transition,
 continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
         PartVisibilityMap, Transition, !IO) :-
     Message = message(MessageId, _Timestamp, Headers0, Tags0, Body0, _Replies0),
-    select_main_part_and_attachments(PartVisibilityMap, Body0, MaybeMainPart,
+    select_main_part_and_attachments(PartVisibilityMap, [Body0], MaybeMainPart,
         AttachmentParts),
     (
         MaybeMainPart = yes(MainPart),
