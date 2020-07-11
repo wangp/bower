@@ -22,7 +22,7 @@
 :- import_module bool.
 :- import_module int.
 :- import_module list.
-:- import_module require.
+:- import_module string.
 :- import_module set.
 :- import_module time.
 
@@ -56,9 +56,9 @@
 %-----------------------------------------------------------------------------%
 
 select_recall(Config, Screen, MaybeThreadId, Transition, !IO) :-
-    find_drafts(Config, MaybeThreadId, Ids, !IO),
+    find_drafts(Config, MaybeThreadId, Res0, !IO),
     (
-        Ids = [],
+        Res0 = ok([]),
         (
             MaybeThreadId = yes(_),
             Message = "No postponed messages for this thread."
@@ -69,31 +69,61 @@ select_recall(Config, Screen, MaybeThreadId, Transition, !IO) :-
         MaybeSelected = no,
         Transition = screen_transition(MaybeSelected, set_warning(Message))
     ;
-        Ids = [_ | _],
+        Res0 = ok(MessageIds),
+        MessageIds = [_ | _],
         current_timestamp(Time, !IO),
         localtime(Time, Nowish, !IO),
-        list.map_foldl(make_recall_line(Config, Nowish), Ids, MaybeLines, !IO),
-        list.filter_map(maybe_is_yes, MaybeLines, Lines),
-        Scrollable = scrollable.init_with_cursor(Lines),
-        update_message(Screen, clear_message, !IO),
-        Info = recall_info(Config, Scrollable),
-        recall_screen_loop(Screen, MaybeSelected, Info, _Info, !IO),
-        Transition = screen_transition(MaybeSelected, no_change)
+        make_recall_lines(Config, Nowish, MessageIds, Res, [], RevLines, !IO),
+        (
+            Res = ok,
+            reverse(RevLines, Lines),
+            Scrollable = scrollable.init_with_cursor(Lines),
+            update_message(Screen, clear_message, !IO),
+            Info = recall_info(Config, Scrollable),
+            recall_screen_loop(Screen, Transition, Info, _Info, !IO)
+        ;
+            Res = error(Error),
+            Transition = screen_transition(no, set_warning(Error))
+        )
+    ;
+        Res0 = error(Error),
+        Transition = screen_transition(no, set_warning(Error))
+    ).
+
+:- pred make_recall_lines(prog_config::in, tm::in, list(message_id)::in,
+    maybe_error::out, list(recall_line)::in, list(recall_line)::out,
+    io::di, io::uo) is det.
+
+make_recall_lines(Config, Nowish, MessageIds, Res, !AccLines, !IO) :-
+    (
+        MessageIds = [],
+        Res = ok
+    ;
+        MessageIds = [MessageId | TailIds],
+        make_recall_line(Config, Nowish, MessageId, Res0, !AccLines, !IO),
+        (
+            Res0 = ok,
+            make_recall_lines(Config, Nowish, TailIds, Res, !AccLines, !IO)
+        ;
+            Res0 = error(Error),
+            Res = error(Error)
+        )
     ).
 
 :- pred make_recall_line(prog_config::in, tm::in, message_id::in,
-    maybe(recall_line)::out, io::di, io::uo) is det.
+    maybe_error::out, list(recall_line)::in, list(recall_line)::out,
+    io::di, io::uo) is det.
 
-make_recall_line(Config, Nowish, MessageId, MaybeLine, !IO) :-
+make_recall_line(Config, Nowish, MessageId, Res, !AccLines, !IO) :-
     run_notmuch(Config,
         [
             "show", "--format=json", "--part=0", "--body=false", "--",
             message_id_to_search_term(MessageId)
         ],
         no_suspend_curses,
-        parse_message_for_recall, Result, !IO),
+        parse_message_for_recall, Res0, !IO),
     (
-        Result = ok(Message),
+        Res0 = ok(Message),
         Message = message_for_recall(_Id, Timestamp, Headers, Tags),
         To = header_value_string(Headers ^ h_to),
         Subject = header_value_string(Headers ^ h_subject),
@@ -102,18 +132,19 @@ make_recall_line(Config, Nowish, MessageId, MaybeLine, !IO) :-
         make_reldate(Nowish, TM, Shorter, RelDate),
         Line = recall_line(Message, RelDate, make_presentable(To),
             make_presentable(Subject), Tags),
-        MaybeLine = yes(Line)
+        cons(Line, !AccLines),
+        Res = ok
     ;
-        Result = error(Error),
-        unexpected($module, $pred, Error)
+        Res0 = error(Error),
+        Res = error("notmuch show: " ++ Error)
     ).
 
 %-----------------------------------------------------------------------------%
 
-:- pred recall_screen_loop(screen::in, maybe(message)::out,
+:- pred recall_screen_loop(screen::in, screen_transition(maybe(message))::out,
     recall_info::in, recall_info::out, io::di, io::uo) is det.
 
-recall_screen_loop(Screen, MaybeSelected, !Info, !IO) :-
+recall_screen_loop(Screen, Transition, !Info, !IO) :-
     draw_recall(Screen, !.Info, !IO),
     draw_status_bar(Screen, !IO),
     update_panels(Screen, !IO),
@@ -124,40 +155,39 @@ recall_screen_loop(Screen, MaybeSelected, !Info, !IO) :-
         )
     ->
         move_cursor(Screen, 1, !Info, !IO),
-        recall_screen_loop(Screen, MaybeSelected, !Info, !IO)
+        recall_screen_loop(Screen, Transition, !Info, !IO)
     ;
         ( KeyCode = char('k')
         ; KeyCode = code(curs.key_up)
         )
     ->
         move_cursor(Screen, -1, !Info, !IO),
-        recall_screen_loop(Screen, MaybeSelected, !Info, !IO)
+        recall_screen_loop(Screen, Transition, !Info, !IO)
     ;
         KeyCode = char('q')
     ->
-        update_message(Screen, clear_message, !IO),
-        MaybeSelected = no
+        Transition = screen_transition(no, clear_message)
     ;
         KeyCode = char('\r')
     ->
-        enter(!.Info, MaybeSelected, !IO)
+        enter(!.Info, Transition, !IO)
     ;
         KeyCode = char('d')
     ->
         delete_draft(Screen, !Info, !IO),
         NumLines = get_num_lines(!.Info ^ r_scrollable),
         ( NumLines = 0 ->
-            MaybeSelected = no
+            Transition = screen_transition(no, no_change)
         ;
-            recall_screen_loop(Screen, MaybeSelected, !Info, !IO)
+            recall_screen_loop(Screen, Transition, !Info, !IO)
         )
     ;
         KeyCode = code(curs.key_resize)
     ->
         recreate_screen_for_resize(Screen, !IO),
-        recall_screen_loop(Screen, MaybeSelected, !Info, !IO)
+        recall_screen_loop(Screen, Transition, !Info, !IO)
     ;
-        recall_screen_loop(Screen, MaybeSelected, !Info, !IO)
+        recall_screen_loop(Screen, Transition, !Info, !IO)
     ).
 
 :- pred move_cursor(screen::in, int::in, recall_info::in, recall_info::out,
@@ -181,9 +211,10 @@ move_cursor(Screen, Delta, !Info, !IO) :-
     ),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred enter(recall_info::in, maybe(message)::out, io::di, io::uo) is det.
+:- pred enter(recall_info::in, screen_transition(maybe(message))::out,
+    io::di, io::uo) is det.
 
-enter(Info, MaybeSelected, !IO) :-
+enter(Info, Transition, !IO) :-
     Scrollable = Info ^ r_scrollable,
     (
         get_cursor_line(Scrollable, _, CursorLine),
@@ -202,17 +233,19 @@ enter(Info, MaybeSelected, !IO) :-
             Result = ok(Message),
             (
                 Message = message(_, _, _, _, _, _),
-                MaybeSelected = yes(Message)
+                Transition = screen_transition(yes(Message), clear_message)
             ;
                 Message = excluded_message(_, _, _, _, _),
-                MaybeSelected = no
+                Error = "Cannot recall excluded message",
+                Transition = screen_transition(no, set_warning(Error))
             )
         ;
-            Result = error(Error),
-            unexpected($module, $pred, Error)
+            Result = error(Error0),
+            Error = "notmuch show: " ++ Error0,
+            Transition = screen_transition(no, set_warning(Error))
         )
     ;
-        MaybeSelected = no
+        Transition = screen_transition(no, clear_message)
     ).
 
 :- pred delete_draft(screen::in, recall_info::in, recall_info::out,

@@ -426,7 +426,8 @@ start_reply_to_message_id(Config, Crypto, Screen, MessageId, ReplyKind,
         )
     ;
         Res = error(Error),
-        unexpected($module, $pred, Error)
+        Warning = "notmuch show: " ++ Error,
+        Transition = screen_transition(not_sent, set_warning(Warning))
     ).
 
 %-----------------------------------------------------------------------------%

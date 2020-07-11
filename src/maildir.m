@@ -21,7 +21,7 @@
     maybe_error::out, io::di, io::uo) is det.
 
 :- pred find_drafts(prog_config::in, maybe(thread_id)::in,
-    list(message_id)::out, io::di, io::uo) is det.
+    maybe_error(list(message_id))::out, io::di, io::uo) is det.
 
 :- pred tag_messages(prog_config::in, list(tag_delta)::in,
     list(message_id)::in, maybe_error::out, io::di, io::uo) is det.
@@ -34,7 +34,6 @@
 
 :- implementation.
 
-:- import_module require.
 :- import_module string.
 
 :- import_module callout.
@@ -102,7 +101,7 @@ default_drafts_folder = "Drafts".
 
 %-----------------------------------------------------------------------------%
 
-find_drafts(Config, MaybeThreadId, MessageIds, !IO) :-
+find_drafts(Config, MaybeThreadId, Res, !IO) :-
     (
         MaybeThreadId = yes(ThreadId),
         ThreadSearchTerm = [thread_id_to_search_term(ThreadId)]
@@ -116,12 +115,14 @@ find_drafts(Config, MaybeThreadId, MessageIds, !IO) :-
             "--", "tag:draft", "-tag:deleted" | ThreadSearchTerm
         ],
         no_suspend_curses,
-        parse_search_messages, Result, !IO),
+        parse_search_messages, Res0, !IO),
     (
-        Result = ok(MessageIds)
+        Res0 = ok(MessageIds),
+        Res = ok(MessageIds)
     ;
-        Result = error(Error),
-        unexpected($module, $pred, Error)
+        Res0 = error(Error0),
+        Error = "notmuch search: " ++ Error0,
+        Res = error(Error)
     ).
 
 %-----------------------------------------------------------------------------%

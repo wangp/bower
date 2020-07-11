@@ -129,7 +129,6 @@
 :- implementation.
 
 :- import_module pair.
-:- import_module require.
 :- import_module string.
 :- import_module string.builder.
 
@@ -197,8 +196,7 @@ write_message_nocatch(Stream, Config, Spec, AllowHeaderError, PausedCurs, Res,
         % Do not write the blank line separating header and body yet.
         % MIME messages require more header fields.
         write_message_type_nocatch(Stream, Config, MessageType, PausedCurs,
-            !IO),
-        Res = ok
+            Res, !IO)
     ).
 
 :- pred build_header(Stream::in, header::in, maybe_error::in, maybe_error::out,
@@ -224,25 +222,26 @@ write_message_type(Stream, Config, MessageType, PausedCurs, Res, !IO) :-
     promise_equivalent_solutions [Res, !:IO]
     ( try [io(!IO)]
         write_message_type_nocatch(Stream, Config, MessageType, PausedCurs,
-            !IO)
+            Res0, !IO)
       then
-        Res = ok
+        Res = Res0
       catch_any Excp ->
         Res = error("Caught exception: " ++ string(Excp))
     ).
 
 :- pred write_message_type_nocatch(Stream::in, prog_config::in,
-    message_type::in, i_paused_curses::in, io::di, io::uo) is det
-    <= writer(Stream).
+    message_type::in, i_paused_curses::in, maybe_error::out, io::di, io::uo)
+    is det <= writer(Stream).
 
-write_message_type_nocatch(Stream, Config, MessageType, PausedCurs, !IO) :-
+write_message_type_nocatch(Stream, Config, MessageType, PausedCurs, Res, !IO) :-
     (
         MessageType = plain(PlainBody),
-        write_plain_body(Stream, PlainBody, !IO)
+        write_plain_body(Stream, PlainBody, !IO),
+        Res = ok
     ;
         MessageType = mime_v1(MimePart),
         write_mime_version_1(Stream, !IO),
-        write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, !IO)
+        write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, Res, !IO)
     ).
 
 %-----------------------------------------------------------------------------%
@@ -266,17 +265,19 @@ write_mime_version_1(Stream, !IO) :-
 write_mime_part(Stream, Config, MimePart, PausedCurs, Res, !IO) :-
     promise_equivalent_solutions [Res, !:IO]
     ( try [io(!IO)]
-        write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, !IO)
-      then
-        Res = ok
-      catch_any Excp ->
+        write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, Res0,
+            !IO)
+    then
+        Res = Res0
+    catch_any Excp ->
         Res = error("Caught exception: " ++ string(Excp))
     ).
 
 :- pred write_mime_part_nocatch(Stream::in, prog_config::in, mime_part::in,
-    i_paused_curses::in, io::di, io::uo) is det <= writer(Stream).
+    i_paused_curses::in, maybe_error::out, io::di, io::uo) is det
+    <= writer(Stream).
 
-write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, !IO) :-
+write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, Res, !IO) :-
     (
         MimePart = discrete(ContentType, MaybeCharset, MaybeContentDisposition,
             MaybeTransferEncoding, Body),
@@ -294,7 +295,7 @@ write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, !IO) :-
             TransferEncoding = cte_8bit
         ),
         write_mime_part_body(Stream, Config, TransferEncoding, Body,
-            PausedCurs, !IO)
+            PausedCurs, Res, !IO)
     ;
         MimePart = composite(ContentType, Boundary, MaybeContentDisposition,
             MaybeTransferEncoding, SubParts),
@@ -305,9 +306,16 @@ write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, !IO) :-
             MaybeTransferEncoding, !IO),
         % Separate header and body.
         put(Stream, "\n", !IO),
-        list.foldl(write_mime_subpart(Stream, Config, Boundary, PausedCurs),
-            SubParts, !IO),
-        write_mime_final_boundary(Stream, Boundary, !IO)
+        write_mime_subparts(Stream, Config, Boundary, PausedCurs, SubParts,
+            Res0, !IO),
+        (
+            Res0 = ok,
+            write_mime_final_boundary(Stream, Boundary, !IO),
+            Res = ok
+        ;
+            Res0 = error(Error),
+            Res = error(Error)
+        )
     ).
 
 :- pred write_discrete_content_type(Stream::in, mime_type::in,
@@ -401,13 +409,34 @@ write_content_transfer_encoding(Stream, CTE, !IO) :-
         put(Stream, "Content-Transfer-Encoding: base64\n", !IO)
     ).
 
-:- pred write_mime_subpart(Stream::in, prog_config::in, boundary::in,
-    i_paused_curses::in, mime_part::in, io::di, io::uo) is det
-    <= writer(Stream).
+:- pred write_mime_subparts(Stream::in, prog_config::in, boundary::in,
+    i_paused_curses::in, list(mime_part)::in, maybe_error::out, io::di, io::uo)
+    is det <= writer(Stream).
 
-write_mime_subpart(Stream, Config, Boundary, PausedCurs, Part, !IO) :-
+write_mime_subparts(Stream, Config, Boundary, PausedCurs, Parts, Res, !IO) :-
+    (
+        Parts = [],
+        Res = ok
+    ;
+        Parts = [Part | TailParts],
+        write_mime_subpart(Stream, Config, Boundary, PausedCurs, Part, Res0, !IO),
+        (
+            Res0 = ok,
+            write_mime_subparts(Stream, Config, Boundary, PausedCurs,
+                TailParts, Res, !IO)
+        ;
+            Res0 = error(Error),
+            Res = error(Error)
+        )
+    ).
+
+:- pred write_mime_subpart(Stream::in, prog_config::in, boundary::in,
+    i_paused_curses::in, mime_part::in, maybe_error::out, io::di, io::uo)
+    is det <= writer(Stream).
+
+write_mime_subpart(Stream, Config, Boundary, PausedCurs, Part, Res, !IO) :-
     write_mime_part_boundary(Stream, Boundary, !IO),
-    write_mime_part_nocatch(Stream, Config, Part, PausedCurs, !IO).
+    write_mime_part_nocatch(Stream, Config, Part, PausedCurs, Res, !IO).
 
 :- pred write_mime_part_boundary(Stream::in, boundary::in, io::di, io::uo)
     is det <= writer(Stream).
@@ -427,43 +456,53 @@ write_mime_final_boundary(Stream, boundary(Boundary), !IO) :-
 
 :- pred write_mime_part_body(Stream::in, prog_config::in,
     write_content_transfer_encoding::in, mime_part_body::in,
-    i_paused_curses::in, io::di, io::uo) is det <= writer(Stream).
+    i_paused_curses::in, maybe_error::out, io::di, io::uo) is det
+    <= writer(Stream).
 
-write_mime_part_body(Stream, Config, TransferEncoding, Body, PausedCurs,
+write_mime_part_body(Stream, Config, TransferEncoding, Body, PausedCurs, Res,
         !IO) :-
     (
         TransferEncoding = cte_8bit,
         (
             Body = text(EncodedBody),
-            put(Stream, EncodedBody, !IO)
+            put(Stream, EncodedBody, !IO),
+            Res = ok
         ;
             Body = base64(_),
-            sorry($module, $pred, "cte_8bit, Body = base64")
+            Res = error("write_mime_part_body: expected text, got base64")
         ;
             Body = external(_),
-            sorry($module, $pred, "cte_8bit, Body = external")
+            Res = error("write_mime_part_body: expected text, got external")
         )
     ;
         TransferEncoding = cte_base64,
         (
             Body = text(Text),
             base64.encode_wrap(Text, 0, length(Text), Stream, !IO),
-            put(Stream, '\n', !IO)
+            put(Stream, '\n', !IO),
+            Res = ok
         ;
             Body = base64(EncodedBody),
-            put(Stream, EncodedBody, !IO)
+            put(Stream, EncodedBody, !IO),
+            Res = ok
         ;
             Body = external(Part),
-            get_external_part_base64(Config, Part, EncodedBody,
-                PausedCurs, !IO),
-            put(Stream, EncodedBody, !IO)
+            get_external_part_base64(Config, Part, PausedCurs, Res0, !IO),
+            (
+                Res0 = ok(EncodedBody),
+                put(Stream, EncodedBody, !IO),
+                Res = ok
+            ;
+                Res0 = error(Error),
+                Res = error(Error)
+            )
         )
     ).
 
-:- pred get_external_part_base64(prog_config::in, part::in, string::out,
-    i_paused_curses::in, io::di, io::uo) is det.
+:- pred get_external_part_base64(prog_config::in, part::in,
+    i_paused_curses::in, maybe_error(string)::out, io::di, io::uo) is det.
 
-get_external_part_base64(Config, Part, Content, PausedCurs, !IO) :-
+get_external_part_base64(Config, Part, PausedCurs, Res, !IO) :-
     Part = part(MessageId, MaybePartId, _, _, _, _, _, _, _, IsDecrypted),
     (
         MaybePartId = yes(PartId),
@@ -483,11 +522,12 @@ get_external_part_base64(Config, Part, Content, PausedCurs, !IO) :-
         CallRes = error(io.make_io_error("no part id"))
     ),
     (
-        CallRes = ok(Content)
+        CallRes = ok(Content),
+        Res = ok(Content)
     ;
-        CallRes = error(Error),
-        % XXX handle this gracefully
-        unexpected($module, $pred, io.error_message(Error))
+        CallRes = error(Error0),
+        Error = "Failed to base64 encode attachment: " ++ io.error_message(Error0),
+        Res = error(Error)
     ).
 
 :- func decrypt_arg(maybe_decrypted) = string.
