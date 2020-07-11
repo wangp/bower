@@ -1939,6 +1939,9 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
             MaybePartId = yes(part_id(PartIdInt)),
             PartFilename = string.format("%s.part_%d", [s(IdStr), i(PartIdInt)])
         ;
+            MaybePartId = yes(part_id_string(PartIdStr)),
+            PartFilename = string.format("%s.part_%s", [s(IdStr), s(PartIdStr)])
+        ;
             MaybePartId = no,
             PartFilename = IdStr ++ ".part"
         )

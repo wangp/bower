@@ -63,7 +63,8 @@
     --->    message_id(string).
 
 :- type part_id
-    --->    part_id(int).
+    --->    part_id(int)
+    ;       part_id_string(string).
 
 :- type message_part_id
     --->    message_part_id(message_id, part_id).
@@ -235,7 +236,8 @@ thread_id_to_search_term(thread_id(Id)) = "thread:" ++ Id.
 
 message_id_to_search_term(message_id(Id)) = "id:" ++ Id.
 
-part_id_to_part_option(part_id(Id)) = "--part=" ++ from_int(Id).
+part_id_to_part_option(part_id(Int)) = "--part=" ++ from_int(Int).
+part_id_to_part_option(part_id_string(Str)) = "--part=" ++ Str.
 
 init_headers = Headers :-
     Empty = header_value(""),

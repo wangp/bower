@@ -332,9 +332,11 @@ parse_header(Key, unesc_string(Value), !Headers) :-
     % A MIME part (format_part_sprinter)
     %
 parse_part(MessageId, IsDecrypted0, JSON, Part) :-
-    % XXX notmuch/devel/schemata says id can be a string
-    ( JSON/"id" = int(PartIdInt) ->
-        PartId = part_id(PartIdInt)
+    (
+        JSON/"id" = Id,
+        parse_part_id(Id, PartId0)
+    ->
+        PartId = PartId0
     ;
         throw(notmuch_json_error("parse_part: expected id"))
     ),
@@ -452,6 +454,19 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
     Part = part(MessageId, yes(PartId), ContentType, MaybeContentCharset,
         MaybeContentDisposition, Content, MaybeFilename,
         MaybeContentLength, MaybeContentTransferEncoding, IsDecrypted).
+
+:- pred parse_part_id(json::in, part_id::out) is semidet.
+
+parse_part_id(JSON, PartId) :-
+    (
+        JSON = int(Int),
+        PartId = part_id(Int)
+    ;
+        JSON = string(Str),
+        % notmuch/devel/schemata suggests part id can be a string,
+        % but currently it's actually always an int.
+        PartId = part_id_string(unescape(Str))
+    ).
 
     % notmuch/devel/schemata: encstatus
     % Encryption status (format_part_sprinter)
