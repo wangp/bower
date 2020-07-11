@@ -116,7 +116,7 @@ find_drafts(Config, MaybeThreadId, MessageIds, !IO) :-
             "--", "tag:draft", "-tag:deleted" | ThreadSearchTerm
         ],
         no_suspend_curses,
-        parse_message_id_list, Result, !IO),
+        parse_search_messages, Result, !IO),
     (
         Result = ok(MessageIds)
     ;

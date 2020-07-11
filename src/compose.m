@@ -411,7 +411,7 @@ start_reply_to_message_id(Config, Crypto, Screen, MessageId, ReplyKind,
             message_id_to_search_term(MessageId)
         ],
         no_suspend_curses,
-        parse_top_message, Res, !IO),
+        parse_message, Res, !IO),
     (
         Res = ok(Message),
         (

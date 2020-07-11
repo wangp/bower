@@ -197,7 +197,7 @@ enter(Info, MaybeSelected, !IO) :-
                 "--", message_id_to_search_term(MessageId)
             ],
             soft_suspend_curses, % Decryption may invoke pinentry-curses.
-            parse_top_message, Result, !IO),
+            parse_message, Result, !IO),
         (
             Result = ok(Message),
             (
