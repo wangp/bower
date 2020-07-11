@@ -185,6 +185,26 @@ parse_message_id(Json, MessageId) :-
     Str \= "", % just in case
     MessageId = message_id(Str).
 
+    % notmuch/devel/schemata: unix_time
+    % Number of seconds since the Epoch
+    %
+:- pred parse_unix_time(json::in, timestamp::out) is semidet.
+
+parse_unix_time(Json, Timestamp) :-
+    (
+        Json = int(Int),
+        % XXX At the time of writing, notmuch returns negative values for
+        % timestamps beyond Y2038 even on platforms where time_t is 64-bits.
+        Timestamp = timestamp(float(Int))
+    ;
+        Json = integer(Integer),
+        % Convert directly to float in case int is 32-bits.
+        % This case is currently unreachable in practice.
+        Str = integer.to_string(Integer),
+        string.to_float(Str, Float),
+        Timestamp = timestamp(Float)
+    ).
+
 %-----------------------------------------------------------------------------%
 
     % notmuch/devel/schemata: thread_set
@@ -723,28 +743,6 @@ parse_address_count(Json, Result) :-
         Result = Count - NameAddr
     ;
         throw(notmuch_json_error("parse_address_count"))
-    ).
-
-%-----------------------------------------------------------------------------%
-
-    % notmuch/devel/schemata: unix_time
-    % Number of seconds since the Epoch
-    %
-:- pred parse_unix_time(json::in, timestamp::out) is semidet.
-
-parse_unix_time(Json, Timestamp) :-
-    (
-        Json = int(Int),
-        % XXX At the time of writing, notmuch returns negative values for
-        % timestamps beyond Y2038 even on platforms where time_t is 64-bits.
-        Timestamp = timestamp(float(Int))
-    ;
-        Json = integer(Integer),
-        % Convert directly to float in case int is 32-bits.
-        % This case is currently unreachable in practice.
-        Str = integer.to_string(Integer),
-        string.to_float(Str, Float),
-        Timestamp = timestamp(Float)
     ).
 
 %-----------------------------------------------------------------------------%
