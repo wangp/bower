@@ -363,7 +363,7 @@
 
 :- implementation.
 
-:- import_module exception.
+:- use_module exception.
 
     % Using the foreign type prevents problems with type ambiguity when
     % compiling with intermodule optimisation.
@@ -607,7 +607,7 @@ suspend(Pred, Res, !IO) :-
     catch_any Excp ->
         reset_prog_mode(!IO),
         refresh(!IO),
-        throw(Excp)
+        exception.throw(Excp)
     ).
 
 %-----------------------------------------------------------------------------%
@@ -631,7 +631,7 @@ soft_suspend(Pred, Res, !IO) :-
     catch_any Excp ->
         reset_prog_mode(!IO),
         redrawwin_stdscr(!IO),
-        throw(Excp)
+        exception.throw(Excp)
     ).
 
 %----------------------------------------------------------------------------%

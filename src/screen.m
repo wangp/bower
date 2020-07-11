@@ -140,11 +140,11 @@
 
 :- import_module array.
 :- import_module bool.
-:- import_module exception.
 :- import_module float.
 :- import_module int.
 :- import_module store.
 :- import_module string.
+:- use_module exception.
 
 :- import_module async.
 :- import_module signal.
@@ -655,7 +655,7 @@ get_keycode_child_process_loop(Tenths, Code, !IO) :-
 throw_sigint_if_received(!IO) :-
     get_sigint_count(Sigints, !IO),
     ( Sigints > 0 ->
-        throw(sigint_received)
+        exception.throw(sigint_received)
     ;
         true
     ).

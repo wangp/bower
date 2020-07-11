@@ -55,9 +55,9 @@
 
 :- implementation.
 
-:- import_module exception.
 :- import_module int.
 :- import_module string.
+:- use_module exception.
 
 :- pragma foreign_type("C", byte_array, "struct byte_array *").
 
@@ -127,7 +127,7 @@ set_length(Length, !ByteArray) :-
     ( Length >= 0 ->
         do_set_length(Length, !ByteArray)
     ;
-        throw(bounds_error($pred, "Length: " ++ from_int(Length)))
+        exception.throw(bounds_error($pred, "Length: " ++ from_int(Length)))
     ).
 
 :- pred do_set_length(int::in, byte_array::di, byte_array::uo) is det.
@@ -163,7 +163,7 @@ get_byte(ByteArray, Index, Byte) :-
     ->
         unsafe_get_byte(ByteArray, Index, Byte)
     ;
-        throw(bounds_error($pred,
+        exception.throw(bounds_error($pred,
             "Index: " ++ from_int(Index) ++ ", Length: " ++ from_int(Length)))
     ).
 
@@ -184,7 +184,7 @@ set_byte(Index, Byte, !ByteArray) :-
     ->
         unsafe_set_byte(Index, Byte, !ByteArray)
     ;
-        throw(bounds_error($pred,
+        exception.throw(bounds_error($pred,
             "Index: " ++ from_int(Index) ++ ", Length: " ++ from_int(Length)))
     ).
 
@@ -208,7 +208,7 @@ copy_bytes(Src, SrcBegin, SrcEnd, Dest0, Dest, DestBegin) :-
     ->
         unsafe_copy_bytes(Src, SrcBegin, SrcEnd, Dest0, Dest, DestBegin)
     ;
-        throw(bounds_error($pred,
+        exception.throw(bounds_error($pred,
             "SrcBegin: " ++ from_int(SrcBegin) ++
             ", SrcEnd: " ++ from_int(SrcEnd) ++
             ", SrcLength: " ++ from_int(SrcLength) ++

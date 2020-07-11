@@ -45,9 +45,9 @@
 
 :- implementation.
 
-:- import_module exception.
 :- import_module int.
 :- import_module string.
+:- use_module exception.
 
 :- import_module string_util.
 
@@ -337,7 +337,7 @@ write_char_or_throw(Data, Char, !IO) :-
         Res = ok
     ;
         Res = error(Error),
-        throw(io.make_io_error(Error))
+        exception.throw(io.make_io_error(Error))
     ).
 
 :- pred write_substring_or_throw(data::in, string::in, int::in, int::in,
@@ -349,7 +349,7 @@ write_substring_or_throw(Data, String, Start, End, !IO) :-
         Res = ok
     ;
         Res = error(Error),
-        throw(io.make_io_error(Error))
+        exception.throw(io.make_io_error(Error))
     ).
 
 %-----------------------------------------------------------------------------%
