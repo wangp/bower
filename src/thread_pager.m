@@ -1936,8 +1936,8 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
         MaybeSubject = no,
         MessageId = message_id(IdStr),
         (
-            MaybePartId = yes(PartId),
-            PartFilename = string.format("%s.part_%d", [s(IdStr), i(PartId)])
+            MaybePartId = yes(part_id(PartIdInt)),
+            PartFilename = string.format("%s.part_%d", [s(IdStr), i(PartIdInt)])
         ;
             MaybePartId = no,
             PartFilename = IdStr ++ ".part"
@@ -1970,7 +1970,7 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
                 Res, !IO),
             (
                 Res = ok,
-                ( MaybePartId = yes(0) ->
+                ( MaybePartId = yes(part_id(0)) ->
                     MessageUpdate = set_info("Message saved.")
                 ;
                     MessageUpdate = set_info("Attachment saved.")
@@ -2026,7 +2026,7 @@ make_save_part_initial_prompt(History, PartFilename, Initial) :-
         Initial = PrevDirName / PartFilename
     ).
 
-:- pred do_save_part(prog_config::in, message_id::in, maybe(int)::in,
+:- pred do_save_part(prog_config::in, message_id::in, maybe(part_id)::in,
     maybe_decrypted::in, string::in, maybe_error::out, io::di, io::uo) is det.
 
 do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName, Res, !IO)
@@ -2036,7 +2036,7 @@ do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName, Res, !IO)
         get_notmuch_command(Config, Notmuch),
         make_quoted_command(Notmuch, [
             "show", "--format=raw", decrypt_arg(IsDecrypted),
-            "--part=" ++ from_int(PartId),
+            part_id_to_part_option(PartId),
             "--", message_id_to_search_term(MessageId)
         ], no_redirect, redirect_output(FileName), Command),
         % Decryption may invoke pinentry-curses.
@@ -2437,7 +2437,7 @@ decrypt_part(Screen, !Info, !IO) :-
     ),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred do_decrypt_part(screen::in, message_id::in, int::in,
+:- pred do_decrypt_part(screen::in, message_id::in, part_id::in,
     message_update::out, thread_pager_info::in, thread_pager_info::out,
     io::di, io::uo) is det.
 
@@ -2446,7 +2446,7 @@ do_decrypt_part(Screen, MessageId, PartId, MessageUpdate, !Info, !IO) :-
     run_notmuch(Config,
         [
             "show", "--format=json", "--decrypt",
-            "--part=" ++ from_int(PartId),
+            part_id_to_part_option(PartId),
             "--", message_id_to_search_term(MessageId)
         ],
         redirect_stderr("/dev/null"),
@@ -2527,7 +2527,7 @@ do_verify_part(Screen, Part0, MessageUpdate, !Info, !IO) :-
             [
                 "show", "--format=json",
                 "--verify", decrypt_arg(IsDecrypted), % seems unlikely
-                "--part=" ++ from_int(PartId),
+                part_id_to_part_option(PartId),
                 "--", message_id_to_search_term(MessageId)
             ],
             redirect_stderr("/dev/null"),

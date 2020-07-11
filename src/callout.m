@@ -333,8 +333,8 @@ parse_header(Key, unesc_string(Value), !Headers) :-
     %
 parse_part(MessageId, IsDecrypted0, JSON, Part) :-
     % XXX notmuch/devel/schemata says id can be a string
-    ( JSON/"id" = int(PartId0) ->
-        PartId = PartId0
+    ( JSON/"id" = int(PartIdInt) ->
+        PartId = part_id(PartIdInt)
     ;
         throw(notmuch_json_error("parse_part: expected id"))
     ),

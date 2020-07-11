@@ -1324,7 +1324,7 @@ get_highlighted_thing(Info, Thing) :-
         Line = start_of_message_header(Message, _, _),
         MessageId = Message ^ m_id,
         Subject = Message ^ m_headers ^ h_subject,
-        PartId = 0,
+        PartId = part_id(0),
         % Hmm.
         Part = part(MessageId, yes(PartId), mime_type.text_plain, no,
             no, unsupported, no, no, no, not_decrypted),

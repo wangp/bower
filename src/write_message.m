@@ -471,7 +471,7 @@ get_external_part_base64(Config, Part, Content, PausedCurs, !IO) :-
         make_quoted_command(Notmuch, [
             "show", "--format=raw",
             decrypt_arg(IsDecrypted), % should not happen yet
-            "--part=" ++ from_int(PartId),
+            part_id_to_part_option(PartId),
             "--", message_id_to_search_term(MessageId)
         ], redirect_input("/dev/null"), no_redirect, Command),
         % Decryption may invoke pinentry-curses.

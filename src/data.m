@@ -62,8 +62,11 @@
 :- type message_id
     --->    message_id(string).
 
+:- type part_id
+    --->    part_id(int).
+
 :- type message_part_id
-    --->    message_part_id(message_id, int).   % XXX bespoke type for part_id
+    --->    message_part_id(message_id, part_id).
 
 :- type headers
     --->    headers(
@@ -110,7 +113,7 @@
 :- type part
     --->    part(
                 pt_msgid                :: message_id,
-                pt_part                 :: maybe(int), % XXX use bespoke type
+                pt_part                 :: maybe(part_id),
                 pt_content_type         :: mime_type,
                 pt_content_charset      :: maybe(content_charset),
                 pt_content_disposition  :: maybe(content_disposition),
@@ -198,6 +201,8 @@
 
 :- func message_id_to_search_term(message_id) = string.
 
+:- func part_id_to_part_option(part_id) = string.
+
 :- func init_headers = headers.
 
 :- pred empty_header_value(header_value::in) is semidet.
@@ -229,6 +234,8 @@
 thread_id_to_search_term(thread_id(Id)) = "thread:" ++ Id.
 
 message_id_to_search_term(message_id(Id)) = "id:" ++ Id.
+
+part_id_to_part_option(part_id(Id)) = "--part=" ++ from_int(Id).
 
 init_headers = Headers :-
     Empty = header_value(""),

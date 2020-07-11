@@ -113,7 +113,7 @@ select_main_part_and_attachments(PartVisibilityMap, Body, MaybeMainPart,
     % Perhaps the similarity should run deeper...
     %
 :- pred find_main_part(part_visibility_map::in, list(part)::in,
-    part::out, list(int)::out) is semidet.
+    part::out, list(part_id)::out) is semidet.
 
 find_main_part(PartVisibilityMap, [Part | _Parts], MainPart, PathToMain) :-
     Part = part(_MessageId, PartId, ContentType, _MaybeContentCharset,
@@ -172,7 +172,7 @@ find_main_part(PartVisibilityMap, [Part | _Parts], MainPart, PathToMain) :-
     true.
 
 :- pred find_main_part_in_alternatives(part_visibility_map::in, list(part)::in,
-    part::out, list(int)::out) is semidet.
+    part::out, list(part_id)::out) is semidet.
 
 find_main_part_in_alternatives(PartVisibilityMap, Parts, MainPart, PathToMain)
         :-
@@ -191,7 +191,7 @@ maybe_cons(yes(X), Xs) = [X | Xs].
 
 %-----------------------------------------------------------------------------%
 
-:- pred select_attachments(list(int)::in, part::in,
+:- pred select_attachments(list(part_id)::in, part::in,
     list(part)::in, list(part)::out) is det.
 
 select_attachments(PathToMain, Part, !RevAttachmentParts) :-
@@ -238,12 +238,13 @@ select_attachments(PathToMain, Part, !RevAttachmentParts) :-
         % make_attachment_mime_part can't write these yet anyway.
     ).
 
-:- pred path_to_text_contains(list(int)::in, maybe(int)::in) is semidet.
+:- pred path_to_text_contains(list(part_id)::in, maybe(part_id)::in)
+    is semidet.
 
 path_to_text_contains(PathToMain, yes(PartId)) :-
     list.contains(PathToMain, PartId).
 
-:- pred path_to_text_contains_part(list(int)::in, part::in) is semidet.
+:- pred path_to_text_contains_part(list(part_id)::in, part::in) is semidet.
 
 path_to_text_contains_part(PathToMain, Part) :-
     path_to_text_contains(PathToMain, Part ^ pt_part).

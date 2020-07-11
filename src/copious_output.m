@@ -12,7 +12,7 @@
 :- import_module prog_config.
 :- import_module quote_arg.
 
-:- pred expand_part(prog_config::in, message_id::in, int::in, mime_type::in,
+:- pred expand_part(prog_config::in, message_id::in, part_id::in, mime_type::in,
     maybe(content_charset)::in, maybe(command_prefix)::in,
     maybe_error(string)::out, io::di, io::uo) is det.
 
@@ -37,7 +37,7 @@ expand_part(ProgConfig, MessageId, PartId, ContentType, MaybeContentCharset,
         MaybeFilterCommand, Res, !IO) :-
     get_notmuch_command(ProgConfig, Notmuch),
     make_quoted_command(Notmuch, [
-        "show", "--format=raw", "--part=" ++ from_int(PartId),
+        "show", "--format=raw", part_id_to_part_option(PartId),
         message_id_to_search_term(MessageId)
     ], redirect_input("/dev/null"), no_redirect, ShowCommand),
     (
