@@ -402,11 +402,10 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
                 "parse_part: expected content for multipart"))
         )
     ; ContentType = mime_type.message_rfc822 ->
-        ( JSON/"content" = list(List) ->
-            % XXX should only be a single object?
-            list.map(parse_message_rfc822_content(MessageId, IsDecrypted0),
-                List, EncapMessages),
-            Content = encapsulated_messages(EncapMessages),
+        ( JSON/"content" = list([EncapMessageJson]) ->
+            parse_message_rfc822_content(MessageId, IsDecrypted0,
+                EncapMessageJson, EncapMessage),
+            Content = encapsulated_message(EncapMessage),
             MaybeContentCharset = no,
             MaybeFilename = no,
             MaybeContentLength = no,

@@ -164,7 +164,7 @@ find_main_part(PartVisibilityMap, [Part | _Parts], MainPart, PathToMain) :-
             fail
         )
     ;
-        Content = encapsulated_messages(_),
+        Content = encapsulated_message(_),
         fail
     ),
     % We search for the main body text down the left spine of the tree
@@ -234,7 +234,7 @@ select_attachments(PathToMain, Part, !RevAttachmentParts) :-
             Encryption = decryption_bad
         )
     ;
-        Content = encapsulated_messages(_)
+        Content = encapsulated_message(_)
         % make_attachment_mime_part can't write these yet anyway.
     ).
 

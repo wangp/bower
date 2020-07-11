@@ -2263,8 +2263,8 @@ make_attachment_mime_part(TextCTE, Attachment, MimePart) :-
             OldContent = subparts(_, _, _),
             unexpected($module, $pred, "nested part")
         ;
-            OldContent = encapsulated_messages(_),
-            unexpected($module, $pred, "encapsulated_messages")
+            OldContent = encapsulated_message(_),
+            unexpected($module, $pred, "encapsulated_message")
         )
     ;
         Attachment = new_attachment(Type, MaybeAttachmentCharset, Content,

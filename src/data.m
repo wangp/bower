@@ -124,7 +124,7 @@
 :- type part_content
     --->    text(string)
     ;       subparts(encryption, list(signature), list(part))
-    ;       encapsulated_messages(list(encapsulated_message))
+    ;       encapsulated_message(encapsulated_message)
     ;       unsupported.
 
 :- type encryption

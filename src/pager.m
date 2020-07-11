@@ -520,12 +520,12 @@ make_part_tree_with_alts(Config, Cols, AltParts, Part, HandleUnsupported, Tree,
             )
         )
     ;
-        Content = encapsulated_messages(EncapMessages),
-        list.map_foldl2(make_encapsulated_message_tree(Config, Cols),
-            EncapMessages, SubTrees0, !Counter, !IO),
+        Content = encapsulated_message(EncapMessage),
+        make_encapsulated_message_tree(Config, Cols, EncapMessage, SubTree0,
+            !Counter, !IO),
         HeadLine = part_head(Part, AltParts,
             part_expanded(part_not_filtered), importance_normal),
-        SubTrees = [leaf([HeadLine]) | SubTrees0],
+        SubTrees = [leaf([HeadLine]), SubTree0],
         Tree = node(PartNodeId, SubTrees, yes),
         !:ElideInitialHeadLine = no
     ;
@@ -1948,7 +1948,7 @@ make_part_message_2(Part, HiddenParts, Expanded, Message) :-
         Content = subparts(EncStatus, Signatures, _)
     ;
         ( Content = text(_)
-        ; Content = encapsulated_messages(_)
+        ; Content = encapsulated_message(_)
         ; Content = unsupported
         ),
         EncStatus = not_encrypted,

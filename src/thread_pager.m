@@ -2388,7 +2388,7 @@ choose_toggle_action(Info, Action0, Action) :-
             (
                 ( Content = text(_)
                 ; Content = subparts(not_encrypted, _, _)
-                ; Content = encapsulated_messages(_)
+                ; Content = encapsulated_message(_)
                 ; Content = unsupported
                 ),
                 Action = Action0
@@ -2459,7 +2459,7 @@ do_decrypt_part(Screen, MessageId, PartId, MessageUpdate, !Info, !IO) :-
             Content = subparts(EncStatus, _SigStatus, _SubParts)
         ;
             ( Content = text(_)
-            ; Content = encapsulated_messages(_)
+            ; Content = encapsulated_message(_)
             ; Content = unsupported
             ),
             % Should not happen.
@@ -2587,7 +2587,7 @@ post_verify_message_update(Content, MessageUpdate) :-
         )
     ;
         ( Content = text(_)
-        ; Content = encapsulated_messages(_)
+        ; Content = encapsulated_message(_)
         ; Content = unsupported
         ),
         MessageUpdate = set_warning("Unexpected content.")

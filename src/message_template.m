@@ -153,11 +153,9 @@ add_part(Config, PartVisibilityMap, MaybeQuoteMarker, Part, !RevLines, !IO) :-
             add_non_text_part(ContentType, !RevLines)
         )
     ;
-        PartContent = encapsulated_messages(EncapMessages),
-        list.foldl2(
-            add_encapsulated_message(Config, PartVisibilityMap,
-                MaybeQuoteMarker),
-            EncapMessages, !RevLines, !IO)
+        PartContent = encapsulated_message(EncapMessage),
+        add_encapsulated_message(Config, PartVisibilityMap, MaybeQuoteMarker,
+            EncapMessage, !RevLines, !IO)
     ;
         PartContent = unsupported,
         add_unsupported_part(Config, PartVisibilityMap, MaybeQuoteMarker, Part,
