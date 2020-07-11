@@ -165,6 +165,28 @@ call_command_parse_json(Command, SuspendCurs, Parser, Result, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
+    % notmuch/devel/schemata: threadid
+    %
+:- pred parse_thread_id(json::in, thread_id::out) is semidet.
+
+parse_thread_id(Json, ThreadId) :-
+    Json = string(Str0),
+    Str = unescape(Str0),
+    Str \= "", % just in case
+    ThreadId = thread_id(Str).
+
+    % notmuch/devel/schemata: messageid
+    %
+:- pred parse_message_id(json::in, message_id::out) is semidet.
+
+parse_message_id(Json, MessageId) :-
+    Json = string(Str0),
+    Str = unescape(Str0),
+    Str \= "", % just in case
+    MessageId = message_id(Str).
+
+%-----------------------------------------------------------------------------%
+
     % notmuch/devel/schemata: thread_set
     % A top-level set of threads (do_show)
     % Returned by notmuch show without a --part argument
@@ -268,7 +290,8 @@ really_exclude_message(CustomExcludeTags, MessageTags) :-
     %
 parse_message_for_recall(JSON, Message) :-
     (
-        JSON/"id" = unesc_string(Id),
+        JSON/"id" = Id,
+        parse_message_id(Id, MessageId),
         % match: bool,
         % filename: [string*],
         JSON/"timestamp" = Timestamp0,
@@ -282,7 +305,6 @@ parse_message_for_recall(JSON, Message) :-
         % crypto: crypto,
         % body?: [part]    # omitted if --body=false
     ->
-        MessageId = message_id(Id),
         TagSet = set.from_list(Tags),
         Message = message_for_recall(MessageId, Timestamp, Headers, TagSet)
     ;
@@ -640,7 +662,8 @@ parse_search_summary(Json, Threads) :-
 
 parse_thread_summary(Json, Thread) :-
     (
-        Json/"thread" = unesc_string(Id),
+        Json/"thread" = ThreadId0,
+        parse_thread_id(ThreadId0, ThreadId),
         Json/"timestamp" = Timestamp0,
         parse_unix_time(Timestamp0, Timestamp),
         % date_relative: string,
@@ -652,7 +675,7 @@ parse_thread_summary(Json, Thread) :-
         list.map(parse_tag, TagsList, Tags)
     ->
         TagSet = set.from_list(Tags),
-        Thread = thread(thread_id(Id), Timestamp, Authors, Subject, TagSet,
+        Thread = thread(ThreadId, Timestamp, Authors, Subject, TagSet,
             Matched, Total)
     ;
         throw(notmuch_json_error("parse_thread_summary"))
@@ -676,12 +699,6 @@ parse_search_messages(JSON, MessageId) :-
     ;
         throw(notmuch_json_error("parse_search_messages: expected list"))
     ).
-
-    % notmuch/devel/schemata: messageid
-    %
-:- pred parse_message_id(json::in, message_id::out) is semidet.
-
-parse_message_id(unesc_string(Id), message_id(Id)).
 
 %-----------------------------------------------------------------------------%
 
