@@ -341,7 +341,7 @@ get_thread_messages(Config, ThreadId, IncludeTags, Res, Messages, !IO) :-
             "--", thread_id_to_search_term(ThreadId)
         ],
         RedirectStderr, SuspendCurs,
-        parse_messages_list(yes(ExcludeTags)), ParseResult, !IO),
+        parse_thread_set(yes(ExcludeTags)), ParseResult, !IO),
     (
         ParseResult = ok(Messages),
         Res = ok

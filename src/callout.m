@@ -40,7 +40,7 @@
 % NOTE: these parser predicates may throw notmuch_json_errors
 % which are intended to be caught by run_notmuch.
 
-:- pred parse_messages_list(maybe(set(tag))::in, json::in, list(message)::out)
+:- pred parse_thread_set(maybe(set(tag))::in, json::in, list(message)::out)
     is det.
 
 :- pred parse_top_message(json::in, message::out) is det.
@@ -165,36 +165,47 @@ call_command_parse_json(Command, SuspendCurs, Parser, Result, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-parse_messages_list(CustomExcludeTags, JSON, Messages) :-
-    ( JSON = list([List]) ->
-        parse_inner_message_list(CustomExcludeTags, List, Messages)
-    ; JSON = list([]) ->
-        Messages = []
+    % notmuch/devel/schemata: thread_set
+    % A top-level set of threads (do_show)
+    % Returned by notmuch show without a --part argument
+    %
+parse_thread_set(CustomExcludeTags, JSON, Messages) :-
+    ( JSON = list(List) ->
+        list.map(parse_thread(CustomExcludeTags), List, Messages0),
+        list.condense(Messages0, Messages)
     ;
-        throw(notmuch_json_error(
-            "parse_messages_list: expected empty or singleton list"))
+        throw(notmuch_json_error("parse_thread_set: expected list"))
     ).
 
-parse_top_message(JSON, Message) :-
-    parse_message_details(no, JSON, [], Message).
-
-:- pred parse_inner_message_list(maybe(set(tag))::in, json::in,
-    list(message)::out) is det.
-
-parse_inner_message_list(CustomExcludeTags, JSON, Messages) :-
-    ( JSON = list(Array) ->
-        list.map(parse_message(CustomExcludeTags), Array, Messagess),
-        list.condense(Messagess, Messages)
-    ;
-        throw(notmuch_json_error("parse_inner_message_list: expected list"))
-    ).
-
-:- pred parse_message(maybe(set(tag))::in, json::in, list(message)::out)
+    % notmuch/devel/schemata: thread
+    % Top-level messages in a thread (show_messages)
+    %
+:- pred parse_thread(maybe(set(tag))::in, json::in, list(message)::out)
     is det.
 
-parse_message(CustomExcludeTags, JSON, Messages) :-
+parse_thread(CustomExcludeTags, JSON, Messages) :-
+    ( JSON = list(List) ->
+        list.map(parse_thread_node(CustomExcludeTags), List, Messages0),
+        list.filter_map(maybe_is_yes, Messages0, Messages)
+    ;
+        throw(notmuch_json_error("parse_thread: expected list"))
+    ).
+
+    % notmuch/devel/schemata: thread_node
+    % A message and its replies (show_messages)
+    %
+:- pred parse_thread_node(maybe(set(tag))::in, json::in, maybe(message)::out)
+    is det.
+
+parse_thread_node(CustomExcludeTags, JSON, MaybeMessage) :-
     ( JSON = list([JSON1, JSON2]) ->
-        parse_inner_message_list(CustomExcludeTags, JSON2, Replies),
+        ( JSON2 = list(List2) ->
+            list.map(parse_thread_node(CustomExcludeTags), List2, Replies0),
+            list.filter_map(maybe_is_yes, Replies0, Replies)
+        ;
+            throw(notmuch_json_error(
+                "parse_thread_node: expected replies list"))
+        ),
         ( JSON1 = null ->
             Message = excluded_message(no, no, no, no, Replies)
         ;
@@ -202,16 +213,20 @@ parse_message(CustomExcludeTags, JSON, Messages) :-
         ),
         % Completely hide excluded messages without replies.
         ( Message = excluded_message(_, _, _, _, []) ->
-            Messages = []
+            MaybeMessage = no
         ;
-            Messages = [Message]
+            MaybeMessage = yes(Message)
         )
     ;
-        throw(notmuch_json_error("parse_message: expected list (2 elements)"))
+        throw(notmuch_json_error(
+            "parse_thread_node: expected list (2 elements)"))
     ).
 
-:- pred parse_message_details(maybe(set(tag))::in, json::in,
-    list(message)::in, message::out) is det.
+parse_top_message(JSON, Message) :-
+    parse_message_details(no, JSON, [], Message).
+
+:- pred parse_message_details(maybe(set(tag))::in, json::in, list(message)::in,
+    message::out) is det.
 
 parse_message_details(CustomExcludeTags, JSON, Replies, Message) :-
     parse_message_for_recall(JSON, Message0),
