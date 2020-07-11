@@ -25,7 +25,6 @@
 :- implementation.
 
 :- import_module int.
-:- import_module require.
 :- import_module string.
 
 %-----------------------------------------------------------------------------%
@@ -36,18 +35,24 @@ load_config_file(FileName, Res, !IO) :-
     io.open_input(FileName, OpenRes, !IO),
     (
         OpenRes = ok(Stream),
-        load_config_stream(Stream, "", map.init, Config, !IO),
+        load_config_stream(Stream, "", Res0, map.init, Config, !IO),
         io.close_input(Stream, !IO),
-        Res = ok(Config)
+        (
+            Res0 = ok,
+            Res = ok(Config)
+        ;
+            Res0 = error(Error),
+            Res = error(Error)
+        )
     ;
         OpenRes = error(Error),
         Res = error(Error)
     ).
 
-:- pred load_config_stream(io.input_stream::in, section::in,
+:- pred load_config_stream(io.input_stream::in, section::in, io.res::out,
     config::in, config::out, io::di, io::uo) is det.
 
-load_config_stream(Stream, Section0, !Config, !IO) :-
+load_config_stream(Stream, Section0, Res, !Config, !IO) :-
     io.read_line_as_string(Stream, ReadRes, !IO),
     (
         ReadRes = ok(Line0),
@@ -57,12 +62,13 @@ load_config_stream(Stream, Section0, !Config, !IO) :-
         ;
             parse_line(Line, Section0, Section, !Config)
         ),
-        load_config_stream(Stream, Section, !Config, !IO)
+        load_config_stream(Stream, Section, Res, !Config, !IO)
     ;
-        ReadRes = eof
+        ReadRes = eof,
+        Res = ok
     ;
         ReadRes = error(Error),
-        error(io.error_message(Error))
+        Res = error(Error)
     ).
 
 :- pred parse_line(string::in, section::in, section::out,
