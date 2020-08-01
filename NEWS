@@ -1,17 +1,22 @@
-Bower 0.12-unreleased
-=====================
+Bower 0.12 (2020-08-01)
+=======================
 This release requires Mercury version 14.04 or above.
 
 * Create reply templates in bower instead of using notmuch reply output.
-* The visibility of parts in the pager determines which parts are included
-  in the reply, forward and edit-as-new message templates.
+* Include filtered non-text parts in reply/forward/edit-as-new templates.
+* Make the visibility of parts in the pager determine which parts to include
+  in message templates.
 * Pass PART_CONTENT_TYPE and PART_CHARSET environment variables to filters.
+* Set detected charset on outgoing text attachments.
+* Use application/octet-stream for text attachments with non UTF-8 content.
+* Improve parsing of notmuch output.
+* Parse notmuch format v4 signature error flags.
 * Clean up spaces and unprintable chars when displaying header values.
-* Fix display of future timestamps.
-* Handle screen resize in a few more places.
 * Hide tags starting with "." (Niklas Haas)
 * Change default cursor color.
+* Handle screen resize in a few more places.
 * Add make clean target.
+* Minor improvements.
 
 Bower 0.11 (2019-08-17)
 =======================
