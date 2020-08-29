@@ -1,6 +1,6 @@
 Bower 0.12 (2020-08-01)
 =======================
-This release requires Mercury version 14.04 or above.
+This release requires Mercury version 14.01 or above.
 
 * Create reply templates in bower instead of using notmuch reply output.
 * Include filtered non-text parts in reply/forward/edit-as-new templates.
