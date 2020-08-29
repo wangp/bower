@@ -199,10 +199,7 @@ number(Src, Number, !PS) :-
         Number = float(Float)
     else if string.to_int(NumberString, Int) then
         Number = int(Int)
-    else if
-        % integer.from_string/2 was added after 14.01.
-        integer.from_string(NumberString) = Integer
-    then
+    else if integer_from_string(NumberString, Integer) then
         Number = integer(Integer)
     else
         fail
@@ -273,6 +270,24 @@ minus_or_plus(Src, unit, !PS) :-
     ( C = ('-')
     ; C = ('+')
     ).
+
+:- pred integer_from_string(string::in, integer::out) is semidet.
+
+integer_from_string(Str, Integer) :-
+    % Mercury 14.01 only has integer.from_string/1
+    % Mercury ROTD 2020-08-18+ only has integer.from_string/2
+    % Maintain compatibility with both older and newer compilers
+    % for now by using integer.det_from_string/1.
+    promise_equivalent_solutions [Res] (
+        ( try []
+            I = integer.det_from_string(Str)
+        then
+            Res = yes(I)
+        catch_any _Exception ->
+            Res = no
+        )
+    ),
+    Res = yes(Integer).
 
 %-----------------------------------------------------------------------------%
 
