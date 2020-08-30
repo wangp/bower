@@ -36,6 +36,10 @@
     ;       nothing
     ;       command(command_prefix).
 
+:- type thread_ordering
+    --->    thread_ordering_threaded
+    ;       thread_ordering_flat.
+
 %-----------------------------------------------------------------------------%
 
 :- pred load_prog_config(load_prog_config_result::out, io::di, io::uo)
@@ -57,6 +61,8 @@
 :- pred get_poll_period_secs(prog_config::in, maybe(int)::out) is det.
 
 :- pred get_wrap_width(prog_config::in, int::in, int::out) is det.
+
+:- pred get_thread_ordering(prog_config::in, thread_ordering::out) is det.
 
 :- pred get_text_filter_command(prog_config::in, mime_type::in,
     command_prefix::out) is semidet.
@@ -133,6 +139,7 @@
                 poll_notify     :: maybe(command_prefix),
                 poll_period_secs :: maybe(int),
                 wrap_width      :: maybe(int),
+                thread_ordering :: thread_ordering,
                 encrypt_by_default :: bool,
                 sign_by_default :: bool,
                 decrypt_by_default :: bool,
@@ -276,6 +283,15 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
         WrapWidth = no
     ),
 
+    (
+        search_config(Config, "ui", "thread_ordering", Ordering0),
+        Ordering0 = "flat"
+    ->
+        Ordering = thread_ordering_flat
+    ;
+        Ordering = thread_ordering_threaded
+    ),
+
     some [!Filters] (
         !:Filters = map.singleton(text_html, default_html_dump_command),
         % For backwards compatibility.
@@ -391,6 +407,7 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ProgConfig ^ poll_notify = PollNotify,
     ProgConfig ^ poll_period_secs = PollSecs,
     ProgConfig ^ wrap_width = WrapWidth,
+    ProgConfig ^ thread_ordering = Ordering,
     ProgConfig ^ text_filters = Filters,
     ProgConfig ^ encrypt_by_default = EncryptByDefault,
     ProgConfig ^ sign_by_default = SignByDefault,
@@ -776,6 +793,9 @@ get_wrap_width(Config, Cols, WrapWidth) :-
         MaybeWrapWidth = no,
         WrapWidth = Cols
     ).
+
+get_thread_ordering(Config, Ordering) :-
+    Ordering = Config ^ thread_ordering.
 
 get_text_filter_command(Config, MimeType, Command) :-
     Filters = Config ^ text_filters,
