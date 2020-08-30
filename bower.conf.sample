@@ -136,6 +136,12 @@
     #
   ; wrap_width =
 
+    # Default thread ordering when viewing messages. May be "flat" or
+    # "threaded". Default: "threaded". The ordering can be toggled by
+    # pressing 'O' while viewing a thread of messages.
+    #
+  ; thread_ordering = threaded
+
 #-----------------------------------------------------------------------------#
 
 [crypto]

@@ -87,7 +87,7 @@
                 tp_thread_id        :: thread_id,
                 tp_include_tags     :: set(tag),
                 tp_messages         :: list(message),
-                tp_ordering         :: ordering,
+                tp_ordering         :: thread_ordering,
 
                 tp_scrollable       :: scrollable(thread_line),
                 tp_num_thread_rows  :: int,
@@ -105,10 +105,6 @@
                 tp_common_history   :: common_history,
                 tp_added_messages   :: int
             ).
-
-:- type ordering
-    --->    ordering_threaded
-    ;       ordering_flat.
 
 :- type thread_line
     --->    thread_line(
@@ -191,7 +187,7 @@ open_thread_pager(Config, Crypto, Screen, ThreadId, IncludeTags,
     get_thread_messages(Config, ThreadId, IncludeTags, ParseResult, Messages,
         !IO),
 
-    Ordering = ordering_threaded,
+    get_thread_ordering(Config, Ordering),
     create_pager_and_thread_lines(Config, Screen, Messages, Ordering,
         Scrollable, NumThreadRows, PagerInfo, NumPagerRows, !IO),
     NumMessages = get_num_lines(Scrollable),
@@ -369,7 +365,7 @@ verify_arg(no) = "--verify=false".
 %-----------------------------------------------------------------------------%
 
 :- pred create_pager_and_thread_lines(prog_config::in, screen::in,
-    list(message)::in, ordering::in,
+    list(message)::in, thread_ordering::in,
     scrollable(thread_line)::out, int::out, pager_info::out, int::out,
     io::di, io::uo) is det.
 
@@ -380,11 +376,11 @@ create_pager_and_thread_lines(Config, Screen, Messages, Ordering,
     current_timestamp(NowTime, !IO),
     localtime(NowTime, Nowish, !IO),
     (
-        Ordering = ordering_threaded,
+        Ordering = thread_ordering_threaded,
         append_threaded_messages(Nowish, Messages, ThreadLines, !IO),
         setup_pager(Config, include_replies, Cols, Messages, PagerInfo0, !IO)
     ;
-        Ordering = ordering_flat,
+        Ordering = thread_ordering_flat,
         append_flat_messages(Nowish, Messages, ThreadLines,
             SortedFlatMessages, !IO),
         setup_pager(Config, toplevel_only, Cols, SortedFlatMessages,
@@ -2644,11 +2640,11 @@ toggle_content(Screen, ToggleType, !Info, !IO) :-
 toggle_ordering(!Info) :-
     Ordering0 = !.Info ^ tp_ordering,
     (
-        Ordering0 = ordering_flat,
-        Ordering = ordering_threaded
+        Ordering0 = thread_ordering_flat,
+        Ordering = thread_ordering_threaded
     ;
-        Ordering0 = ordering_threaded,
-        Ordering = ordering_flat
+        Ordering0 = thread_ordering_threaded,
+        Ordering = thread_ordering_flat
     ),
     !Info ^ tp_ordering := Ordering.
 
