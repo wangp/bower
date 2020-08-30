@@ -37,6 +37,12 @@
     #
   ; editor = vim '+set ft=mail'
 
+    # Specifying an alt_html_filter allows to compose multipart/alternative
+    # messages with bower. The filter will receive the text/plain part on
+    # stdin and is meant to produce an equivalent text/html part on stdout.
+    #
+  ; alt_html_filter = pandoc -f markdown -t html
+
     # Default command to open a part.
     # An unquoted & suffix causes the command to run in the background.
     #

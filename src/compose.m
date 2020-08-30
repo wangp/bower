@@ -122,6 +122,7 @@
                 si_headers      :: headers,
                 si_parsed_hdrs  :: parsed_headers,
                 si_text         :: string,
+                si_text_alt     :: maybe(string),
                 si_old_msgid    :: maybe(message_id),
                 si_attach_hist  :: history
             ).
@@ -537,7 +538,7 @@ create_edit_stage_2(Config, Screen, Headers0, Text0, Attachments,
         MaybeOldDraft, Transition, !CryptoInfo, !IO) :-
     make_parsed_headers(Headers0, ParsedHeaders0),
     create_temp_message_file(Config, prepare_edit, Headers0,
-        ParsedHeaders0, Text0, Attachments, !.CryptoInfo, ResFilename,
+        ParsedHeaders0, Text0, no, Attachments, !.CryptoInfo, ResFilename,
         _MaybeWarning, !IO),
     (
         ResFilename = ok(Filename),
@@ -549,7 +550,8 @@ create_edit_stage_2(Config, Screen, Headers0, Text0, Attachments,
                 ResParse = ok(Headers1 - Text),
                 io.remove_file(Filename, _, !IO),
                 update_references(Headers0, Headers1, Headers2),
-                reenter_staging_screen(Config, Screen, Headers2, Text,
+                make_text_alt(Config, Text, TextAlt, !IO),
+                reenter_staging_screen(Config, Screen, Headers2, Text, TextAlt,
                     Attachments, MaybeOldDraft, Transition, !CryptoInfo, !IO)
             ;
                 ResParse = error(Error),
@@ -622,25 +624,47 @@ update_references(Headers0, !Headers) :-
 %-----------------------------------------------------------------------------%
 
 :- pred reenter_staging_screen(prog_config::in, screen::in, headers::in,
-    string::in, list(attachment)::in, maybe(message_id)::in,
+    string::in, maybe(string)::in, list(attachment)::in, maybe(message_id)::in,
     screen_transition(sent)::out, crypto_info::in, crypto_info::out,
     io::di, io::uo) is det.
 
-reenter_staging_screen(Config, Screen, Headers0, Text, Attachments,
+reenter_staging_screen(Config, Screen, Headers0, Text, TextAlt, Attachments,
         MaybeOldDraft, Transition, !CryptoInfo, !IO) :-
     parse_and_expand_headers(Config, Headers0, Headers, Parsed, !IO),
     get_some_matching_account(Config, Parsed ^ ph_from, MaybeAccount),
     maintain_encrypt_keys(Parsed, !CryptoInfo, !IO),
     maintain_sign_keys(Parsed, !CryptoInfo, !IO),
 
-    StagingInfo = staging_info(Config, MaybeAccount, Headers, Parsed, Text,
-        MaybeOldDraft, init_history),
+    StagingInfo = staging_info(Config, MaybeAccount, Headers, Parsed,
+        Text, TextAlt, MaybeOldDraft, init_history),
     AttachInfo = scrollable.init_with_cursor(Attachments),
     get_cols(Screen, Cols, !IO),
     setup_pager_for_staging(Config, Cols, Text, new_pager, PagerInfo),
     update_message(Screen, clear_message, !IO),
     staging_screen(Screen, StagingInfo, AttachInfo, PagerInfo, Transition,
         !CryptoInfo, !IO).
+
+:- pred make_text_alt(prog_config::in, string::in, maybe(string)::out,
+    io::di, io::uo) is det.
+
+make_text_alt(Config, TextIn, TextOut, !IO) :-
+    get_alt_html_filter_command(Config, MaybeCommand),
+    (
+        MaybeCommand = no, TextOut = no
+    ;
+        MaybeCommand = yes(Command),
+        ErrorLimit = yes(100),
+        call_system_filter(Command, environ([]), TextIn, ErrorLimit,
+            CallRes, !IO),
+        (
+            CallRes = ok(Output),
+            TextOut = yes(Output)
+        ;
+            CallRes = error(Error),
+            % TODO: Add proper error message
+            TextOut = no
+        )
+    ).
 
 :- pred parse_and_expand_headers(prog_config::in, headers::in, headers::out,
     parsed_headers::out, io::di, io::uo) is det.
@@ -745,7 +769,7 @@ maybe_expand_mailbox(Config, Opt, Mailbox0, Mailbox, !Cache, !IO) :-
 staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         !CryptoInfo, !IO) :-
     !.StagingInfo = staging_info(Config, MaybeAccount, Headers, ParsedHeaders,
-        Text, MaybeOldDraft, _AttachHistory),
+        Text, TextAlt, MaybeOldDraft, _AttachHistory),
     Attrs = compose_attrs(Config),
     PagerAttrs = pager_attrs(Config),
 
@@ -817,8 +841,8 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         Action = continue
     ; KeyCode = char('p') ->
         Attachments = get_lines_list(!.AttachInfo),
-        postpone(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
-            !.CryptoInfo, Res, PostponeMsg, !IO),
+        postpone(Config, Screen, Headers, ParsedHeaders, Text, TextAlt,
+            Attachments, !.CryptoInfo, Res, PostponeMsg, !IO),
         (
             Res = yes,
             maybe_remove_draft(!.StagingInfo, !IO),
@@ -833,7 +857,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         (
             MaybeAccount = yes(Account),
             send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text,
-                Attachments, !.CryptoInfo, Sent0, MessageUpdate0, !IO)
+                TextAlt, Attachments, !.CryptoInfo, Sent0, MessageUpdate0, !IO)
         ;
             MaybeAccount = no,
             Sent0 = not_sent,
@@ -1780,13 +1804,13 @@ draw_staging_bar(Attrs, Screen, StagingInfo, !IO) :-
 %-----------------------------------------------------------------------------%
 
 :- pred postpone(prog_config::in, screen::in, headers::in, parsed_headers::in,
-    string::in, list(attachment)::in, crypto_info::in, bool::out,
-    message_update::out, io::di, io::uo) is det.
+    string::in, maybe(string)::in, list(attachment)::in, crypto_info::in,
+    bool::out, message_update::out, io::di, io::uo) is det.
 
-postpone(Config, Screen, Headers, ParsedHeaders, Text, Attachments, CryptoInfo,
-        Res, MessageUpdate, !IO) :-
+postpone(Config, Screen, Headers, ParsedHeaders, Text, TextAlt, Attachments,
+        CryptoInfo, Res, MessageUpdate, !IO) :-
     create_temp_message_file(Config, prepare_postpone, Headers, ParsedHeaders,
-        Text, Attachments, CryptoInfo, ResFilename, Warnings, !IO),
+        Text, TextAlt, Attachments, CryptoInfo, ResFilename, Warnings, !IO),
     (
         ResFilename = ok(Filename),
         (
@@ -1846,13 +1870,13 @@ maybe_remove_draft(StagingInfo, !IO) :-
 %-----------------------------------------------------------------------------%
 
 :- pred send_mail(prog_config::in, account::in, screen::in, headers::in,
-    parsed_headers::in, string::in, list(attachment)::in, crypto_info::in,
-    sent::out, message_update::out, io::di, io::uo) is det.
+    parsed_headers::in, string::in, maybe(string)::in, list(attachment)::in,
+    crypto_info::in, sent::out, message_update::out, io::di, io::uo) is det.
 
-send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text, Attachments,
-        CryptoInfo, Res, MessageUpdate, !IO) :-
+send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text, TextAlt,
+        Attachments, CryptoInfo, Res, MessageUpdate, !IO) :-
     create_temp_message_file(Config, prepare_send, Headers, ParsedHeaders,
-        Text, Attachments, CryptoInfo, ResFilename, Warnings, !IO),
+        Text, TextAlt, Attachments, CryptoInfo, ResFilename, Warnings, !IO),
     (
         ResFilename = ok(Filename),
         prompt_confirm_warnings(Screen, Warnings, ConfirmAll, !IO),
@@ -2012,12 +2036,12 @@ tag_replied_message(Config, Headers, Res, !IO) :-
     ;       prepare_postpone.
 
 :- pred create_temp_message_file(prog_config::in, prepare_temp::in,
-    headers::in, parsed_headers::in, string::in, list(attachment)::in,
-    crypto_info::in, maybe_error(string)::out, list(string)::out,
-    io::di, io::uo) is det.
+    headers::in, parsed_headers::in, string::in, maybe(string)::in,
+    list(attachment)::in, crypto_info::in, maybe_error(string)::out,
+    list(string)::out, io::di, io::uo) is det.
 
-create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
-        Attachments, CryptoInfo, Res, Warnings, !IO) :-
+create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
+        Text, TextAlt, Attachments, CryptoInfo, Res, Warnings, !IO) :-
     % We only use this to generate MIME boundaries.
     current_timestamp(timestamp(Seed), !IO),
     splitmix64.init(truncate_to_int(Seed), RS0),
@@ -2048,8 +2072,8 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
             Encrypt = no,
             Sign = no,
             generate_boundary(MixedBoundary, RS0, _RS),
-            make_text_and_attachments_mime_part(cte_8bit, Text, Attachments,
-                boundary(MixedBoundary), Res0),
+            make_text_and_attachments_mime_part(cte_8bit, Text, TextAlt,
+                Attachments, boundary(MixedBoundary), Res0),
             (
                 Res0 = ok(MimePart),
                 Spec = message_spec(WriteHeaders, mime_v1(MimePart)),
@@ -2091,8 +2115,8 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
                 missing_keys_warning(Missing, WarningsA),
                 leaked_bccs_warning(LeakedBccs, WarningsB),
                 generate_boundary(MixedBoundary, RS0, RS1),
-                make_text_and_attachments_mime_part(TextCTE, Text, Attachments,
-                    boundary(MixedBoundary), Res0),
+                make_text_and_attachments_mime_part(TextCTE, Text, TextAlt,
+                    Attachments, boundary(MixedBoundary), Res0),
                 (
                     Res0 = ok(PartToEncrypt),
                     generate_boundary(EncryptedBoundary, RS1, _RS),
@@ -2122,8 +2146,8 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders, Text,
                 % Force text parts to be base64-encoded to avoid being mangled
                 % during transfer.
                 generate_boundary(MixedBoundary, RS0, RS1),
-                make_text_and_attachments_mime_part(cte_base64, Text, Attachments,
-                    boundary(MixedBoundary), Res0),
+                make_text_and_attachments_mime_part(cte_base64, Text, TextAlt,
+                    Attachments, boundary(MixedBoundary), Res0),
                 (
                     Res0 = ok(PartToSign),
                     generate_boundary(SignedBoundary, RS1, _RS),
@@ -2234,13 +2258,26 @@ maybe_cons_unstructured(SkipEmpty, Options, FieldName, Value, !Acc) :-
 %-----------------------------------------------------------------------------%
 
 :- pred make_text_and_attachments_mime_part(write_content_transfer_encoding::in,
-    string::in, list(attachment)::in, boundary::in,
+    string::in, maybe(string)::in, list(attachment)::in, boundary::in,
     maybe_error(mime_part)::out) is det.
 
-make_text_and_attachments_mime_part(TextCTE, Text, Attachments, MixedBoundary,
-        Res) :-
-    TextPart = discrete(text_plain, yes("utf-8"),
+make_text_and_attachments_mime_part(TextCTE, Text, TextAlt, Attachments,
+        MixedBoundary, Res) :-
+    TextPlain = discrete(text_plain, yes("utf-8"),
         yes(write_content_disposition(inline, no)), yes(TextCTE), text(Text)),
+    (
+        TextAlt = no,
+        TextPart = TextPlain
+    ;
+        TextAlt = yes(TextAltContent),
+        TextHTML = discrete(text_html, yes("utf-8"),
+            yes(write_content_disposition(inline, no)), yes(TextCTE),
+            text(TextAltContent)),
+        TextPart = composite(multipart_alternative,
+            boundary("========ASDUFOuotipZOIzzPTOINfsaASD=="),
+            yes(write_content_disposition(inline, no)), yes(cte_8bit),
+            [TextPlain, TextHTML])
+    ),
     (
         Attachments = [],
         Res = ok(TextPart)

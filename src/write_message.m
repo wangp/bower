@@ -64,6 +64,7 @@
 
 :- type composite_content_type
     --->    multipart_mixed
+    ;       multipart_alternative
     ;       multipart_encrypted(protocol)
     ;       multipart_signed(micalg, protocol).
 
@@ -341,6 +342,13 @@ write_composite_content_type(Stream, ContentType, boundary(Boundary), !IO) :-
         ContentType = multipart_mixed,
         list.foldl(put(Stream),
             ["Content-Type: multipart/mixed; boundary=""", Boundary, """\n"],
+            !IO)
+    ;
+        ContentType = multipart_alternative,
+        list.foldl(put(Stream),
+            ["Content-Type: multipart/alternative",
+            "; boundary=""", Boundary, """",
+            "\n"],
             !IO)
     ;
         ContentType = multipart_encrypted(Protocol),

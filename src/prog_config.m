@@ -55,6 +55,9 @@
 
 :- pred get_pipe_id_command(prog_config::in, string::out) is det.
 
+:- pred get_alt_html_filter_command(prog_config::in,
+    maybe(string)::out) is det.
+
 :- pred get_poll_notify_command(prog_config::in, maybe(command_prefix)::out)
     is det.
 
@@ -136,6 +139,7 @@
                 open_part       :: string, % not shell-quoted
                 open_url        :: string, % not shell-quoted
                 pipe_id         :: string, % not shell-quoted
+                alt_html_filter :: maybe(string),
                 poll_notify     :: maybe(command_prefix),
                 poll_period_secs :: maybe(int),
                 wrap_width      :: maybe(int),
@@ -252,6 +256,15 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
         PipeId = PipeId0
     ;
         PipeId = default_pipe_id_command
+    ),
+
+    (
+        search_config(Config, "command", "alt_html_filter", AltHTMLFilter0),
+        AltHTMLFilter0 \= ""
+    ->
+        AltHTMLFilter = yes(AltHTMLFilter0)
+    ;
+        AltHTMLFilter = no
     ),
 
     (
@@ -404,6 +417,7 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ProgConfig ^ open_part = OpenPart,
     ProgConfig ^ open_url = OpenUrl,
     ProgConfig ^ pipe_id = PipeId,
+    ProgConfig ^ alt_html_filter = AltHTMLFilter,
     ProgConfig ^ poll_notify = PollNotify,
     ProgConfig ^ poll_period_secs = PollSecs,
     ProgConfig ^ wrap_width = WrapWidth,
@@ -777,6 +791,9 @@ get_open_url_command(Config, Command) :-
 
 get_pipe_id_command(Config, Command) :-
     Command = Config ^ pipe_id.
+
+get_alt_html_filter_command(Config, Command) :-
+    Command = Config ^ alt_html_filter.
 
 get_poll_notify_command(Config, Command) :-
     Command = Config ^ poll_notify.
