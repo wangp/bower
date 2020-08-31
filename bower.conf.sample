@@ -41,6 +41,10 @@
     # messages with bower. The filter will receive the text/plain part on
     # stdin and is meant to produce an equivalent text/html part on stdout.
     #
+    # Some of the email's header values will be available to the filter
+    # as environment variables. The following environment variables are
+    # set by bower: from, to, cc, bcc, subject, reply_to, in_reply_to.
+    #
   ; alt_html_filter = pandoc -f markdown -t html
 
     # Default command to open a part.
