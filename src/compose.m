@@ -550,7 +550,7 @@ create_edit_stage_2(Config, Screen, Headers0, Text0, Attachments,
                 ResParse = ok(Headers1 - Text),
                 io.remove_file(Filename, _, !IO),
                 update_references(Headers0, Headers1, Headers2),
-                make_text_alt(Config, Text, TextAlt, !IO),
+                make_text_alt(Config, Headers2, Text, TextAlt, !IO),
                 reenter_staging_screen(Config, Screen, Headers2, Text, TextAlt,
                     Attachments, MaybeOldDraft, Transition, !CryptoInfo, !IO)
             ;
@@ -644,17 +644,30 @@ reenter_staging_screen(Config, Screen, Headers0, Text, TextAlt, Attachments,
     staging_screen(Screen, StagingInfo, AttachInfo, PagerInfo, Transition,
         !CryptoInfo, !IO).
 
-:- pred make_text_alt(prog_config::in, string::in, maybe(string)::out,
-    io::di, io::uo) is det.
+:- func headers_as_env(headers) = spawn_env.
 
-make_text_alt(Config, TextIn, TextOut, !IO) :-
+headers_as_env(Headers) =
+     environ([
+        set_var("from", header_value_string(Headers ^ h_from)),
+        set_var("to", header_value_string(Headers ^ h_to)),
+        set_var("cc", header_value_string(Headers ^ h_cc)),
+        set_var("bcc", header_value_string(Headers ^ h_bcc)),
+        set_var("subject", header_value_string(Headers ^ h_subject)),
+        set_var("reply_to", header_value_string(Headers ^ h_replyto)),
+        set_var("in_reply_to", header_value_string(Headers ^ h_inreplyto))
+    ]).
+
+:- pred make_text_alt(prog_config::in, headers::in, string::in,
+    maybe(string)::out, io::di, io::uo) is det.
+
+make_text_alt(Config, Headers, TextIn, TextOut, !IO) :-
     get_alt_html_filter_command(Config, MaybeCommand),
     (
         MaybeCommand = no, TextOut = no
     ;
         MaybeCommand = yes(Command),
         ErrorLimit = yes(100),
-        call_system_filter(Command ++ " 2>/dev/null", environ([]),
+        call_system_filter(Command ++ " 2>/dev/null", headers_as_env(Headers),
             TextIn, ErrorLimit, CallRes, !IO),
         (
             CallRes = ok(Output),
