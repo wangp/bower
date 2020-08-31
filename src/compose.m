@@ -674,7 +674,13 @@ make_text_alt(Config, Headers, TextIn, TextOut, !IO) :-
             ErrorLimit, CallRes, !IO),
         (
             CallRes = ok(Output),
-            TextOut = yes(Output)
+            (
+                Output = ""
+            ->
+                TextOut = no
+            ;
+                TextOut = yes(Output)
+            )
         ;
             CallRes = error(Error),
             % TODO: Add proper error message
