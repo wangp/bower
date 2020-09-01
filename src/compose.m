@@ -550,8 +550,7 @@ create_edit_stage_2(Config, Screen, Headers0, Text0, Attachments,
                 ResParse = ok(Headers1 - Text),
                 io.remove_file(Filename, _, !IO),
                 update_references(Headers0, Headers1, Headers2),
-                make_text_alt(Config, Headers2, Text, TextAlt, !IO),
-                reenter_staging_screen(Config, Screen, Headers2, Text, TextAlt,
+                reenter_staging_screen(Config, Screen, Headers2, Text,
                     Attachments, MaybeOldDraft, Transition, !CryptoInfo, !IO)
             ;
                 ResParse = error(Error),
@@ -624,12 +623,13 @@ update_references(Headers0, !Headers) :-
 %-----------------------------------------------------------------------------%
 
 :- pred reenter_staging_screen(prog_config::in, screen::in, headers::in,
-    string::in, maybe(string)::in, list(attachment)::in, maybe(message_id)::in,
+    string::in, list(attachment)::in, maybe(message_id)::in,
     screen_transition(sent)::out, crypto_info::in, crypto_info::out,
     io::di, io::uo) is det.
 
-reenter_staging_screen(Config, Screen, Headers0, Text, TextAlt, Attachments,
+reenter_staging_screen(Config, Screen, Headers0, Text, Attachments,
         MaybeOldDraft, Transition, !CryptoInfo, !IO) :-
+    make_text_alt(Config, Headers0, Text, TextAlt, !IO),
     parse_and_expand_headers(Config, Headers0, Headers, Parsed, !IO),
     get_some_matching_account(Config, Parsed ^ ph_from, MaybeAccount),
     maintain_encrypt_keys(Parsed, !CryptoInfo, !IO),
