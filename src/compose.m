@@ -629,7 +629,7 @@ update_references(Headers0, !Headers) :-
 
 reenter_staging_screen(Config, Screen, Headers0, Text, Attachments,
         MaybeOldDraft, Transition, !CryptoInfo, !IO) :-
-    make_text_alt(Config, Headers0, Text, TextAlt, !IO),
+    make_text_alt(Config, Headers0, Text, TextAlt, FilterRes, !IO),
     parse_and_expand_headers(Config, Headers0, Headers, Parsed, !IO),
     get_some_matching_account(Config, Parsed ^ ph_from, MaybeAccount),
     maintain_encrypt_keys(Parsed, !CryptoInfo, !IO),
@@ -661,12 +661,12 @@ headers_as_env(Headers) =
     ]).
 
 :- pred make_text_alt(prog_config::in, headers::in, string::in,
-    maybe(string)::out, io::di, io::uo) is det.
+    maybe(string)::out, call_res::out, io::di, io::uo) is det.
 
-make_text_alt(Config, Headers, TextIn, TextOut, !IO) :-
+make_text_alt(Config, Headers, TextIn, TextOut, Res, !IO) :-
     get_alt_html_filter_command(Config, MaybeCommand),
     (
-        MaybeCommand = no, TextOut = no
+        MaybeCommand = no, TextOut = no, Res = ok
     ;
         MaybeCommand = yes(Command),
         ErrorLimit = yes(100),
@@ -674,6 +674,7 @@ make_text_alt(Config, Headers, TextIn, TextOut, !IO) :-
             TextIn, ErrorLimit, CallRes, !IO),
         (
             CallRes = ok(Output),
+            Res = ok,
             (
                 Output = ""
             ->
@@ -683,7 +684,9 @@ make_text_alt(Config, Headers, TextIn, TextOut, !IO) :-
             )
         ;
             CallRes = error(Error),
-            % TODO: Add proper error message
+            string.append_list(["Error running ", Command, ": ",
+                io.error_message(Error)], Warning),
+            Res = error(Warning),
             TextOut = no
         )
     ).
