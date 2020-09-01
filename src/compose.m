@@ -640,7 +640,13 @@ reenter_staging_screen(Config, Screen, Headers0, Text, Attachments,
     AttachInfo = scrollable.init_with_cursor(Attachments),
     get_cols(Screen, Cols, !IO),
     setup_pager_for_staging(Config, Cols, Text, new_pager, PagerInfo),
-    update_message(Screen, clear_message, !IO),
+    (
+        FilterRes = ok,
+        update_message(Screen, clear_message, !IO)
+    ;
+        FilterRes = error(Error),
+        update_message(Screen, set_warning(Error), !IO)
+    ),
     staging_screen(Screen, StagingInfo, AttachInfo, PagerInfo, Transition,
         !CryptoInfo, !IO).
 
