@@ -670,8 +670,8 @@ make_text_alt(Config, Headers, TextIn, TextOut, !IO) :-
     ;
         MaybeCommand = yes(Command),
         ErrorLimit = yes(100),
-        call_system_filter(Command, headers_as_env(Headers), TextIn,
-            ErrorLimit, CallRes, !IO),
+        call_system_filter(Command ++ " 2>/dev/null", headers_as_env(Headers),
+            TextIn, ErrorLimit, CallRes, !IO),
         (
             CallRes = ok(Output),
             (
