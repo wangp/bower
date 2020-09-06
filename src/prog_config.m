@@ -269,12 +269,16 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ),
 
     (
-        search_config(Config, "command", "alt_html_filter", AltHTMLFilter0),
-        AltHTMLFilter0 \= ""
-    ->
-        AltHTMLFilter = yes(AltHTMLFilter0)
+        search_config(Config, "command", "alt_html_filter", AltHTMLFilter0) ->
+        (
+            AltHTMLFilter0 \= ""
+        ->
+            AltHTMLFilter = yes(AltHTMLFilter0)
+        ;
+            AltHTMLFilter = no
+        )
     ;
-        AltHTMLFilter = no
+        AltHTMLFilter = yes(default_alt_html_filter_command)
     ),
 
     (
@@ -968,6 +972,10 @@ default_open_url_command = "xdg-open&".
 :- func default_pipe_id_command = string.
 
 default_pipe_id_command = "xclip".
+
+:- func default_alt_html_filter_command = string.
+
+default_alt_html_filter_command = "pandoc -f markdown -t html".
 
 :- func default_poll_period_secs = maybe(int).
 
