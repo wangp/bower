@@ -40,6 +40,12 @@
     --->    thread_ordering_threaded
     ;       thread_ordering_flat.
 
+:- type use_alt_html_filter
+    --->    alt_html_filter_never
+    ;       alt_html_filter_off
+    ;       alt_html_filter_on
+    ;       alt_html_filter_always.
+
 %-----------------------------------------------------------------------------%
 
 :- pred load_prog_config(load_prog_config_result::out, io::di, io::uo)
@@ -56,6 +62,9 @@
 :- pred get_pipe_id_command(prog_config::in, string::out) is det.
 
 :- pred get_alt_html_filter_command(prog_config::in, maybe(string)::out)
+    is det.
+
+:- pred get_use_alt_html_filter(prog_config::in, use_alt_html_filter::out)
     is det.
 
 :- pred get_poll_notify_command(prog_config::in, maybe(command_prefix)::out)
@@ -140,6 +149,7 @@
                 open_url        :: string, % not shell-quoted
                 pipe_id         :: string, % not shell-quoted
                 alt_html_filter :: maybe(string),
+                use_alt_html_filter :: use_alt_html_filter,
                 poll_notify     :: maybe(command_prefix),
                 poll_period_secs :: maybe(int),
                 wrap_width      :: maybe(int),
@@ -265,6 +275,27 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
         AltHTMLFilter = yes(AltHTMLFilter0)
     ;
         AltHTMLFilter = no
+    ),
+
+    (
+        search_config(Config, "command", "use_alt_html_filter",
+            UseAltHTMLFilter0),
+        UseAltHTMLFilter1 = string.to_lower(UseAltHTMLFilter0),
+        (
+            UseAltHTMLFilter1 = "never",
+            UseAltHTMLFilter = alt_html_filter_never
+        ;
+            UseAltHTMLFilter1 = "manual",
+            UseAltHTMLFilter = alt_html_filter_off
+        ;
+            UseAltHTMLFilter1 = "default",
+            UseAltHTMLFilter = alt_html_filter_on
+        ;
+            UseAltHTMLFilter1 = "always",
+            UseAltHTMLFilter = alt_html_filter_always
+        )
+    ;
+        UseAltHTMLFilter = alt_html_filter_off
     ),
 
     (
@@ -418,6 +449,7 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ProgConfig ^ open_url = OpenUrl,
     ProgConfig ^ pipe_id = PipeId,
     ProgConfig ^ alt_html_filter = AltHTMLFilter,
+    ProgConfig ^ use_alt_html_filter = UseAltHTMLFilter,
     ProgConfig ^ poll_notify = PollNotify,
     ProgConfig ^ poll_period_secs = PollSecs,
     ProgConfig ^ wrap_width = WrapWidth,
@@ -794,6 +826,9 @@ get_pipe_id_command(Config, Command) :-
 
 get_alt_html_filter_command(Config, Command) :-
     Command = Config ^ alt_html_filter.
+
+get_use_alt_html_filter(Config, UseAltHTMLFilter) :-
+    UseAltHTMLFilter = Config ^ use_alt_html_filter.
 
 get_poll_notify_command(Config, Command) :-
     Command = Config ^ poll_notify.

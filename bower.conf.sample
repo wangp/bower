@@ -47,6 +47,13 @@
     #
   ; alt_html_filter = pandoc -f markdown -t html
 
+    # When to use the alt_html_filter. Can be one of never, manual,
+    # default or always. If either manual or default are chosen,
+    # the filter can be toggled on or off on a per message basis by
+    # pressing H.
+    #
+  ; use_alt_html_filter = manual
+
     # Default command to open a part.
     # An unquoted & suffix causes the command to run in the background.
     #

@@ -123,6 +123,7 @@
                 si_parsed_hdrs  :: parsed_headers,
                 si_text         :: string,
                 si_text_alt     :: maybe(string),
+                si_make_alt     :: use_alt_html_filter,
                 si_old_msgid    :: maybe(message_id),
                 si_attach_hist  :: history
             ).
@@ -525,17 +526,19 @@ create_edit_stage(Config, Crypto, Screen, Headers0, Text0, Attachments,
     CryptoInfo0 = init_crypto_info(Crypto,
         EncryptByDefault `or` EncryptInit,
         SignByDefault `or` SignInit),
-    create_edit_stage_2(Config, Screen, Headers0, Text0, Attachments,
-        MaybeOldDraft, Transition, CryptoInfo0, CryptoInfo, !IO),
+    get_use_alt_html_filter(Config, UseAltHTMLFilter),
+    create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHTMLFilter,
+        Attachments, MaybeOldDraft, Transition, CryptoInfo0, CryptoInfo, !IO),
     unref_keys(CryptoInfo, !IO).
 
 :- pred create_edit_stage_2(prog_config::in, screen::in,
-    headers::in, string::in, list(attachment)::in, maybe(message_id)::in,
+    headers::in, string::in, use_alt_html_filter::in,
+    list(attachment)::in, maybe(message_id)::in,
     screen_transition(sent)::out, crypto_info::in, crypto_info::out,
     io::di, io::uo) is det.
 
-create_edit_stage_2(Config, Screen, Headers0, Text0, Attachments,
-        MaybeOldDraft, Transition, !CryptoInfo, !IO) :-
+create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHTMLFilter,
+        Attachments, MaybeOldDraft, Transition, !CryptoInfo, !IO) :-
     make_parsed_headers(Headers0, ParsedHeaders0),
     create_temp_message_file(Config, prepare_edit, Headers0,
         ParsedHeaders0, Text0, no, Attachments, !.CryptoInfo, ResFilename,
@@ -551,7 +554,8 @@ create_edit_stage_2(Config, Screen, Headers0, Text0, Attachments,
                 io.remove_file(Filename, _, !IO),
                 update_references(Headers0, Headers1, Headers2),
                 reenter_staging_screen(Config, Screen, Headers2, Text,
-                    Attachments, MaybeOldDraft, Transition, !CryptoInfo, !IO)
+                    UseAltHTMLFilter, Attachments, MaybeOldDraft, Transition,
+                    !CryptoInfo, !IO)
             ;
                 ResParse = error(Error),
                 io.error_message(Error, Msg),
@@ -623,28 +627,32 @@ update_references(Headers0, !Headers) :-
 %-----------------------------------------------------------------------------%
 
 :- pred reenter_staging_screen(prog_config::in, screen::in, headers::in,
-    string::in, list(attachment)::in, maybe(message_id)::in,
-    screen_transition(sent)::out, crypto_info::in, crypto_info::out,
+    string::in, use_alt_html_filter::in, list(attachment)::in,
+    maybe(message_id)::in, screen_transition(sent)::out,
+    crypto_info::in, crypto_info::out,
     io::di, io::uo) is det.
 
-reenter_staging_screen(Config, Screen, Headers0, Text, Attachments,
-        MaybeOldDraft, Transition, !CryptoInfo, !IO) :-
-    make_text_alt(Config, Headers0, Text, TextAlt, FilterRes, !IO),
+reenter_staging_screen(Config, Screen, Headers0, Text, UseAltHTMLFilter,
+        Attachments, MaybeOldDraft, Transition, !CryptoInfo, !IO) :-
     parse_and_expand_headers(Config, Headers0, Headers, Parsed, !IO),
     get_some_matching_account(Config, Parsed ^ ph_from, MaybeAccount),
     maintain_encrypt_keys(Parsed, !CryptoInfo, !IO),
     maintain_sign_keys(Parsed, !CryptoInfo, !IO),
 
-    StagingInfo = staging_info(Config, MaybeAccount, Headers, Parsed,
-        Text, TextAlt, MaybeOldDraft, init_history),
+    StagingInfo0 = staging_info(Config, MaybeAccount, Headers, Parsed,
+        Text, no, UseAltHTMLFilter, MaybeOldDraft, init_history),
+    maybe_make_text_alt(FilterRes, StagingInfo0, StagingInfo, !IO),
     AttachInfo = scrollable.init_with_cursor(Attachments),
     get_cols(Screen, Cols, !IO),
     setup_pager_for_staging(Config, Cols, Text, new_pager, PagerInfo),
     (
-        FilterRes = ok,
+        FilterRes = no,
         update_message(Screen, clear_message, !IO)
     ;
-        FilterRes = error(Error),
+        FilterRes = yes(ok),
+        update_message(Screen, clear_message, !IO)
+    ;
+        FilterRes = yes(error(Error)),
         update_message(Screen, set_warning(Error), !IO)
     ),
     staging_screen(Screen, StagingInfo, AttachInfo, PagerInfo, Transition,
@@ -692,6 +700,33 @@ make_text_alt(Config, Headers, TextIn, TextOut, Res, !IO) :-
             Res = error(Warning),
             TextOut = no
         )
+    ).
+
+:- pred maybe_make_text_alt(maybe(call_res)::out, staging_info::in,
+    staging_info::out, io::di, io::uo) is det.
+
+maybe_make_text_alt(MaybeFilterRes, !StagingInfo, !IO) :-
+    UseFilter = !.StagingInfo ^ si_make_alt,
+    Config = !.StagingInfo ^ si_config,
+    Headers = !.StagingInfo ^ si_headers,
+    Text = !.StagingInfo ^ si_text,
+    (
+        (
+            UseFilter = alt_html_filter_always
+        ;
+            UseFilter = alt_html_filter_on
+        ),
+        make_text_alt(Config, Headers, Text, TextAlt, FilterRes, !IO),
+        MaybeFilterRes = yes(FilterRes),
+        !StagingInfo ^ si_text_alt := TextAlt
+    ;
+        (
+            UseFilter = alt_html_filter_never
+        ;
+            UseFilter = alt_html_filter_off
+        ),
+        MaybeFilterRes = no,
+        !StagingInfo ^ si_text_alt := no
     ).
 
 :- pred parse_and_expand_headers(prog_config::in, headers::in, headers::out,
@@ -797,7 +832,7 @@ maybe_expand_mailbox(Config, Opt, Mailbox0, Mailbox, !Cache, !IO) :-
 staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         !CryptoInfo, !IO) :-
     !.StagingInfo = staging_info(Config, MaybeAccount, Headers, ParsedHeaders,
-        Text, TextAlt, MaybeOldDraft, _AttachHistory),
+        Text, TextAlt, UseAltHTMLFilter, MaybeOldDraft, _AttachHistory),
     Attrs = compose_attrs(Config),
     PagerAttrs = pager_attrs(Config),
 
@@ -842,6 +877,9 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         Action = continue
     ; KeyCode = char('S') ->
         toggle_sign(!StagingInfo, !CryptoInfo, !IO),
+        Action = continue
+    ; KeyCode = char('H') ->
+        toggle_alt_html(Screen, !StagingInfo, !IO),
         Action = continue
     ;
         ( KeyCode = char('j')
@@ -952,8 +990,8 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         Action = edit,
         EditAttachments = get_lines_list(!.AttachInfo),
         % XXX make this tail-recursive in hlc
-        create_edit_stage_2(Config, Screen, Headers, Text, EditAttachments,
-            MaybeOldDraft, Transition, !CryptoInfo, !IO)
+        create_edit_stage_2(Config, Screen, Headers, Text, UseAltHTMLFilter,
+            EditAttachments, MaybeOldDraft, Transition, !CryptoInfo, !IO)
     ;
         Action = leave(Sent, TransitionMessage),
         Transition = screen_transition(Sent, TransitionMessage)
@@ -1100,6 +1138,55 @@ toggle_sign(!StagingInfo, !CryptoInfo, !IO) :-
     !CryptoInfo ^ ci_sign := not(!.CryptoInfo ^ ci_sign),
     ParsedHeaders = !.StagingInfo ^ si_parsed_hdrs,
     maintain_sign_keys(ParsedHeaders, !CryptoInfo, !IO).
+
+:- pred toggle_alt_html(screen::in, staging_info::in, staging_info::out,
+    io::di, io::uo) is det.
+
+toggle_alt_html(Screen, !StagingInfo, !IO) :-
+    UseFilter = !.StagingInfo ^ si_make_alt,
+    (
+        UseFilter = alt_html_filter_always,
+        Message = set_warning("use_alt_html_filter is set to always.")
+    ;
+        UseFilter = alt_html_filter_never,
+        Message = set_warning("use_alt_html_filter is set to never.")
+    ;
+        UseFilter = alt_html_filter_on,
+        (
+            !.StagingInfo ^ si_text_alt = yes(_),
+            Message = set_info("HTML multipart/alternative removed.")
+        ;
+            !.StagingInfo ^ si_text_alt = no,
+            Message = set_info("HTML multipart/alternative turned off.")
+        ),
+        !StagingInfo ^ si_make_alt := alt_html_filter_off,
+        !StagingInfo ^ si_text_alt := no
+    ;
+        UseFilter = alt_html_filter_off,
+        !StagingInfo ^ si_make_alt := alt_html_filter_on,
+        maybe_make_text_alt(MaybeFilterRes, !StagingInfo, !IO),
+        (
+            MaybeFilterRes = no,
+            Message = set_warning("Internal error.")
+            % This branch is dead. We just set StagingInfo ^ si_make_alt to
+            % alt_html_filter_on, so maybe_make_text_alt will always try
+            % to run the filter.
+        ;
+            MaybeFilterRes = yes(ok),
+            (
+                !.StagingInfo ^ si_text_alt = yes(_),
+                Message = set_info("HTML multipart/alternative added.")
+            ;
+                !.StagingInfo ^ si_text_alt = no,
+                Message = set_info("HTML multipart/alternative empty. " ++
+                    "Nothing to add.")
+            )
+        ;
+            MaybeFilterRes = yes(error(Error)),
+            Message = set_warning(Error)
+        )
+    ),
+    update_message(Screen, Message, !IO).
 
 %-----------------------------------------------------------------------------%
 
@@ -1805,9 +1892,14 @@ draw_sep_bar(_, no, _, !IO).
 draw_sep_bar(Screen, yes(Panel), Attrs, !IO) :-
     get_cols(Screen, Cols, !IO),
     erase(Screen, Panel, !IO),
+    ( Cols =< 86 ->
+        EditFields = "(ftcBsr)"
+    ;
+        EditFields = "(ftcBsr) edit fields"
+    ),
     draw(Screen, Panel, Attrs ^ c_status ^ bar,
-        "-- (ftcBsr) edit fields; (E)ncrypt, (S)ign; " ++
-        "(a)ttach, (d)etach, media (T)ype ", !IO),
+        "-- " ++ EditFields ++ "; (E)ncrypt, (S)ign; " ++
+        "(a)ttach, (d)etach, media (T)ype, (H)TML ", !IO),
     hline(Screen, Panel, '-', Cols, !IO).
 
 :- pred draw_staging_bar(compose_attrs::in, screen::in, staging_info::in,
