@@ -103,7 +103,6 @@
 :- import_module write_message.
 
 :- use_module curs.
-:- use_module tree234.
 
 :- include_module compose.crypto.
 :- import_module compose.crypto.
@@ -662,28 +661,7 @@ headers_as_env(Headers) =
         set_var("subject",header_value_string(Headers ^ h_subject)),
         set_var("reply_to",header_value_string(Headers ^ h_replyto)),
         set_var("in_reply_to",header_value_string(Headers ^ h_inreplyto))
-        | h_rest_as_vars(tree234.tree234_to_assoc_list(Headers ^ h_rest))
     ]).
-
-:- func h_rest_as_vars(assoc_list(string, header_value)) =
-    list(env_modification).
-
-h_rest_as_vars([]) = [].
-h_rest_as_vars([ Key - Val | Rest ]) =
-    [
-        set_var(
-            normalize_header_key(Key),
-            header_value_string(Val)
-        )
-    |
-        h_rest_as_vars(Rest)
-    ].
-
-% Normalize key for use as environment variable.
-% E. g. "In-Reply-To" -> "in_reply_to"
-:- func normalize_header_key(string) = string.
-
-normalize_header_key(Key) = replace_all(to_lower(Key), "-", "_").
 
 :- pred make_text_alt(prog_config::in, headers::in, string::in,
     maybe(string)::out, call_res::out, io::di, io::uo) is det.
