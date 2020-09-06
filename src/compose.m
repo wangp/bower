@@ -687,7 +687,7 @@ make_text_alt(Config, Headers, TextIn, TextOut, Res, !IO) :-
             CallRes = ok(Output),
             Res = ok,
             (
-                Output = ""
+                string.strip(Output) = ""
             ->
                 TextOut = no
             ;
