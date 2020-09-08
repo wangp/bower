@@ -924,31 +924,16 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
 thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     NumPagerRows = !.Info ^ tp_num_pager_rows,
     (
-        ( Key = char('j')
-        ; Key = code(curs.key_down)
-        )
-    ->
-        next_message(MessageUpdate, !Info),
-        Action = continue
-    ;
         Key = char('J')
     ->
         set_current_line_read(!Info),
-        next_message(MessageUpdate, !Info),
-        Action = continue
-    ;
-        ( Key = char('k')
-        ; Key = code(curs.key_up)
-        )
-    ->
-        prev_message(MessageUpdate, !Info),
+        pager_action(pager_pred(next_message), MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('K')
     ->
         set_current_line_read(!Info),
-        prev_message(MessageUpdate, !Info),
-        Action = continue
+        plain_pager_binding(char('k'), Action, MessageUpdate, !Info)
     ;
         Key = char('\r')
     ->
@@ -1024,25 +1009,25 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Key = char('\x12\') % ^R
     ->
         mark_preceding_read(!Info),
-        next_message(MessageUpdate, !Info),
+        pager_action(pager_pred(next_message), MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('N')
     ->
         toggle_unread(!Info),
-        next_message(MessageUpdate, !Info),
+        pager_action(pager_pred(next_message), MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('a')
     ->
         toggle_archive(!Info),
-        next_message(MessageUpdate, !Info),
+        pager_action(pager_pred(next_message), MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('d')
     ->
         change_deleted(deleted, !Info),
-        next_message(MessageUpdate, !Info),
+        pager_action(pager_pred(next_message), MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('u')
@@ -1070,7 +1055,7 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Key = char('t')
     ->
         toggle_select(!Info),
-        next_message(MessageUpdate, !Info),
+        pager_action(pager_pred(next_message), MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('T')
@@ -1148,9 +1133,8 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Action = refresh_results,
         MessageUpdate = clear_message
     ;
-        ( Key = char('i')
-        ; Key = char('q')
-        )
+        Key = char('q')     % TODO: Can we add this binding to the plain pager
+                            %       without breaking stuff elsewhere?
     ->
         Action = leave,
         MessageUpdate = clear_message
@@ -1207,34 +1191,49 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         MessageUpdate = no_change
     ;
         ( Key = code(curs.key_resize) ->
-            Action = resize
+            Action = resize,
+            MessageUpdate = no_change
         ; Key = timeout_or_error ->
-            Action = continue_no_draw
+            Action = continue_no_draw,
+            MessageUpdate = no_change
         ;
-            Action = continue
-        ),
-        MessageUpdate = no_change
+            plain_pager_binding(Key, Action, MessageUpdate, !Info)
+        )
     ).
 
 %-----------------------------------------------------------------------------%
 
-:- pred next_message(message_update::out,
+:- type pager_pred
+    ---> pager_pred(pred(message_update::out, pager_info::in,
+        pager_info::out) is det).
+
+:- pred pager_action(pager_pred::in, message_update::out,
     thread_pager_info::in, thread_pager_info::out) is det.
 
-next_message(MessageUpdate, !Info) :-
+pager_action(PlainPagerPred, MessageUpdate, !Info) :-
+    PlainPagerPred = pager_pred(Pred),
     PagerInfo0 = !.Info ^ tp_pager,
-    pager.next_message(MessageUpdate, PagerInfo0, PagerInfo),
+    Pred(MessageUpdate, PagerInfo0, PagerInfo),
     !Info ^ tp_pager := PagerInfo,
     sync_thread_to_pager(!Info).
 
-:- pred prev_message(message_update::out,
-    thread_pager_info::in, thread_pager_info::out) is det.
+:- pred plain_pager_binding(keycode::in, thread_pager_action::out,
+    message_update::out, thread_pager_info::in, thread_pager_info::out)
+    is det.
 
-prev_message(MessageUpdate, !Info) :-
-    PagerInfo0 = !.Info ^ tp_pager,
-    pager.prev_message(MessageUpdate, PagerInfo0, PagerInfo),
-    !Info ^ tp_pager := PagerInfo,
-    sync_thread_to_pager(!Info).
+plain_pager_binding(KeyCode, ThreadPagerAction, MessageUpdate,
+    !ThreadPagerInfo) :-
+    NumPagerRows = !.ThreadPagerInfo ^ tp_num_pager_rows,
+    PagerInfo0 = !.ThreadPagerInfo ^ tp_pager,
+    pager_input(NumPagerRows, KeyCode, PagerAction, MessageUpdate,
+        PagerInfo0, PagerInfo),
+    (
+        PagerAction = continue, ThreadPagerAction = continue
+    ;
+        PagerAction = leave_pager, ThreadPagerAction = leave
+    ),
+    !ThreadPagerInfo ^ tp_pager := PagerInfo,
+    sync_thread_to_pager(!ThreadPagerInfo).
 
 :- pred scroll(int::in, message_update::out,
     thread_pager_info::in, thread_pager_info::out) is det.
