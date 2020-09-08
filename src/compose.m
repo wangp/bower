@@ -776,7 +776,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
     ; KeyCode = char('c') ->
         edit_header(Screen, cc, !StagingInfo, !CryptoInfo, !IO),
         Action = continue
-    ; KeyCode = char('b') ->
+    ; KeyCode = char('B') ->
         edit_header(Screen, bcc, !StagingInfo, !CryptoInfo, !IO),
         Action = continue
     ; KeyCode = char('s') ->
@@ -1754,7 +1754,7 @@ draw_sep_bar(Screen, yes(Panel), Attrs, !IO) :-
     get_cols(Screen, Cols, !IO),
     erase(Screen, Panel, !IO),
     draw(Screen, Panel, Attrs ^ c_status ^ bar,
-        "-- (ftcbsr) edit fields; (E)ncrypt, (S)ign; " ++
+        "-- (ftcBsr) edit fields; (E)ncrypt, (S)ign; " ++
         "(a)ttach, (d)etach, media (T)ype ", !IO),
     hline(Screen, Panel, '-', Cols, !IO).
 
