@@ -30,7 +30,8 @@
     list(message)::in, pager_info::out, io::di, io::uo) is det.
 
 :- pred setup_pager_for_staging(prog_config::in, int::in, string::in,
-    retain_pager_pos::in, pager_info::out) is det.
+    maybe(string)::in, retain_pager_pos::in, pager_info::out, io::di,
+    io::uo) is det.
 
 :- type pager_action
     --->    continue
@@ -791,17 +792,37 @@ wrap_text(Text) = text(Text).
 
 %-----------------------------------------------------------------------------%
 
-setup_pager_for_staging(Config, Cols, Text, RetainPagerPos, Info) :-
-    get_wrap_width(Config, Cols, WrapWidth),
-    make_text_lines(WrapWidth, Text, Lines0),
-    Lines = wrap_texts(Lines0) ++ [
+setup_pager_for_staging(Config, Cols, Text, TextAlt, RetainPagerPos,
+        Info, !IO) :-
+    PlainPart = part(message_id(""), no, mime_type.text_plain, no,
+        yes(content_disposition("inline")), text(Text), no, no, no,
+        is_decrypted),
+    Separators = leaf([
         message_separator,
         message_separator,
         message_separator
-    ],
+    ]),
+    (
+        TextAlt = no,
+        Part = PlainPart
+    ;
+        TextAlt = yes(HTML),
+        % TODO: Check if message_id("") and content_disposition("inline")
+        % have undesirable side effects !!!
+        HTMLPart = part(message_id(""), no, mime_type.text_html, no,
+            yes(content_disposition("inline")), text(HTML), no, no, no,
+            is_decrypted),
+        MixedPart = part(message_id(""), no, mime_type.multipart_alternative,
+            no, yes(content_disposition("inline")), subparts(not_encrypted, [],
+            [PlainPart, HTMLPart]), no, no, no, is_decrypted),
+        Part = MixedPart
+    ),
     counter.init(0, Counter0),
-    allocate_node_id(NodeId, Counter0, Counter),
-    Tree = node(NodeId, [leaf(Lines)], no),
+    make_part_tree(Config, Cols, Part, BodyTree0, yes,
+        _ElideInitialHeadLine, Counter0, Counter1, !IO),
+    allocate_node_id(NodeId, Counter1, Counter),
+    Tree = node(NodeId, [BodyTree0, Separators], no),
+
     Flattened = flatten(Tree),
     Scrollable0 = scrollable.init(Flattened),
     make_extents(Flattened, Extents0),
