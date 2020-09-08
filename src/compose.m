@@ -881,8 +881,15 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         toggle_sign(!StagingInfo, !CryptoInfo, !IO),
         Action = continue
     ; KeyCode = char('H') ->
-        toggle_alt_html(Screen, !StagingInfo, !IO),
-        Action = continue
+        toggle_alt_html(UpdateMessage, NeedsResize, !StagingInfo, !IO),
+        update_message(Screen, UpdateMessage, !IO),
+        (
+            NeedsResize = yes,
+            Action = resize
+        ;
+            NeedsResize = no,
+            Action = continue
+        )
     ;
         ( KeyCode = char('j')
         ; KeyCode = code(curs.key_down)
@@ -1142,25 +1149,29 @@ toggle_sign(!StagingInfo, !CryptoInfo, !IO) :-
     ParsedHeaders = !.StagingInfo ^ si_parsed_hdrs,
     maintain_sign_keys(ParsedHeaders, !CryptoInfo, !IO).
 
-:- pred toggle_alt_html(screen::in, staging_info::in, staging_info::out,
-    io::di, io::uo) is det.
+:- pred toggle_alt_html(message_update::out, bool::out, staging_info::in,
+    staging_info::out, io::di, io::uo) is det.
 
-toggle_alt_html(Screen, !StagingInfo, !IO) :-
+toggle_alt_html(Message, NeedsResize, !StagingInfo, !IO) :-
     UseFilter = !.StagingInfo ^ si_make_alt,
     (
         UseFilter = alt_html_filter_always,
-        Message = set_warning("use_alt_html_filter is set to always.")
+        Message = set_warning("use_alt_html_filter is set to always."),
+        NeedsResize = no
     ;
         UseFilter = alt_html_filter_never,
-        Message = set_warning("use_alt_html_filter is set to never.")
+        Message = set_warning("use_alt_html_filter is set to never."),
+        NeedsResize = no
     ;
         UseFilter = alt_html_filter_on,
         (
             !.StagingInfo ^ si_text_alt = yes(_),
-            Message = set_info("HTML multipart/alternative removed.")
+            Message = set_info("HTML multipart/alternative removed."),
+            NeedsResize = yes
         ;
             !.StagingInfo ^ si_text_alt = no,
-            Message = set_info("HTML multipart/alternative turned off.")
+            Message = set_info("HTML multipart/alternative turned off."),
+            NeedsResize = no
         ),
         !StagingInfo ^ si_make_alt := alt_html_filter_off,
         !StagingInfo ^ si_text_alt := no
@@ -1170,26 +1181,29 @@ toggle_alt_html(Screen, !StagingInfo, !IO) :-
         maybe_make_text_alt(MaybeFilterRes, !StagingInfo, !IO),
         (
             MaybeFilterRes = no,
-            Message = set_warning("Internal error.")
+            Message = set_warning("Internal error."),
             % This branch is dead. We just set StagingInfo ^ si_make_alt to
             % alt_html_filter_on, so maybe_make_text_alt will always try
             % to run the filter.
+            NeedsResize = yes   % Because why not
         ;
             MaybeFilterRes = yes(ok),
             (
                 !.StagingInfo ^ si_text_alt = yes(_),
-                Message = set_info("HTML multipart/alternative added.")
+                Message = set_info("HTML multipart/alternative added."),
+                NeedsResize = yes
             ;
                 !.StagingInfo ^ si_text_alt = no,
                 Message = set_info("HTML multipart/alternative empty. " ++
-                    "Nothing to add.")
+                    "Nothing to add."),
+                NeedsResize = no
             )
         ;
             MaybeFilterRes = yes(error(Error)),
-            Message = set_warning(Error)
+            Message = set_warning(Error),
+            NeedsResize = no
         )
-    ),
-    update_message(Screen, Message, !IO).
+    ).
 
 %-----------------------------------------------------------------------------%
 
