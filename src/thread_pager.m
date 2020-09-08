@@ -995,11 +995,6 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         goto_parent_message(MessageUpdate, !Info),
         Action = continue
     ;
-        Key = char('S')
-    ->
-        skip_quoted_text(MessageUpdate, !Info),
-        Action = continue
-    ;
         ( Key = char('\t')
         ; Key = char(',')
         )
@@ -1308,15 +1303,6 @@ find_non_excluded_ancestor(Scrollable, ParentId, !Cursor, AncestorId) :-
         ThreadLine ^ tp_parent = yes(GP),
         find_non_excluded_ancestor(Scrollable, GP, !Cursor, AncestorId)
     ).
-
-:- pred skip_quoted_text(message_update::out,
-    thread_pager_info::in, thread_pager_info::out) is det.
-
-skip_quoted_text(MessageUpdate, !Info) :-
-    PagerInfo0 = !.Info ^ tp_pager,
-    pager.skip_quoted_text(MessageUpdate, PagerInfo0, PagerInfo),
-    !Info ^ tp_pager := PagerInfo,
-    sync_thread_to_pager(!Info).
 
 :- pred sync_thread_to_pager(thread_pager_info::in, thread_pager_info::out)
     is det.
