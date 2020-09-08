@@ -946,16 +946,6 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         set_current_line_read(!Info),
         plain_pager_binding(char('k'), Action, MessageUpdate, !Info)
     ;
-        Key = char('\r')
-    ->
-        scroll(1, MessageUpdate, !Info),
-        Action = continue
-    ;
-        Key = char('\\')
-    ->
-        scroll(-1, MessageUpdate, !Info),
-        Action = continue
-    ;
         Key = char(']')
     ->
         Delta = int.min(15, NumPagerRows - 1),
@@ -1254,16 +1244,6 @@ plain_pager_binding(KeyCode, ThreadPagerAction, MessageUpdate,
     ),
     !ThreadPagerInfo ^ tp_pager := PagerInfo,
     sync_thread_to_pager(!ThreadPagerInfo).
-
-:- pred scroll(int::in, message_update::out,
-    thread_pager_info::in, thread_pager_info::out) is det.
-
-scroll(Delta, MessageUpdate, !Info) :-
-    PagerInfo0 = !.Info ^ tp_pager,
-    NumPagerRows = !.Info ^ tp_num_pager_rows,
-    pager.scroll(NumPagerRows, Delta, MessageUpdate, PagerInfo0, PagerInfo),
-    !Info ^ tp_pager := PagerInfo,
-    sync_thread_to_pager(!Info).
 
 :- pred scroll_but_stop_at_message(int::in, message_update::out,
     thread_pager_info::in, thread_pager_info::out) is det.
