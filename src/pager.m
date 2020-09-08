@@ -883,9 +883,9 @@ key_binding(KeyCode, Binding) :-
     ;
         KeyCode = code(Code),
         ( Code = curs.key_down ->
-            Binding = scroll_down
+            Binding = next_message
         ; Code = curs.key_up ->
-            Binding = scroll_up
+            Binding = prev_message
         ; Code = curs.key_pagedown ->
             Binding = page_down
         ; Code = curs.key_pageup ->
