@@ -642,9 +642,11 @@ reenter_staging_screen(Config, Screen, Headers0, Text, UseAltHTMLFilter,
     StagingInfo0 = staging_info(Config, MaybeAccount, Headers, Parsed,
         Text, no, UseAltHTMLFilter, MaybeOldDraft, init_history),
     maybe_make_text_alt(FilterRes, StagingInfo0, StagingInfo, !IO),
+    TextAlt = StagingInfo ^ si_text_alt,
     AttachInfo = scrollable.init_with_cursor(Attachments),
     get_cols(Screen, Cols, !IO),
-    setup_pager_for_staging(Config, Cols, Text, new_pager, PagerInfo),
+    setup_pager_for_staging(Config, Cols, Text, TextAlt, new_pager,
+        PagerInfo, !IO),
     (
         FilterRes = no,
         update_message(Screen, clear_message, !IO)
@@ -1009,8 +1011,9 @@ resize_staging_screen(Screen, StagingInfo, PagerInfo0, PagerInfo, !IO) :-
     NumPagerRows = list.length(PagerPanels),
     Config = StagingInfo ^ si_config,
     Text = StagingInfo ^ si_text,
-    setup_pager_for_staging(Config, Cols, Text,
-        retain_pager_pos(PagerInfo0, NumPagerRows), PagerInfo).
+    TextAlt = StagingInfo ^ si_text_alt,
+    setup_pager_for_staging(Config, Cols, Text, TextAlt,
+        retain_pager_pos(PagerInfo0, NumPagerRows), PagerInfo, !IO).
 
 %-----------------------------------------------------------------------------%
 
