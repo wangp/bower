@@ -219,7 +219,8 @@
     ;       end
     ;       next_message
     ;       prev_message
-    ;       skip_quoted_text.
+    ;       skip_quoted_text
+    ;       highlight_minor.
 
 %-----------------------------------------------------------------------------%
 
@@ -868,6 +869,10 @@ pager_input(NumRows, KeyCode, Action, MessageUpdate, !Info) :-
             Binding = skip_quoted_text,
             skip_quoted_text(MessageUpdate, !Info),
             Action = continue
+        ;
+            Binding = highlight_minor,
+            highlight_minor(NumRows, MessageUpdate, !Info),
+            Action = continue
         )
     ;
         Action = continue,
@@ -912,6 +917,7 @@ char_binding('[', half_page_up).
 char_binding('j', next_message).
 char_binding('k', prev_message).
 char_binding('S', skip_quoted_text).
+char_binding('v', highlight_minor).
 
 %-----------------------------------------------------------------------------%
 
