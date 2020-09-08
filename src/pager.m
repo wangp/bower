@@ -918,6 +918,8 @@ char_binding('j', next_message).
 char_binding('k', prev_message).
 char_binding('S', skip_quoted_text).
 char_binding('v', highlight_minor).
+char_binding('g', home).
+char_binding('G', end).
 
 %-----------------------------------------------------------------------------%
 
