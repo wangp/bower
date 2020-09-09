@@ -765,7 +765,7 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
     ;
         OnEntry = no_draw_have_key(Key)
     ),
-    thread_pager_input(Key, Action, MessageUpdate, !Info, !IO),
+    thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO),
     update_message(Screen, MessageUpdate, !IO),
 
     (
@@ -924,11 +924,11 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred thread_pager_input(keycode::in, thread_pager_action::out,
+:- pred thread_pager_input(screen::in, keycode::in, thread_pager_action::out,
     message_update::out, thread_pager_info::in, thread_pager_info::out,
     io::di, io::uo) is det.
 
-thread_pager_input(Key, Action, MessageUpdate, !Info, !IO) :-
+thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO) :-
     NumPagerRows = !.Info ^ tp_num_pager_rows,
     (
         Key = char('J')
@@ -940,7 +940,8 @@ thread_pager_input(Key, Action, MessageUpdate, !Info, !IO) :-
         Key = char('K')
     ->
         set_current_line_read(!Info),
-        plain_pager_binding(char('k'), Action, MessageUpdate, !Info, !IO)
+        plain_pager_binding(Screen, char('k'), Action, MessageUpdate,
+            !Info, !IO)
     ;
         Key = char(']')
     ->
@@ -1177,7 +1178,8 @@ thread_pager_input(Key, Action, MessageUpdate, !Info, !IO) :-
             Action = continue_no_draw,
             MessageUpdate = no_change
         ;
-            plain_pager_binding(Key, Action, MessageUpdate, !Info, !IO)
+            plain_pager_binding(Screen, Key, Action, MessageUpdate,
+                !Info, !IO)
         )
     ).
 
@@ -1199,15 +1201,15 @@ pager_action(PlainPagerPred, MessageUpdate, !Info) :-
     !Info ^ tp_pager := PagerInfo,
     sync_thread_to_pager(!Info).
 
-:- pred plain_pager_binding(keycode::in, thread_pager_action::out,
+:- pred plain_pager_binding(screen::in, keycode::in, thread_pager_action::out,
     message_update::out, thread_pager_info::in, thread_pager_info::out,
     io::di, io::uo) is det.
 
-plain_pager_binding(KeyCode, ThreadPagerAction, MessageUpdate,
+plain_pager_binding(Screen, KeyCode, ThreadPagerAction, MessageUpdate,
         !ThreadPagerInfo, !IO) :-
     NumPagerRows = !.ThreadPagerInfo ^ tp_num_pager_rows,
     PagerInfo0 = !.ThreadPagerInfo ^ tp_pager,
-    pager_input(NumPagerRows, KeyCode, PagerAction, MessageUpdate,
+    pager_input(Screen, NumPagerRows, KeyCode, PagerAction, MessageUpdate,
         PagerInfo0, PagerInfo, !IO),
     (
         PagerAction = continue,

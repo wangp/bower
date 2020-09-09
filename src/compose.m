@@ -982,7 +982,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
     ; KeyCode = code(curs.key_resize) ->
         Action = resize
     ;
-        pager_input(NumPagerRows, KeyCode, _Action, MessageUpdate,
+        pager_input(Screen, NumPagerRows, KeyCode, _Action, MessageUpdate,
             !PagerInfo, !IO),
         update_message(Screen, MessageUpdate, !IO),
         Action = continue
