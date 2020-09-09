@@ -914,7 +914,7 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
         Action = continue
     ; KeyCode = char('p') ->
         Attachments = get_lines_list(!.AttachInfo),
-        postpone(Config, Screen, Headers, ParsedHeaders, Text, TextAlt,
+        postpone(Config, Screen, Headers, ParsedHeaders, Text,
             Attachments, !.CryptoInfo, Res, PostponeMsg, !IO),
         (
             Res = yes,
@@ -1941,13 +1941,13 @@ draw_staging_bar(Attrs, Screen, StagingInfo, !IO) :-
 %-----------------------------------------------------------------------------%
 
 :- pred postpone(prog_config::in, screen::in, headers::in, parsed_headers::in,
-    string::in, maybe(string)::in, list(attachment)::in, crypto_info::in,
-    bool::out, message_update::out, io::di, io::uo) is det.
+    string::in, list(attachment)::in, crypto_info::in, bool::out,
+    message_update::out, io::di, io::uo) is det.
 
-postpone(Config, Screen, Headers, ParsedHeaders, Text, TextAlt, Attachments,
+postpone(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
         CryptoInfo, Res, MessageUpdate, !IO) :-
     create_temp_message_file(Config, prepare_postpone, Headers, ParsedHeaders,
-        Text, TextAlt, Attachments, CryptoInfo, ResFilename, Warnings, !IO),
+        Text, no, Attachments, CryptoInfo, ResFilename, Warnings, !IO),
     (
         ResFilename = ok(Filename),
         (
