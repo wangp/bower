@@ -154,7 +154,6 @@
     ;       prompt_search(search_direction)
     ;       decrypt_part
     ;       verify_part
-    ;       toggle_content(toggle_type)
     ;       toggle_ordering
     ;       addressbook_add
     ;       pipe_ids
@@ -766,7 +765,7 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
     ;
         OnEntry = no_draw_have_key(Key)
     ),
-    thread_pager_input(Key, Action, MessageUpdate, !Info),
+    thread_pager_input(Key, Action, MessageUpdate, !Info, !IO),
     update_message(Screen, MessageUpdate, !IO),
 
     (
@@ -902,10 +901,6 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
         verify_part(Screen, !Info, !IO),
         thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
-        Action = toggle_content(ToggleType),
-        toggle_content(Screen, ToggleType, !Info, !IO),
-        thread_pager_loop(Screen, redraw, !Info, !IO)
-    ;
         Action = toggle_ordering,
         toggle_ordering(!Info),
         reopen_thread_pager(Screen, yes, !Info, !IO),
@@ -930,9 +925,10 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
 %-----------------------------------------------------------------------------%
 
 :- pred thread_pager_input(keycode::in, thread_pager_action::out,
-    message_update::out, thread_pager_info::in, thread_pager_info::out) is det.
+    message_update::out, thread_pager_info::in, thread_pager_info::out,
+    io::di, io::uo) is det.
 
-thread_pager_input(Key, Action, MessageUpdate, !Info) :-
+thread_pager_input(Key, Action, MessageUpdate, !Info, !IO) :-
     NumPagerRows = !.Info ^ tp_num_pager_rows,
     (
         Key = char('J')
@@ -944,7 +940,7 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
         Key = char('K')
     ->
         set_current_line_read(!Info),
-        plain_pager_binding(char('k'), Action, MessageUpdate, !Info)
+        plain_pager_binding(char('k'), Action, MessageUpdate, !Info, !IO)
     ;
         Key = char(']')
     ->
@@ -1082,18 +1078,6 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ->
         open_part(Action, MessageUpdate, !Info)
     ;
-        Key = char('z')
-    ->
-        choose_toggle_action(!.Info, toggle_content(cycle_alternatives),
-            Action),
-        MessageUpdate = clear_message
-    ;
-        Key = char('Z')
-    ->
-        choose_toggle_action(!.Info, toggle_content(toggle_expanded),
-            Action),
-        MessageUpdate = clear_message
-    ;
         Key = char('y')
     ->
         Action = verify_part,
@@ -1193,7 +1177,7 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
             Action = continue_no_draw,
             MessageUpdate = no_change
         ;
-            plain_pager_binding(Key, Action, MessageUpdate, !Info)
+            plain_pager_binding(Key, Action, MessageUpdate, !Info, !IO)
         )
     ).
 
@@ -1216,21 +1200,30 @@ pager_action(PlainPagerPred, MessageUpdate, !Info) :-
     sync_thread_to_pager(!Info).
 
 :- pred plain_pager_binding(keycode::in, thread_pager_action::out,
-    message_update::out, thread_pager_info::in, thread_pager_info::out)
-    is det.
+    message_update::out, thread_pager_info::in, thread_pager_info::out,
+    io::di, io::uo) is det.
 
 plain_pager_binding(KeyCode, ThreadPagerAction, MessageUpdate,
-    !ThreadPagerInfo) :-
+        !ThreadPagerInfo, !IO) :-
     NumPagerRows = !.ThreadPagerInfo ^ tp_num_pager_rows,
     PagerInfo0 = !.ThreadPagerInfo ^ tp_pager,
     pager_input(NumPagerRows, KeyCode, PagerAction, MessageUpdate,
-        PagerInfo0, PagerInfo),
+        PagerInfo0, PagerInfo, !IO),
     (
         PagerAction = continue,
         ThreadPagerAction = continue
     ;
         PagerAction = leave_pager,
         ThreadPagerAction = leave
+    ;
+        PagerAction = decrypt_part,
+        ThreadPagerAction = decrypt_part
+    ;
+        PagerAction = cycle_alternatives,
+        ThreadPagerAction = continue
+    ;
+        PagerAction = toggle_expanded,
+        ThreadPagerAction = continue
     ),
     !ThreadPagerInfo ^ tp_pager := PagerInfo,
     sync_thread_to_pager(!ThreadPagerInfo).
@@ -2354,43 +2347,6 @@ skip_to_search(SearchKind, RelSearchDir, MessageUpdate, !Info) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred choose_toggle_action(thread_pager_info::in, thread_pager_action::in,
-    thread_pager_action::out) is det.
-
-choose_toggle_action(Info, Action0, Action) :-
-    Pager = Info ^ tp_pager,
-    ( get_highlighted_thing(Pager, Thing) ->
-        (
-            Thing = highlighted_part(Part, _),
-            Content = Part ^ pt_content,
-            (
-                ( Content = text(_)
-                ; Content = subparts(not_encrypted, _, _)
-                ; Content = encapsulated_message(_)
-                ; Content = unsupported
-                ),
-                Action = Action0
-            ;
-                Content = subparts(decryption_good, _, _),
-                Action = Action0
-            ;
-                Content = subparts(encrypted, _, _),
-                Action = decrypt_part
-            ;
-                Content = subparts(decryption_bad, _, _),
-                Action = decrypt_part
-            )
-        ;
-            Thing = highlighted_url(_),
-            Action = continue
-        ;
-            Thing = highlighted_fold_marker,
-            Action = Action0
-        )
-    ;
-        Action = continue
-    ).
-
 :- pred decrypt_part(screen::in, thread_pager_info::in, thread_pager_info::out,
     io::di, io::uo) is det.
 
@@ -2595,22 +2551,6 @@ good_signature(Signature) :-
         Status = not_good(_, _),
         fail
     ).
-
-%-----------------------------------------------------------------------------%
-
-:- pred toggle_content(screen::in, toggle_type::in,
-    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
-
-toggle_content(Screen, ToggleType, !Info, !IO) :-
-    Config = !.Info ^ tp_config,
-    NumRows = !.Info ^ tp_num_pager_rows,
-    get_cols(Screen, Cols, !IO),
-    Pager0 = !.Info ^ tp_pager,
-    pager.toggle_content(Config, ToggleType, NumRows, Cols, MessageUpdate,
-        Pager0, Pager, !IO),
-    !Info ^ tp_pager := Pager,
-    sync_thread_to_pager(!Info),
-    update_message(Screen, MessageUpdate, !IO).
 
 %-----------------------------------------------------------------------------%
 
