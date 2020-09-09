@@ -92,7 +92,7 @@
 :- pred get_highlighted_thing(pager_info::in, highlighted_thing::out)
     is semidet.
 
-:- pred replace_node_under_cursor(prog_config::in, int::in, int::in, part::in,
+:- pred replace_node_under_cursor(int::in, int::in, part::in,
     pager_info::in, pager_info::out, io::di, io::uo) is det.
 
 :- type toggle_type
@@ -1421,7 +1421,7 @@ get_highlighted_thing(Info, Thing) :-
 
 %-----------------------------------------------------------------------------%
 
-replace_node_under_cursor(_, NumRows, Cols, Part, Info0, Info, !IO) :-
+replace_node_under_cursor(NumRows, Cols, Part, Info0, Info, !IO) :-
     Info0 = pager_info(Tree0, Counter0, Scrollable0, _Extents0, Config),
     ( get_cursor_line(Scrollable0, _, NodeId - _Line) ->
         make_part_tree(Config, Cols, Part, NewNode, no, _ElideInitialHeadLine,

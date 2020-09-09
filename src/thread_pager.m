@@ -2387,8 +2387,7 @@ do_decrypt_part(Screen, MessageId, PartId, MessageUpdate, !Info, !IO) :-
         Pager0 = !.Info ^ tp_pager,
         NumRows = !.Info ^ tp_num_pager_rows,
         get_cols(Screen, Cols, !IO),
-        replace_node_under_cursor(Config, NumRows, Cols, Part, Pager0, Pager,
-            !IO),
+        replace_node_under_cursor(NumRows, Cols, Part, Pager0, Pager, !IO),
         !Info ^ tp_pager := Pager
     ;
         ParseResult = error(Error),
@@ -2454,8 +2453,8 @@ do_verify_part(Screen, Part0, MessageUpdate, !Info, !IO) :-
                 NumRows = !.Info ^ tp_num_pager_rows,
                 get_cols(Screen, Cols, !IO),
                 % Regenerating the part tree is overkill...
-                replace_node_under_cursor(Config, NumRows, Cols, Part,
-                    Pager0, Pager, !IO),
+                replace_node_under_cursor(NumRows, Cols, Part, Pager0,
+                    Pager, !IO),
                 !Info ^ tp_pager := Pager,
 
                 post_verify_message_update(Content, MessageUpdate)
