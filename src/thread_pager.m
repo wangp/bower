@@ -2046,7 +2046,8 @@ open_part(Action, MessageUpdate, !Info) :-
         ;
             Thing = highlighted_fold_marker,
             % This is a bit ugly as we will end up looking up the line again.
-            Action = toggle_content(toggle_expanded)
+            % Action = toggle_content(toggle_expanded)
+            Action = continue
         ),
         MessageUpdate = clear_message
     ;
