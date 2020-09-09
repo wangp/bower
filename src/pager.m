@@ -40,7 +40,7 @@
     ;       decrypt_part
     ;       leave_pager.
 
-:- pred pager_input(int::in, keycode::in, pager_action::out,
+:- pred pager_input(screen::in, int::in, keycode::in, pager_action::out,
     message_update::out, pager_info::in, pager_info::out, io::di, io::uo)
     is det.
 
@@ -850,7 +850,7 @@ setup_pager_for_staging(Config, Cols, Text, TextAlt, RetainPagerPos,
 
 %-----------------------------------------------------------------------------%
 
-pager_input(NumRows, KeyCode, Action, MessageUpdate, !Info, !IO) :-
+pager_input(Screen, NumRows, KeyCode, Action, MessageUpdate, !Info, !IO) :-
     ( key_binding(KeyCode, Binding) ->
         (
             Binding = leave_pager,
@@ -923,8 +923,7 @@ pager_input(NumRows, KeyCode, Action, MessageUpdate, !Info, !IO) :-
                 )
             ->
                 Action = continue,
-                %get_cols(Screen, Cols, !IO),   % TODO: Do not hardcode columns
-                Cols = 80,
+                get_cols(Screen, Cols, !IO),
                 toggle_content(ToggleType, NumRows, Cols, MessageUpdate,
                     !Info, !IO)
             ;
