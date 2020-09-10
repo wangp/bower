@@ -7,16 +7,89 @@
 :- import_module io.
 :- import_module list.
 :- import_module maybe.
+:- import_module map.
+:- import_module counter.
+:- import_module bool.
 
 :- import_module color.
 :- import_module data.
 :- import_module prog_config.
 :- import_module screen.
 :- import_module scrollable.
+:- import_module view_common.
+:- import_module pager_text.
 
 %-----------------------------------------------------------------------------%
 
-:- type pager_info.
+:- type pager_info
+    --->    pager_info(
+                p_tree          :: tree,
+                p_id_counter    :: counter,
+                p_scrollable    :: scrollable(id_pager_line),
+                p_extents       :: map(message_id, message_extents),
+                p_config        :: prog_config,
+                p_history       :: common_history
+            ).
+
+:- type tree
+    --->    leaf(list(pager_line))
+    ;       node(
+                node_id     :: node_id,
+                subtrees    :: list(tree),
+                preblank    :: bool
+            ).
+
+:- type id_pager_line
+    --->    node_id - pager_line.
+
+:- type node_id
+    --->    node_id(int).
+
+:- type pager_line
+    --->    start_of_message_header(
+                som_message     :: message,
+                som_header_name :: string,
+                som_header_value :: string % folded (wrapped)
+            )
+    ;       subseq_message_header(
+                smh_continue    :: bool,
+                smh_name        :: string,
+                smh_value       :: string % folded (wrapped)
+            )
+    ;       text(pager_text)
+    ;       part_head(
+                part            :: part,
+                % Hidden alternatives for multipart/alternative.
+                alternatives    :: list(part),
+                ph_expanded     :: part_expanded,
+                importance      :: part_importance
+            )
+    ;       fold_marker(
+                content         :: list(pager_line),
+                expanded        :: bool
+            )
+    ;       signature(
+                signature       :: signature
+            )
+    ;       message_separator.
+
+:- type message_extents
+    --->    message_extents(
+                start_line      :: int,
+                end_excl_line   :: int
+            ).
+
+:- type part_expanded
+    --->    part_expanded(part_filtered)
+    ;       part_not_expanded.
+
+:- type part_filtered
+    --->    part_filtered
+    ;       part_not_filtered.
+
+:- type part_importance
+    --->    importance_normal
+    ;       importance_low.
 
 :- type setup_mode
     --->    include_replies
@@ -38,6 +111,8 @@
     ;       toggle_expanded
     ;       cycle_alternatives
     ;       decrypt_part
+    ;       redraw
+    ;       press_key_to_delete(string)
     ;       leave_pager.
 
 :- pred pager_input(screen::in, int::in, keycode::in, pager_action::out,
@@ -120,103 +195,29 @@
 
 :- implementation.
 
-:- import_module bool.
 :- import_module char.
 :- import_module cord.
-:- import_module counter.
 :- import_module float.
 :- import_module int.
-:- import_module map.
 :- import_module set.
 :- import_module string.
 :- import_module time.
 :- import_module version_array.
-:- import_module view_common.
 
 :- import_module copious_output.
 :- import_module fold_lines.
 :- import_module list_util.
 :- import_module mime_type.
-:- import_module pager_text.
 :- import_module quote_arg.
 :- import_module sanitise.
 :- import_module size_util.
 :- import_module string_util.
 :- import_module time_util.
+:- import_module prompt_external.
 
 :- use_module curs.
 
 %-----------------------------------------------------------------------------%
-
-:- type pager_info
-    --->    pager_info(
-                p_tree          :: tree,
-                p_id_counter    :: counter,
-                p_scrollable    :: scrollable(id_pager_line),
-                p_extents       :: map(message_id, message_extents),
-                p_config        :: prog_config,
-                p_history       :: common_history
-            ).
-
-:- type node_id
-    --->    node_id(int).
-
-:- type tree
-    --->    leaf(list(pager_line))
-    ;       node(
-                node_id     :: node_id,
-                subtrees    :: list(tree),
-                preblank    :: bool
-            ).
-
-:- type id_pager_line
-    --->    node_id - pager_line.
-
-:- type pager_line
-    --->    start_of_message_header(
-                som_message     :: message,
-                som_header_name :: string,
-                som_header_value :: string % folded (wrapped)
-            )
-    ;       subseq_message_header(
-                smh_continue    :: bool,
-                smh_name        :: string,
-                smh_value       :: string % folded (wrapped)
-            )
-    ;       text(pager_text)
-    ;       part_head(
-                part            :: part,
-                % Hidden alternatives for multipart/alternative.
-                alternatives    :: list(part),
-                ph_expanded     :: part_expanded,
-                importance      :: part_importance
-            )
-    ;       fold_marker(
-                content         :: list(pager_line),
-                expanded        :: bool
-            )
-    ;       signature(
-                signature       :: signature
-            )
-    ;       message_separator.
-
-:- type part_expanded
-    --->    part_expanded(part_filtered)
-    ;       part_not_expanded.
-
-:- type part_filtered
-    --->    part_filtered
-    ;       part_not_filtered.
-
-:- type part_importance
-    --->    importance_normal
-    ;       importance_low.
-
-:- type message_extents
-    --->    message_extents(
-                start_line      :: int,
-                end_excl_line   :: int
-            ).
 
 :- type binding
     --->    leave_pager
@@ -233,7 +234,9 @@
     ;       skip_quoted_text
     ;       highlight_minor
     ;       cycle_alternatives
-    ;       toggle_expanded.
+    ;       toggle_expanded
+    ;       save_part
+    ;       open_part.
 
 %-----------------------------------------------------------------------------%
 
@@ -909,6 +912,14 @@ pager_input(Screen, NumRows, KeyCode, Action, MessageUpdate, !Info, !IO) :-
             highlight_minor(NumRows, MessageUpdate, !Info),
             Action = continue
         ;
+            Binding = save_part,
+            save_part(Screen, PromptAction, MessageUpdate, !Info, !IO),
+            Action = translate_prompt_action(PromptAction)
+        ;
+            Binding = open_part,
+            open_part(Screen, PromptAction, MessageUpdate, !Info, !IO),
+            Action = translate_prompt_action(PromptAction)
+        ;
             (
                 Binding = cycle_alternatives,
                 DefaultAction = cycle_alternatives
@@ -982,6 +993,8 @@ char_binding('g', home).
 char_binding('G', end).
 char_binding('z', cycle_alternatives).
 char_binding('Z', toggle_expanded).
+char_binding('s', save_part).
+char_binding('o', open_part).
 
 %-----------------------------------------------------------------------------%
 
@@ -2017,6 +2030,13 @@ draw_pager_line(Attrs, Screen, Panel, Line, IsCursor, !IO) :-
         Attr = Attrs ^ p_separator,
         draw(Screen, Panel, Attr, "~", !IO)
     ).
+
+:- func translate_prompt_action(action_after_prompt) = pager_action.
+
+translate_prompt_action(redraw) = redraw.
+translate_prompt_action(continue) = continue.
+translate_prompt_action(press_key_to_delete(FileName)) =
+    press_key_to_delete(FileName).
 
 :- func quote_level_to_attr(pager_attrs, quote_level) = curs.attr.
 

@@ -42,12 +42,9 @@
 :- implementation.
 
 :- import_module bool.
-:- import_module char.
 :- import_module cord.
-:- import_module dir.
 :- import_module float.
 :- import_module int.
-:- import_module parsing_utils.
 :- import_module string.
 :- import_module time.
 :- import_module version_array.
@@ -59,10 +56,8 @@
 :- import_module color.
 :- import_module compose.
 :- import_module cord_util.
-:- import_module make_temp.
 :- import_module mime_type.
 :- import_module pager.
-:- import_module path_expand.
 :- import_module pipe_to.
 :- import_module poll_notify.
 :- import_module quote_arg.
@@ -70,11 +65,11 @@
 :- import_module resend.
 :- import_module sanitise.
 :- import_module scrollable.
-:- import_module shell_word.
 :- import_module string_util.
 :- import_module text_entry.
 :- import_module time_util.
 :- import_module view_async.
+:- import_module prompt_external.
 
 :- use_module curs.
 
@@ -148,9 +143,6 @@
     ;       edit_as_template(message)
     ;       prompt_tag(string)
     ;       bulk_tag(keep_selection)
-    ;       prompt_save_part(part, maybe(header_value))
-    ;       prompt_open_part(part)
-    ;       prompt_open_url(string)
     ;       prompt_search(search_direction)
     ;       decrypt_part
     ;       verify_part
@@ -158,6 +150,9 @@
     ;       addressbook_add
     ;       pipe_ids
     ;       refresh_results
+    ;       redraw
+    ;       no_draw_have_key(keycode)
+    ;       press_key_to_delete(string)
     ;       leave.
 
 :- type keep_selection
@@ -762,6 +757,12 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
         maybe_sched_poll(!Info, !IO),
         thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
+        Action = press_key_to_delete(FileName),
+        get_keycode_blocking_handle_resize(Screen, no_change, NextKey,
+            !Info, !IO),
+        io.remove_file(FileName, _, !IO),
+        thread_pager_loop(Screen, no_draw_have_key(NextKey), !Info, !IO)
+    ;
         Action = continue_no_draw,
         maybe_sched_poll(!Info, !IO),
         thread_pager_loop(Screen, no_draw, !Info, !IO)
@@ -860,22 +861,10 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
         ),
         thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
-        Action = prompt_save_part(Part, MaybeSubject),
-        prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO),
-        thread_pager_loop(Screen, redraw, !Info, !IO)
+        Action = no_draw_have_key(NextKey),
+        thread_pager_loop(Screen, no_draw_have_key(NextKey), !Info, !IO)
     ;
-        Action = prompt_open_part(Part),
-        prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO),
-        (
-            MaybeNextKey = yes(NextKey),
-            thread_pager_loop(Screen, no_draw_have_key(NextKey), !Info, !IO)
-        ;
-            MaybeNextKey = no,
-            thread_pager_loop(Screen, redraw, !Info, !IO)
-        )
-    ;
-        Action = prompt_open_url(Url),
-        prompt_open_url(Screen, Url, !Info, !IO),
+        Action = redraw,
         thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = prompt_search(SearchDir),
@@ -1060,14 +1049,6 @@ thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO) :-
         highlight_major(MessageUpdate, !Info),
         Action = continue
     ;
-        Key = char('s')
-    ->
-        save_part(Action, MessageUpdate, !Info)
-    ;
-        Key = char('o')
-    ->
-        open_part(Action, MessageUpdate, !Info)
-    ;
         Key = char('y')
     ->
         Action = verify_part,
@@ -1205,6 +1186,12 @@ plain_pager_binding(Screen, KeyCode, ThreadPagerAction, MessageUpdate,
     ;
         PagerAction = toggle_expanded,
         ThreadPagerAction = continue
+    ;
+        PagerAction = press_key_to_delete(FileName),
+        ThreadPagerAction = press_key_to_delete(FileName)
+    ;
+        PagerAction = redraw,
+        ThreadPagerAction = redraw
     ),
     !ThreadPagerInfo ^ tp_pager := PagerInfo,
     sync_thread_to_pager(!ThreadPagerInfo).
@@ -1843,438 +1830,6 @@ highlight_major(MessageUpdate, !Info) :-
     NumRows = !.Info ^ tp_num_pager_rows,
     highlight_major(NumRows, MessageUpdate, Pager0, Pager),
     !Info ^ tp_pager := Pager.
-
-%-----------------------------------------------------------------------------%
-
-:- pred save_part(thread_pager_action::out, message_update::out,
-    thread_pager_info::in, thread_pager_info::out) is det.
-
-save_part(Action, MessageUpdate, !Info) :-
-    Pager = !.Info ^ tp_pager,
-    ( get_highlighted_thing(Pager, highlighted_part(Part, MaybeSubject)) ->
-        Action = prompt_save_part(Part, MaybeSubject),
-        MessageUpdate = clear_message
-    ;
-        Action = continue,
-        MessageUpdate = set_warning("No message or attachment selected.")
-    ).
-
-:- pred prompt_save_part(screen::in, part::in, maybe(header_value)::in,
-    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
-
-prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
-    Part = part(MessageId, MaybePartId, _Type, _MaybeContentCharset,
-        _MaybeContentDisposition, _Content, MaybePartFilename,
-        _MaybeContentLength, _MaybeCTE, IsDecrypted),
-    (
-        MaybePartFilename = yes(filename(PartFilename))
-    ;
-        MaybePartFilename = no,
-        MaybeSubject = yes(Subject),
-        make_filename_from_subject(Subject, PartFilename)
-    ;
-        MaybePartFilename = no,
-        MaybeSubject = no,
-        MessageId = message_id(IdStr),
-        (
-            MaybePartId = yes(part_id(PartIdInt)),
-            PartFilename = string.format("%s.part_%d", [s(IdStr), i(PartIdInt)])
-        ;
-            MaybePartId = yes(part_id_string(PartIdStr)),
-            PartFilename = string.format("%s.part_%s", [s(IdStr), s(PartIdStr)])
-        ;
-            MaybePartId = no,
-            PartFilename = IdStr ++ ".part"
-        )
-    ),
-    History0 = !.Info ^ tp_common_history ^ ch_save_history,
-    make_save_part_initial_prompt(History0, PartFilename, Initial),
-    get_home_dir(Home, !IO),
-    text_entry_initial(Screen, "Save to file: ", History0, Initial,
-        complete_path(Home), Return, !IO),
-    (
-        Return = yes(FileName0),
-        FileName0 \= ""
-    ->
-        add_history_nodup(FileName0, History0, History),
-        !Info ^ tp_common_history ^ ch_save_history := History,
-        expand_tilde_home(Home, FileName0, FileName),
-        FollowSymLinks = no,
-        io.file_type(FollowSymLinks, FileName, ResType, !IO),
-        (
-            ResType = ok(_),
-            % XXX prompt to overwrite
-            Error = FileName ++ " already exists.",
-            MessageUpdate = set_warning(Error)
-        ;
-            ResType = error(_),
-            % This assumes the file doesn't exist.
-            Config = !.Info ^ tp_config,
-            do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName,
-                Res, !IO),
-            (
-                Res = ok,
-                ( MaybePartId = yes(part_id(0)) ->
-                    MessageUpdate = set_info("Message saved.")
-                ;
-                    MessageUpdate = set_info("Attachment saved.")
-                )
-            ;
-                Res = error(Error),
-                MessageUpdate = set_warning(Error)
-            )
-        )
-    ;
-        MessageUpdate = clear_message
-    ),
-    update_message(Screen, MessageUpdate, !IO).
-
-:- pred make_filename_from_subject(header_value::in, string::out) is det.
-
-make_filename_from_subject(Subject, Filename) :-
-    SubjectString = header_value_string(Subject),
-    string.to_char_list(SubjectString, CharList0),
-    list.filter_map(replace_subject_char, CharList0, CharList),
-    string.from_char_list(CharList, Filename).
-
-:- pred replace_subject_char(char::in, char::out) is semidet.
-
-replace_subject_char(C0, C) :-
-    (
-        ( char.is_alnum_or_underscore(C0)
-        ; C0 = ('+')
-        ; C0 = ('-')
-        ; C0 = ('.')
-        ; char.to_int(C0) >= 0x80
-        )
-    ->
-        C = C0
-    ;
-        ( C0 = (' ')
-        ; C0 = ('/')
-        ; C0 = ('\\')
-        ; C0 = (':')
-        ),
-        C = ('-')
-    ).
-
-:- pred make_save_part_initial_prompt(history::in, string::in, string::out)
-    is det.
-
-make_save_part_initial_prompt(History, PartFilename, Initial) :-
-    choose_text_initial(History, "", PrevFilename),
-    dir.dirname(PrevFilename, PrevDirName),
-    ( PrevDirName = "." ->
-        Initial = PartFilename
-    ;
-        Initial = PrevDirName / PartFilename
-    ).
-
-:- pred do_save_part(prog_config::in, message_id::in, maybe(part_id)::in,
-    maybe_decrypted::in, string::in, maybe_error::out, io::di, io::uo) is det.
-
-do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName, Res, !IO)
-        :-
-    (
-        MaybePartId = yes(PartId),
-        get_notmuch_command(Config, Notmuch),
-        make_quoted_command(Notmuch, [
-            "show", "--format=raw", decrypt_arg(IsDecrypted),
-            part_id_to_part_option(PartId),
-            "--", message_id_to_search_term(MessageId)
-        ], no_redirect, redirect_output(FileName), Command),
-        % Decryption may invoke pinentry-curses.
-        curs.soft_suspend(io.call_system(Command), CallRes, !IO)
-    ;
-        MaybePartId = no,
-        CallRes = error(io.make_io_error("no part id"))
-    ),
-    (
-        CallRes = ok(ExitStatus),
-        ( ExitStatus = 0 ->
-            Res = ok
-        ;
-            string.format("notmuch show returned exit status %d",
-                [i(ExitStatus)], Msg),
-            Res = error(Msg)
-        )
-    ;
-        CallRes = error(Error),
-        Res = error(io.error_message(Error))
-    ).
-
-%-----------------------------------------------------------------------------%
-
-:- pred open_part(thread_pager_action::out,
-    message_update::out, thread_pager_info::in, thread_pager_info::out) is det.
-
-open_part(Action, MessageUpdate, !Info) :-
-    Pager = !.Info ^ tp_pager,
-    ( get_highlighted_thing(Pager, Thing) ->
-        (
-            Thing = highlighted_part(Part, _MaybeFilename),
-            Action = prompt_open_part(Part)
-        ;
-            Thing = highlighted_url(Url),
-            Action = prompt_open_url(Url)
-        ;
-            Thing = highlighted_fold_marker,
-            % This is a bit ugly as we will end up looking up the line again.
-            % Action = toggle_content(toggle_expanded)
-            Action = continue
-        ),
-        MessageUpdate = clear_message
-    ;
-        Action = continue,
-        MessageUpdate = set_warning("No message or attachment selected.")
-    ).
-
-:- pred prompt_open_part(screen::in, part::in, maybe(keycode)::out,
-    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
-
-prompt_open_part(Screen, Part, MaybeNextKey, !Info, !IO) :-
-    History0 = !.Info ^ tp_common_history ^ ch_open_part_history,
-    text_entry(Screen, "Open with command: ", History0, complete_none,
-        Return, !IO),
-    (
-        Return = yes(Command1),
-        Command1 \= ""
-    ->
-        add_history_nodup(Command1, History0, History),
-        !Info ^ tp_common_history ^ ch_open_part_history := History,
-        Config = !.Info ^ tp_config,
-        do_open_part(Config, Screen, Part, Command1, MessageUpdate,
-            MaybeNextKey, !Info, !IO)
-    ;
-        MessageUpdate = clear_message,
-        MaybeNextKey = no
-    ),
-    update_message(Screen, MessageUpdate, !IO).
-
-:- pred do_open_part(prog_config::in, screen::in, part::in, string::in,
-    message_update::out, maybe(keycode)::out,
-    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
-
-do_open_part(Config, Screen, Part, Command, MessageUpdate, MaybeNextKey,
-        !Info, !IO) :-
-    promise_equivalent_solutions [MessageUpdate, MaybeNextKey, !:Info, !:IO] (
-        shell_word.split(Command, ParseResult),
-        (
-            ParseResult = ok([]),
-            % Should not happen.
-            MessageUpdate = clear_message,
-            MaybeNextKey = no
-        ;
-            ParseResult = ok(CommandWords),
-            CommandWords = [_ | _],
-            do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate,
-                MaybeNextKey, !Info, !IO)
-        ;
-            (
-                ParseResult = error(yes(Error), _Line, Column),
-                Message = string.format("parse error at column %d: %s",
-                    [i(Column), s(Error)])
-            ;
-                ParseResult = error(no, _Line, Column),
-                Message = string.format("parse error at column %d",
-                    [i(Column)])
-            ),
-            MessageUpdate = set_warning(Message),
-            MaybeNextKey = no
-        )
-    ).
-
-:- pred do_open_part_2(prog_config::in, screen::in, part::in,
-    list(word)::in(non_empty_list), message_update::out, maybe(keycode)::out,
-    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
-
-do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, MaybeNextKey,
-        !Info, !IO) :-
-    Part = part(MessageId, MaybePartId, _ContentType, _MaybeContentCharset,
-        _MaybeContentDisposition, _Content, MaybePartFileName,
-        _MaybeContentLength, _MaybeCTE, IsDecrypted),
-    (
-        MaybePartFileName = yes(filename(PartFilename)),
-        get_extension(PartFilename, Ext)
-    ->
-        make_temp_suffix(Ext, Res0, !IO)
-    ;
-        make_temp_suffix("", Res0, !IO)
-    ),
-    (
-        Res0 = ok(FileName),
-        do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName,
-            Res, !IO),
-        (
-            Res = ok,
-            call_open_command(Screen, CommandWords, FileName, MaybeError, !IO),
-            (
-                MaybeError = ok,
-                Message = "Press any key to continue (deletes temporary file)",
-                get_keycode_blocking_handle_resize(Screen, set_info(Message),
-                    Key, !Info, !IO),
-                MaybeNextKey = yes(Key),
-                MessageUpdate = clear_message
-            ;
-                MaybeError = error(Msg),
-                MessageUpdate = set_warning(Msg),
-                MaybeNextKey = no
-            )
-        ;
-            Res = error(Error),
-            string.format("Error saving to %s: %s", [s(FileName), s(Error)],
-                Msg),
-            MessageUpdate = set_warning(Msg),
-            MaybeNextKey = no
-        ),
-        io.remove_file(FileName, _, !IO)
-    ;
-        Res0 = error(Error),
-        string.format("Error opening temporary file: %s", [s(Error)], Msg),
-        MessageUpdate = set_warning(Msg),
-        MaybeNextKey = no
-    ).
-
-:- pred call_open_command(screen::in, list(word)::in(non_empty_list),
-    string::in, maybe_error::out, io::di, io::uo) is det.
-
-call_open_command(Screen, CommandWords, Arg, MaybeError, !IO) :-
-    make_open_command(CommandWords, Arg, CommandToShow, CommandToRun, Bg),
-    CallMessage = set_info("Calling " ++ CommandToShow ++ "..."),
-    update_message_immed(Screen, CallMessage, !IO),
-    (
-        Bg = run_in_background,
-        io.call_system(CommandToRun, CallRes, !IO)
-    ;
-        Bg = run_in_foreground,
-        curs.suspend(io.call_system(CommandToRun), CallRes, !IO)
-    ),
-    (
-        CallRes = ok(ExitStatus),
-        ( ExitStatus = 0 ->
-            MaybeError = ok
-        ;
-            string.format("%s returned with exit status %d",
-                [s(CommandToShow), i(ExitStatus)], Msg),
-            MaybeError = error(Msg)
-        )
-    ;
-        CallRes = error(Error),
-        MaybeError = error("Error: " ++ io.error_message(Error))
-    ).
-
-:- pred make_open_command(list(word)::in(non_empty_list), string::in,
-    string::out, string::out, run_in_background::out) is det.
-
-make_open_command(CommandWords0, Arg, CommandToShow, CommandToRun, Bg) :-
-    remove_bg_operator(CommandWords0, CommandWords, Bg),
-    WordStrings = list.map(word_string, CommandWords),
-    CommandToShow = string.join_list(" ", WordStrings),
-    CommandPrefix = command_prefix(
-        shell_quoted(string.join_list(" ", list.map(quote_arg, WordStrings))),
-        ( detect_ssh(CommandWords) -> quote_twice ; quote_once )
-    ),
-    (
-        Bg = run_in_background,
-        make_quoted_command(CommandPrefix, [Arg],
-            redirect_input("/dev/null"), redirect_output("/dev/null"),
-            redirect_stderr("/dev/null"), run_in_background,
-            CommandToRun)
-    ;
-        Bg = run_in_foreground,
-        make_quoted_command(CommandPrefix, [Arg], no_redirect, no_redirect,
-            CommandToRun)
-    ).
-
-:- pred remove_bg_operator(list(word)::in(non_empty_list), list(word)::out,
-    run_in_background::out) is det.
-
-remove_bg_operator(Words0, Words, Bg) :-
-    (
-        list.split_last(Words0, ButLast, Last0),
-        remove_bg_operator_2(Last0, Last)
-    ->
-        (
-            Last = word([]),
-            Words = ButLast
-        ;
-            Last = word([_ | _]),
-            Words = ButLast ++ [Last]
-        ),
-        Bg = run_in_background
-    ;
-        Words = Words0,
-        Bg = run_in_foreground
-    ).
-
-:- pred remove_bg_operator_2(word::in, word::out) is semidet.
-
-remove_bg_operator_2(word(Segments0), word(Segments)) :-
-    list.split_last(Segments0, ButLast, Last0),
-    Last0 = unquoted(LastString0),
-    string.remove_suffix(LastString0, "&", LastString),
-    ( LastString = "" ->
-        Segments = ButLast
-    ;
-        Segments = ButLast ++ [unquoted(LastString)]
-    ).
-
-%-----------------------------------------------------------------------------%
-
-:- pred prompt_open_url(screen::in, string::in,
-    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
-
-prompt_open_url(Screen, Url, !Info, !IO) :-
-    History0 = !.Info ^ tp_common_history ^ ch_open_url_history,
-    % No completion for command inputs yet.
-    text_entry(Screen, "Open URL with command: ", History0, complete_none,
-        Return, !IO),
-    (
-        Return = yes(Command1),
-        Command1 \= ""
-    ->
-        add_history_nodup(Command1, History0, History),
-        !Info ^ tp_common_history ^ ch_open_url_history := History,
-        do_open_url(Screen, Command1, Url, MessageUpdate, !IO)
-    ;
-        MessageUpdate = clear_message
-    ),
-    update_message(Screen, MessageUpdate, !IO).
-
-:- pred do_open_url(screen::in, string::in, string::in, message_update::out,
-    io::di, io::uo) is det.
-
-do_open_url(Screen, Command, Url, MessageUpdate, !IO) :-
-    promise_equivalent_solutions [MessageUpdate, !:IO] (
-        shell_word.split(Command, ParseResult),
-        (
-            ParseResult = ok([]),
-            % Should not happen.
-            MessageUpdate = clear_message
-        ;
-            ParseResult = ok(CommandWords),
-            CommandWords = [_ | _],
-            call_open_command(Screen, CommandWords, Url, MaybeError, !IO),
-            (
-                MaybeError = ok,
-                MessageUpdate = no_change
-            ;
-                MaybeError = error(Msg),
-                MessageUpdate = set_warning(Msg)
-            )
-        ;
-            (
-                ParseResult = error(yes(Error), _Line, Column),
-                Message = string.format("parse error at column %d: %s",
-                    [i(Column), s(Error)])
-            ;
-                ParseResult = error(no, _Line, Column),
-                Message = string.format("parse error at column %d",
-                    [i(Column)])
-            ),
-            MessageUpdate = set_warning(Message)
-        )
-    ).
 
 %-----------------------------------------------------------------------------%
 
