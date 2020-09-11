@@ -1094,8 +1094,9 @@ thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO) :-
         Action = refresh_results,
         MessageUpdate = clear_message
     ;
-        Key = char('q')     % TODO: Can we add this binding to the plain pager
-                            %       without breaking stuff elsewhere?
+        ( Key = char('i')
+        ; Key = char('q')
+        )
     ->
         Action = leave,
         MessageUpdate = clear_message
@@ -1194,9 +1195,6 @@ plain_pager_binding(Screen, KeyCode, ThreadPagerAction, MessageUpdate,
     (
         PagerAction = continue,
         ThreadPagerAction = continue
-    ;
-        PagerAction = leave_pager,
-        ThreadPagerAction = leave
     ;
         PagerAction = decrypt_part,
         ThreadPagerAction = decrypt_part
