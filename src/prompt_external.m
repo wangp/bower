@@ -75,9 +75,9 @@ save_part(Screen, Action, MessageUpdate, !Info, !IO) :-
     pager_info::in, pager_info::out, io::di, io::uo) is det.
 
 prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
-    Part = part(MessageId, MaybePartId, _Type, _MaybeContentCharset,
-        _MaybeContentDisposition, _Content, MaybePartFilename,
-        _MaybeContentLength, _MaybeCTE, IsDecrypted),
+    MessageId = Part ^ pt_msgid,
+    MaybePartId = Part ^ pt_part,
+    MaybePartFilename = Part ^ pt_filename,
     (
         MaybePartFilename = yes(filename(PartFilename))
     ;
@@ -122,8 +122,7 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
             ResType = error(_),
             % This assumes the file doesn't exist.
             Config = !.Info ^ p_config,
-            do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName,
-                Res, !IO),
+            do_save_part(Config, Part, FileName, Res, !IO),
             (
                 Res = ok,
                 ( MaybePartId = yes(part_id(0)) ->
@@ -182,37 +181,53 @@ make_save_part_initial_prompt(History, PartFilename, Initial) :-
         Initial = PrevDirName / PartFilename
     ).
 
-:- pred do_save_part(prog_config::in, message_id::in, maybe(part_id)::in,
-    maybe_decrypted::in, string::in, maybe_error::out, io::di, io::uo) is det.
+:- pred do_save_part(prog_config::in, part::in, string::in, maybe_error::out,
+    io::di, io::uo) is det.
 
-do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName, Res, !IO)
-        :-
+do_save_part(Config, Part, FileName, Res, !IO) :-
     (
-        MaybePartId = yes(PartId),
-        get_notmuch_command(Config, Notmuch),
-        make_quoted_command(Notmuch, [
-            "show", "--format=raw", decrypt_arg(IsDecrypted),
-            part_id_to_part_option(PartId),
-            "--", message_id_to_search_term(MessageId)
-        ], no_redirect, redirect_output(FileName), Command),
-        % Decryption may invoke pinentry-curses.
-        curs.soft_suspend(io.call_system(Command), CallRes, !IO)
-    ;
-        MaybePartId = no,
-        CallRes = error(io.make_io_error("no part id"))
-    ),
-    (
-        CallRes = ok(ExitStatus),
-        ( ExitStatus = 0 ->
-            Res = ok
+        Part ^ pt_content = text(PartContent)
+    ->
+        tell(FileName, FileWrite, !IO),
+        write_string(PartContent, !IO),
+        told(!IO),
+        (
+            FileWrite = ok, Res = ok
         ;
-            string.format("notmuch show returned exit status %d",
-                [i(ExitStatus)], Msg),
-            Res = error(Msg)
+            FileWrite = error(Error),
+            Res = error(io.error_message(Error))
         )
     ;
-        CallRes = error(Error),
-        Res = error(io.error_message(Error))
+        MessageId = Part ^ pt_msgid,
+        MaybePartId = Part ^ pt_part,
+        IsDecrypted = Part ^ pt_decrypted,
+        (
+            MaybePartId = yes(PartId),
+            get_notmuch_command(Config, Notmuch),
+            make_quoted_command(Notmuch, [
+                "show", "--format=raw", decrypt_arg(IsDecrypted),
+                part_id_to_part_option(PartId),
+                "--", message_id_to_search_term(MessageId)
+            ], no_redirect, redirect_output(FileName), Command),
+            % Decryption may invoke pinentry-curses.
+            curs.soft_suspend(io.call_system(Command), CallRes, !IO)
+        ;
+            MaybePartId = no,
+            CallRes = error(io.make_io_error("no part id"))
+        ),
+        (
+            CallRes = ok(ExitStatus),
+            ( ExitStatus = 0 ->
+                Res = ok
+            ;
+                string.format("notmuch show returned exit status %d",
+                    [i(ExitStatus)], Msg),
+                Res = error(Msg)
+            )
+        ;
+            CallRes = error(Error),
+            Res = error(io.error_message(Error))
+        )
     ).
 
 %-----------------------------------------------------------------------------%
@@ -306,9 +321,7 @@ do_open_part(Config, Screen, Part, Command, MessageUpdate, Tempfile,
 
 do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, Tempfile,
         !Info, !IO) :-
-    Part = part(MessageId, MaybePartId, _ContentType, _MaybeContentCharset,
-        _MaybeContentDisposition, _Content, MaybePartFileName,
-        _MaybeContentLength, _MaybeCTE, IsDecrypted),
+    MaybePartFileName = Part ^ pt_filename,
     (
         MaybePartFileName = yes(filename(PartFilename)),
         get_extension(PartFilename, Ext)
@@ -319,8 +332,7 @@ do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, Tempfile,
     ),
     (
         Res0 = ok(FileName),
-        do_save_part(Config, MessageId, MaybePartId, IsDecrypted, FileName,
-            Res, !IO),
+        do_save_part(Config, Part, FileName, Res, !IO),
         (
             Res = ok,
             call_open_command(Screen, CommandWords, FileName, MaybeError, !IO),
