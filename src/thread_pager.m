@@ -69,7 +69,6 @@
 :- import_module text_entry.
 :- import_module time_util.
 :- import_module view_async.
-:- import_module prompt_external.
 
 :- use_module curs.
 
