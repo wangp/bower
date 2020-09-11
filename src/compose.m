@@ -160,6 +160,7 @@
     --->    continue
     ;       resize
     ;       edit
+    ;       press_key_to_delete(string)
     ;       leave(sent, message_update).
 
 :- type call_res
@@ -657,7 +658,7 @@ reenter_staging_screen(Config, Screen, Headers0, Text, UseAltHTMLFilter,
         FilterRes = yes(error(Error)),
         update_message(Screen, set_warning(Error), !IO)
     ),
-    staging_screen(Screen, StagingInfo, AttachInfo, PagerInfo, Transition,
+    staging_screen(Screen, no, StagingInfo, AttachInfo, PagerInfo, Transition,
         !CryptoInfo, !IO).
 
 :- func headers_as_env(headers) = spawn_env.
@@ -827,12 +828,12 @@ maybe_expand_mailbox(Config, Opt, Mailbox0, Mailbox, !Cache, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred staging_screen(screen::in, staging_info::in, attach_info::in,
-    pager_info::in, screen_transition(sent)::out,
+:- pred staging_screen(screen::in, maybe(keycode)::in, staging_info::in,
+    attach_info::in, pager_info::in, screen_transition(sent)::out,
     crypto_info::in, crypto_info::out, io::di, io::uo) is det.
 
-staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
-        !CryptoInfo, !IO) :-
+staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
+        Transition, !CryptoInfo, !IO) :-
     !.StagingInfo = staging_info(Config, MaybeAccount, Headers, ParsedHeaders,
         Text, TextAlt, UseAltHTMLFilter, MaybeOldDraft, _AttachHistory),
     Attrs = compose_attrs(Config),
@@ -853,7 +854,12 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
 
     NumAttachmentRows = list.length(AttachmentPanels),
     NumPagerRows = list.length(PagerPanels),
-    get_keycode_blocking(KeyCode, !IO),
+    (
+        MaybeKey = yes(KeyCode)
+    ;
+        MaybeKey = no,
+        get_keycode_blocking(KeyCode, !IO)
+    ),
     ( KeyCode = char('e') ->
         Action = edit
     ; KeyCode = char('f') ->
@@ -982,19 +988,25 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
     ; KeyCode = code(curs.key_resize) ->
         Action = resize
     ;
-        pager_input(Screen, NumPagerRows, KeyCode, _Action, MessageUpdate,
+        pager_input(Screen, NumPagerRows, KeyCode, PagerAction, MessageUpdate,
             !PagerInfo, !IO),
         update_message(Screen, MessageUpdate, !IO),
-        Action = continue
+        convert_pager_action(PagerAction, Action)
     ),
     (
         Action = continue,
-        staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo,
+        staging_screen(Screen, no, !.StagingInfo, !.AttachInfo, !.PagerInfo,
             Transition, !CryptoInfo, !IO)
+    ;
+        Action = press_key_to_delete(FileName),
+        get_keycode_blocking(NextKey, !IO),
+        io.remove_file(FileName, _, !IO),
+        staging_screen(Screen, yes(NextKey), !.StagingInfo, !.AttachInfo,
+            !.PagerInfo, Transition, !CryptoInfo, !IO)
     ;
         Action = resize,
         resize_staging_screen(Screen, !.StagingInfo, !PagerInfo, !IO),
-        staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo,
+        staging_screen(Screen, no, !.StagingInfo, !.AttachInfo, !.PagerInfo,
             Transition, !CryptoInfo, !IO)
     ;
         Action = edit,
@@ -1005,6 +1017,20 @@ staging_screen(Screen, !.StagingInfo, !.AttachInfo, !.PagerInfo, Transition,
     ;
         Action = leave(Sent, TransitionMessage),
         Transition = screen_transition(Sent, TransitionMessage)
+    ).
+
+:- pred convert_pager_action(pager_action::in, staging_screen_action::out)
+    is det.
+
+convert_pager_action(PagerAction, Action) :-
+    (
+        PagerAction = press_key_to_delete(FileName)
+    ->
+        Action = press_key_to_delete(FileName)
+    ;
+        Action = continue
+        % This isn't particularly good, since it means we might end up
+        % ignoring some of what the pager tells us to do.
     ).
 
 :- pred resize_staging_screen(screen::in, staging_info::in,
