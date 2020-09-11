@@ -112,8 +112,7 @@
     ;       cycle_alternatives
     ;       decrypt_part
     ;       redraw
-    ;       press_key_to_delete(string)
-    ;       leave_pager.
+    ;       press_key_to_delete(string).
 
 :- pred pager_input(screen::in, int::in, keycode::in, pager_action::out,
     message_update::out, pager_info::in, pager_info::out, io::di, io::uo)
@@ -220,8 +219,7 @@
 %-----------------------------------------------------------------------------%
 
 :- type binding
-    --->    leave_pager
-    ;       scroll_down
+    --->    scroll_down
     ;       scroll_up
     ;       page_down
     ;       page_up
@@ -860,10 +858,6 @@ setup_pager_for_staging(Config, Cols, Text, TextAlt, RetainPagerPos,
 pager_input(Screen, NumRows, KeyCode, Action, MessageUpdate, !Info, !IO) :-
     ( key_binding(KeyCode, Binding) ->
         (
-            Binding = leave_pager,
-            Action = leave_pager,
-            MessageUpdate = clear_message
-        ;
             Binding = scroll_down,
             scroll(NumRows, 1, MessageUpdate, !Info),
             Action = continue
@@ -977,7 +971,6 @@ key_binding(KeyCode, Binding) :-
 
 :- pred char_binding(char::in, binding::out) is semidet.
 
-char_binding('i', leave_pager).
 char_binding('\r', scroll_down).
 char_binding('\\', scroll_up).
 char_binding('\b', scroll_up).   % XXX doesn't work
