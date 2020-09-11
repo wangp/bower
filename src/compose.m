@@ -665,13 +665,13 @@ reenter_staging_screen(Config, Screen, Headers0, Text, UseAltHTMLFilter,
 
 headers_as_env(Headers) =
      environ([
-        set_var("from",header_value_string(Headers ^ h_from)),
-        set_var("to",header_value_string(Headers ^ h_to)),
-        set_var("cc",header_value_string(Headers ^ h_cc)),
-        set_var("bcc",header_value_string(Headers ^ h_bcc)),
-        set_var("subject",header_value_string(Headers ^ h_subject)),
-        set_var("reply_to",header_value_string(Headers ^ h_replyto)),
-        set_var("in_reply_to",header_value_string(Headers ^ h_inreplyto))
+        set_var("MAIL_FROM",header_value_string(Headers ^ h_from)),
+        set_var("MAIL_TO",header_value_string(Headers ^ h_to)),
+        set_var("MAIL_CC",header_value_string(Headers ^ h_cc)),
+        set_var("MAIL_BCC",header_value_string(Headers ^ h_bcc)),
+        set_var("MAIL_SUBJECT",header_value_string(Headers ^ h_subject)),
+        set_var("MAIL_REPLY_TO",header_value_string(Headers ^ h_replyto)),
+        set_var("MAIL_IN_REPLY_TO",header_value_string(Headers ^ h_inreplyto))
     ]).
 
 :- pred make_text_alt(prog_config::in, headers::in, string::in,

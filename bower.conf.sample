@@ -44,7 +44,8 @@
     #
     # Some of the email's header values will be available to the filter
     # as environment variables. The following environment variables are
-    # set by bower: from, to, cc, bcc, subject, reply_to, in_reply_to.
+    # set by bower: MAIL_FROM, MAIL_TO, MAIL_CC, MAIL_BCC, MAIL_SUBJECT,
+    # MAIL_REPLY_TO, MAIL_IN_REPLY_TO.
     #
   ; alt_html_filter = pandoc -f markdown -t html
 
