@@ -2235,9 +2235,8 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
         (
             Encrypt = no,
             Sign = no,
-            generate_boundary(MixedBoundary, RS0, _RS),
             make_text_and_attachments_mime_part(cte_8bit, Text, TextAlt,
-                Attachments, boundary(MixedBoundary), Res0),
+                Attachments, RS0, _RS, Res0),
             (
                 Res0 = ok(MimePart),
                 Spec = message_spec(WriteHeaders, mime_v1(MimePart)),
@@ -2278,9 +2277,8 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
                 EncryptKeys = [_ | _],
                 missing_keys_warning(Missing, WarningsA),
                 leaked_bccs_warning(LeakedBccs, WarningsB),
-                generate_boundary(MixedBoundary, RS0, RS1),
                 make_text_and_attachments_mime_part(TextCTE, Text, TextAlt,
-                    Attachments, boundary(MixedBoundary), Res0),
+                    Attachments, RS0, RS1, Res0),
                 (
                     Res0 = ok(PartToEncrypt),
                     generate_boundary(EncryptedBoundary, RS1, _RS),
@@ -2309,9 +2307,8 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
                 SignKeys = [_ | _],
                 % Force text parts to be base64-encoded to avoid being mangled
                 % during transfer.
-                generate_boundary(MixedBoundary, RS0, RS1),
                 make_text_and_attachments_mime_part(cte_base64, Text, TextAlt,
-                    Attachments, boundary(MixedBoundary), Res0),
+                    Attachments, RS0, RS1, Res0),
                 (
                     Res0 = ok(PartToSign),
                     generate_boundary(SignedBoundary, RS1, _RS),
@@ -2422,23 +2419,26 @@ maybe_cons_unstructured(SkipEmpty, Options, FieldName, Value, !Acc) :-
 %-----------------------------------------------------------------------------%
 
 :- pred make_text_and_attachments_mime_part(write_content_transfer_encoding::in,
-    string::in, maybe(string)::in, list(attachment)::in, boundary::in,
-    maybe_error(mime_part)::out) is det.
+    string::in, maybe(string)::in, list(attachment)::in, splitmix64::in,
+    splitmix64::out, maybe_error(mime_part)::out) is det.
 
 make_text_and_attachments_mime_part(TextCTE, Text, TextAlt, Attachments,
-        MixedBoundary, Res) :-
+        BoundarySeed0, BoundarySeed1, Res) :-
+    generate_boundary(MixedBoundary, BoundarySeed0, BoundarySeed1Half),
     TextPlain = discrete(text_plain, yes("utf-8"),
         yes(write_content_disposition(inline, no)), yes(TextCTE), text(Text)),
     (
         TextAlt = no,
-        TextPart = TextPlain
+        TextPart = TextPlain,
+        BoundarySeed1 = BoundarySeed1Half
     ;
         TextAlt = yes(TextAltContent),
         TextHTML = discrete(text_html, yes("utf-8"),
             yes(write_content_disposition(inline, no)), yes(TextCTE),
             text(TextAltContent)),
+        generate_boundary(MultipartBoundary, BoundarySeed1Half, BoundarySeed1),
         TextPart = composite(multipart_alternative,
-            boundary("========ASDUFOuotipZOIzzPTOINfsaASD=="),
+            boundary(MultipartBoundary),
             yes(write_content_disposition(inline, no)), yes(cte_8bit),
             [TextPlain, TextHTML])
     ),
@@ -2451,7 +2451,7 @@ make_text_and_attachments_mime_part(TextCTE, Text, TextAlt, Attachments,
             AttachmentParts, [], AnyErrors),
         (
             AnyErrors = [],
-            MultiPart = composite(multipart_mixed, MixedBoundary,
+            MultiPart = composite(multipart_mixed, boundary(MixedBoundary),
                 yes(write_content_disposition(inline, no)), yes(cte_8bit),
                 [TextPart | AttachmentParts]),
             Res = ok(MultiPart)
