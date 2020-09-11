@@ -96,7 +96,11 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
             PartFilename = string.format("%s.part_%s", [s(IdStr), s(PartIdStr)])
         ;
             MaybePartId = no,
-            PartFilename = IdStr ++ ".part"
+            ( IdStr \= "" ->
+                PartFilename = IdStr ++ ".part"
+            ;
+                PartFilename = "message.part"
+            )
         )
     ),
     History0 = !.Info ^ p_history ^ ch_save_history,
