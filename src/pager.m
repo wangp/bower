@@ -993,7 +993,7 @@ char_binding('g', home).
 char_binding('G', end).
 char_binding('z', cycle_alternatives).
 char_binding('Z', toggle_expanded).
-char_binding('s', save_part).
+char_binding('w', save_part).
 char_binding('o', open_part).
 
 %-----------------------------------------------------------------------------%
