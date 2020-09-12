@@ -214,7 +214,7 @@ This view pages through an entire thread.  The keys are:
 
     v               highlight next visible attachment or URL or folded text
     V               highlight next visible attachment or top of message
-    s               save highlighted message/part
+    s, w            save highlighted message/part to file
     o               open highlighted message/part/URL with external program
     z               cycle alternative parts / toggle inline display / decrypt
     Z               toggle inline display of part / decrypt
