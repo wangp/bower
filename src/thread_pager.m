@@ -920,6 +920,11 @@ thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO) :-
         plain_pager_binding(Screen, char('k'), Action, MessageUpdate,
             !Info, !IO)
     ;
+        Key = char('s')
+    ->
+        plain_pager_binding(Screen, char('w'), Action, MessageUpdate,
+            !Info, !IO)
+    ;
         Key = char(']')
     ->
         Delta = int.min(15, NumPagerRows - 1),
