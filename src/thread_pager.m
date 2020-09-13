@@ -458,13 +458,18 @@ compute_num_rows(Rows, Scrollable, NumThreadRows, NumPagerRows) :-
     ExtraLines = SepLine + 2,
     Y0 = int.max(1, (Rows - ExtraLines) // 3),
     Y1 = int.min(Y0, NumThreadLines),
-    Y2 = int.min(Y1, max_thread_lines),
+    Y2 = int.min(Y1, max_thread_lines(Rows)),
     NumThreadRows = Y2,
     NumPagerRows = int.max(0, Rows - NumThreadRows - SepLine).
 
-:- func max_thread_lines = int.
+:- func max_thread_lines(int) = int.
 
-max_thread_lines = 8.
+max_thread_lines(TotalRows) = MaxRows :-
+    (
+        if TotalRows < 40
+        then MaxRows = 8
+        else MaxRows = TotalRows/5
+    ).
 
 :- pred append_threaded_messages(tm::in, list(message)::in,
     list(thread_line)::out, io::di, io::uo) is det.
