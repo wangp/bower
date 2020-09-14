@@ -110,6 +110,7 @@
     ;       half_page_down
     ;       skip_to_unread
     ;       enter
+    ;       limit(string)
     ;       enter_limit
     ;       enter_limit_tilde
     ;       refresh_all
@@ -137,7 +138,7 @@
     ;       continue_no_draw
     ;       resize
     ;       open_pager(thread_id, set(tag))
-    ;       enter_limit(maybe(string))
+    ;       enter_limit(maybe(string), bool)
     ;       refresh_all
     ;       start_compose
     ;       start_recall
@@ -366,7 +367,7 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         !IndexInfo ^ i_common_history := CommonHistory,
         index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
-        Action = enter_limit(MaybeInitial),
+        Action = enter_limit(MaybeInitial, Prompt),
         Config = !.IndexInfo ^ i_config,
         History0 = !.IndexInfo ^ i_common_history ^ ch_limit_history,
         (
@@ -378,12 +379,23 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
             FirstTime = yes
         ),
         Completion = complete_limit(Config, search_alias_section),
-        text_entry_full(Screen, "Limit to messages matching: ", History0,
-            Initial, Completion, FirstTime, Return, !IO),
+        (
+            Prompt = yes,
+            text_entry_full(Screen, "Limit to messages matching: ", History0,
+                Initial, Completion, FirstTime, Return, !IO)
+        ;
+            Prompt = no,
+            Return = MaybeInitial
+        ),
         (
             Return = yes(LimitString),
-            add_history_nodup(LimitString, History0, History),
-            !IndexInfo ^ i_common_history ^ ch_limit_history := History,
+            (
+                Prompt = yes,
+                add_history_nodup(LimitString, History0, History),
+                !IndexInfo ^ i_common_history ^ ch_limit_history := History
+            ;
+                Prompt = no
+            ),
             current_timestamp(Time, !IO),
             predigest_search_string(Config, no, LimitString, ParseRes, !IO),
             (
@@ -568,11 +580,15 @@ index_view_input(NumRows, KeyCode, MessageUpdate, Action, !IndexInfo) :-
         ;
             Binding = enter_limit,
             MessageUpdate = no_change,
-            Action = enter_limit(no)
+            Action = enter_limit(no, yes)
         ;
             Binding = enter_limit_tilde,
             MessageUpdate = no_change,
-            Action = enter_limit(yes("~"))
+            Action = enter_limit(yes("~"), yes)
+        ;
+            Binding = limit(Query),
+            MessageUpdate = no_change,
+            Action = enter_limit(yes(Query), no)
         ;
             Binding = refresh_all,
             MessageUpdate = no_change,
@@ -681,6 +697,8 @@ key_binding(code(Code), Binding) :-
     ;
         fail
     ).
+key_binding(meta(Char), Binding) :-
+    Binding = limit(string.from_char_list(['~', Char])).
 
 :- pred key_binding_char(char::in, binding::out) is semidet.
 
