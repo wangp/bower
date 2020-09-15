@@ -735,7 +735,7 @@ key_binding_char('@', addressbook_add).
 key_binding_char('/', prompt_internal_search(dir_forward)).
 key_binding_char('?', prompt_internal_search(dir_reverse)).
 key_binding_char('n', skip_to_internal_search).
-key_binding_char('N', toggle_unread).
+key_binding_char('U', toggle_unread).
 key_binding_char('a', toggle_archive).
 key_binding_char('F', toggle_flagged).
 key_binding_char('d', set_deleted).

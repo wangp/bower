@@ -142,7 +142,7 @@ The keys are:
     /, ?            search for string within results
     n               skip to next search result
 
-    N               toggle 'unread' tag on current thread
+    U               toggle 'unread' tag on current thread
     F               toggle 'flagged' tag on current thread
     a               toggle 'inbox', 'unread' tags on current thread (archive)
     d               set 'deleted' tag on current thread
@@ -190,7 +190,7 @@ This view pages through an entire thread.  The keys are:
 
     J               mark current message read and go to next message
     K               mark current message read and go to previous message
-    N               toggle 'unread' tag on current message
+    U               toggle 'unread' tag on current message
     ^R              remove 'unread' tag on preceding messages
     F               toggle 'flagged' tag on current message
     a               toggle 'inbox', 'unread' tags on current message (archive)
