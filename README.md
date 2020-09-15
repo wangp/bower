@@ -140,7 +140,8 @@ The keys are:
     z               toggle authors column
 
     /, ?            search for string within results
-    n               skip to next search result
+    n               skip to next search result (forward)
+    N               skip to next search result (reverse)
 
     U               toggle 'unread' tag on current thread
     F               toggle 'flagged' tag on current thread
@@ -186,7 +187,8 @@ This view pages through an entire thread.  The keys are:
     =               refresh search results
 
     /, ?            search for string
-    n               skip to next search result
+    n               skip to next search result (forward)
+    N               skip to next search result (reverse)
 
     J               mark current message read and go to next message
     K               mark current message read and go to previous message

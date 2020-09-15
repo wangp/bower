@@ -72,7 +72,6 @@
                 i_next_poll_time    :: maybe(timestamp),
                 i_poll_count        :: int,
                 i_internal_search   :: maybe(string),
-                i_internal_search_dir :: search_direction,
                 i_show_authors      :: show_authors,
                 i_common_history    :: common_history
             ).
@@ -119,7 +118,7 @@
     ;       start_reply(reply_kind)
     ;       addressbook_add
     ;       prompt_internal_search(search_direction)
-    ;       skip_to_internal_search
+    ;       skip_to_internal_search(search_direction)
     ;       toggle_unread
     ;       toggle_archive
     ;       toggle_flagged
@@ -215,7 +214,7 @@ open_index(Config, NotmuchConfig, Crypto, Screen, LimitString,
     MaybeSearch = no,
     IndexInfo = index_info(Config, Crypto, Scrollable, LimitString,
         SearchTokens, SearchTime, NextPollTime, PollCount, MaybeSearch,
-        dir_forward, show_authors, !.CommonHistory),
+        show_authors, !.CommonHistory),
     index_loop(Screen, redraw, IndexInfo, !IO).
 
 :- pred search_new_limit_string(screen::in, string::in, maybe(string)::in,
@@ -625,8 +624,9 @@ index_view_input(NumRows, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = prompt_internal_search(SearchDir)
         ;
-            Binding = skip_to_internal_search,
-            skip_to_internal_search(NumRows, MessageUpdate, !IndexInfo),
+            Binding = skip_to_internal_search(Direction),
+            skip_to_internal_search(NumRows, Direction, MessageUpdate,
+                !IndexInfo),
             Action = continue
         ;
             Binding = toggle_unread,
@@ -734,7 +734,8 @@ key_binding_char('R', start_recall).
 key_binding_char('@', addressbook_add).
 key_binding_char('/', prompt_internal_search(dir_forward)).
 key_binding_char('?', prompt_internal_search(dir_reverse)).
-key_binding_char('n', skip_to_internal_search).
+key_binding_char('n', skip_to_internal_search(dir_forward)).
+key_binding_char('N', skip_to_internal_search(dir_reverse)).
 key_binding_char('U', toggle_unread).
 key_binding_char('a', toggle_archive).
 key_binding_char('F', toggle_flagged).
@@ -1001,24 +1002,22 @@ prompt_internal_search(Screen, SearchDir, !Info, !IO) :-
         ;
             add_history_nodup(Search, History0, History),
             !Info ^ i_internal_search := yes(Search),
-            !Info ^ i_internal_search_dir := SearchDir,
             !Info ^ i_common_history ^ ch_internal_search_history := History,
             get_main_rows(Screen, NumRows, !IO),
-            skip_to_internal_search(NumRows, MessageUpdate, !Info),
+            skip_to_internal_search(NumRows, SearchDir, MessageUpdate, !Info),
             update_message(Screen, MessageUpdate, !IO)
         )
     ;
         Return = no
     ).
 
-:- pred skip_to_internal_search(int::in, message_update::out,
-    index_info::in, index_info::out) is det.
+:- pred skip_to_internal_search(int::in, search_direction::in,
+    message_update::out, index_info::in, index_info::out) is det.
 
-skip_to_internal_search(NumRows, MessageUpdate, !Info) :-
+skip_to_internal_search(NumRows, SearchDir, MessageUpdate, !Info) :-
     MaybeSearch = !.Info ^ i_internal_search,
     (
         MaybeSearch = yes(Search),
-        SearchDir = !.Info ^ i_internal_search_dir,
         Scrollable0 = !.Info ^ i_scrollable,
         ( get_cursor(Scrollable0, Cursor0) ->
             (
