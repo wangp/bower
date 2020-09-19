@@ -372,6 +372,7 @@ verify_arg(no) = "--verify=false".
 create_pager_and_thread_lines(Config, Screen, Messages, Ordering,
         Scrollable, NumThreadRows, PagerInfo, NumPagerRows, !IO) :-
     get_rows_cols(Screen, Rows0, Cols, !IO),
+    % Subtract rows for status bar and message.
     Rows = Rows0 - 2,
     current_timestamp(NowTime, !IO),
     localtime(NowTime, Nowish, !IO),
@@ -437,9 +438,11 @@ get_latest_line(LineA, LineB, Line) :-
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 resize_thread_pager(Screen, !Info, !IO) :-
-    get_rows_cols(Screen, Rows, _Cols, !IO),
+    get_rows_cols(Screen, Rows0, _Cols, !IO),
+    % Subtract rows for status bar and message.
+    Rows = Rows0 - 2,
     Scrollable0 = !.Info ^ tp_scrollable,
-    compute_num_rows(Rows - 2, Scrollable0, NumThreadRows, NumPagerRows),
+    compute_num_rows(Rows, Scrollable0, NumThreadRows, NumPagerRows),
     ( get_cursor(Scrollable0, Cursor) ->
         set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
@@ -455,8 +458,7 @@ resize_thread_pager(Screen, !Info, !IO) :-
 compute_num_rows(Rows, Scrollable, NumThreadRows, NumPagerRows) :-
     NumThreadLines = get_num_lines(Scrollable),
     SepLine = 1,
-    ExtraLines = SepLine + 2,
-    Y0 = int.max(1, (Rows - ExtraLines) // 3),
+    Y0 = int.max(1, (Rows - SepLine) // 3),
     Y1 = int.min(Y0, NumThreadLines),
     Y2 = int.min(Y1, max_thread_lines(Rows)),
     NumThreadRows = Y2,
