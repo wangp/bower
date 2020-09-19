@@ -464,11 +464,11 @@ compute_num_rows(Rows, Scrollable, NumThreadRows, NumPagerRows) :-
 
 :- func max_thread_lines(int) = int.
 
-max_thread_lines(TotalRows) = MaxRows :-
-    (
-        if TotalRows < 40
-        then MaxRows = 8
-        else MaxRows = TotalRows/5
+max_thread_lines(Rows) = MaxRows :-
+    ( if Rows < 40 then
+        MaxRows = 8
+    else
+        MaxRows = Rows // 5
     ).
 
 :- pred append_threaded_messages(tm::in, list(message)::in,
