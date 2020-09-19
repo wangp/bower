@@ -179,14 +179,14 @@
 
 %-----------------------------------------------------------------------------%
 
-open_index(Config, NotmuchConfig, Crypto, Screen, SearchString,
+open_index(Config, NotmuchConfig, Crypto, Screen, LimitString,
         !.CommonHistory, !IO) :-
     current_timestamp(Time, !IO),
-    ( SearchString = "" ->
+    ( LimitString = "" ->
         SearchTokens = [],
         Threads = []
     ;
-        predigest_search_string(Config, yes(NotmuchConfig), SearchString,
+        predigest_search_string(Config, yes(NotmuchConfig), LimitString,
             ParseRes, !IO),
         (
             ParseRes = ok(SearchTokens),
@@ -205,7 +205,7 @@ open_index(Config, NotmuchConfig, Crypto, Screen, SearchString,
             Threads = []
         ),
         LimitHistory0 = !.CommonHistory ^ ch_limit_history,
-        add_history_nodup(SearchString, LimitHistory0, LimitHistory),
+        add_history_nodup(LimitString, LimitHistory0, LimitHistory),
         !CommonHistory ^ ch_limit_history := LimitHistory
     ),
     setup_index_scrollable(Time, Threads, Scrollable, !IO),
@@ -213,7 +213,7 @@ open_index(Config, NotmuchConfig, Crypto, Screen, SearchString,
     NextPollTime = next_poll_time(Config, Time),
     PollCount = 0,
     MaybeSearch = no,
-    IndexInfo = index_info(Config, Crypto, Scrollable, SearchString,
+    IndexInfo = index_info(Config, Crypto, Scrollable, LimitString,
         SearchTokens, SearchTime, NextPollTime, PollCount, MaybeSearch,
         dir_forward, show_authors, !.CommonHistory),
     index_loop(Screen, redraw, IndexInfo, !IO).
