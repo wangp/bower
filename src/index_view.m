@@ -218,6 +218,34 @@ open_index(Config, NotmuchConfig, Crypto, Screen, SearchString,
         dir_forward, show_authors, !.CommonHistory),
     index_loop(Screen, redraw, IndexInfo, !IO).
 
+:- pred search_new_limit_string(screen::in, string::in, maybe(string)::in,
+    index_info::in, index_info::out, io::di, io::uo) is det.
+
+search_new_limit_string(Screen, LimitString, MaybeDesc, !IndexInfo, !IO) :-
+    Config = !.IndexInfo ^ i_config,
+    current_timestamp(Time, !IO),
+    predigest_search_string(Config, no, LimitString, ParseRes, !IO),
+    (
+        ParseRes = ok(Tokens),
+        search_terms_with_progress(Config, Screen, MaybeDesc, Tokens,
+            MaybeThreads, !IO),
+        (
+            MaybeThreads = yes(Threads),
+            setup_index_scrollable(Time, Threads, Scrollable, !IO),
+            !IndexInfo ^ i_scrollable := Scrollable,
+            !IndexInfo ^ i_search_terms := LimitString,
+            !IndexInfo ^ i_search_tokens := Tokens,
+            !IndexInfo ^ i_search_time := Time,
+            !IndexInfo ^ i_next_poll_time := next_poll_time(Config, Time),
+            !IndexInfo ^ i_poll_count := 0
+        ;
+            MaybeThreads = no
+        )
+    ;
+        ParseRes = error(Error),
+        update_message(Screen, set_warning(Error), !IO)
+    ).
+
 :- pred search_terms_with_progress(prog_config::in, screen::in,
     maybe(string)::in, list(token)::in, maybe(list(thread))::out,
     io::di, io::uo) is det.
@@ -395,29 +423,7 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
             Return = yes(LimitString),
             add_history_nodup(LimitString, History0, History),
             !IndexInfo ^ i_common_history ^ ch_limit_history := History,
-            current_timestamp(Time, !IO),
-            predigest_search_string(Config, no, LimitString, ParseRes, !IO),
-            (
-                ParseRes = ok(Tokens),
-                search_terms_with_progress(Config, Screen, no, Tokens,
-                    MaybeThreads, !IO),
-                (
-                    MaybeThreads = yes(Threads),
-                    setup_index_scrollable(Time, Threads, Scrollable, !IO),
-                    !IndexInfo ^ i_scrollable := Scrollable,
-                    !IndexInfo ^ i_search_terms := LimitString,
-                    !IndexInfo ^ i_search_tokens := Tokens,
-                    !IndexInfo ^ i_search_time := Time,
-                    !IndexInfo ^ i_next_poll_time :=
-                        next_poll_time(Config, Time),
-                    !IndexInfo ^ i_poll_count := 0
-                ;
-                    MaybeThreads = no
-                )
-            ;
-                ParseRes = error(Error),
-                update_message(Screen, set_warning(Error), !IO)
-            )
+            search_new_limit_string(Screen, LimitString, no, !IndexInfo, !IO)
         ;
             Return = no,
             update_message(Screen, clear_message, !IO)
@@ -425,31 +431,9 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
         Action = limit_alias_char(Char),
-        Config = !.IndexInfo ^ i_config,
         LimitString = "~" ++ string.from_char(Char),
-        current_timestamp(Time, !IO),
-        predigest_search_string(Config, no, LimitString, ParseRes, !IO),
-        (
-            ParseRes = ok(Tokens),
-            search_terms_with_progress(Config, Screen, yes(LimitString),
-                Tokens, MaybeThreads, !IO),
-            (
-                MaybeThreads = yes(Threads),
-                setup_index_scrollable(Time, Threads, Scrollable, !IO),
-                !IndexInfo ^ i_scrollable := Scrollable,
-                !IndexInfo ^ i_search_terms := LimitString,
-                !IndexInfo ^ i_search_tokens := Tokens,
-                !IndexInfo ^ i_search_time := Time,
-                !IndexInfo ^ i_next_poll_time :=
-                    next_poll_time(Config, Time),
-                !IndexInfo ^ i_poll_count := 0
-            ;
-                MaybeThreads = no
-            )
-        ;
-            ParseRes = error(Error),
-            update_message(Screen, set_warning(Error), !IO)
-        ),
+        search_new_limit_string(Screen, LimitString, yes(LimitString),
+            !IndexInfo, !IO),
         index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
         Action = refresh_all,
