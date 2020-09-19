@@ -101,6 +101,7 @@
                 tp_index_poll_count :: int,
 
                 tp_search           :: maybe(string),
+                tp_search_dir       :: search_direction,
                 tp_common_history   :: common_history,
                 tp_added_messages   :: int
             ).
@@ -160,6 +161,10 @@
     ;       refresh_results
     ;       leave.
 
+:- type rel_search_direction
+    --->    prevailing_dir
+    ;       opposite_dir.
+
 :- type keep_selection
     --->    clear_selection
     ;       keep_selection.
@@ -202,7 +207,7 @@ open_thread_pager(Config, Crypto, Screen, ThreadId, IncludeTags,
         Ordering, Scrollable, NumThreadRows, PagerInfo, NumPagerRows,
         RefreshTime, NextPollTime, ThreadPollCount,
         IndexPollString, IndexPollCount,
-        MaybeSearch, CommonHistory0, AddedMessages0),
+        MaybeSearch, dir_forward, CommonHistory0, AddedMessages0),
 
     (
         ParseResult = ok,
@@ -229,7 +234,7 @@ reopen_thread_pager(Screen, KeepCached, !Info, !IO) :-
         Scrollable0, _NumThreadRows0, Pager0, _NumPagerRows0,
         _RefreshTime0, _NextPollTime0, _ThreadPollCount0,
         _IndexPollString, _IndexPollCount,
-        _Search, _CommonHistory, _AddedMessages),
+        _Search, _SearchDir, _CommonHistory, _AddedMessages),
 
     (
         KeepCached = yes,
@@ -1141,12 +1146,12 @@ thread_pager_input(Key, Action, MessageUpdate, !Info) :-
     ;
         Key = char('n')
     ->
-        skip_to_search(continue_search, dir_forward, MessageUpdate, !Info),
+        skip_to_search(continue_search, prevailing_dir, MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('N')
     ->
-        skip_to_search(continue_search, dir_reverse, MessageUpdate, !Info),
+        skip_to_search(continue_search, opposite_dir, MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('O')
@@ -2356,23 +2361,32 @@ prompt_search(Screen, SearchDir, !Info, !IO) :-
         ;
             add_history_nodup(Search, History0, History),
             !Info ^ tp_search := yes(Search),
+            !Info ^ tp_search_dir := SearchDir,
             !Info ^ tp_common_history ^ ch_internal_search_history := History,
-            skip_to_search(new_search, SearchDir, MessageUpdate, !Info),
+            skip_to_search(new_search, prevailing_dir, MessageUpdate, !Info),
             update_message(Screen, MessageUpdate, !IO)
         )
     ;
         Return = no
     ).
 
-:- pred skip_to_search(search_kind::in, search_direction::in,
+:- pred skip_to_search(search_kind::in, rel_search_direction::in,
     message_update::out, thread_pager_info::in, thread_pager_info::out) is det.
 
-skip_to_search(SearchKind, SearchDir, MessageUpdate, !Info) :-
+skip_to_search(SearchKind, RelSearchDir, MessageUpdate, !Info) :-
     MaybeSearch = !.Info ^ tp_search,
     (
         MaybeSearch = yes(Search),
         Pager0 = !.Info ^ tp_pager,
         NumRows = !.Info ^ tp_num_pager_rows,
+        SearchDir0 = !.Info ^ tp_search_dir,
+        (
+            RelSearchDir = prevailing_dir,
+            SearchDir = SearchDir0
+        ;
+            RelSearchDir = opposite_dir,
+            SearchDir = opposite_search_direction(SearchDir0)
+        ),
         pager.skip_to_search(NumRows, SearchKind, Search, SearchDir,
             MessageUpdate, Pager0, Pager),
         !Info ^ tp_pager := Pager,

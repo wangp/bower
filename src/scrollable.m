@@ -71,6 +71,8 @@
 :- pred move_cursor(int::in, int::in, bool::out,
     scrollable(T)::in, scrollable(T)::out) is det.
 
+:- func opposite_search_direction(search_direction) = search_direction.
+
 :- pred search(pred(T)::in(pred(in) is semidet), search_direction::in,
     scrollable(T)::in, int::in, int::out) is semidet.
 
@@ -279,6 +281,9 @@ move_cursor(NumRows, Delta, HitLimit, !Scrollable) :-
         MaybeCursor0 = no,
         HitLimit = no
     ).
+
+opposite_search_direction(dir_forward) = dir_reverse.
+opposite_search_direction(dir_reverse) = dir_forward.
 
 search(P, dir_forward, Scrollable, I0, I) :-
     search_forward(P, Scrollable, I0, I, _MatchLine).
