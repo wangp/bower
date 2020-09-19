@@ -1,3 +1,14 @@
+Bower 0.13-unreleased
+=======================
+Please note the key binding changes.
+
+* Add thread_ordering config option. (Frank Seifferth)
+* Use 'U' to toggle unread instead of 'N'. (Frank Seifferth)
+* Add 'N' to search in opposite direction. (Frank Seifferth)
+* index: Add Alt+Key binding for fast alias expansion. (Frank Seifferth)
+* compose: Use B for "edit Bcc". (Frank Seifferth)
+* thread/pager: Increase thread pane size for long threads. (Frank Seifferth)
+
 Bower 0.12 (2020-08-01)
 =======================
 This release requires Mercury version 14.01 or above.
