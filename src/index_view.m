@@ -698,6 +698,7 @@ key_binding(code(Code), Binding) :-
         fail
     ).
 key_binding(meta(Char), Binding) :-
+    char.is_alnum(Char),
     Binding = limit(string.from_char_list(['~', Char])).
 
 :- pred key_binding_char(char::in, binding::out) is semidet.
