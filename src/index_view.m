@@ -110,9 +110,9 @@
     ;       half_page_down
     ;       skip_to_unread
     ;       enter
-    ;       limit(string)
     ;       enter_limit
     ;       enter_limit_tilde
+    ;       limit_alias_char(char)
     ;       refresh_all
     ;       start_compose
     ;       start_recall
@@ -138,7 +138,8 @@
     ;       continue_no_draw
     ;       resize
     ;       open_pager(thread_id, set(tag))
-    ;       enter_limit(maybe(string), bool)
+    ;       enter_limit(maybe(string))
+    ;       limit_alias_char(char)
     ;       refresh_all
     ;       start_compose
     ;       start_recall
@@ -189,7 +190,7 @@ open_index(Config, NotmuchConfig, Crypto, Screen, SearchString,
             ParseRes, !IO),
         (
             ParseRes = ok(SearchTokens),
-            search_terms_with_progress(Config, Screen, SearchTokens,
+            search_terms_with_progress(Config, Screen, no, SearchTokens,
                 MaybeThreads, !IO)
         ;
             ParseRes = error(Error),
@@ -218,11 +219,20 @@ open_index(Config, NotmuchConfig, Crypto, Screen, SearchString,
     index_loop(Screen, redraw, IndexInfo, !IO).
 
 :- pred search_terms_with_progress(prog_config::in, screen::in,
-    list(token)::in, maybe(list(thread))::out, io::di, io::uo) is det.
+    maybe(string)::in, list(token)::in, maybe(list(thread))::out,
+    io::di, io::uo) is det.
 
-search_terms_with_progress(Config, Screen, Tokens, MaybeThreads, !IO) :-
+search_terms_with_progress(Config, Screen, MaybeDesc, Tokens, MaybeThreads,
+        !IO) :-
     flush_async_with_progress(Screen, !IO),
-    update_message_immed(Screen, set_info("Searching..."), !IO),
+    (
+        MaybeDesc = no,
+        Message = "Searching..."
+    ;
+        MaybeDesc = yes(Desc),
+        Message = "Searching " ++ Desc ++ "..."
+    ),
+    update_message_immed(Screen, set_info(Message), !IO),
     search_terms_quiet(Config, Tokens, MaybeThreads, MessageUpdate, !IO),
     update_message(Screen, MessageUpdate, !IO).
 
@@ -367,7 +377,7 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         !IndexInfo ^ i_common_history := CommonHistory,
         index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
-        Action = enter_limit(MaybeInitial, Prompt),
+        Action = enter_limit(MaybeInitial),
         Config = !.IndexInfo ^ i_config,
         History0 = !.IndexInfo ^ i_common_history ^ ch_limit_history,
         (
@@ -379,28 +389,17 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
             FirstTime = yes
         ),
         Completion = complete_limit(Config, search_alias_section),
-        (
-            Prompt = yes,
-            text_entry_full(Screen, "Limit to messages matching: ", History0,
-                Initial, Completion, FirstTime, Return, !IO)
-        ;
-            Prompt = no,
-            Return = MaybeInitial
-        ),
+        text_entry_full(Screen, "Limit to messages matching: ", History0,
+            Initial, Completion, FirstTime, Return, !IO),
         (
             Return = yes(LimitString),
-            (
-                Prompt = yes,
-                add_history_nodup(LimitString, History0, History),
-                !IndexInfo ^ i_common_history ^ ch_limit_history := History
-            ;
-                Prompt = no
-            ),
+            add_history_nodup(LimitString, History0, History),
+            !IndexInfo ^ i_common_history ^ ch_limit_history := History,
             current_timestamp(Time, !IO),
             predigest_search_string(Config, no, LimitString, ParseRes, !IO),
             (
                 ParseRes = ok(Tokens),
-                search_terms_with_progress(Config, Screen, Tokens,
+                search_terms_with_progress(Config, Screen, no, Tokens,
                     MaybeThreads, !IO),
                 (
                     MaybeThreads = yes(Threads),
@@ -422,6 +421,34 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         ;
             Return = no,
             update_message(Screen, clear_message, !IO)
+        ),
+        index_loop(Screen, redraw, !.IndexInfo, !IO)
+    ;
+        Action = limit_alias_char(Char),
+        Config = !.IndexInfo ^ i_config,
+        LimitString = "~" ++ string.from_char(Char),
+        current_timestamp(Time, !IO),
+        predigest_search_string(Config, no, LimitString, ParseRes, !IO),
+        (
+            ParseRes = ok(Tokens),
+            search_terms_with_progress(Config, Screen, yes(LimitString),
+                Tokens, MaybeThreads, !IO),
+            (
+                MaybeThreads = yes(Threads),
+                setup_index_scrollable(Time, Threads, Scrollable, !IO),
+                !IndexInfo ^ i_scrollable := Scrollable,
+                !IndexInfo ^ i_search_terms := LimitString,
+                !IndexInfo ^ i_search_tokens := Tokens,
+                !IndexInfo ^ i_search_time := Time,
+                !IndexInfo ^ i_next_poll_time :=
+                    next_poll_time(Config, Time),
+                !IndexInfo ^ i_poll_count := 0
+            ;
+                MaybeThreads = no
+            )
+        ;
+            ParseRes = error(Error),
+            update_message(Screen, set_warning(Error), !IO)
         ),
         index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
@@ -580,15 +607,15 @@ index_view_input(NumRows, KeyCode, MessageUpdate, Action, !IndexInfo) :-
         ;
             Binding = enter_limit,
             MessageUpdate = no_change,
-            Action = enter_limit(no, yes)
+            Action = enter_limit(no)
         ;
             Binding = enter_limit_tilde,
             MessageUpdate = no_change,
-            Action = enter_limit(yes("~"), yes)
+            Action = enter_limit(yes("~"))
         ;
-            Binding = limit(Query),
+            Binding = limit_alias_char(Char),
             MessageUpdate = no_change,
-            Action = enter_limit(yes(Query), no)
+            Action = limit_alias_char(Char)
         ;
             Binding = refresh_all,
             MessageUpdate = no_change,
@@ -699,7 +726,7 @@ key_binding(code(Code), Binding) :-
     ).
 key_binding(meta(Char), Binding) :-
     char.is_alnum(Char),
-    Binding = limit(string.from_char_list(['~', Char])).
+    Binding = limit_alias_char(Char).
 
 :- pred key_binding_char(char::in, binding::out) is semidet.
 
@@ -1654,8 +1681,8 @@ refresh_all(Screen, Verbose, !Info, !IO) :-
         ParseRes = ok(Tokens),
         (
             Verbose = verbose,
-            search_terms_with_progress(Config, Screen, Tokens, MaybeThreads,
-                !IO)
+            search_terms_with_progress(Config, Screen, no, Tokens,
+                MaybeThreads, !IO)
         ;
             Verbose = quiet,
             search_terms_quiet(Config, Tokens, MaybeThreads, _MessageUpdate,
