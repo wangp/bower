@@ -135,6 +135,7 @@ The keys are:
     Tab, comma      go to next unread thread
     Enter           open thread
     l, ~            change search terms ("limit")
+    Alt+Key         invoke search term alias named by Key
     =               refresh search results
     z               toggle authors column
 
@@ -162,6 +163,11 @@ The keys are:
     |               pipe thread IDs to command
 
     q               quit
+
+Pressing Alt+Key, where Key is an ASCII letter or digit,
+will treat Key as a single letter search alias that is invoked
+directly without further prompting (see below for search term aliases).
+This provides a convenient way to switch between frequent queries.
 
 Thread/pager view keys
 ----------------------
