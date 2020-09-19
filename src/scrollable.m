@@ -191,7 +191,11 @@ set_cursor(Cursor, !Scrollable) :-
     !Scrollable ^ s_cursor := yes(Cursor).
 
 set_cursor_centred(Cursor, NumRows, !Scrollable) :-
-    Top = max(0, Cursor - NumRows//2),
+    Lines = !.Scrollable ^ s_lines,
+    NumLines = version_array.size(Lines),
+    Top0 = max(0, Cursor - NumRows // 2),
+    Top1 = max(0, NumLines - NumRows),
+    Top = min(Top0, Top1),
     !Scrollable ^ s_top := Top,
     !Scrollable ^ s_cursor := yes(Cursor).
 
