@@ -218,7 +218,7 @@ This view pages through an entire thread.  The keys are:
     o               open highlighted message/part/URL with external program
     z               cycle alternative parts / toggle inline display / decrypt
     Z               toggle inline display of part / decrypt
-    z, o            expand/collapse folded text
+    z, Z            expand/collapse folded text
     y               verify signed part
 
     |               pipe thread or message IDs to command
