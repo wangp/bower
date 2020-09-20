@@ -2279,28 +2279,19 @@ make_save_part_initial_prompt(History, PartFilename, Initial) :-
     io::di, io::uo) is det.
 
 do_save_part(Config, Part, FileName, Res, !IO) :-
+    MessageId = Part ^ pt_msgid,
+    MaybePartId = Part ^ pt_part,
+    IsDecrypted = Part ^ pt_decrypted,
     (
-        Part ^ pt_content = text(PartContent)
-    ->
-        do_save_part_text_content(FileName, PartContent, Res, !IO)
-    ;
-        MessageId = Part ^ pt_msgid,
-        MaybePartId = Part ^ pt_part,
-        IsDecrypted = Part ^ pt_decrypted,
-        (
-            MaybePartId = yes(PartId),
-            get_notmuch_command(Config, Notmuch),
-            make_quoted_command(Notmuch, [
-                "show", "--format=raw", decrypt_arg(IsDecrypted),
-                part_id_to_part_option(PartId),
-                "--", message_id_to_search_term(MessageId)
-            ], no_redirect, redirect_output(FileName), Command),
-            % Decryption may invoke pinentry-curses.
-            curs.soft_suspend(io.call_system(Command), CallRes, !IO)
-        ;
-            MaybePartId = no,
-            CallRes = error(io.make_io_error("no part id"))
-        ),
+        MaybePartId = yes(PartId),
+        get_notmuch_command(Config, Notmuch),
+        make_quoted_command(Notmuch, [
+            "show", "--format=raw", decrypt_arg(IsDecrypted),
+            part_id_to_part_option(PartId),
+            "--", message_id_to_search_term(MessageId)
+        ], no_redirect, redirect_output(FileName), Command),
+        % Decryption may invoke pinentry-curses.
+        curs.soft_suspend(io.call_system(Command), CallRes, !IO),
         (
             CallRes = ok(ExitStatus),
             ( ExitStatus = 0 ->
@@ -2313,6 +2304,17 @@ do_save_part(Config, Part, FileName, Res, !IO) :-
         ;
             CallRes = error(Error),
             Res = error(io.error_message(Error))
+        )
+    ;
+        MaybePartId = no,
+        % This is only supposed to be used for the message preview part on the
+        % compose screen. For saving parts from received messages,
+        % notmuch show --format=raw returns the part content without
+        % transcoding to UTF-8.
+        ( Part ^ pt_content = text(PartContent) ->
+            do_save_part_text_content(FileName, PartContent, Res, !IO)
+        ;
+            Res = error("no part id")
         )
     ).
 
