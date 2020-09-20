@@ -159,11 +159,11 @@
 
 :- type pager_info
     --->    pager_info(
+                p_config        :: prog_config,
                 p_tree          :: tree,
                 p_id_counter    :: counter,
                 p_scrollable    :: scrollable(id_pager_line),
                 p_extents       :: map(message_id, message_extents),
-                p_config        :: prog_config,
                 p_history       :: common_history,
                 p_last_blank    :: bool     % Introduced for compose view,
                                             % allows to remove the initial
@@ -345,7 +345,7 @@ setup_pager(Config, Mode, Cols, Messages, Info, !IO) :-
     Scrollable = scrollable.init(Flattened),
     make_extents(Flattened, Extents),
     init_common_history(Config, History),
-    Info = pager_info(Tree, Counter, Scrollable, Extents, Config, History, no).
+    Info = pager_info(Config, Tree, Counter, Scrollable, Extents, History, no).
 
 :- pred make_message_tree(prog_config::in, setup_mode::in, int::in,
     message::in, tree::out, counter::in, counter::out, io::di, io::uo) is det.
@@ -855,7 +855,7 @@ setup_pager_for_staging(Config, Cols, Text, TextAlt, RetainPagerPos,
     Scrollable0 = scrollable.init(Flattened),
     make_extents(Flattened, Extents0),
     init_common_history(Config, History),
-    Info0 = pager_info(Tree, Counter, Scrollable0, Extents0, Config,
+    Info0 = pager_info(Config, Tree, Counter, Scrollable0, Extents0,
         History, LastBlank0),
     (
         RetainPagerPos = new_pager,
@@ -1446,7 +1446,7 @@ get_highlighted_thing(Info, Thing) :-
 %-----------------------------------------------------------------------------%
 
 replace_node_under_cursor(NumRows, Cols, Part, Info0, Info, !IO) :-
-    Info0 = pager_info(Tree0, Counter0, Scrollable0, _Extents0, Config,
+    Info0 = pager_info(Config, Tree0, Counter0, Scrollable0, _Extents0,
         History, LastBlank0),
     ( get_cursor_line(Scrollable0, _, NodeId - _Line) ->
         make_part_tree(Config, Cols, Part, NewNode, no, _ElideInitialHeadLine,
@@ -1455,7 +1455,7 @@ replace_node_under_cursor(NumRows, Cols, Part, Info0, Info, !IO) :-
         Flattened = flatten(Tree, LastBlank0),
         scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
         make_extents(Flattened, Extents),
-        Info = pager_info(Tree, Counter, Scrollable, Extents, Config,
+        Info = pager_info(Config, Tree, Counter, Scrollable, Extents,
             History, LastBlank0)
     ;
         Info = Info0
@@ -1550,8 +1550,8 @@ toggle_part(ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
         HiddenParts0 = [Part | HiddenParts1]
     ->
         HiddenParts = HiddenParts1 ++ [Part0],
-        Info0 = pager_info(Tree0, Counter0, Scrollable0, _Extents0,
-            Config, History, LastBlank0),
+        Info0 = pager_info(Config, Tree0, Counter0, Scrollable0, _Extents0,
+            History, LastBlank0),
         make_part_tree_with_alts(Config, Cols, HiddenParts, Part,
             expand_unsupported, NewNode, no, _ElideInitialHeadLine,
             Counter0, Counter, !IO),
@@ -1559,7 +1559,7 @@ toggle_part(ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
         Flattened = flatten(Tree, LastBlank0),
         scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
         make_extents(Flattened, Extents),
-        Info = pager_info(Tree, Counter, Scrollable, Extents, Config,
+        Info = pager_info(Config, Tree, Counter, Scrollable, Extents,
             History, LastBlank0),
         Type = mime_type.to_string(Part ^ pt_content_type),
         MessageUpdate = set_info("Showing " ++ Type ++ " alternative.")
@@ -1576,7 +1576,7 @@ toggle_part(ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
 toggle_part_expanded(NumRows, Cols, NodeId, Line0, MessageUpdate,
         Info0, Info, !IO) :-
     Line0 = part_head(Part, HiddenParts, WasExpanded, Importance),
-    Info0 = pager_info(Tree0, Counter0, Scrollable0, _Extents0, Config,
+    Info0 = pager_info(Config, Tree0, Counter0, Scrollable0, _Extents0,
         History, LastBlank0),
     (
         WasExpanded = part_not_expanded,
@@ -1596,7 +1596,7 @@ toggle_part_expanded(NumRows, Cols, NodeId, Line0, MessageUpdate,
     Flattened = flatten(Tree, LastBlank0),
     scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
     make_extents(Flattened, Extents),
-    Info = pager_info(Tree, Counter, Scrollable, Extents, Config,
+    Info = pager_info(Config, Tree, Counter, Scrollable, Extents,
         History, LastBlank0).
 
 :- inst fold_marker
@@ -1618,13 +1618,13 @@ toggle_folding(NumRows, NodeId, Line, Info0, Info) :-
     ),
     NewNode = node(NodeId, [SubTree], no),
 
-    Info0 = pager_info(Tree0, Counter, Scrollable0, _Extents0, Config,
+    Info0 = pager_info(Config, Tree0, Counter, Scrollable0, _Extents0,
         History, LastBlank0),
     replace_node(NodeId, NewNode, Tree0, Tree),
     Flattened = flatten(Tree, LastBlank0),
     scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
     make_extents(Flattened, Extents),
-    Info = pager_info(Tree, Counter, Scrollable, Extents, Config,
+    Info = pager_info(Config, Tree, Counter, Scrollable, Extents,
         History, LastBlank0).
 
 %-----------------------------------------------------------------------------%
