@@ -2282,16 +2282,7 @@ do_save_part(Config, Part, FileName, Res, !IO) :-
     (
         Part ^ pt_content = text(PartContent)
     ->
-        io.open_output(FileName, OpenRes, !IO),
-        (
-            OpenRes = ok(Stream),
-            io.write_string(Stream, PartContent, !IO),
-            io.close_output(Stream, !IO),
-            Res = ok
-        ;
-            OpenRes = error(Error),
-            Res = error(io.error_message(Error))
-        )
+        do_save_part_text_content(FileName, PartContent, Res, !IO)
     ;
         MessageId = Part ^ pt_msgid,
         MaybePartId = Part ^ pt_part,
@@ -2323,6 +2314,29 @@ do_save_part(Config, Part, FileName, Res, !IO) :-
             CallRes = error(Error),
             Res = error(io.error_message(Error))
         )
+    ).
+
+:- pred do_save_part_text_content(string::in, string::in, maybe_error::out,
+    io::di, io::uo) is det.
+
+do_save_part_text_content(FileName, PartContent, Res, !IO) :-
+    io.open_output(FileName, OpenRes, !IO),
+    (
+        OpenRes = ok(Stream),
+        promise_equivalent_solutions [Res, !:IO]
+        ( try [io(!IO)]
+            (
+                io.write_string(Stream, PartContent, !IO),
+                io.close_output(Stream, !IO)
+            )
+        then
+            Res = ok
+        catch_any Excp ->
+            Res = error("caught exception: " ++ string(Excp))
+        )
+    ;
+        OpenRes = error(Error),
+        Res = error(io.error_message(Error))
     ).
 
 %-----------------------------------------------------------------------------%
