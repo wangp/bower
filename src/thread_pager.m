@@ -1190,8 +1190,9 @@ plain_pager_binding(Screen, KeyCode, ThreadPagerAction, MessageUpdate,
         !ThreadPagerInfo, !IO) :-
     NumPagerRows = !.ThreadPagerInfo ^ tp_num_pager_rows,
     PagerInfo0 = !.ThreadPagerInfo ^ tp_pager,
+    History0 = !.ThreadPagerInfo ^ tp_common_history,
     pager_input(Screen, NumPagerRows, KeyCode, PagerAction, MessageUpdate,
-        PagerInfo0, PagerInfo, !IO),
+        PagerInfo0, PagerInfo, History0, History, !IO),
     (
         PagerAction = continue,
         ThreadPagerAction = continue
@@ -1212,6 +1213,7 @@ plain_pager_binding(Screen, KeyCode, ThreadPagerAction, MessageUpdate,
         ThreadPagerAction = redraw
     ),
     !ThreadPagerInfo ^ tp_pager := PagerInfo,
+    !ThreadPagerInfo ^ tp_common_history := History,
     sync_thread_to_pager(!ThreadPagerInfo).
 
 :- pred scroll_but_stop_at_message(int::in, message_update::out,

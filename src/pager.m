@@ -13,6 +13,7 @@
 :- import_module prog_config.
 :- import_module screen.
 :- import_module scrollable.
+:- import_module view_common.
 
 %-----------------------------------------------------------------------------%
 
@@ -42,8 +43,8 @@
     ;       press_key_to_delete(string).
 
 :- pred pager_input(screen::in, int::in, keycode::in, pager_action::out,
-    message_update::out, pager_info::in, pager_info::out, io::di, io::uo)
-    is det.
+    message_update::out, pager_info::in, pager_info::out,
+    common_history::in, common_history::out, io::di, io::uo) is det.
 
 :- pred scroll(int::in, int::in, message_update::out,
     pager_info::in, pager_info::out) is det.
@@ -132,7 +133,6 @@
 :- import_module string.
 :- import_module time.
 :- import_module version_array.
-:- import_module view_common.
 
 :- import_module copious_output.
 :- import_module fold_lines.
@@ -154,7 +154,6 @@
 
 :- use_module curs.
 
-
 %-----------------------------------------------------------------------------%
 
 :- type pager_info
@@ -164,7 +163,6 @@
                 p_id_counter    :: counter,
                 p_scrollable    :: scrollable(id_pager_line),
                 p_extents       :: map(message_id, message_extents),
-                p_history       :: common_history,
                 p_last_blank    :: bool     % Introduced for compose view,
                                             % allows to remove the initial
                                             % blank line.
@@ -344,8 +342,7 @@ setup_pager(Config, Mode, Cols, Messages, Info, !IO) :-
     Flattened = flatten(Tree, no),
     Scrollable = scrollable.init(Flattened),
     make_extents(Flattened, Extents),
-    init_common_history(Config, History),
-    Info = pager_info(Config, Tree, Counter, Scrollable, Extents, History, no).
+    Info = pager_info(Config, Tree, Counter, Scrollable, Extents, no).
 
 :- pred make_message_tree(prog_config::in, setup_mode::in, int::in,
     message::in, tree::out, counter::in, counter::out, io::di, io::uo) is det.
@@ -854,9 +851,8 @@ setup_pager_for_staging(Config, Cols, Text, TextAlt, RetainPagerPos,
     Flattened = flatten(Tree, LastBlank0),
     Scrollable0 = scrollable.init(Flattened),
     make_extents(Flattened, Extents0),
-    init_common_history(Config, History),
     Info0 = pager_info(Config, Tree, Counter, Scrollable0, Extents0,
-        History, LastBlank0),
+        LastBlank0),
     (
         RetainPagerPos = new_pager,
         Info = Info0
@@ -870,7 +866,8 @@ setup_pager_for_staging(Config, Cols, Text, TextAlt, RetainPagerPos,
 
 %-----------------------------------------------------------------------------%
 
-pager_input(Screen, NumRows, KeyCode, Action, MessageUpdate, !Info, !IO) :-
+pager_input(Screen, NumRows, KeyCode, Action, MessageUpdate, !Info, !History,
+        !IO) :-
     ( key_binding(KeyCode, Binding) ->
         (
             Binding = scroll_down,
@@ -922,10 +919,10 @@ pager_input(Screen, NumRows, KeyCode, Action, MessageUpdate, !Info, !IO) :-
             Action = continue
         ;
             Binding = save_part,
-            save_part(Screen, Action, MessageUpdate, !Info, !IO)
+            save_part(Screen, Action, MessageUpdate, !Info, !History, !IO)
         ;
             Binding = open_part,
-            open_part(Screen, Action, MessageUpdate, !Info, !IO)
+            open_part(Screen, Action, MessageUpdate, !Info, !History, !IO)
         ;
             (
                 Binding = cycle_alternatives,
@@ -1447,7 +1444,7 @@ get_highlighted_thing(Info, Thing) :-
 
 replace_node_under_cursor(NumRows, Cols, Part, Info0, Info, !IO) :-
     Info0 = pager_info(Config, Tree0, Counter0, Scrollable0, _Extents0,
-        History, LastBlank0),
+        LastBlank0),
     ( get_cursor_line(Scrollable0, _, NodeId - _Line) ->
         make_part_tree(Config, Cols, Part, NewNode, no, _ElideInitialHeadLine,
             Counter0, Counter, !IO),
@@ -1456,7 +1453,7 @@ replace_node_under_cursor(NumRows, Cols, Part, Info0, Info, !IO) :-
         scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
         make_extents(Flattened, Extents),
         Info = pager_info(Config, Tree, Counter, Scrollable, Extents,
-            History, LastBlank0)
+            LastBlank0)
     ;
         Info = Info0
     ).
@@ -1551,7 +1548,7 @@ toggle_part(ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
     ->
         HiddenParts = HiddenParts1 ++ [Part0],
         Info0 = pager_info(Config, Tree0, Counter0, Scrollable0, _Extents0,
-            History, LastBlank0),
+            LastBlank0),
         make_part_tree_with_alts(Config, Cols, HiddenParts, Part,
             expand_unsupported, NewNode, no, _ElideInitialHeadLine,
             Counter0, Counter, !IO),
@@ -1560,7 +1557,7 @@ toggle_part(ToggleType, NumRows, Cols, NodeId, Line, MessageUpdate,
         scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
         make_extents(Flattened, Extents),
         Info = pager_info(Config, Tree, Counter, Scrollable, Extents,
-            History, LastBlank0),
+            LastBlank0),
         Type = mime_type.to_string(Part ^ pt_content_type),
         MessageUpdate = set_info("Showing " ++ Type ++ " alternative.")
     ;
@@ -1577,7 +1574,7 @@ toggle_part_expanded(NumRows, Cols, NodeId, Line0, MessageUpdate,
         Info0, Info, !IO) :-
     Line0 = part_head(Part, HiddenParts, WasExpanded, Importance),
     Info0 = pager_info(Config, Tree0, Counter0, Scrollable0, _Extents0,
-        History, LastBlank0),
+        LastBlank0),
     (
         WasExpanded = part_not_expanded,
         MessageUpdate = set_info("Showing part."),
@@ -1597,7 +1594,7 @@ toggle_part_expanded(NumRows, Cols, NodeId, Line0, MessageUpdate,
     scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
     make_extents(Flattened, Extents),
     Info = pager_info(Config, Tree, Counter, Scrollable, Extents,
-        History, LastBlank0).
+        LastBlank0).
 
 :- inst fold_marker
     --->    fold_marker(ground, ground).
@@ -1619,13 +1616,13 @@ toggle_folding(NumRows, NodeId, Line, Info0, Info) :-
     NewNode = node(NodeId, [SubTree], no),
 
     Info0 = pager_info(Config, Tree0, Counter, Scrollable0, _Extents0,
-        History, LastBlank0),
+        LastBlank0),
     replace_node(NodeId, NewNode, Tree0, Tree),
     Flattened = flatten(Tree, LastBlank0),
     scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
     make_extents(Flattened, Extents),
     Info = pager_info(Config, Tree, Counter, Scrollable, Extents,
-        History, LastBlank0).
+        LastBlank0).
 
 %-----------------------------------------------------------------------------%
 
@@ -2150,12 +2147,12 @@ decrypt_arg_bool(no) = "--decrypt=false".
 %-----------------------------------------------------------------------------%
 
 :- pred save_part(screen::in, pager_action::out, message_update::out,
-    pager_info::in, pager_info::out, io::di, io::uo) is det.
+    pager_info::in, pager_info::out, common_history::in, common_history::out,
+    io::di, io::uo) is det.
 
-save_part(Screen, Action, MessageUpdate, !Info, !IO) :-
+save_part(Screen, Action, MessageUpdate, !Info, !History, !IO) :-
     ( get_highlighted_thing(!.Info, highlighted_part(Part, MaybeSubject)) ->
-        %Action = prompt_save_part(Part, MaybeSubject),
-        prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO),
+        prompt_save_part(Screen, Part, MaybeSubject, !Info, !History, !IO),
         MessageUpdate = no_change,
         Action = redraw
     ;
@@ -2164,9 +2161,10 @@ save_part(Screen, Action, MessageUpdate, !Info, !IO) :-
     ).
 
 :- pred prompt_save_part(screen::in, part::in, maybe(header_value)::in,
-    pager_info::in, pager_info::out, io::di, io::uo) is det.
+    pager_info::in, pager_info::out, common_history::in, common_history::out,
+    io::di, io::uo) is det.
 
-prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
+prompt_save_part(Screen, Part, MaybeSubject, !Info, !History, !IO) :-
     MessageId = Part ^ pt_msgid,
     MaybePartId = Part ^ pt_part,
     MaybePartFilename = Part ^ pt_filename,
@@ -2195,17 +2193,17 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !IO) :-
             )
         )
     ),
-    History0 = !.Info ^ p_history ^ ch_save_history,
-    make_save_part_initial_prompt(History0, PartFilename, Initial),
+    SaveHistory0 = !.History ^ ch_save_history,
+    make_save_part_initial_prompt(SaveHistory0, PartFilename, Initial),
     get_home_dir(Home, !IO),
-    text_entry_initial(Screen, "Save to file: ", History0, Initial,
+    text_entry_initial(Screen, "Save to file: ", SaveHistory0, Initial,
         complete_path(Home), Return, !IO),
     (
         Return = yes(FileName0),
         FileName0 \= ""
     ->
-        add_history_nodup(FileName0, History0, History),
-        !Info ^ p_history ^ ch_save_history := History,
+        add_history_nodup(FileName0, SaveHistory0, SaveHistory),
+        !History ^ ch_save_history := SaveHistory,
         expand_tilde_home(Home, FileName0, FileName),
         FollowSymLinks = no,
         io.file_type(FollowSymLinks, FileName, ResType, !IO),
@@ -2329,14 +2327,15 @@ do_save_part(Config, Part, FileName, Res, !IO) :-
 %-----------------------------------------------------------------------------%
 
 :- pred open_part(screen::in, pager_action::out, message_update::out,
-    pager_info::in, pager_info::out, io::di, io::uo) is det.
+    pager_info::in, pager_info::out, common_history::in, common_history::out,
+    io::di, io::uo) is det.
 
-open_part(Screen, Action, MessageUpdate, !Info, !IO) :-
+open_part(Screen, Action, MessageUpdate, !Info, !History, !IO) :-
     ( get_highlighted_thing(!.Info, Thing) ->
         (
             Thing = highlighted_part(Part, _MaybeFilename),
             prompt_open_part(Screen, Part, MessageUpdate, Tempfile,
-                !Info, !IO),
+                !Info, !History, !IO),
             (
                 Tempfile = yes(FileName),
                 Action = press_key_to_delete(FileName)
@@ -2346,7 +2345,7 @@ open_part(Screen, Action, MessageUpdate, !Info, !IO) :-
             )
         ;
             Thing = highlighted_url(Url),
-            prompt_open_url(Screen, Url, MessageUpdate, !Info, !IO),
+            prompt_open_url(Screen, Url, MessageUpdate, !Info, !History, !IO),
             Action = redraw
         ;
             Thing = highlighted_fold_marker,
@@ -2359,19 +2358,20 @@ open_part(Screen, Action, MessageUpdate, !Info, !IO) :-
     ).
 
 :- pred prompt_open_part(screen::in, part::in, message_update::out,
-    maybe(string)::out, pager_info::in, pager_info::out, io::di, io::uo)
-    is det.
+    maybe(string)::out, pager_info::in, pager_info::out,
+    common_history::in, common_history::out, io::di, io::uo) is det.
 
-prompt_open_part(Screen, Part, MessageUpdate, Tempfile, !Info, !IO) :-
-    History0 = !.Info ^ p_history ^ ch_open_part_history,
-    text_entry(Screen, "Open with command: ", History0, complete_none,
+prompt_open_part(Screen, Part, MessageUpdate, Tempfile, !Info, !History, !IO)
+        :-
+    OpenHistory0 = !.History ^ ch_open_part_history,
+    text_entry(Screen, "Open with command: ", OpenHistory0, complete_none,
         Return, !IO),
     (
         Return = yes(Command1),
         Command1 \= ""
     ->
-        add_history_nodup(Command1, History0, History),
-        !Info ^ p_history ^ ch_open_part_history := History,
+        add_history_nodup(Command1, OpenHistory0, OpenHistory),
+        !History ^ ch_open_part_history := OpenHistory,
         Config = !.Info ^ p_config,
         do_open_part(Config, Screen, Part, Command1, MessageUpdate,
             Tempfile, !Info, !IO)
@@ -2545,19 +2545,20 @@ remove_bg_operator_2(word(Segments0), word(Segments)) :-
 %-----------------------------------------------------------------------------%
 
 :- pred prompt_open_url(screen::in, string::in, message_update::out,
-    pager_info::in, pager_info::out, io::di, io::uo) is det.
+    pager_info::in, pager_info::out, common_history::in, common_history::out,
+    io::di, io::uo) is det.
 
-prompt_open_url(Screen, Url, MessageUpdate, !Info, !IO) :-
-    History0 = !.Info ^ p_history ^ ch_open_url_history,
+prompt_open_url(Screen, Url, MessageUpdate, !Info, !History, !IO) :-
+    OpenHistory0 = !.History ^ ch_open_url_history,
     % No completion for command inputs yet.
-    text_entry(Screen, "Open URL with command: ", History0, complete_none,
+    text_entry(Screen, "Open URL with command: ", OpenHistory0, complete_none,
         Return, !IO),
     (
         Return = yes(Command1),
         Command1 \= ""
     ->
-        add_history_nodup(Command1, History0, History),
-        !Info ^ p_history ^ ch_open_url_history := History,
+        add_history_nodup(Command1, OpenHistory0, OpenHistory),
+        !History ^ ch_open_url_history := OpenHistory,
         do_open_url(Screen, Command1, Url, MessageUpdate, !IO)
     ;
         MessageUpdate = clear_message

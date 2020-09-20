@@ -100,6 +100,7 @@
 :- import_module string_util.
 :- import_module tags.
 :- import_module time_util.
+:- import_module view_common.
 :- import_module write_message.
 
 :- use_module curs.
@@ -988,8 +989,10 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
     ; KeyCode = code(curs.key_resize) ->
         Action = resize
     ;
+        % XXX thread common history
+        init_common_history(Config, History0),
         pager_input(Screen, NumPagerRows, KeyCode, PagerAction, MessageUpdate,
-            !PagerInfo, !IO),
+            !PagerInfo, History0, _History, !IO),
         update_message(Screen, MessageUpdate, !IO),
         convert_pager_action(PagerAction, Action)
     ),
