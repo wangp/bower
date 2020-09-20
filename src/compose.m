@@ -722,28 +722,43 @@ make_alt_html(Config, Headers, TextIn, MaybeAltHtml, Res, !IO) :-
     staging_info::out, io::di, io::uo) is det.
 
 maybe_make_alt_html(MaybeFilterRes, !StagingInfo, !IO) :-
-    UseFilter = !.StagingInfo ^ si_make_alt_html,
     Config = !.StagingInfo ^ si_config,
     Headers = !.StagingInfo ^ si_headers,
     Text = !.StagingInfo ^ si_text,
+    UseFilter0 = !.StagingInfo ^ si_make_alt_html,
     (
-        (
-            UseFilter = alt_html_filter_always
-        ;
-            UseFilter = alt_html_filter_on
+        ( UseFilter0 = alt_html_filter_always
+        ; UseFilter0 = alt_html_filter_on
         ),
         make_alt_html(Config, Headers, Text, MaybeAltHtml, FilterRes, !IO),
-        MaybeFilterRes = yes(FilterRes),
-        !StagingInfo ^ si_alt_html := MaybeAltHtml
+        MaybeFilterRes = yes(FilterRes)
     ;
-        (
-            UseFilter = alt_html_filter_never
-        ;
-            UseFilter = alt_html_filter_off
+        ( UseFilter0 = alt_html_filter_never
+        ; UseFilter0 = alt_html_filter_off
         ),
         MaybeFilterRes = no,
-        !StagingInfo ^ si_alt_html := no
-    ).
+        MaybeAltHtml = no
+    ),
+    (
+        UseFilter0 = alt_html_filter_always,
+        UseFilter = alt_html_filter_always
+    ;
+        UseFilter0 = alt_html_filter_never,
+        UseFilter = alt_html_filter_never
+    ;
+        ( UseFilter0 = alt_html_filter_on
+        ; UseFilter0 = alt_html_filter_off
+        ),
+        (
+            MaybeAltHtml = yes(_),
+            UseFilter = alt_html_filter_on
+        ;
+            MaybeAltHtml = no,
+            UseFilter = alt_html_filter_off
+        )
+    ),
+    !StagingInfo ^ si_alt_html := MaybeAltHtml,
+    !StagingInfo ^ si_make_alt_html := UseFilter.
 
 :- pred parse_and_expand_headers(prog_config::in, headers::in, headers::out,
     parsed_headers::out, io::di, io::uo) is det.
@@ -1206,53 +1221,43 @@ toggle_sign(!StagingInfo, !CryptoInfo, !IO) :-
     staging_info::out, io::di, io::uo) is det.
 
 toggle_alt_html(Message, NeedsResize, !StagingInfo, !IO) :-
-    UseFilter = !.StagingInfo ^ si_make_alt_html,
+    Config = !.StagingInfo ^ si_config,
+    Headers = !.StagingInfo ^ si_headers,
+    Text = !.StagingInfo ^ si_text,
+    UseFilter0 = !.StagingInfo ^ si_make_alt_html,
     (
-        UseFilter = alt_html_filter_always,
+        UseFilter0 = alt_html_filter_always,
         Message = set_warning("use_alt_html_filter is set to always."),
         NeedsResize = no
     ;
-        UseFilter = alt_html_filter_never,
+        UseFilter0 = alt_html_filter_never,
         Message = set_warning("use_alt_html_filter is set to never."),
         NeedsResize = no
     ;
-        UseFilter = alt_html_filter_on,
-        (
-            !.StagingInfo ^ si_alt_html = yes(_),
-            Message = set_info("Removed text/html alternative."),
-            NeedsResize = yes
-        ;
-            !.StagingInfo ^ si_alt_html = no,
-            Message = set_info("Disabled text/html alternative."),
-            NeedsResize = no
-        ),
+        UseFilter0 = alt_html_filter_on,
+        !StagingInfo ^ si_alt_html := no,
         !StagingInfo ^ si_make_alt_html := alt_html_filter_off,
-        !StagingInfo ^ si_alt_html := no
+        Message = set_info("Removed text/html alternative."),
+        NeedsResize = yes
     ;
-        UseFilter = alt_html_filter_off,
-        !StagingInfo ^ si_make_alt_html := alt_html_filter_on,
-        maybe_make_alt_html(MaybeFilterRes, !StagingInfo, !IO),
+        UseFilter0 = alt_html_filter_off,
+        make_alt_html(Config, Headers, Text, MaybeAltHtml, FilterRes, !IO),
         (
-            MaybeFilterRes = no,
-            Message = set_warning("Internal error."),
-            % This branch is dead. We just set StagingInfo ^ si_make_alt_html
-            % to alt_html_filter_on, so maybe_make_alt_html will always try
-            % to run the filter.
-            NeedsResize = yes   % Because why not
-        ;
-            MaybeFilterRes = yes(ok),
+            FilterRes = ok,
             (
-                !.StagingInfo ^ si_alt_html = yes(_),
+                MaybeAltHtml = yes(Html),
+                !StagingInfo ^ si_alt_html := yes(Html),
+                !StagingInfo ^ si_make_alt_html := alt_html_filter_on,
                 Message = set_info("Added text/html alternative."),
                 NeedsResize = yes
             ;
-                !.StagingInfo ^ si_alt_html = no,
+                MaybeAltHtml = no,
                 Message = set_warning("Not adding text/html alternative; " ++
                     "the filter returned nothing."),
                 NeedsResize = no
             )
         ;
-            MaybeFilterRes = yes(error(Error)),
+            FilterRes = error(Error),
             Message = set_warning(Error),
             NeedsResize = no
         )
