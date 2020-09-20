@@ -789,9 +789,11 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
             Config = !.Info ^ tp_config,
             Crypto = !.Info ^ tp_crypto,
             Pager = !.Info ^ tp_pager,
+            History0 = !.Info ^ tp_common_history,
             get_part_visibility_map(Pager, MessageId, PartVisibilityMap),
             start_reply(Config, Crypto, Screen, Message, ReplyKind,
-                PartVisibilityMap, Transition, !IO),
+                PartVisibilityMap, Transition, History0, History, !IO),
+            !Info ^ tp_common_history := History,
             handle_screen_transition(Screen, Transition, Sent, !Info, !IO),
             (
                 Sent = sent,
@@ -814,9 +816,11 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
             Config = !.Info ^ tp_config,
             Crypto = !.Info ^ tp_crypto,
             Pager = !.Info ^ tp_pager,
+            History0 = !.Info ^ tp_common_history,
             get_part_visibility_map(Pager, MessageId, PartVisibilityMap),
             start_forward(Config, Crypto, Screen, Message, PartVisibilityMap,
-                Transition, !IO),
+                Transition, History0, History, !IO),
+            !Info ^ tp_common_history := History,
             handle_screen_transition(Screen, Transition, _Sent, !Info, !IO)
         ;
             Message = excluded_message(_, _, _, _, _)
@@ -2258,6 +2262,7 @@ handle_resend(Screen, MessageId, !Info, !IO) :-
 handle_recall(Screen, ThreadId, Sent, !Info, !IO) :-
     Config = !.Info ^ tp_config,
     Crypto = !.Info ^ tp_crypto,
+    History0 = !.Info ^ tp_common_history,
     select_recall(Config, Screen, yes(ThreadId), TransitionA, !IO),
     handle_screen_transition(Screen, TransitionA, MaybeSelected, !Info, !IO),
     (
@@ -2266,7 +2271,9 @@ handle_recall(Screen, ThreadId, Sent, !Info, !IO) :-
             Message = message(_, _, _, _, _, _),
             PartVisibilityMap = map.init,
             continue_from_message(Config, Crypto, Screen, postponed_message,
-                Message, PartVisibilityMap, TransitionB, !IO),
+                Message, PartVisibilityMap, TransitionB, History0, History,
+                !IO),
+            !Info ^ tp_common_history := History,
             handle_screen_transition(Screen, TransitionB, Sent, !Info, !IO)
         ;
             Message = excluded_message(_, _, _, _, _),
@@ -2299,11 +2306,13 @@ handle_edit_as_template(Screen, Message, Sent, !Info, !IO) :-
     Config = !.Info ^ tp_config,
     Crypto = !.Info ^ tp_crypto,
     Pager = !.Info ^ tp_pager,
+    History0 = !.Info ^ tp_common_history,
     (
         Message = message(MessageId, _, _, _, _, _),
         get_part_visibility_map(Pager, MessageId, PartVisibilityMap),
         continue_from_message(Config, Crypto, Screen, arbitrary_message,
-            Message, PartVisibilityMap, Transition, !IO),
+            Message, PartVisibilityMap, Transition, History0, History, !IO),
+        !Info ^ tp_common_history := History,
         handle_screen_transition(Screen, Transition, Sent, !Info, !IO)
     ;
         Message = excluded_message(_, _, _, _, _),

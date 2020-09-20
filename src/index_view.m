@@ -449,14 +449,10 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         flush_async_with_progress(Screen, !IO),
         Config = !.IndexInfo ^ i_config,
         Crypto = !.IndexInfo ^ i_crypto,
-        CommonHistory0 = !.IndexInfo ^ i_common_history,
-        ToHistory0 = CommonHistory0 ^ ch_to_history,
-        SubjectHistory0 = CommonHistory0 ^ ch_subject_history,
-        start_compose(Config, Crypto, Screen, Transition,
-            ToHistory0, ToHistory, SubjectHistory0, SubjectHistory, !IO),
-        CommonHistory1 = CommonHistory0 ^ ch_to_history := ToHistory,
-        CommonHistory = CommonHistory1 ^ ch_subject_history := SubjectHistory,
-        !IndexInfo ^ i_common_history := CommonHistory,
+        History0 = !.IndexInfo ^ i_common_history,
+        start_compose(Config, Crypto, Screen, Transition, History0, History,
+            !IO),
+        !IndexInfo ^ i_common_history := History,
         handle_screen_transition(Screen, Transition, Sent, !IndexInfo, !IO),
         (
             Sent = sent,
@@ -913,8 +909,10 @@ try_reply(Screen, ThreadId, RequireUnread, ReplyKind, Res, !Info, !IO) :-
     (
         ListRes = ok(MessageIds),
         ( MessageIds = [MessageId] ->
+            History0 = !.Info ^ i_common_history,
             start_reply_to_message_id(Config, Crypto, Screen, MessageId,
-                ReplyKind, Transition, !IO),
+                ReplyKind, Transition, History0, History, !IO),
+            !Info ^ i_common_history := History,
             handle_screen_transition(Screen, Transition, Sent, !Info, !IO),
             Res = ok(Sent)
         ;
@@ -934,6 +932,7 @@ try_reply(Screen, ThreadId, RequireUnread, ReplyKind, Res, !Info, !IO) :-
 handle_recall(Screen, Sent, !IndexInfo, !IO) :-
     Config = !.IndexInfo ^ i_config,
     Crypto = !.IndexInfo ^ i_crypto,
+    History0 = !.IndexInfo ^ i_common_history,
     select_recall(Config, Screen, no, TransitionA, !IO),
     handle_screen_transition(Screen, TransitionA, MaybeSelected,
         !IndexInfo, !IO),
@@ -943,7 +942,9 @@ handle_recall(Screen, Sent, !IndexInfo, !IO) :-
             Message = message(_, _, _, _, _, _),
             PartVisibilityMap = map.init,
             continue_from_message(Config, Crypto, Screen, postponed_message,
-                Message, PartVisibilityMap, TransitionB, !IO),
+                Message, PartVisibilityMap, TransitionB, History0, History,
+                !IO),
+            !IndexInfo ^ i_common_history := History,
             handle_screen_transition(Screen, TransitionB, Sent, !IndexInfo,
                 !IO)
         ;
