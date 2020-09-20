@@ -2,6 +2,8 @@ Bower 0.13-unreleased
 =======================
 Please note the key binding changes.
 
+* Support composing messages with text/html alternative;
+  see alt_html_filter config option. (Frank Seifferth)
 * Add thread_ordering config option. (Frank Seifferth)
 * Use 'U' to toggle unread instead of 'N'. (Frank Seifferth)
 * Add 'N' to search in opposite direction. (Frank Seifferth)
