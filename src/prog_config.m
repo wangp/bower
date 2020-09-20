@@ -268,35 +268,35 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
         PipeId = default_pipe_id_command
     ),
 
-    ( search_config(Config, "command", "alt_html_filter", AltHTMLFilter0) ->
-        ( AltHTMLFilter0 \= "" ->
-            AltHTMLFilter = yes(AltHTMLFilter0)
+    ( search_config(Config, "command", "alt_html_filter", AltHtmlFilter0) ->
+        ( AltHtmlFilter0 \= "" ->
+            AltHtmlFilter = yes(AltHtmlFilter0)
         ;
-            AltHTMLFilter = no
+            AltHtmlFilter = no
         )
     ;
-        AltHTMLFilter = yes(default_alt_html_filter_command)
+        AltHtmlFilter = yes(default_alt_html_filter_command)
     ),
 
     (
         search_config(Config, "command", "use_alt_html_filter",
-            UseAltHTMLFilter0),
-        UseAltHTMLFilter1 = string.to_lower(UseAltHTMLFilter0),
+            UseAltHtmlFilter0),
+        UseAltHtmlFilter1 = string.to_lower(UseAltHtmlFilter0),
         (
-            UseAltHTMLFilter1 = "never",
-            UseAltHTMLFilter = alt_html_filter_never
+            UseAltHtmlFilter1 = "never",
+            UseAltHtmlFilter = alt_html_filter_never
         ;
-            UseAltHTMLFilter1 = "manual",
-            UseAltHTMLFilter = alt_html_filter_off
+            UseAltHtmlFilter1 = "manual",
+            UseAltHtmlFilter = alt_html_filter_off
         ;
-            UseAltHTMLFilter1 = "default",
-            UseAltHTMLFilter = alt_html_filter_on
+            UseAltHtmlFilter1 = "default",
+            UseAltHtmlFilter = alt_html_filter_on
         ;
-            UseAltHTMLFilter1 = "always",
-            UseAltHTMLFilter = alt_html_filter_always
+            UseAltHtmlFilter1 = "always",
+            UseAltHtmlFilter = alt_html_filter_always
         )
     ;
-        UseAltHTMLFilter = alt_html_filter_off
+        UseAltHtmlFilter = alt_html_filter_off
     ),
 
     (
@@ -449,8 +449,8 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ProgConfig ^ open_part = OpenPart,
     ProgConfig ^ open_url = OpenUrl,
     ProgConfig ^ pipe_id = PipeId,
-    ProgConfig ^ alt_html_filter = AltHTMLFilter,
-    ProgConfig ^ use_alt_html_filter = UseAltHTMLFilter,
+    ProgConfig ^ alt_html_filter = AltHtmlFilter,
+    ProgConfig ^ use_alt_html_filter = UseAltHtmlFilter,
     ProgConfig ^ poll_notify = PollNotify,
     ProgConfig ^ poll_period_secs = PollSecs,
     ProgConfig ^ wrap_width = WrapWidth,
@@ -828,8 +828,8 @@ get_pipe_id_command(Config, Command) :-
 get_alt_html_filter_command(Config, Command) :-
     Command = Config ^ alt_html_filter.
 
-get_use_alt_html_filter(Config, UseAltHTMLFilter) :-
-    UseAltHTMLFilter = Config ^ use_alt_html_filter.
+get_use_alt_html_filter(Config, UseAltHtmlFilter) :-
+    UseAltHtmlFilter = Config ^ use_alt_html_filter.
 
 get_poll_notify_command(Config, Command) :-
     Command = Config ^ poll_notify.

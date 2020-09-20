@@ -126,8 +126,8 @@
                 si_headers      :: headers,
                 si_parsed_hdrs  :: parsed_headers,
                 si_text         :: string,
-                si_text_alt     :: maybe(string),
-                si_make_alt     :: use_alt_html_filter,
+                si_alt_html     :: maybe(string),
+                si_make_alt_html:: use_alt_html_filter,
                 si_old_msgid    :: maybe(message_id),
                 si_attach_hist  :: history
             ).
@@ -538,8 +538,8 @@ create_edit_stage(Config, Crypto, Screen, Headers0, Text0, Attachments,
     CryptoInfo0 = init_crypto_info(Crypto,
         EncryptByDefault `or` EncryptInit,
         SignByDefault `or` SignInit),
-    get_use_alt_html_filter(Config, UseAltHTMLFilter),
-    create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHTMLFilter,
+    get_use_alt_html_filter(Config, UseAltHtmlFilter),
+    create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHtmlFilter,
         Attachments, MaybeOldDraft, Transition, CryptoInfo0, CryptoInfo,
         !History, !IO),
     unref_keys(CryptoInfo, !IO).
@@ -550,7 +550,7 @@ create_edit_stage(Config, Crypto, Screen, Headers0, Text0, Attachments,
     screen_transition(sent)::out, crypto_info::in, crypto_info::out,
     common_history::in, common_history::out, io::di, io::uo) is det.
 
-create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHTMLFilter,
+create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHtmlFilter,
         Attachments, MaybeOldDraft, Transition, !CryptoInfo, !History, !IO) :-
     make_parsed_headers(Headers0, ParsedHeaders0),
     create_temp_message_file(Config, prepare_edit, Headers0,
@@ -567,7 +567,7 @@ create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHTMLFilter,
                 io.remove_file(Filename, _, !IO),
                 update_references(Headers0, Headers1, Headers2),
                 reenter_staging_screen(Config, Screen, Headers2, Text,
-                    UseAltHTMLFilter, Attachments, MaybeOldDraft, Transition,
+                    UseAltHtmlFilter, Attachments, MaybeOldDraft, Transition,
                     !CryptoInfo, !History, !IO)
             ;
                 ResParse = error(Error),
@@ -645,7 +645,7 @@ update_references(Headers0, !Headers) :-
     crypto_info::in, crypto_info::out, common_history::in, common_history::out,
     io::di, io::uo) is det.
 
-reenter_staging_screen(Config, Screen, Headers0, Text, UseAltHTMLFilter,
+reenter_staging_screen(Config, Screen, Headers0, Text, UseAltHtmlFilter,
         Attachments, MaybeOldDraft, Transition, !CryptoInfo, !History, !IO) :-
     parse_and_expand_headers(Config, Headers0, Headers, Parsed, !IO),
     get_some_matching_account(Config, Parsed ^ ph_from, MaybeAccount),
@@ -654,12 +654,12 @@ reenter_staging_screen(Config, Screen, Headers0, Text, UseAltHTMLFilter,
 
     % XXX loses attach history
     StagingInfo0 = staging_info(Config, MaybeAccount, Headers, Parsed,
-        Text, no, UseAltHTMLFilter, MaybeOldDraft, init_history),
-    maybe_make_text_alt(FilterRes, StagingInfo0, StagingInfo, !IO),
-    TextAlt = StagingInfo ^ si_text_alt,
+        Text, no, UseAltHtmlFilter, MaybeOldDraft, init_history),
+    maybe_make_alt_html(FilterRes, StagingInfo0, StagingInfo, !IO),
+    MaybeAltHtml = StagingInfo ^ si_alt_html,
     AttachInfo = scrollable.init_with_cursor(Attachments),
     get_cols(Screen, Cols, !IO),
-    setup_pager_for_staging(Config, Cols, Text, TextAlt, new_pager,
+    setup_pager_for_staging(Config, Cols, Text, MaybeAltHtml, new_pager,
         PagerInfo, !IO),
     (
         FilterRes = no,
@@ -687,14 +687,14 @@ headers_as_env(Headers) =
         set_var("MAIL_IN_REPLY_TO", header_value_string(Headers ^ h_inreplyto))
     ]).
 
-:- pred make_text_alt(prog_config::in, headers::in, string::in,
+:- pred make_alt_html(prog_config::in, headers::in, string::in,
     maybe(string)::out, call_res::out, io::di, io::uo) is det.
 
-make_text_alt(Config, Headers, TextIn, TextOut, Res, !IO) :-
+make_alt_html(Config, Headers, TextIn, MaybeAltHtml, Res, !IO) :-
     get_alt_html_filter_command(Config, MaybeCommand),
     (
         MaybeCommand = no,
-        TextOut = no,
+        MaybeAltHtml = no,
         Res = ok
     ;
         MaybeCommand = yes(Command),
@@ -705,24 +705,24 @@ make_text_alt(Config, Headers, TextIn, TextOut, Res, !IO) :-
             CallRes = ok(Output),
             Res = ok,
             ( string.all_match(char.is_whitespace, Output) ->
-                TextOut = no
+                MaybeAltHtml = no
             ;
-                TextOut = yes(Output)
+                MaybeAltHtml = yes(Output)
             )
         ;
             CallRes = error(Error),
             string.append_list(["Error running ", Command, ": ",
                 io.error_message(Error)], Warning),
             Res = error(Warning),
-            TextOut = no
+            MaybeAltHtml = no
         )
     ).
 
-:- pred maybe_make_text_alt(maybe(call_res)::out, staging_info::in,
+:- pred maybe_make_alt_html(maybe(call_res)::out, staging_info::in,
     staging_info::out, io::di, io::uo) is det.
 
-maybe_make_text_alt(MaybeFilterRes, !StagingInfo, !IO) :-
-    UseFilter = !.StagingInfo ^ si_make_alt,
+maybe_make_alt_html(MaybeFilterRes, !StagingInfo, !IO) :-
+    UseFilter = !.StagingInfo ^ si_make_alt_html,
     Config = !.StagingInfo ^ si_config,
     Headers = !.StagingInfo ^ si_headers,
     Text = !.StagingInfo ^ si_text,
@@ -732,9 +732,9 @@ maybe_make_text_alt(MaybeFilterRes, !StagingInfo, !IO) :-
         ;
             UseFilter = alt_html_filter_on
         ),
-        make_text_alt(Config, Headers, Text, TextAlt, FilterRes, !IO),
+        make_alt_html(Config, Headers, Text, MaybeAltHtml, FilterRes, !IO),
         MaybeFilterRes = yes(FilterRes),
-        !StagingInfo ^ si_text_alt := TextAlt
+        !StagingInfo ^ si_alt_html := MaybeAltHtml
     ;
         (
             UseFilter = alt_html_filter_never
@@ -742,7 +742,7 @@ maybe_make_text_alt(MaybeFilterRes, !StagingInfo, !IO) :-
             UseFilter = alt_html_filter_off
         ),
         MaybeFilterRes = no,
-        !StagingInfo ^ si_text_alt := no
+        !StagingInfo ^ si_alt_html := no
     ).
 
 :- pred parse_and_expand_headers(prog_config::in, headers::in, headers::out,
@@ -852,7 +852,7 @@ maybe_expand_mailbox(Config, Opt, Mailbox0, Mailbox, !Cache, !IO) :-
 staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
         Transition, !CryptoInfo, !History, !IO) :-
     !.StagingInfo = staging_info(Config, MaybeAccount, Headers, ParsedHeaders,
-        Text, TextAlt, UseAltHTMLFilter, MaybeOldDraft, _AttachHistory),
+        Text, MaybeAltHtml, UseAltHtmlFilter, MaybeOldDraft, _AttachHistory),
     Attrs = compose_attrs(Config),
     PagerAttrs = pager_attrs(Config),
 
@@ -955,7 +955,8 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
         (
             MaybeAccount = yes(Account),
             send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text,
-                TextAlt, Attachments, !.CryptoInfo, Sent0, MessageUpdate0, !IO)
+                MaybeAltHtml, Attachments, !.CryptoInfo, Sent0, MessageUpdate0,
+                !IO)
         ;
             MaybeAccount = no,
             Sent0 = not_sent,
@@ -1029,7 +1030,7 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
         Action = edit,
         EditAttachments = get_lines_list(!.AttachInfo),
         % XXX make this tail-recursive in hlc
-        create_edit_stage_2(Config, Screen, Headers, Text, UseAltHTMLFilter,
+        create_edit_stage_2(Config, Screen, Headers, Text, UseAltHtmlFilter,
             EditAttachments, MaybeOldDraft, Transition, !CryptoInfo, !History,
             !IO)
     ;
@@ -1069,8 +1070,8 @@ resize_staging_screen(Screen, StagingInfo, PagerInfo0, PagerInfo, !IO) :-
     NumPagerRows = list.length(PagerPanels),
     Config = StagingInfo ^ si_config,
     Text = StagingInfo ^ si_text,
-    TextAlt = StagingInfo ^ si_text_alt,
-    setup_pager_for_staging(Config, Cols, Text, TextAlt,
+    MaybeAltHtml = StagingInfo ^ si_alt_html,
+    setup_pager_for_staging(Config, Cols, Text, MaybeAltHtml,
         retain_pager_pos(PagerInfo0, NumPagerRows), PagerInfo, !IO).
 
 %-----------------------------------------------------------------------------%
@@ -1204,7 +1205,7 @@ toggle_sign(!StagingInfo, !CryptoInfo, !IO) :-
     staging_info::out, io::di, io::uo) is det.
 
 toggle_alt_html(Message, NeedsResize, !StagingInfo, !IO) :-
-    UseFilter = !.StagingInfo ^ si_make_alt,
+    UseFilter = !.StagingInfo ^ si_make_alt_html,
     (
         UseFilter = alt_html_filter_always,
         Message = set_warning("use_alt_html_filter is set to always."),
@@ -1216,35 +1217,35 @@ toggle_alt_html(Message, NeedsResize, !StagingInfo, !IO) :-
     ;
         UseFilter = alt_html_filter_on,
         (
-            !.StagingInfo ^ si_text_alt = yes(_),
+            !.StagingInfo ^ si_alt_html = yes(_),
             Message = set_info("HTML multipart/alternative removed."),
             NeedsResize = yes
         ;
-            !.StagingInfo ^ si_text_alt = no,
+            !.StagingInfo ^ si_alt_html = no,
             Message = set_info("HTML multipart/alternative turned off."),
             NeedsResize = no
         ),
-        !StagingInfo ^ si_make_alt := alt_html_filter_off,
-        !StagingInfo ^ si_text_alt := no
+        !StagingInfo ^ si_make_alt_html := alt_html_filter_off,
+        !StagingInfo ^ si_alt_html := no
     ;
         UseFilter = alt_html_filter_off,
-        !StagingInfo ^ si_make_alt := alt_html_filter_on,
-        maybe_make_text_alt(MaybeFilterRes, !StagingInfo, !IO),
+        !StagingInfo ^ si_make_alt_html := alt_html_filter_on,
+        maybe_make_alt_html(MaybeFilterRes, !StagingInfo, !IO),
         (
             MaybeFilterRes = no,
             Message = set_warning("Internal error."),
-            % This branch is dead. We just set StagingInfo ^ si_make_alt to
-            % alt_html_filter_on, so maybe_make_text_alt will always try
+            % This branch is dead. We just set StagingInfo ^ si_make_alt_html
+            % to alt_html_filter_on, so maybe_make_alt_html will always try
             % to run the filter.
             NeedsResize = yes   % Because why not
         ;
             MaybeFilterRes = yes(ok),
             (
-                !.StagingInfo ^ si_text_alt = yes(_),
+                !.StagingInfo ^ si_alt_html = yes(_),
                 Message = set_info("HTML multipart/alternative added."),
                 NeedsResize = yes
             ;
-                !.StagingInfo ^ si_text_alt = no,
+                !.StagingInfo ^ si_alt_html = no,
                 Message = set_info("HTML multipart/alternative empty. " ++
                     "Nothing to add."),
                 NeedsResize = no
@@ -2061,10 +2062,10 @@ maybe_remove_draft(StagingInfo, !IO) :-
     parsed_headers::in, string::in, maybe(string)::in, list(attachment)::in,
     crypto_info::in, sent::out, message_update::out, io::di, io::uo) is det.
 
-send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text, TextAlt,
+send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text, MaybeAltHtml,
         Attachments, CryptoInfo, Res, MessageUpdate, !IO) :-
     create_temp_message_file(Config, prepare_send, Headers, ParsedHeaders,
-        Text, TextAlt, Attachments, CryptoInfo, ResFilename, Warnings, !IO),
+        Text, MaybeAltHtml, Attachments, CryptoInfo, ResFilename, Warnings, !IO),
     (
         ResFilename = ok(Filename),
         prompt_confirm_warnings(Screen, Warnings, ConfirmAll, !IO),
@@ -2229,7 +2230,7 @@ tag_replied_message(Config, Headers, Res, !IO) :-
     list(string)::out, io::di, io::uo) is det.
 
 create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
-        Text, TextAlt, Attachments, CryptoInfo, Res, Warnings, !IO) :-
+        Text, MaybeAltHtml, Attachments, CryptoInfo, Res, Warnings, !IO) :-
     % We only use this to generate MIME boundaries.
     current_timestamp(timestamp(Seed), !IO),
     splitmix64.init(truncate_to_int(Seed), RS0),
@@ -2259,7 +2260,7 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
         (
             Encrypt = no,
             Sign = no,
-            make_text_and_attachments_mime_part(cte_8bit, Text, TextAlt,
+            make_text_and_attachments_mime_part(cte_8bit, Text, MaybeAltHtml,
                 Attachments, RS0, _RS, Res0),
             (
                 Res0 = ok(MimePart),
@@ -2301,8 +2302,8 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
                 EncryptKeys = [_ | _],
                 missing_keys_warning(Missing, WarningsA),
                 leaked_bccs_warning(LeakedBccs, WarningsB),
-                make_text_and_attachments_mime_part(TextCTE, Text, TextAlt,
-                    Attachments, RS0, RS1, Res0),
+                make_text_and_attachments_mime_part(TextCTE, Text,
+                    MaybeAltHtml, Attachments, RS0, RS1, Res0),
                 (
                     Res0 = ok(PartToEncrypt),
                     generate_boundary(EncryptedBoundary, RS1, _RS),
@@ -2331,8 +2332,8 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
                 SignKeys = [_ | _],
                 % Force text parts to be base64-encoded to avoid being mangled
                 % during transfer.
-                make_text_and_attachments_mime_part(cte_base64, Text, TextAlt,
-                    Attachments, RS0, RS1, Res0),
+                make_text_and_attachments_mime_part(cte_base64, Text,
+                    MaybeAltHtml, Attachments, RS0, RS1, Res0),
                 (
                     Res0 = ok(PartToSign),
                     generate_boundary(SignedBoundary, RS1, _RS),
@@ -2446,25 +2447,25 @@ maybe_cons_unstructured(SkipEmpty, Options, FieldName, Value, !Acc) :-
     string::in, maybe(string)::in, list(attachment)::in, splitmix64::in,
     splitmix64::out, maybe_error(mime_part)::out) is det.
 
-make_text_and_attachments_mime_part(TextCTE, Text, TextAlt, Attachments,
+make_text_and_attachments_mime_part(TextCTE, Text, MaybeAltHtml, Attachments,
         BoundarySeed0, BoundarySeed1, Res) :-
     generate_boundary(MixedBoundary, BoundarySeed0, BoundarySeed1Half),
-    TextPlain = discrete(text_plain, yes("utf-8"),
+    TextPlainPart = discrete(text_plain, yes("utf-8"),
         yes(write_content_disposition(inline, no)), yes(TextCTE), text(Text)),
     (
-        TextAlt = no,
-        TextPart = TextPlain,
+        MaybeAltHtml = no,
+        TextPart = TextPlainPart,
         BoundarySeed1 = BoundarySeed1Half
     ;
-        TextAlt = yes(TextAltContent),
-        TextHTML = discrete(text_html, yes("utf-8"),
+        MaybeAltHtml = yes(HtmlContent),
+        TextHtmlPart = discrete(text_html, yes("utf-8"),
             yes(write_content_disposition(inline, no)), yes(TextCTE),
-            text(TextAltContent)),
+            text(HtmlContent)),
         generate_boundary(MultipartBoundary, BoundarySeed1Half, BoundarySeed1),
         TextPart = composite(multipart_alternative,
             boundary(MultipartBoundary),
             yes(write_content_disposition(inline, no)), yes(cte_8bit),
-            [TextPlain, TextHTML])
+            [TextPlainPart, TextHtmlPart])
     ),
     (
         Attachments = [],

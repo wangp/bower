@@ -818,9 +818,9 @@ wrap_text(Text) = text(Text).
 
 %-----------------------------------------------------------------------------%
 
-setup_pager_for_staging(Config, Cols, Text, TextAlt, RetainPagerPos,
+setup_pager_for_staging(Config, Cols, Text, MaybeAltHtml, RetainPagerPos,
         Info, !IO) :-
-    PlainPart = part(message_id(""), no, mime_type.text_plain, no,
+    TextPlainPart = part(message_id(""), no, mime_type.text_plain, no,
         yes(content_disposition("inline")), text(Text), no, no, no,
         is_decrypted),
     Separators = leaf([
@@ -829,19 +829,19 @@ setup_pager_for_staging(Config, Cols, Text, TextAlt, RetainPagerPos,
         message_separator
     ]),
     (
-        TextAlt = no,
-        Part = PlainPart,
+        MaybeAltHtml = no,
+        Part = TextPlainPart,
         LastBlank0 = yes
     ;
-        TextAlt = yes(HTML),
+        MaybeAltHtml = yes(HtmlContent),
         % TODO: Check if message_id("") and content_disposition("inline")
         % have undesirable side effects !!!
-        HTMLPart = part(message_id(""), no, mime_type.text_html, no,
-            yes(content_disposition("inline")), text(HTML), no, no, no,
+        TextHtmlPart = part(message_id(""), no, mime_type.text_html, no,
+            yes(content_disposition("inline")), text(HtmlContent), no, no, no,
             is_decrypted),
         MixedPart = part(message_id(""), no, mime_type.multipart_alternative,
             no, yes(content_disposition("inline")), subparts(not_encrypted, [],
-            [PlainPart, HTMLPart]), no, no, no, is_decrypted),
+            [TextPlainPart, TextHtmlPart]), no, no, no, is_decrypted),
         Part = MixedPart,
         LastBlank0 = no
     ),
