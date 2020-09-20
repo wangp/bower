@@ -2341,7 +2341,8 @@ open_part(Screen, Action, MessageUpdate, !Info, !IO) :-
                 Tempfile = yes(FileName),
                 Action = press_key_to_delete(FileName)
             ;
-                Tempfile = no, Action = redraw
+                Tempfile = no,
+                Action = redraw
             )
         ;
             Thing = highlighted_url(Url),
@@ -2349,10 +2350,8 @@ open_part(Screen, Action, MessageUpdate, !Info, !IO) :-
             Action = redraw
         ;
             Thing = highlighted_fold_marker,
-            % This is a bit ugly as we will end up looking up the line again.
-            % Action = toggle_content(toggle_expanded)
             Action = continue,
-            MessageUpdate = clear_message
+            MessageUpdate = set_warning("No message or attachment selected.")
         )
     ;
         Action = continue,
