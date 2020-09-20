@@ -1218,11 +1218,11 @@ toggle_alt_html(Message, NeedsResize, !StagingInfo, !IO) :-
         UseFilter = alt_html_filter_on,
         (
             !.StagingInfo ^ si_alt_html = yes(_),
-            Message = set_info("HTML multipart/alternative removed."),
+            Message = set_info("Removed text/html alternative."),
             NeedsResize = yes
         ;
             !.StagingInfo ^ si_alt_html = no,
-            Message = set_info("HTML multipart/alternative turned off."),
+            Message = set_info("Disabled text/html alternative."),
             NeedsResize = no
         ),
         !StagingInfo ^ si_make_alt_html := alt_html_filter_off,
@@ -1242,12 +1242,12 @@ toggle_alt_html(Message, NeedsResize, !StagingInfo, !IO) :-
             MaybeFilterRes = yes(ok),
             (
                 !.StagingInfo ^ si_alt_html = yes(_),
-                Message = set_info("HTML multipart/alternative added."),
+                Message = set_info("Added text/html alternative."),
                 NeedsResize = yes
             ;
                 !.StagingInfo ^ si_alt_html = no,
-                Message = set_info("HTML multipart/alternative empty. " ++
-                    "Nothing to add."),
+                Message = set_warning("Not adding text/html alternative; " ++
+                    "the filter returned nothing."),
                 NeedsResize = no
             )
         ;
