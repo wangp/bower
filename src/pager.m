@@ -105,8 +105,13 @@
     message_update::out, pager_info::in, pager_info::out, io::di, io::uo)
     is det.
 
-:- pred choose_toggle_action(pager_info::in, pager_action::in,
-    pager_action::out) is det.
+:- type toggle_action
+    --->    toggle(toggle_type)
+    ;       decrypt_part
+    ;       do_nothing.
+
+:- pred choose_toggle_action(pager_info::in, toggle_type::in,
+    toggle_action::out) is det.
 
 :- pred get_percent_visible(pager_info::in, int::in, message_id::in, int::out)
     is semidet.
@@ -926,27 +931,25 @@ pager_input(Screen, NumRows, KeyCode, Action, MessageUpdate, !Info, !History,
         ;
             (
                 Binding = cycle_alternatives,
-                DefaultAction = cycle_alternatives
+                ToggleType0 = cycle_alternatives
             ;
                 Binding = toggle_expanded,
-                DefaultAction = toggle_expanded
+                ToggleType0 = toggle_expanded
             ),
-            choose_toggle_action(!.Info, DefaultAction, Action0),
+            choose_toggle_action(!.Info, ToggleType0, ToggleAction),
             (
-                (
-                    Action0 = cycle_alternatives,
-                    ToggleType = cycle_alternatives
-                ;
-                    Action0 = toggle_expanded,
-                    ToggleType = toggle_expanded
-                )
-            ->
-                Action = continue,
+                ToggleAction = toggle(ToggleType),
                 get_cols(Screen, Cols, !IO),
                 toggle_content(ToggleType, NumRows, Cols, MessageUpdate,
-                    !Info, !IO)
+                    !Info, !IO),
+                Action = continue
             ;
-                Action = Action0,
+                ToggleAction = decrypt_part,
+                Action = decrypt_part,
+                MessageUpdate = clear_message
+            ;
+                ToggleAction = do_nothing,
+                Action = continue,
                 MessageUpdate = clear_message
             )
         )
@@ -1469,7 +1472,7 @@ toggle_content(ToggleType, NumRows, Cols, MessageUpdate, !Info, !IO) :-
         MessageUpdate = clear_message
     ).
 
-choose_toggle_action(Info, Action0, Action) :-
+choose_toggle_action(Info, ToggleType, Action) :-
     ( get_highlighted_thing(Info, Thing) ->
         (
             Thing = highlighted_part(Part, _),
@@ -1480,10 +1483,10 @@ choose_toggle_action(Info, Action0, Action) :-
                 ; Content = encapsulated_message(_)
                 ; Content = unsupported
                 ),
-                Action = Action0
+                Action = toggle(ToggleType)
             ;
                 Content = subparts(decryption_good, _, _),
-                Action = Action0
+                Action = toggle(ToggleType)
             ;
                 Content = subparts(encrypted, _, _),
                 Action = decrypt_part
@@ -1493,13 +1496,13 @@ choose_toggle_action(Info, Action0, Action) :-
             )
         ;
             Thing = highlighted_url(_),
-            Action = continue
+            Action = do_nothing
         ;
             Thing = highlighted_fold_marker,
-            Action = Action0
+            Action = toggle(ToggleType)
         )
     ;
-        Action = continue
+        Action = do_nothing
     ).
 
 :- pred toggle_line(toggle_type::in, int::in, int::in,
