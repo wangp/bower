@@ -2282,13 +2282,14 @@ do_save_part(Config, Part, FileName, Res, !IO) :-
     (
         Part ^ pt_content = text(PartContent)
     ->
-        tell(FileName, FileWrite, !IO),
-        write_string(PartContent, !IO),
-        told(!IO),
+        io.open_output(FileName, OpenRes, !IO),
         (
-            FileWrite = ok, Res = ok
+            OpenRes = ok(Stream),
+            io.write_string(Stream, PartContent, !IO),
+            io.close_output(Stream, !IO),
+            Res = ok
         ;
-            FileWrite = error(Error),
+            OpenRes = error(Error),
             Res = error(io.error_message(Error))
         )
     ;
