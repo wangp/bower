@@ -61,8 +61,8 @@
 
 :- pred get_pipe_id_command(prog_config::in, string::out) is det.
 
-:- pred get_alt_html_filter_command(prog_config::in, maybe(string)::out)
-    is det.
+:- pred get_alt_html_filter_command(prog_config::in,
+    maybe(command_prefix)::out) is det.
 
 :- pred get_use_alt_html_filter(prog_config::in, use_alt_html_filter::out)
     is det.
@@ -148,7 +148,7 @@
                 open_part       :: string, % not shell-quoted
                 open_url        :: string, % not shell-quoted
                 pipe_id         :: string, % not shell-quoted
-                alt_html_filter :: maybe(string),
+                alt_html_filter :: maybe(command_prefix),
                 use_alt_html_filter :: use_alt_html_filter,
                 poll_notify     :: maybe(command_prefix),
                 poll_period_secs :: maybe(int),
@@ -270,7 +270,8 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
 
     ( search_config(Config, "command", "alt_html_filter", AltHtmlFilter0) ->
         ( AltHtmlFilter0 \= "" ->
-            AltHtmlFilter = yes(AltHtmlFilter0)
+            parse_command(AltHtmlFilter0, AltHtmlFilter1, !Errors),
+            AltHtmlFilter = yes(AltHtmlFilter1)
         ;
             AltHtmlFilter = no
         )
@@ -970,9 +971,10 @@ default_open_url_command = "xdg-open&".
 
 default_pipe_id_command = "xclip".
 
-:- func default_alt_html_filter_command = string.
+:- func default_alt_html_filter_command = command_prefix.
 
-default_alt_html_filter_command = "pandoc -f markdown -t html".
+default_alt_html_filter_command =
+    command_prefix(shell_quoted("pandoc -f markdown -t html"), quote_once).
 
 :- func default_poll_period_secs = maybe(int).
 

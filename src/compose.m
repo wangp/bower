@@ -697,10 +697,14 @@ make_alt_html(Config, Headers, TextIn, MaybeAltHtml, Res, !IO) :-
         MaybeAltHtml = no,
         Res = ok
     ;
-        MaybeCommand = yes(Command),
+        MaybeCommand = yes(CommandPrefix),
+        % We don't really need to invoke the shell but this is easier for now.
+        make_quoted_command(CommandPrefix, [], no_redirect, no_redirect,
+            redirect_stderr("/dev/null"), run_in_foreground, Command),
+        SpawnEnv = headers_as_env(Headers),
         ErrorLimit = yes(100),
-        call_system_filter(Command ++ " 2>/dev/null", headers_as_env(Headers),
-            TextIn, ErrorLimit, CallRes, !IO),
+        call_system_filter(Command, SpawnEnv, TextIn, ErrorLimit, CallRes,
+            !IO),
         (
             CallRes = ok(Output),
             Res = ok,
