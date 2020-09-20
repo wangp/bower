@@ -1042,13 +1042,19 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
 
 convert_pager_action(PagerAction, Action) :-
     (
-        PagerAction = press_key_to_delete(FileName)
-    ->
-        Action = press_key_to_delete(FileName)
-    ;
+        PagerAction = continue,
         Action = continue
-        % This isn't particularly good, since it means we might end up
-        % ignoring some of what the pager tells us to do.
+    ;
+        PagerAction = decrypt_part,
+        % Should have nothing to decrypt on this screen.
+        Action = continue
+    ;
+        PagerAction = redraw,
+        % staging_screen always redraws.
+        Action = continue
+    ;
+        PagerAction = press_key_to_delete(FileName),
+        Action = press_key_to_delete(FileName)
     ).
 
 :- pred resize_staging_screen(screen::in, staging_info::in,

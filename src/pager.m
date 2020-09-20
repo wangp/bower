@@ -36,8 +36,6 @@
 
 :- type pager_action
     --->    continue
-    ;       toggle_expanded
-    ;       cycle_alternatives
     ;       decrypt_part
     ;       redraw
     ;       press_key_to_delete(string).

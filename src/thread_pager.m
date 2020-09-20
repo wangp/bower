@@ -1197,12 +1197,6 @@ plain_pager_binding(Screen, KeyCode, ThreadPagerAction, MessageUpdate,
         PagerAction = decrypt_part,
         ThreadPagerAction = decrypt_part
     ;
-        PagerAction = cycle_alternatives,
-        ThreadPagerAction = continue
-    ;
-        PagerAction = toggle_expanded,
-        ThreadPagerAction = continue
-    ;
         PagerAction = press_key_to_delete(FileName),
         ThreadPagerAction = press_key_to_delete(FileName)
     ;
