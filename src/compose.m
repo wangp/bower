@@ -162,7 +162,7 @@
 
 :- type staging_screen_action
     --->    continue
-    ;       resize
+    ;       resize(message_update)
     ;       edit
     ;       press_key_to_delete(string)
     ;       leave(sent, message_update).
@@ -904,13 +904,13 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
         toggle_sign(!StagingInfo, !CryptoInfo, !IO),
         Action = continue
     ; KeyCode = char('H') ->
-        toggle_alt_html(UpdateMessage, NeedsResize, !StagingInfo, !IO),
-        update_message(Screen, UpdateMessage, !IO),
+        toggle_alt_html(MessageUpdate0, NeedsResize, !StagingInfo, !IO),
         (
             NeedsResize = yes,
-            Action = resize
+            Action = resize(MessageUpdate0)
         ;
             NeedsResize = no,
+            update_message(Screen, MessageUpdate0, !IO),
             Action = continue
         )
     ;
@@ -1004,7 +1004,7 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
             Action = leave(not_sent, Message)
         )
     ; KeyCode = code(curs.key_resize) ->
-        Action = resize
+        Action = resize(no_change)
     ;
         pager_input(Screen, NumPagerRows, KeyCode, PagerAction, MessageUpdate,
             !PagerInfo, !History, !IO),
@@ -1022,8 +1022,9 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
         staging_screen(Screen, yes(NextKey), !.StagingInfo, !.AttachInfo,
             !.PagerInfo, Transition, !CryptoInfo, !History, !IO)
     ;
-        Action = resize,
+        Action = resize(DeferredMessageUpdate),
         resize_staging_screen(Screen, !.StagingInfo, !PagerInfo, !IO),
+        update_message(Screen, DeferredMessageUpdate, !IO),
         staging_screen(Screen, no, !.StagingInfo, !.AttachInfo, !.PagerInfo,
             Transition, !CryptoInfo, !History, !IO)
     ;
