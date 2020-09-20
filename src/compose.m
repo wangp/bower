@@ -691,7 +691,7 @@ make_text_alt(Config, Headers, TextIn, TextOut, Res, !IO) :-
         (
             CallRes = ok(Output),
             Res = ok,
-            ( string.strip(Output) = "" ->
+            ( string.all_match(char.is_whitespace, Output) ->
                 TextOut = no
             ;
                 TextOut = yes(Output)
