@@ -72,6 +72,7 @@
 
 :- import_module addressbook.
 :- import_module call_system.
+:- import_module char_util.
 :- import_module list_util.
 :- import_module notmuch_config.
 :- import_module process.
@@ -321,7 +322,7 @@ text_entry_loop(Screen, Return, !Info, !IO) :-
         continue_text_entry(Screen, Return, !Info, !IO)
     ;
         Key = char(Char),
-        isprint(Char)
+        is_printable(Char)
     ->
         insert(Char, !Info),
         continue_text_entry(Screen, Return, !Info, !IO)
@@ -1134,19 +1135,6 @@ take_upto_width([C | Cs], TakeChars, RemainCols0, RemainCols) :-
     ).
 
 %-----------------------------------------------------------------------------%
-
-:- pred isprint(char::in) is semidet.
-
-:- pragma foreign_proc("C",
-    isprint(Char::in),
-    [will_not_call_mercury, promise_pure, thread_safe],
-"
-    /* The argument to isprint must be representable by an unsigned char
-     * or equal to EOF.
-     */
-    SUCCESS_INDICATOR = (Char >= 0x80) || isprint(Char);
-").
-
 %-----------------------------------------------------------------------------%
 
 :- pred is_word_char(char::in) is semidet.
