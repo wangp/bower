@@ -38,6 +38,7 @@
 :- import_module addressbook.
 :- import_module async.
 :- import_module callout.
+:- import_module char_util.
 :- import_module color.
 :- import_module compose.
 :- import_module cord_util.
@@ -714,7 +715,8 @@ key_binding(code(Code), Binding) :-
         fail
     ).
 key_binding(meta(Char), Binding) :-
-    char.is_alnum(Char),
+    % Prevent Alt-Backspace, etc.
+    is_printable(Char),
     Binding = limit_alias_char(Char).
 
 :- pred key_binding_char(char::in, binding::out) is semidet.

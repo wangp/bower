@@ -165,9 +165,8 @@ The keys are:
 
     q               quit
 
-Pressing Alt+Key, where Key is an ASCII letter or digit,
-will treat Key as a single letter search alias that is invoked
-directly without further prompting (see below for search term aliases).
+Pressing Alt+Key will treat Key as a single character search alias that is
+invoked directly without further prompting (see below for search term aliases).
 This provides a convenient way to switch between frequent queries.
 
 Thread/pager view keys
