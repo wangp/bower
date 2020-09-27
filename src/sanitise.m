@@ -22,10 +22,11 @@
 :- import_module list.
 :- import_module string.
 
+:- import_module char_util.
 :- import_module string_util.
 
 make_presentable(S0) = presentable_string(S) :-
-    ( string.all_match(isprint, S0) ->
+    ( string.all_match(is_printable, S0) ->
         S1 = S0
     ;
         % Not the most efficient but should be rarely reached.
@@ -38,25 +39,13 @@ make_presentable(S0) = presentable_string(S) :-
 :- pred sanitise_char(char::in, char::out) is det.
 
 sanitise_char(C0, C) :-
-    ( isprint(C0) ->
+    ( is_printable(C0) ->
         C = C0
     ; char.is_whitespace(C0) ->
         C = (' ')
     ;
         C = ('\ufffd')
     ).
-
-:- pred isprint(char::in) is semidet.
-
-:- pragma foreign_proc("C",
-    isprint(Char::in),
-    [will_not_call_mercury, promise_pure, thread_safe],
-"
-    /* The argument to isprint must be representable by an unsigned char
-     * or equal to EOF.
-     */
-    SUCCESS_INDICATOR = (Char >= 0x80) || isprint(Char);
-").
 
 :- pred collapse_spaces(string::in, string::out) is det.
 
