@@ -2174,25 +2174,26 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !History, !IO) :-
     ;
         MaybePartFilename = no,
         MaybeSubject = yes(Subject),
-        make_filename_from_subject(Subject, PartFilename)
+        suggest_filename(header_value_string(Subject), PartFilename)
     ;
         MaybePartFilename = no,
         MaybeSubject = no,
         MessageId = message_id(IdStr),
         (
             MaybePartId = yes(part_id(PartIdInt)),
-            PartFilename = string.format("%s.part_%d", [s(IdStr), i(PartIdInt)])
+            PartFilename0 = string.format("%s.part_%d", [s(IdStr), i(PartIdInt)])
         ;
             MaybePartId = yes(part_id_string(PartIdStr)),
-            PartFilename = string.format("%s.part_%s", [s(IdStr), s(PartIdStr)])
+            PartFilename0 = string.format("%s.part_%s", [s(IdStr), s(PartIdStr)])
         ;
             MaybePartId = no,
             ( IdStr \= "" ->
-                PartFilename = IdStr ++ ".part"
+                PartFilename0 = IdStr ++ ".part"
             ;
-                PartFilename = "message.part"
+                PartFilename0 = "message.part"
             )
-        )
+        ),
+        suggest_filename(PartFilename0, PartFilename)
     ),
     SaveHistory0 = !.History ^ ch_save_history,
     make_save_part_initial_prompt(SaveHistory0, PartFilename, Initial),
@@ -2235,17 +2236,16 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !History, !IO) :-
     ),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred make_filename_from_subject(header_value::in, string::out) is det.
+:- pred suggest_filename(string::in, string::out) is det.
 
-make_filename_from_subject(Subject, Filename) :-
-    SubjectString = header_value_string(Subject),
-    string.to_char_list(SubjectString, CharList0),
-    list.filter_map(replace_subject_char, CharList0, CharList),
-    string.from_char_list(CharList, Filename).
+suggest_filename(String0, String) :-
+    string.to_char_list(String0, CharList0),
+    list.filter_map(replace_filename_char, CharList0, CharList),
+    string.from_char_list(CharList, String).
 
-:- pred replace_subject_char(char::in, char::out) is semidet.
+:- pred replace_filename_char(char::in, char::out) is semidet.
 
-replace_subject_char(C0, C) :-
+replace_filename_char(C0, C) :-
     (
         ( char.is_alnum_or_underscore(C0)
         ; C0 = ('+')
