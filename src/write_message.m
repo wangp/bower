@@ -325,6 +325,11 @@ write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, Res, !IO) :-
 write_discrete_content_type(Stream, ContentType, MaybeCharset, !IO) :-
     put(Stream, "Content-Type: ", !IO),
     put(Stream, mime_type.to_string(ContentType), !IO),
+    ( ContentType = application_pgp_signature ->
+        put(Stream, "; name=""signature.asc""", !IO)
+    ;
+        true
+    ),
     (
         MaybeCharset = yes(Charset),
         put(Stream, "; charset=", !IO),
