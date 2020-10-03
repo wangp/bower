@@ -163,6 +163,7 @@
 :- type staging_screen_action
     --->    continue
     ;       resize(message_update)
+    ;       recreate(message_update)
     ;       edit
     ;       press_key_to_delete(string)
     ;       leave(sent, message_update).
@@ -926,7 +927,7 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
         toggle_alt_html(MessageUpdate0, NeedsResize, !StagingInfo, !IO),
         (
             NeedsResize = yes,
-            Action = resize(MessageUpdate0)
+            Action = recreate(MessageUpdate0)
         ;
             NeedsResize = no,
             update_message(Screen, MessageUpdate0, !IO),
@@ -1042,7 +1043,14 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
             !.PagerInfo, Transition, !CryptoInfo, !History, !IO)
     ;
         Action = resize(DeferredMessageUpdate),
-        resize_staging_screen(Screen, !.StagingInfo, !PagerInfo, !IO),
+        resize_staging_screen(Screen, !.StagingInfo, resize, !PagerInfo, !IO),
+        update_message(Screen, DeferredMessageUpdate, !IO),
+        staging_screen(Screen, no, !.StagingInfo, !.AttachInfo, !.PagerInfo,
+            Transition, !CryptoInfo, !History, !IO)
+    ;
+        Action = recreate(DeferredMessageUpdate),
+        resize_staging_screen(Screen, !.StagingInfo, recreate, !PagerInfo,
+            !IO),
         update_message(Screen, DeferredMessageUpdate, !IO),
         staging_screen(Screen, no, !.StagingInfo, !.AttachInfo, !.PagerInfo,
             Transition, !CryptoInfo, !History, !IO)
@@ -1078,10 +1086,11 @@ convert_pager_action(PagerAction, Action) :-
         Action = press_key_to_delete(FileName)
     ).
 
-:- pred resize_staging_screen(screen::in, staging_info::in,
+:- pred resize_staging_screen(screen::in, staging_info::in, resize_type::in,
     pager_info::in, pager_info::out, io::di, io::uo) is det.
 
-resize_staging_screen(Screen, StagingInfo, PagerInfo0, PagerInfo, !IO) :-
+resize_staging_screen(Screen, StagingInfo, PartsChanged, PagerInfo0, PagerInfo,
+        !IO) :-
     recreate_screen_for_resize(Screen, !IO),
     get_cols(Screen, Cols, !IO),
     get_main_panels(Screen, MainPanels, !IO),
@@ -1092,7 +1101,8 @@ resize_staging_screen(Screen, StagingInfo, PagerInfo0, PagerInfo, !IO) :-
     Text = StagingInfo ^ si_text,
     MaybeAltHtml = StagingInfo ^ si_alt_html,
     setup_pager_for_staging(Config, Cols, Text, MaybeAltHtml,
-        retain_pager_pos(PagerInfo0, NumPagerRows), PagerInfo, !IO).
+        retain_pager_pos(PagerInfo0, NumPagerRows, PartsChanged),
+        PagerInfo, !IO).
 
 %-----------------------------------------------------------------------------%
 
