@@ -823,10 +823,10 @@ wrap_text(Text) = text(Text).
 %-----------------------------------------------------------------------------%
 
 :- pred make_staging_tree(prog_config::in, int::in, string::in,
-    maybe(string)::in, tree::out, counter::out, bool::out, io::di, io::uo)
-    is det.
+    maybe(string)::in, bool::in, tree::out, counter::out, bool::out,
+    io::di, io::uo) is det.
 
-make_staging_tree(Config, Cols, Text, MaybeAltHtml, Tree, Counter,
+make_staging_tree(Config, Cols, Text, MaybeAltHtml, ShowHtml, Tree, Counter,
         LastBlank0, !IO) :-
     TextPlainPart = part(message_id(""), no, mime_type.text_plain, no,
         yes(content_disposition("inline")), text(Text), no, no, no,
@@ -847,9 +847,16 @@ make_staging_tree(Config, Cols, Text, MaybeAltHtml, Tree, Counter,
         TextHtmlPart = part(message_id(""), no, mime_type.text_html, no,
             yes(content_disposition("inline")), text(HtmlContent), no, no, no,
             is_decrypted),
+        (
+            ShowHtml = yes,
+            OrderedParts = [TextHtmlPart, TextPlainPart]
+        ;
+            ShowHtml = no,
+            OrderedParts = [TextPlainPart, TextHtmlPart]
+        ),
         MixedPart = part(message_id(""), no, mime_type.multipart_alternative,
             no, yes(content_disposition("inline")), subparts(not_encrypted, [],
-            [TextPlainPart, TextHtmlPart]), no, no, no, is_decrypted),
+            OrderedParts), no, no, no, is_decrypted),
         Part = MixedPart,
         LastBlank0 = no
     ),
@@ -860,11 +867,11 @@ make_staging_tree(Config, Cols, Text, MaybeAltHtml, Tree, Counter,
     Tree = node(NodeId, [BodyTree0, Separators], no).
 
 :- pred new_info_for_staging(prog_config::in, int::in, string::in,
-    maybe(string)::in, pager_info::out, io::di, io::uo) is det.
+    maybe(string)::in, bool::in, pager_info::out, io::di, io::uo) is det.
 
-new_info_for_staging(Config, Cols, Text, MaybeAltHtml, Info, !IO) :-
-    make_staging_tree(Config, Cols, Text, MaybeAltHtml, Tree, Counter,
-        LastBlank0, !IO),
+new_info_for_staging(Config, Cols, Text, MaybeAltHtml, ShowHtml, Info, !IO) :-
+    make_staging_tree(Config, Cols, Text, MaybeAltHtml, ShowHtml, Tree,
+        Counter, LastBlank0, !IO),
     Flattened = flatten(Tree, LastBlank0),
     Scrollable = scrollable.init(Flattened),
     make_extents(Flattened, Extents),
@@ -874,12 +881,14 @@ setup_pager_for_staging(Config, Cols, Text, MaybeAltHtml, RetainPagerPos, Info,
         !IO) :-
     (
         RetainPagerPos = new_pager,
-        new_info_for_staging(Config, Cols, Text, MaybeAltHtml, Info, !IO)
+        new_info_for_staging(Config, Cols, Text, MaybeAltHtml, no, Info, !IO)
     ;
         RetainPagerPos = retain_pager_pos(OldPager, _NumRows, ResizeType),
         (
             ResizeType = recreate,
-            new_info_for_staging(Config, Cols, Text, MaybeAltHtml, Info, !IO)
+            ShowHtml = yes,
+            new_info_for_staging(Config, Cols, Text, MaybeAltHtml, ShowHtml,
+                Info, !IO)
         ;
             ResizeType = resize,
             Info = OldPager
