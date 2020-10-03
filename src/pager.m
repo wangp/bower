@@ -25,7 +25,11 @@
 
 :- type retain_pager_pos
     --->    new_pager
-    ;       retain_pager_pos(pager_info, int).
+    ;       retain_pager_pos(pager_info, int, resize_type).
+
+:- type resize_type
+    --->    resize
+    ;       recreate.
 
 :- pred setup_pager(prog_config::in, setup_mode::in, int::in,
     list(message)::in, pager_info::out, io::di, io::uo) is det.
@@ -818,8 +822,11 @@ wrap_text(Text) = text(Text).
 
 %-----------------------------------------------------------------------------%
 
-setup_pager_for_staging(Config, Cols, Text, MaybeAltHtml, RetainPagerPos,
-        Info, !IO) :-
+:- pred make_staging_tree(prog_config::in, int::in, string::in,
+    maybe(string)::in, tree::out, counter::out, bool::out, io::di, io::uo).
+
+make_staging_tree(Config, Cols, Text, MaybeAltHtml, Tree, Counter,
+        LastBlank0, !IO) :-
     TextPlainPart = part(message_id(""), no, mime_type.text_plain, no,
         yes(content_disposition("inline")), text(Text), no, no, no,
         is_decrypted),
@@ -849,22 +856,34 @@ setup_pager_for_staging(Config, Cols, Text, MaybeAltHtml, RetainPagerPos,
     make_part_tree(Config, Cols, Part, BodyTree0, yes,
         _ElideInitialHeadLine, Counter0, Counter1, !IO),
     allocate_node_id(NodeId, Counter1, Counter),
-    Tree = node(NodeId, [BodyTree0, Separators], no),
+    Tree = node(NodeId, [BodyTree0, Separators], no).
 
-    Flattened = flatten(Tree, LastBlank0),
-    Scrollable0 = scrollable.init(Flattened),
-    make_extents(Flattened, Extents0),
-    Info0 = pager_info(Config, Tree, Counter, Scrollable0, Extents0,
-        LastBlank0),
+:- pred new_info_for_staging(prog_config::in, int::in, string::in,
+    maybe(string)::in, pager_info::out, io::di, io::uo).
+
+new_info_for_staging(Config, Cols, Text, MaybeAltHtml, Info, !IO) :-
+        make_staging_tree(Config, Cols, Text, MaybeAltHtml, Tree, Counter,
+            LastBlank0, !IO),
+        Flattened = flatten(Tree, LastBlank0),
+        Scrollable = scrollable.init(Flattened),
+        make_extents(Flattened, Extents),
+        Info = pager_info(Config, Tree, Counter, Scrollable, Extents,
+            LastBlank0).
+
+setup_pager_for_staging(Config, Cols, Text, MaybeAltHtml, RetainPagerPos,
+        Info, !IO) :-
     (
         RetainPagerPos = new_pager,
-        Info = Info0
+        new_info_for_staging(Config, Cols, Text, MaybeAltHtml, Info, !IO)
     ;
-        RetainPagerPos = retain_pager_pos(OldPager, NumRows),
-        % Make an attempt to retain the pager position.
-        OldScrollable = OldPager ^ p_scrollable,
-        Top = get_top(OldScrollable),
-        scroll(NumRows, Top, _, Info0, Info)
+        RetainPagerPos = retain_pager_pos(OldPager, _NumRows, ResizeType),
+        (
+            ResizeType = recreate,
+            new_info_for_staging(Config, Cols, Text, MaybeAltHtml, Info, !IO)
+        ;
+            ResizeType = resize,
+            Info = OldPager
+        )
     ).
 
 %-----------------------------------------------------------------------------%
