@@ -933,6 +933,8 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
             update_message(Screen, MessageUpdate0, !IO),
             Action = continue
         )
+    ; KeyCode = char('=') ->
+        Action = recreate(clear_message)
     ;
         ( KeyCode = char('j')
         ; KeyCode = code(curs.key_down)
