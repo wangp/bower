@@ -886,6 +886,9 @@ setup_pager_for_staging(Config, Cols, Text, MaybeAltHtml, RetainPagerPos, Info,
         RetainPagerPos = retain_pager_pos(OldPager, _NumRows, ResizeType),
         (
             ResizeType = recreate,
+            % XXX When recreating the pager after a resize, whether to show
+            % the text/plain part or text/html part should depend on the state
+            % in OldPager.
             ShowHtml = yes,
             new_info_for_staging(Config, Cols, Text, MaybeAltHtml, ShowHtml,
                 Info, !IO)
