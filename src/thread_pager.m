@@ -376,13 +376,14 @@ create_pager_and_thread_lines(Config, Screen, Messages, Ordering,
     (
         Ordering = thread_ordering_threaded,
         append_threaded_messages(Nowish, Messages, ThreadLines, !IO),
-        setup_pager(Config, include_replies, Cols, Messages, PagerInfo0, !IO)
+        setup_pager(Config, Cols, include_replies, do_folding, Messages,
+            PagerInfo0, !IO)
     ;
         Ordering = thread_ordering_flat,
         append_flat_messages(Nowish, Messages, ThreadLines,
             SortedFlatMessages, !IO),
-        setup_pager(Config, toplevel_only, Cols, SortedFlatMessages,
-            PagerInfo0, !IO)
+        setup_pager(Config, Cols, toplevel_only, do_folding,
+            SortedFlatMessages, PagerInfo0, !IO)
     ),
     Scrollable0 = scrollable.init_with_cursor(ThreadLines),
     compute_num_rows(Rows, Scrollable0, NumThreadRows, NumPagerRows),
@@ -1188,8 +1189,8 @@ plain_pager_binding(Screen, KeyCode, ThreadPagerAction, MessageUpdate,
     NumPagerRows = !.ThreadPagerInfo ^ tp_num_pager_rows,
     PagerInfo0 = !.ThreadPagerInfo ^ tp_pager,
     History0 = !.ThreadPagerInfo ^ tp_common_history,
-    pager_input(Screen, NumPagerRows, KeyCode, PagerAction, MessageUpdate,
-        PagerInfo0, PagerInfo, History0, History, !IO),
+    pager_input(Screen, NumPagerRows, KeyCode, do_folding, PagerAction,
+        MessageUpdate, PagerInfo0, PagerInfo, History0, History, !IO),
     (
         PagerAction = continue,
         ThreadPagerAction = continue
@@ -1962,7 +1963,8 @@ do_decrypt_part(Screen, MessageId, PartId, MessageUpdate, !Info, !IO) :-
         Pager0 = !.Info ^ tp_pager,
         NumRows = !.Info ^ tp_num_pager_rows,
         get_cols(Screen, Cols, !IO),
-        replace_node_under_cursor(NumRows, Cols, Part, Pager0, Pager, !IO),
+        replace_node_under_cursor(NumRows, Cols, do_folding, Part,
+            Pager0, Pager, !IO),
         !Info ^ tp_pager := Pager
     ;
         ParseResult = error(Error),
@@ -2028,8 +2030,8 @@ do_verify_part(Screen, Part0, MessageUpdate, !Info, !IO) :-
                 NumRows = !.Info ^ tp_num_pager_rows,
                 get_cols(Screen, Cols, !IO),
                 % Regenerating the part tree is overkill...
-                replace_node_under_cursor(NumRows, Cols, Part, Pager0,
-                    Pager, !IO),
+                replace_node_under_cursor(NumRows, Cols, do_folding, Part,
+                    Pager0, Pager, !IO),
                 !Info ^ tp_pager := Pager,
 
                 post_verify_message_update(Content, MessageUpdate)

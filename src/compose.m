@@ -660,8 +660,8 @@ reenter_staging_screen(Config, Screen, Headers0, Text, UseAltHtmlFilter,
     MaybeAltHtml = StagingInfo ^ si_alt_html,
     AttachInfo = scrollable.init_with_cursor(Attachments),
     get_cols(Screen, Cols, !IO),
-    setup_pager_for_staging(Config, Cols, Text, MaybeAltHtml, new_pager,
-        PagerInfo, !IO),
+    setup_pager_for_staging(Config, Cols, do_not_fold, Text, MaybeAltHtml,
+        new_pager, PagerInfo, !IO),
     (
         FilterRes = no,
         update_message(Screen, clear_message, !IO)
@@ -1028,8 +1028,8 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
     ; KeyCode = code(curs.key_resize) ->
         Action = resize(no_change)
     ;
-        pager_input(Screen, NumPagerRows, KeyCode, PagerAction, MessageUpdate,
-            !PagerInfo, !History, !IO),
+        pager_input(Screen, NumPagerRows, KeyCode, do_not_fold, PagerAction,
+            MessageUpdate, !PagerInfo, !History, !IO),
         update_message(Screen, MessageUpdate, !IO),
         convert_pager_action(PagerAction, Action)
     ),
@@ -1102,7 +1102,7 @@ resize_staging_screen(Screen, StagingInfo, PartsChanged, PagerInfo0, PagerInfo,
     Config = StagingInfo ^ si_config,
     Text = StagingInfo ^ si_text,
     MaybeAltHtml = StagingInfo ^ si_alt_html,
-    setup_pager_for_staging(Config, Cols, Text, MaybeAltHtml,
+    setup_pager_for_staging(Config, Cols, do_not_fold, Text, MaybeAltHtml,
         retain_pager_pos(PagerInfo0, NumPagerRows, PartsChanged),
         PagerInfo, !IO).
 
