@@ -1675,7 +1675,7 @@ bulk_tag(Screen, Done, !Info, !IO) :-
     Lines0 = get_lines_list(Scrollable0),
     ( any_selected_line(Lines0) ->
         Prompt = "Action: (d)elete, (u)ndelete, (N) toggle unread, " ++
-            "(') mark read, (+/-) change tags",
+            "(') mark read, (S)pam, (+/-) change tags",
         get_keycode_blocking_handle_resize(Screen, set_prompt(Prompt), KeyCode,
             !Info, !IO),
         ( KeyCode = char('-') ->
@@ -1692,6 +1692,11 @@ bulk_tag(Screen, Done, !Info, !IO) :-
             Done = yes
         ; KeyCode = char('d') ->
             AddTags = set.make_singleton_set(tag("deleted")),
+            RemoveTags = set.init,
+            bulk_tag_changes(AddTags, RemoveTags, MessageUpdate, !Info, !IO),
+            Done = yes
+        ; KeyCode = char('S') ->
+            AddTags = set.make_singleton_set(tag("spam")),
             RemoveTags = set.init,
             bulk_tag_changes(AddTags, RemoveTags, MessageUpdate, !Info, !IO),
             Done = yes
