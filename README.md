@@ -148,6 +148,7 @@ The keys are:
     a               toggle 'inbox', 'unread' tags on current thread (archive)
     d               set 'deleted' tag on current thread
     u               unset 'deleted' tag on current thread
+    $               apply '+spam -unread' tags on current thread
     +, -            add/remove arbitrary tags
     t               select/unselect thread
     T               unselect all threads
@@ -197,6 +198,7 @@ This view pages through an entire thread.  The keys are:
     a               toggle 'inbox', 'unread' tags on current message (archive)
     d               add 'deleted' tag on current message
     u               remove 'deleted' tag on current message
+    $               apply '+spam -unread' tags on current message
     +, -            add/remove arbitrary tags
     t               select/unselect message
     T               unselect all messages

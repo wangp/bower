@@ -126,6 +126,7 @@
     ;       toggle_flagged
     ;       set_deleted
     ;       unset_deleted
+    ;       mark_spam
     ;       prompt_tag(string)
     ;       toggle_select
     ;       unselect_all
@@ -152,6 +153,7 @@
     ;       toggle_flagged
     ;       set_deleted
     ;       unset_deleted
+    ;       mark_spam
     ;       prompt_tag(string)
     ;       bulk_tag(keep_selection)
     ;       pipe_thread_id
@@ -512,6 +514,10 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         modify_tag_cursor_line(unset_deleted, Screen, !IndexInfo, !IO),
         index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
+        Action = mark_spam,
+        modify_tag_cursor_line(mark_spam, Screen, !IndexInfo, !IO),
+        index_loop(Screen, redraw, !.IndexInfo, !IO)
+    ;
         Action = prompt_tag(Initial),
         prompt_tag(Screen, Initial, !IndexInfo, !IO),
         index_loop(Screen, redraw, !.IndexInfo, !IO)
@@ -651,6 +657,10 @@ index_view_input(NumRows, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = unset_deleted
         ;
+            Binding = mark_spam,
+            MessageUpdate = no_change,
+            Action = mark_spam
+        ;
             Binding = prompt_tag(Initial),
             MessageUpdate = no_change,
             Action = prompt_tag(Initial)
@@ -744,6 +754,7 @@ key_binding_char('a', toggle_archive).
 key_binding_char('F', toggle_flagged).
 key_binding_char('d', set_deleted).
 key_binding_char('u', unset_deleted).
+key_binding_char('$', mark_spam).
 key_binding_char('+', prompt_tag("+")).
 key_binding_char('-', prompt_tag("-")).
 key_binding_char('t', toggle_select).
@@ -1192,6 +1203,14 @@ unset_deleted(!Line, [TagDelta]) :-
     remove_tag(tag("deleted"), !Line),
     TagDelta = tag_delta("-deleted").
 
+:- pred mark_spam(index_line::in, index_line::out, list(tag_delta)::out)
+    is det.
+
+mark_spam(!Line, TagDeltas) :-
+    add_tag(tag("spam"), !Line),
+    remove_tag(tag("unread"), !Line),
+    TagDeltas = [tag_delta("+spam"), tag_delta("-unread")].
+
 :- pred add_tag(tag::in, index_line::in, index_line::out) is det.
 
 add_tag(Tag, !Line) :-
@@ -1341,7 +1360,7 @@ bulk_tag(Screen, Done, !Info, !IO) :-
     Lines0 = get_lines_list(Scrollable0),
     ( any_selected_line(Lines0) ->
         Prompt = "Action: (d)elete, (u)ndelete, (N) toggle unread, " ++
-            "(') mark read, (+/-) change tags",
+            "(') mark read, ($) spam, (+/-) change tags",
         get_keycode_blocking_handle_resize(Screen, set_prompt(Prompt), KeyCode,
             !Info, !IO),
         ( KeyCode = char('-') ->
@@ -1375,6 +1394,13 @@ bulk_tag(Screen, Done, !Info, !IO) :-
         ; KeyCode = char('''') ->
             TagDeltas = [tag_delta("-unread")],
             AddTags = set.init,
+            RemoveTags = set.make_singleton_set(tag("unread")),
+            bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate,
+                !Info, !IO),
+            Done = yes
+        ; KeyCode = char('$') ->
+            TagDeltas = [tag_delta("+spam"), tag_delta("-unread")],
+            AddTags = set.make_singleton_set(tag("spam")),
             RemoveTags = set.make_singleton_set(tag("unread")),
             bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate,
                 !Info, !IO),

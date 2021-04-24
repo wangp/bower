@@ -1028,6 +1028,12 @@ thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO) :-
         MessageUpdate = clear_message,
         Action = continue
     ;
+        Key = char('$')
+    ->
+        mark_spam(!Info),
+        pager_next_message(MessageUpdate, !Info),
+        Action = continue
+    ;
         Key = char('+')
     ->
         Action = prompt_tag("+"),
@@ -1501,6 +1507,19 @@ change_deleted(Deleted, !Info) :-
         true
     ).
 
+:- pred mark_spam(thread_pager_info::in, thread_pager_info::out) is det.
+
+mark_spam(!Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    scrollable.map_lines(set_line_spam, Scrollable0, Scrollable),
+    !Info ^ tp_scrollable := Scrollable.
+
+:- pred set_line_spam(thread_line::in, thread_line::out) is det.
+
+set_line_spam(!Line) :-
+    remove_tag(tag("unread"), !Line),
+    add_tag(tag("spam"), !Line).
+
 :- pred add_tag(tag::in, thread_line::in, thread_line::out) is det.
 
 add_tag(Tag, !Line) :-
@@ -1635,7 +1654,7 @@ bulk_tag(Screen, Done, !Info, !IO) :-
     Lines0 = get_lines_list(Scrollable0),
     ( any_selected_line(Lines0) ->
         Prompt = "Action: (d)elete, (u)ndelete, (N) toggle unread, " ++
-            "(') mark read, (+/-) change tags",
+            "(') mark read, ($) spam, (+/-) change tags",
         get_keycode_blocking_handle_resize(Screen, set_prompt(Prompt), KeyCode,
             !Info, !IO),
         ( KeyCode = char('-') ->
@@ -1664,6 +1683,11 @@ bulk_tag(Screen, Done, !Info, !IO) :-
             bulk_toggle_unread(MessageUpdate, Done, !Info, !IO)
         ; KeyCode = char('''') ->
             AddTags = set.init,
+            RemoveTags = set.make_singleton_set(tag("unread")),
+            bulk_tag_changes(AddTags, RemoveTags, MessageUpdate, !Info, !IO),
+            Done = yes
+        ; KeyCode = char('$') ->
+            AddTags = set.make_singleton_set(tag("spam")),
             RemoveTags = set.make_singleton_set(tag("unread")),
             bulk_tag_changes(AddTags, RemoveTags, MessageUpdate, !Info, !IO),
             Done = yes
