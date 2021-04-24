@@ -1010,6 +1010,12 @@ thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO) :-
         pager_next_message(MessageUpdate, !Info),
         Action = continue
     ;
+        Key = char('S')
+    ->
+        toggle_spam(!Info),
+        pager_next_message(MessageUpdate, !Info),
+        Action = continue
+    ;
         Key = char('d')
     ->
         change_deleted(deleted, !Info),
@@ -1442,6 +1448,26 @@ toggle_archive(!Info) :-
         true
     ).
 
+:- pred toggle_spam(thread_pager_info::in, thread_pager_info::out) is det.
+
+toggle_spam(!Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
+        Tags0 = Line0 ^ tp_curr_tags,
+        (
+            ( set.contains(Tags0, tag("spam"))
+            )
+        ->
+            set_line_spam(Line0, Line)
+        ;
+            set_line_unspam(Line0, Line)
+        ),
+        set_cursor_line(Line, Scrollable0, Scrollable),
+        !Info ^ tp_scrollable := Scrollable
+    ;
+        true
+    ).
+
 :- pred mark_all_archived(thread_pager_info::in, thread_pager_info::out) is det.
 
 mark_all_archived(!Info) :-
@@ -1462,6 +1488,20 @@ set_line_archived(!Line) :-
 
 set_line_unarchived(!Line) :-
     add_tag(tag("inbox"), !Line).
+
+:- pred set_line_spam(thread_line::in, thread_line::out) is det.
+
+set_line_spam(!Line) :-
+    % Although this doesn't skip excluded messages, it ends up having no
+    % effect.
+    Tags0 = !.Line ^ tp_curr_tags,
+    set.delete_list([tag("spam")], Tags0, Tags),
+    set_tags(Tags, !Line).
+
+:- pred set_line_unspam(thread_line::in, thread_line::out) is det.
+
+set_line_unspam(!Line) :-
+    add_tag(tag("spam"), !Line).
 
 :- pred toggle_flagged(thread_pager_info::in, thread_pager_info::out) is det.
 

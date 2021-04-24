@@ -123,6 +123,7 @@
     ;       skip_to_internal_search(rel_search_direction)
     ;       toggle_unread
     ;       toggle_archive
+    ;       toggle_spam
     ;       toggle_flagged
     ;       set_deleted
     ;       unset_deleted
@@ -149,6 +150,7 @@
     ;       prompt_internal_search(search_direction)
     ;       toggle_unread
     ;       toggle_archive
+    ;       toggle_spam
     ;       toggle_flagged
     ;       set_deleted
     ;       unset_deleted
@@ -500,6 +502,10 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         modify_tag_cursor_line(toggle_archive, Screen, !IndexInfo, !IO),
         index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
+        Action = toggle_spam,
+        modify_tag_cursor_line(toggle_spam, Screen, !IndexInfo, !IO),
+        index_loop(Screen, redraw, !.IndexInfo, !IO)
+    ;
         Action = toggle_flagged,
         modify_tag_cursor_line(toggle_flagged, Screen, !IndexInfo, !IO),
         index_loop(Screen, redraw, !.IndexInfo, !IO)
@@ -639,6 +645,10 @@ index_view_input(NumRows, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = toggle_archive
         ;
+            Binding = toggle_spam,
+            MessageUpdate = no_change,
+            Action = toggle_spam
+        ;
             Binding = toggle_flagged,
             MessageUpdate = no_change,
             Action = toggle_flagged
@@ -742,6 +752,7 @@ key_binding_char('N', skip_to_internal_search(opposite_dir)).
 key_binding_char('U', toggle_unread).
 key_binding_char('a', toggle_archive).
 key_binding_char('F', toggle_flagged).
+key_binding_char('S', toggle_spam).
 key_binding_char('d', set_deleted).
 key_binding_char('u', unset_deleted).
 key_binding_char('+', prompt_tag("+")).
@@ -1157,6 +1168,23 @@ toggle_archive(Line0, Line, TagDeltas) :-
     ;
         set.insert(tag("inbox"), TagSet0, TagSet),
         TagDeltas = [tag_delta("+inbox")]
+    ),
+    set_tags(TagSet, Line0, Line).
+
+:- pred toggle_spam(index_line::in, index_line::out, list(tag_delta)::out)
+    is det.
+
+toggle_spam(Line0, Line, TagDeltas) :-
+    TagSet0 = Line0 ^ i_tags,
+    (
+        ( set.contains(TagSet0, tag("spam"))
+        )
+    ->
+        set.delete_list([tag("spam")], TagSet0, TagSet),
+        TagDeltas = [tag_delta("-spam")]
+    ;
+        set.insert(tag("spam"), TagSet0, TagSet),
+        TagDeltas = [tag_delta("+spam")]
     ),
     set_tags(TagSet, Line0, Line).
 
