@@ -1010,9 +1010,9 @@ thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO) :-
         pager_next_message(MessageUpdate, !Info),
         Action = continue
     ;
-        Key = char('S')
+        Key = char('$')
     ->
-        toggle_spam(!Info),
+        set_spam(!Info),
         pager_next_message(MessageUpdate, !Info),
         Action = continue
     ;
@@ -1448,25 +1448,18 @@ toggle_archive(!Info) :-
         true
     ).
 
-:- pred toggle_spam(thread_pager_info::in, thread_pager_info::out) is det.
+:- pred set_spam(thread_pager_info::in, thread_pager_info::out) is det.
 
-toggle_spam(!Info) :-
+set_spam(!Info) :-
     Scrollable0 = !.Info ^ tp_scrollable,
-    ( get_cursor_line(Scrollable0, _Cursor, Line0) ->
-        Tags0 = Line0 ^ tp_curr_tags,
-        (
-            ( set.contains(Tags0, tag("spam"))
-            )
-        ->
-            set_line_spam(Line0, Line)
-        ;
-            set_line_unspam(Line0, Line)
-        ),
-        set_cursor_line(Line, Scrollable0, Scrollable),
-        !Info ^ tp_scrollable := Scrollable
-    ;
-        true
-    ).
+    scrollable.map_lines(set_line_spam, Scrollable0, Scrollable),
+    !Info ^ tp_scrollable := Scrollable.
+
+:- pred set_line_spam(thread_line::in, thread_line::out) is det.
+
+set_line_spam(!Line) :-
+    remove_tag(tag("unread"), !Line),
+    add_tag(tag("spam"), !Line).
 
 :- pred mark_all_archived(thread_pager_info::in, thread_pager_info::out) is det.
 
@@ -1488,20 +1481,6 @@ set_line_archived(!Line) :-
 
 set_line_unarchived(!Line) :-
     add_tag(tag("inbox"), !Line).
-
-:- pred set_line_spam(thread_line::in, thread_line::out) is det.
-
-set_line_spam(!Line) :-
-    % Although this doesn't skip excluded messages, it ends up having no
-    % effect.
-    Tags0 = !.Line ^ tp_curr_tags,
-    set.delete_list([tag("spam")], Tags0, Tags),
-    set_tags(Tags, !Line).
-
-:- pred set_line_unspam(thread_line::in, thread_line::out) is det.
-
-set_line_unspam(!Line) :-
-    add_tag(tag("spam"), !Line).
 
 :- pred toggle_flagged(thread_pager_info::in, thread_pager_info::out) is det.
 
@@ -1695,9 +1674,9 @@ bulk_tag(Screen, Done, !Info, !IO) :-
             RemoveTags = set.init,
             bulk_tag_changes(AddTags, RemoveTags, MessageUpdate, !Info, !IO),
             Done = yes
-        ; KeyCode = char('S') ->
+        ; KeyCode = char('$') ->
             AddTags = set.make_singleton_set(tag("spam")),
-            RemoveTags = set.init,
+            RemoveTags = set.make_singleton_set(tag("unread")),
             bulk_tag_changes(AddTags, RemoveTags, MessageUpdate, !Info, !IO),
             Done = yes
         ; KeyCode = char('u') ->

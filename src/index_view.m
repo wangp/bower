@@ -123,10 +123,10 @@
     ;       skip_to_internal_search(rel_search_direction)
     ;       toggle_unread
     ;       toggle_archive
-    ;       toggle_spam
     ;       toggle_flagged
     ;       set_deleted
     ;       unset_deleted
+    ;       set_spam
     ;       prompt_tag(string)
     ;       toggle_select
     ;       unselect_all
@@ -150,10 +150,10 @@
     ;       prompt_internal_search(search_direction)
     ;       toggle_unread
     ;       toggle_archive
-    ;       toggle_spam
     ;       toggle_flagged
     ;       set_deleted
     ;       unset_deleted
+    ;       set_spam
     ;       prompt_tag(string)
     ;       bulk_tag(keep_selection)
     ;       pipe_thread_id
@@ -502,8 +502,8 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         modify_tag_cursor_line(toggle_archive, Screen, !IndexInfo, !IO),
         index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
-        Action = toggle_spam,
-        modify_tag_cursor_line(toggle_spam, Screen, !IndexInfo, !IO),
+        Action = set_spam,
+        modify_tag_cursor_line(set_spam, Screen, !IndexInfo, !IO),
         index_loop(Screen, redraw, !.IndexInfo, !IO)
     ;
         Action = toggle_flagged,
@@ -645,9 +645,9 @@ index_view_input(NumRows, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             MessageUpdate = no_change,
             Action = toggle_archive
         ;
-            Binding = toggle_spam,
+            Binding = set_spam,
             MessageUpdate = no_change,
-            Action = toggle_spam
+            Action = set_spam
         ;
             Binding = toggle_flagged,
             MessageUpdate = no_change,
@@ -752,7 +752,7 @@ key_binding_char('N', skip_to_internal_search(opposite_dir)).
 key_binding_char('U', toggle_unread).
 key_binding_char('a', toggle_archive).
 key_binding_char('F', toggle_flagged).
-key_binding_char('S', toggle_spam).
+key_binding_char('$', set_spam).
 key_binding_char('d', set_deleted).
 key_binding_char('u', unset_deleted).
 key_binding_char('+', prompt_tag("+")).
@@ -1171,23 +1171,6 @@ toggle_archive(Line0, Line, TagDeltas) :-
     ),
     set_tags(TagSet, Line0, Line).
 
-:- pred toggle_spam(index_line::in, index_line::out, list(tag_delta)::out)
-    is det.
-
-toggle_spam(Line0, Line, TagDeltas) :-
-    TagSet0 = Line0 ^ i_tags,
-    (
-        ( set.contains(TagSet0, tag("spam"))
-        )
-    ->
-        set.delete_list([tag("spam")], TagSet0, TagSet),
-        TagDeltas = [tag_delta("-spam")]
-    ;
-        set.insert(tag("spam"), TagSet0, TagSet),
-        TagDeltas = [tag_delta("+spam")]
-    ),
-    set_tags(TagSet, Line0, Line).
-
 :- pred toggle_flagged(index_line::in, index_line::out, list(tag_delta)::out)
     is semidet.
 
@@ -1219,6 +1202,14 @@ set_deleted(!Line, [TagDelta]) :-
 unset_deleted(!Line, [TagDelta]) :-
     remove_tag(tag("deleted"), !Line),
     TagDelta = tag_delta("-deleted").
+
+:- pred set_spam(index_line::in, index_line::out, list(tag_delta)::out)
+    is det.
+
+set_spam(!Line, TagDeltas) :-
+    add_tag(tag("spam"), !Line),
+    remove_tag(tag("unread"), !Line),
+    TagDeltas = [tag_delta("+spam"), tag_delta("-unread")].
 
 :- pred add_tag(tag::in, index_line::in, index_line::out) is det.
 
@@ -1391,10 +1382,10 @@ bulk_tag(Screen, Done, !Info, !IO) :-
             bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate,
                 !Info, !IO),
             Done = yes
-        ; KeyCode = char('S') ->
-            TagDeltas = [tag_delta("+spam")],
+        ; KeyCode = char('$') ->
+            TagDeltas = [tag_delta("+spam"), tag_delta("-unread")],
             AddTags = set.make_singleton_set(tag("spam")),
-            RemoveTags = set.init,
+            RemoveTags = set.make_singleton_set(tag("unread")),
             bulk_tag_changes(TagDeltas, AddTags, RemoveTags, MessageUpdate,
                 !Info, !IO),
             Done = yes

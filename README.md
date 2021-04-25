@@ -146,7 +146,7 @@ The keys are:
     U               toggle 'unread' tag on current thread
     F               toggle 'flagged' tag on current thread
     a               toggle 'inbox', 'unread' tags on current thread (archive)
-    S               toggle 'spam' tag on current thread
+    $               toggle 'spam' tag on current thread
     d               set 'deleted' tag on current thread
     u               unset 'deleted' tag on current thread
     +, -            add/remove arbitrary tags
@@ -196,7 +196,7 @@ This view pages through an entire thread.  The keys are:
     ^R              remove 'unread' tag on preceding messages
     F               toggle 'flagged' tag on current message
     a               toggle 'inbox', 'unread' tags on current message (archive)
-    S               toggle 'spam' tag on current message
+    $               toggle 'spam' tag on current message
     d               add 'deleted' tag on current message
     u               remove 'deleted' tag on current message
     +, -            add/remove arbitrary tags
