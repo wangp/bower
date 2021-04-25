@@ -1360,7 +1360,7 @@ bulk_tag(Screen, Done, !Info, !IO) :-
     Lines0 = get_lines_list(Scrollable0),
     ( any_selected_line(Lines0) ->
         Prompt = "Action: (d)elete, (u)ndelete, (N) toggle unread, " ++
-            "(') mark read, (S)pam, (+/-) change tags",
+            "(') mark read, ($)pam, (+/-) change tags",
         get_keycode_blocking_handle_resize(Screen, set_prompt(Prompt), KeyCode,
             !Info, !IO),
         ( KeyCode = char('-') ->
