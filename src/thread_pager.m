@@ -1653,7 +1653,7 @@ bulk_tag(Screen, Done, !Info, !IO) :-
     Scrollable0 = !.Info ^ tp_scrollable,
     Lines0 = get_lines_list(Scrollable0),
     ( any_selected_line(Lines0) ->
-        Prompt = "Bulk: (d)elete, (u)ndelete, (N) unread, (') read, " ++
+        Prompt = "Bulk: (d)elete, (u)ndelete, (U) unread, (') read, " ++
             "($) spam, (+/-) tags",
         get_keycode_blocking_handle_resize(Screen, set_prompt(Prompt), KeyCode,
             !Info, !IO),
@@ -1679,7 +1679,7 @@ bulk_tag(Screen, Done, !Info, !IO) :-
             RemoveTags = set.make_singleton_set(tag("deleted")),
             bulk_tag_changes(AddTags, RemoveTags, MessageUpdate, !Info, !IO),
             Done = yes
-        ; KeyCode = char('N') ->
+        ; KeyCode = char('U') ->
             bulk_toggle_unread(MessageUpdate, Done, !Info, !IO)
         ; KeyCode = char('''') ->
             AddTags = set.init,
