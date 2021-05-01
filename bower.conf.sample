@@ -163,6 +163,16 @@
 
 #-----------------------------------------------------------------------------#
 
+[compose]
+
+    # Append contents of this file when composing messages.
+    # The path must be an absolute path; relative paths are not supported yet.
+    # An initial ~/ expands to the home directory.
+    #
+  ; signature_file = ~/.signature
+
+#-----------------------------------------------------------------------------#
+
 [crypto]
 
     # Enable encryption by default when composing messages.

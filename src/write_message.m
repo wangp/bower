@@ -41,7 +41,10 @@
     ;       mime_v1(mime_part).
 
 :- type plain_body
-    --->    plain_body(string).
+    --->    plain_body(
+                string,
+                maybe(string)   % optional signature
+            ).
 
 :- type mime_part
     --->    discrete(
@@ -250,10 +253,32 @@ write_message_type_nocatch(Stream, Config, MessageType, PausedCurs, Res, !IO) :-
 :- pred write_plain_body(Stream::in, plain_body::in, io::di, io::uo)
     is det <= writer(Stream).
 
-write_plain_body(Stream, plain_body(Text), !IO) :-
+write_plain_body(Stream, plain_body(Text, MaybeSignature), !IO) :-
     % Separate header and body.
     put(Stream, "\n", !IO),
-    put(Stream, Text, !IO).
+    put_ensure_terminated(Stream, Text, !IO),
+    (
+        MaybeSignature = yes(Signature),
+        put(Stream, "\n", !IO),
+        put_ensure_terminated(Stream, Signature, !IO)
+    ;
+        MaybeSignature = no
+    ).
+
+:- pred put_ensure_terminated(Stream::in, string::in, io::di, io::uo)
+    is det <= writer(Stream).
+
+put_ensure_terminated(Stream, String, !IO) :-
+    ( String = "" ->
+        true
+    ;
+        put(Stream, String, !IO),
+        ( string.suffix(String, "\n") ->
+            true
+        ;
+            put(Stream, "\n", !IO)
+        )
+    ).
 
 %-----------------------------------------------------------------------------%
 

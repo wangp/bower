@@ -247,8 +247,9 @@ start_compose_3(Config, Crypto, Screen, !.Headers, Body, Transition,
     !Headers ^ h_from := header_value(From),
     Attachments = [],
     MaybeOldDraft = no,
-    create_edit_stage(Config, Crypto, Screen, !.Headers, Body, Attachments,
-        MaybeOldDraft, no, no, Transition, !History, !IO).
+    create_edit_stage(Config, Crypto, Screen, !.Headers, Body,
+        do_append_signature, Attachments, MaybeOldDraft, no, no, Transition,
+        !History, !IO).
 
 %-----------------------------------------------------------------------------%
 
@@ -334,8 +335,9 @@ start_reply(Config, Crypto, Screen, Message, ReplyKind, PartVisibilityMap,
         Attachments = [],
         MaybeOldDraft = no,
         SignInit = no,
-        create_edit_stage(Config, Crypto, Screen, Headers, Body, Attachments,
-            MaybeOldDraft, WasEncrypted, SignInit, Transition, !History, !IO)
+        create_edit_stage(Config, Crypto, Screen, Headers, Body,
+            do_append_signature, Attachments, MaybeOldDraft,
+            WasEncrypted, SignInit, Transition, !History, !IO)
     ;
         ResParse = error(Error),
         Warning = "Error parsing notmuch response: " ++ Error,
@@ -456,12 +458,15 @@ start_forward(Config, Crypto, Screen, Message, PartVisibilityMap, Transition,
     ),
     prepare_forward_message(Config, Message, PartVisibilityMap, From,
         Headers, Body, AttachmentParts, !IO),
+    % Should we append signature when forwarding?
+    MaybeAppendSignature = do_not_append_signature,
     list.map(to_old_attachment, AttachmentParts, Attachments),
     MaybeOldDraft = no,
     WasEncrypted = contains(Message ^ m_tags, encrypted_tag),
     DraftSign = no,
-    create_edit_stage(Config, Crypto, Screen, Headers, Body, Attachments,
-        MaybeOldDraft, WasEncrypted, DraftSign, Transition, !History, !IO).
+    create_edit_stage(Config, Crypto, Screen, Headers, Body,
+        MaybeAppendSignature, Attachments, MaybeOldDraft,
+        WasEncrypted, DraftSign, Transition, !History, !IO).
 
 %-----------------------------------------------------------------------------%
 
@@ -511,8 +516,9 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
             ContinueBase = arbitrary_message,
             MaybeOldDraft = no
         ),
-        create_edit_stage(Config, Crypto, Screen, Headers, Text, Attachments,
-            MaybeOldDraft, WasEncrypted, DraftSign, Transition, !History, !IO)
+        create_edit_stage(Config, Crypto, Screen, Headers, Text,
+            do_not_append_signature, Attachments, MaybeOldDraft,
+            WasEncrypted, DraftSign, Transition, !History, !IO)
     ;
         CallRes = error(Error),
         string.append_list(["Error running notmuch: ",
@@ -527,13 +533,13 @@ to_old_attachment(Part, old_attachment(Part)).
 %-----------------------------------------------------------------------------%
 
 :- pred create_edit_stage(prog_config::in, crypto::in, screen::in, headers::in,
-    string::in, list(attachment)::in, maybe(message_id)::in, bool::in,
-    bool::in, screen_transition(sent)::out,
+    string::in, maybe_append_signature::in, list(attachment)::in,
+    maybe(message_id)::in, bool::in, bool::in, screen_transition(sent)::out,
     common_history::in, common_history::out, io::di, io::uo) is det.
 
-create_edit_stage(Config, Crypto, Screen, Headers0, Text0, Attachments,
-        MaybeOldDraft, EncryptInit, SignInit, Transition,
-        !History, !IO) :-
+create_edit_stage(Config, Crypto, Screen, Headers0, Text0,
+        MaybeAppendSignature, Attachments, MaybeOldDraft,
+        EncryptInit, SignInit, Transition, !History, !IO) :-
     get_encrypt_by_default(Config, EncryptByDefault),
     get_sign_by_default(Config, SignByDefault),
     CryptoInfo0 = init_crypto_info(Crypto,
@@ -541,22 +547,24 @@ create_edit_stage(Config, Crypto, Screen, Headers0, Text0, Attachments,
         SignByDefault `or` SignInit),
     get_use_alt_html_filter(Config, UseAltHtmlFilter),
     create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHtmlFilter,
-        Attachments, MaybeOldDraft, Transition, CryptoInfo0, CryptoInfo,
-        !History, !IO),
+        MaybeAppendSignature, Attachments, MaybeOldDraft, Transition,
+        CryptoInfo0, CryptoInfo, !History, !IO),
     unref_keys(CryptoInfo, !IO).
 
 :- pred create_edit_stage_2(prog_config::in, screen::in,
     headers::in, string::in, use_alt_html_filter::in,
+    maybe_append_signature::in,
     list(attachment)::in, maybe(message_id)::in,
     screen_transition(sent)::out, crypto_info::in, crypto_info::out,
     common_history::in, common_history::out, io::di, io::uo) is det.
 
 create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHtmlFilter,
-        Attachments, MaybeOldDraft, Transition, !CryptoInfo, !History, !IO) :-
+        MaybeAppendSignature, Attachments, MaybeOldDraft, Transition,
+        !CryptoInfo, !History, !IO) :-
     make_parsed_headers(Headers0, ParsedHeaders0),
-    create_temp_message_file(Config, prepare_edit, Headers0,
-        ParsedHeaders0, Text0, no, Attachments, !.CryptoInfo, ResFilename,
-        _MaybeWarning, !IO),
+    create_temp_message_file(Config, prepare_edit(MaybeAppendSignature),
+        Headers0, ParsedHeaders0, Text0, no, Attachments, !.CryptoInfo,
+        ResFilename, _MaybeWarning, !IO),
     (
         ResFilename = ok(Filename),
         call_editor(Config, Filename, ResEdit, !IO),
@@ -1061,8 +1069,8 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
         EditAttachments = get_lines_list(!.AttachInfo),
         % XXX make this tail-recursive in hlc
         create_edit_stage_2(Config, Screen, Headers, Text, UseAltHtmlFilter,
-            EditAttachments, MaybeOldDraft, Transition, !CryptoInfo, !History,
-            !IO)
+            do_not_append_signature, EditAttachments, MaybeOldDraft,
+            Transition, !CryptoInfo, !History, !IO)
     ;
         Action = leave(Sent, TransitionMessage),
         Transition = screen_transition(Sent, TransitionMessage)
@@ -2020,8 +2028,10 @@ draw_staging_bar(Attrs, Screen, StagingInfo, !IO) :-
 
 postpone(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
         CryptoInfo, Res, MessageUpdate, !IO) :-
+    MaybeAltHtml = no,
     create_temp_message_file(Config, prepare_postpone, Headers, ParsedHeaders,
-        Text, no, Attachments, CryptoInfo, ResFilename, Warnings, !IO),
+        Text, MaybeAltHtml, Attachments, CryptoInfo, ResFilename, Warnings,
+        !IO),
     (
         ResFilename = ok(Filename),
         (
@@ -2087,7 +2097,8 @@ maybe_remove_draft(StagingInfo, !IO) :-
 send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text, MaybeAltHtml,
         Attachments, CryptoInfo, Res, MessageUpdate, !IO) :-
     create_temp_message_file(Config, prepare_send, Headers, ParsedHeaders,
-        Text, MaybeAltHtml, Attachments, CryptoInfo, ResFilename, Warnings, !IO),
+        Text, MaybeAltHtml, Attachments, CryptoInfo, ResFilename, Warnings,
+        !IO),
     (
         ResFilename = ok(Filename),
         prompt_confirm_warnings(Screen, Warnings, ConfirmAll, !IO),
@@ -2243,8 +2254,12 @@ tag_replied_message(Config, Headers, Res, !IO) :-
 
 :- type prepare_temp
     --->    prepare_send
-    ;       prepare_edit
+    ;       prepare_edit(maybe_append_signature)
     ;       prepare_postpone.
+
+:- type maybe_append_signature
+    --->    do_append_signature
+    ;       do_not_append_signature.
 
 :- pred create_temp_message_file(prog_config::in, prepare_temp::in,
     headers::in, parsed_headers::in, string::in, maybe(string)::in,
@@ -2261,8 +2276,16 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
     make_headers(Prepare, Headers, ParsedHeaders, Date, MessageId,
         WriteHeaders),
     (
-        Prepare = prepare_edit,
-        Spec = message_spec(WriteHeaders, plain(plain_body(Text))),
+        Prepare = prepare_edit(MaybeAppendSignature),
+        (
+            MaybeAppendSignature = do_append_signature,
+            maybe_read_signature_file(Config, MaybeSignature, !IO)
+        ;
+            MaybeAppendSignature = do_not_append_signature,
+            MaybeSignature = no
+        ),
+        Spec = message_spec(WriteHeaders,
+            plain(plain_body(Text, MaybeSignature))),
         curs.soft_suspend(
             write_temp_message_file(Config, Prepare, Spec, i_paused_curses),
             Res, !IO),
@@ -2391,16 +2414,16 @@ make_headers(Prepare, Headers, ParsedHeaders, Date, MessageId, WriteHeaders) :-
             cons(header(field_name("Date"), unstructured(Date, no_encoding)),
                 !Acc)
         ;
-            Prepare = prepare_edit
+            Prepare = prepare_edit(_)
         ),
         (
             Prepare = prepare_send,
             cons(header(field_name("Message-ID"), unstructured(MessageId,
                 no_encoding)), !Acc)
         ;
-            Prepare = prepare_postpone
-        ;
-            Prepare = prepare_edit
+            ( Prepare = prepare_edit(_)
+            ; Prepare = prepare_postpone
+            )
         ),
         (
             ( Prepare = prepare_send
@@ -2409,7 +2432,7 @@ make_headers(Prepare, Headers, ParsedHeaders, Date, MessageId, WriteHeaders) :-
             SkipEmpty = yes,
             Options = rfc2047_encoding
         ;
-            Prepare = prepare_edit,
+            Prepare = prepare_edit(_),
             SkipEmpty = no,
             Options = no_encoding
         ),
@@ -2429,7 +2452,7 @@ make_headers(Prepare, Headers, ParsedHeaders, Date, MessageId, WriteHeaders) :-
             cons(header(field_name("References"), references(References)),
                 !Acc)
         ;
-            Prepare = prepare_edit
+            Prepare = prepare_edit(_)
         ),
         map.foldl(maybe_cons_unstructured(SkipEmpty, Options), RestHeaders,
             !Acc),
@@ -2461,6 +2484,37 @@ maybe_cons_unstructured(SkipEmpty, Options, FieldName, Value, !Acc) :-
         true
     ;
         cons(header(field_name(FieldName), unstructured(Value, Options)), !Acc)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred maybe_read_signature_file(prog_config::in, maybe(string)::out,
+    io::di, io::uo) is det.
+
+maybe_read_signature_file(Config, Res, !IO) :-
+    get_maybe_signature_file(Config, MaybeSignatureFile),
+    (
+        MaybeSignatureFile = yes(SignatureFile),
+        io.open_input(SignatureFile, ResOpen, !IO),
+        (
+            ResOpen = ok(SignatureStream),
+            io.read_file_as_string(SignatureStream, ResRead, !IO),
+            (
+                ResRead = ok(SignatureString),
+                Res = yes(SignatureString)
+            ;
+                ResRead = error(_, _Error),
+                % Just ignore it.
+                Res = no
+            )
+        ;
+            ResOpen = error(_Error),
+            % Just ignore it.
+            Res = no
+        )
+    ;
+        MaybeSignatureFile = no,
+        Res = no
     ).
 
 %-----------------------------------------------------------------------------%
@@ -2711,8 +2765,10 @@ write_temp_message_file(Config, Prepare, Spec, PausedCurs, Res, !IO) :-
 :- func allow_header_error(prepare_temp) = bool.
 
 allow_header_error(prepare_send) = no.
-allow_header_error(prepare_edit) = yes.
+allow_header_error(prepare_edit(_)) = yes.
 allow_header_error(prepare_postpone) = yes.
+
+%-----------------------------------------------------------------------------%
 
 :- pred missing_keys_warning(list(addr_spec)::in, list(string)::out) is det.
 

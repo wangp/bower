@@ -79,6 +79,8 @@
 :- pred get_text_filter_command(prog_config::in, mime_type::in,
     command_prefix::out) is semidet.
 
+:- pred get_maybe_signature_file(prog_config::in, maybe(string)::out) is det.
+
 :- pred get_encrypt_by_default(prog_config::in, bool::out) is det.
 
 :- pred get_sign_by_default(prog_config::in, bool::out) is det.
@@ -129,12 +131,14 @@
 
 :- implementation.
 
+:- import_module dir.
 :- import_module int.
 :- import_module map.
 :- import_module parsing_utils.
 :- import_module string.
 
 :- import_module config.
+:- import_module path_expand.
 :- import_module rfc5322.parser.
 :- import_module rfc5322.writer.
 :- import_module sys_util.
@@ -142,6 +146,9 @@
 
 :- type prog_config
     --->    prog_config(
+                % XXX reorganise this type
+
+                % [command]
                 notmuch         :: command_prefix,
                 editor          :: command_prefix,
                 text_filters    :: map(mime_type, command_prefix),
@@ -151,17 +158,32 @@
                 alt_html_filter :: maybe(command_prefix),
                 use_alt_html_filter :: use_alt_html_filter,
                 poll_notify     :: maybe(command_prefix),
+
+                % [ui]
                 poll_period_secs :: maybe(int),
                 wrap_width      :: maybe(int),
                 thread_ordering :: thread_ordering,
+
+                % [compose]
+                maybe_signature_file  :: maybe(string), % absolute path
+
+                % [crypto]
                 encrypt_by_default :: bool,
                 sign_by_default :: bool,
                 decrypt_by_default :: bool,
                 verify_by_default :: bool,
+
+                % from FQDN
                 message_id_right :: string,
+
+                % [account.*]
                 accounts        :: list(account),
                 default_account :: maybe(account),
+
+                % from notmuch config
                 exclude_tags    :: set(tag),
+
+                % [color]
                 colors          :: colors
             ).
 
@@ -359,6 +381,20 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
         Filters = !.Filters
     ),
 
+    ( search_config(Config, "compose", "signature_file", SignatureFile0) ->
+        get_home_dir(Home, !IO),
+        expand_tilde_home(Home, SignatureFile0, SignatureFile),
+        ( dir.path_name_is_absolute(SignatureFile) ->
+            MaybeSignatureFile = yes(SignatureFile)
+        ;
+            cons("signature_file must specify an absolute path: " ++
+                SignatureFile0, !Errors),
+            MaybeSignatureFile = no
+        )
+    ;
+        MaybeSignatureFile = no
+    ),
+
     ( search_config(Config, "crypto", "encrypt_by_default", Encrypt0) ->
         ( to_bool(Encrypt0, Encrypt1) ->
             EncryptByDefault = Encrypt1
@@ -457,6 +493,7 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ProgConfig ^ wrap_width = WrapWidth,
     ProgConfig ^ thread_ordering = Ordering,
     ProgConfig ^ text_filters = Filters,
+    ProgConfig ^ maybe_signature_file = MaybeSignatureFile,
     ProgConfig ^ encrypt_by_default = EncryptByDefault,
     ProgConfig ^ sign_by_default = SignByDefault,
     ProgConfig ^ decrypt_by_default = DecryptByDefault,
@@ -854,6 +891,9 @@ get_thread_ordering(Config, Ordering) :-
 get_text_filter_command(Config, MimeType, Command) :-
     Filters = Config ^ text_filters,
     search(Filters, MimeType, Command).
+
+get_maybe_signature_file(Config, MaybeSignatureFile) :-
+    MaybeSignatureFile = Config ^ maybe_signature_file.
 
 get_encrypt_by_default(Config, EncryptByDefault) :-
     EncryptByDefault = Config ^ encrypt_by_default.
