@@ -10,6 +10,8 @@ Please note the key binding changes.
 * index: Add Alt+Key binding for fast alias expansion. (Frank Seifferth)
 * compose: Use B for "edit Bcc". (Frank Seifferth)
 * thread/pager: Increase thread pane size for long threads. (Frank Seifferth)
+* Add '$' to mark threads or messages as spam (Sean E. Russell).
+* Add compose.signature_file config option.
 
 Bower 0.12 (2020-08-01)
 =======================
