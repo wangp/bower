@@ -266,10 +266,13 @@ add_unsupported_part(Config, PartVisibilityMap, MaybeQuoteMarker, Part,
                 add_quoted_text(MaybeQuoteMarker, Text, !RevLines)
             ;
                 MaybeText = error(_Error),
+                % Leave something to show that the intention was there.
                 add_unsupported_part_stub(Part, !RevLines)
             )
         ;
-            add_unsupported_part_stub(Part, !RevLines)
+            % The stubs are not really useful.
+            % add_unsupported_part_stub(Part, !RevLines)
+            true
         )
     ).
 
