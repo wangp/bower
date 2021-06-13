@@ -221,7 +221,8 @@ open_index(Config, NotmuchConfig, Crypto, Screen, LimitString,
         add_history_nodup(LimitString, LimitHistory0, LimitHistory),
         !CommonHistory ^ ch_limit_history := LimitHistory
     ),
-    setup_index_scrollable(Time, Threads, Scrollable, !IO),
+    set.init(SelectedThreadIds),
+    setup_index_scrollable(Time, SelectedThreadIds, Threads, Scrollable, !IO),
     SearchTime = Time,
     LastActiveTime = Time,
     NextPollTime = next_poll_time(Config, Time),
@@ -245,7 +246,9 @@ search_new_limit_string(Screen, LimitString, MaybeDesc, !IndexInfo, !IO) :-
             Tokens, MaybeThreads, !IO),
         (
             MaybeThreads = yes(Threads),
-            setup_index_scrollable(Time, Threads, Scrollable, !IO),
+            set.init(SelectedThreadIds),
+            setup_index_scrollable(Time, SelectedThreadIds, Threads,
+                Scrollable, !IO),
             !IndexInfo ^ i_scrollable := Scrollable,
             !IndexInfo ^ i_search_terms := LimitString,
             !IndexInfo ^ i_search_tokens := Tokens,
@@ -334,12 +337,13 @@ search_terms_quiet(Config, RefreshType, Tokens, MaybeThreads, MessageUpdate,
         MessageUpdate = set_warning(Message)
     ).
 
-:- pred setup_index_scrollable(timestamp::in, list(thread)::in,
-    scrollable(index_line)::out, io::di, io::uo) is det.
+:- pred setup_index_scrollable(timestamp::in, set(thread_id)::in,
+    list(thread)::in, scrollable(index_line)::out, io::di, io::uo) is det.
 
-setup_index_scrollable(Time, Threads, Scrollable, !IO) :-
+setup_index_scrollable(Time, SelectedThreadIds, Threads, Scrollable, !IO) :-
     localtime(Time, Nowish, !IO),
-    list.foldl2(add_thread(Nowish), Threads, cord.init, LinesCord, !IO),
+    list.foldl2(add_thread(Nowish, SelectedThreadIds), Threads,
+        cord.init, LinesCord, !IO),
     Lines = list(LinesCord),
     (
         Lines = [],
@@ -349,23 +353,28 @@ setup_index_scrollable(Time, Threads, Scrollable, !IO) :-
         Scrollable = scrollable.init_with_cursor(Lines)
     ).
 
-:- pred add_thread(tm::in, thread::in,
+:- pred add_thread(tm::in, set(thread_id)::in, thread::in,
     cord(index_line)::in, cord(index_line)::out, io::di, io::uo) is det.
 
-add_thread(Nowish, Thread, !Lines, !IO) :-
-    thread_to_index_line(Nowish, Thread, Line, !IO),
+add_thread(Nowish, SelectedThreadIds, Thread, !Lines, !IO) :-
+    thread_to_index_line(Nowish, SelectedThreadIds, Thread, Line, !IO),
     cord_util.snoc(Line, !Lines).
 
-:- pred thread_to_index_line(tm::in, thread::in, index_line::out,
-    io::di, io::uo) is det.
+:- pred thread_to_index_line(tm::in, set(thread_id)::in, thread::in,
+    index_line::out, io::di, io::uo) is det.
 
-thread_to_index_line(Nowish, Thread, Line, !IO) :-
-    Thread = thread(Id, Timestamp, Authors, Subject, Tags, Matched, Total),
+thread_to_index_line(Nowish, SelectedThreadIds, Thread, Line, !IO) :-
+    Thread = thread(ThreadId, Timestamp, Authors, Subject, Tags, Matched, Total),
     localtime(Timestamp, TM, !IO),
     Shorter = yes,
     make_reldate(Nowish, TM, Shorter, Date),
     get_standard_tags(Tags, StdTags, DisplayTagsWidth),
-    Line = index_line(Id, not_selected, Date, make_presentable(Authors),
+    ( set.contains(SelectedThreadIds, ThreadId) ->
+        Selected = selected
+    ;
+        Selected = not_selected
+    ),
+    Line = index_line(ThreadId, Selected, Date, make_presentable(Authors),
         make_presentable(Subject), Tags, StdTags, DisplayTagsWidth,
         Matched, Total).
 
@@ -1838,7 +1847,9 @@ refresh_all_2(Screen, Time, Tokens, Threads, !Info, !IO) :-
     some [!Scrollable] (
         Scrollable0 = !.Info ^ i_scrollable,
         Top0 = get_top(Scrollable0),
-        setup_index_scrollable(Time, Threads, !:Scrollable, !IO),
+        get_selected_thread_ids(Scrollable0, SelectedThreadIds),
+        setup_index_scrollable(Time, SelectedThreadIds, Threads, !:Scrollable,
+            !IO),
         ( Top0 < get_num_lines(!.Scrollable) ->
             set_top(Top0, !Scrollable)
         ;
@@ -1863,6 +1874,27 @@ refresh_all_2(Screen, Time, Tokens, Threads, !Info, !IO) :-
         !Info ^ i_search_time := Time,
         !Info ^ i_next_poll_time := next_poll_time(!.Info ^ i_config, Time),
         !Info ^ i_poll_count := 0
+    ).
+
+:- pred get_selected_thread_ids(scrollable(index_line)::in,
+    set(thread_id)::out) is det.
+
+get_selected_thread_ids(Scrollable, SelectedThreadIds) :-
+    Lines = get_lines_list(Scrollable),
+    list.foldl(add_thread_id_if_selected, Lines, [], SelectedThreadIdsList),
+    SelectedThreadIds = set.from_list(SelectedThreadIdsList).
+
+:- pred add_thread_id_if_selected(index_line::in,
+    list(thread_id)::in, list(thread_id)::out) is det.
+
+add_thread_id_if_selected(Line, !SelectedThreadIds) :-
+    MaybeSelected = Line ^ i_selected,
+    (
+        MaybeSelected = not_selected
+    ;
+        MaybeSelected = selected,
+        ThreadId = Line ^ i_id,
+        !:SelectedThreadIds = [ThreadId | !.SelectedThreadIds]
     ).
 
 :- pred line_matches_thread_id(thread_id::in, index_line::in) is semidet.
@@ -1900,9 +1932,22 @@ refresh_index_line(Screen, ThreadId, !IndexInfo, !IO) :-
 
 replace_index_cursor_line(Nowish, Thread, !Info, !IO) :-
     Scrollable0 = !.Info ^ i_scrollable,
-    thread_to_index_line(Nowish, Thread, Line, !IO),
-    set_cursor_line(Line, Scrollable0, Scrollable),
-    !Info ^ i_scrollable := Scrollable.
+    ( get_cursor_line(Scrollable0, LineNum, Line0) ->
+        MaybeSelected = Line0 ^ i_selected,
+        (
+            MaybeSelected = selected,
+            ThreadId = Line0 ^ i_id,
+            set.singleton_set(ThreadId, SelectedThreadIds)
+        ;
+            MaybeSelected = not_selected,
+            set.init(SelectedThreadIds)
+        ),
+        thread_to_index_line(Nowish, SelectedThreadIds, Thread, Line, !IO),
+        set_line(LineNum, Line, Scrollable0, Scrollable),
+        !Info ^ i_scrollable := Scrollable
+    ;
+        true
+    ).
 
 %-----------------------------------------------------------------------------%
 
