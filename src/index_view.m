@@ -70,6 +70,7 @@
                 i_search_terms      :: string,
                 i_search_tokens     :: list(token),
                 i_search_time       :: timestamp,
+                i_last_active_time  :: timestamp,
                 i_next_poll_time    :: maybe(timestamp),
                 i_poll_count        :: int,
                 i_internal_search   :: maybe(string),
@@ -136,13 +137,14 @@
     ;       quit.
 
 :- type action
-    --->    continue
-    ;       continue_no_draw
+    --->    continue            % active
+    ;       continue_no_draw    % active
+    ;       continue_inactive
     ;       resize
     ;       open_pager(thread_id, set(tag))
     ;       enter_limit(maybe(string))
     ;       limit_alias_char(char)
-    ;       refresh_all
+    ;       refresh_all(refresh_type)
     ;       start_compose
     ;       start_recall
     ;       start_reply(reply_kind)
@@ -180,9 +182,13 @@
                 remove_tags :: set(tag)
             ).
 
-:- type verbosity
+:- type refresh_verbosity
     --->    verbose
     ;       quiet.
+
+:- type refresh_type
+    --->    manual_refresh
+    ;       auto_refresh.
 
 %-----------------------------------------------------------------------------%
 
@@ -197,8 +203,8 @@ open_index(Config, NotmuchConfig, Crypto, Screen, LimitString,
             ParseRes, !IO),
         (
             ParseRes = ok(SearchTokens),
-            search_terms_with_progress(Config, Screen, no, SearchTokens,
-                MaybeThreads, !IO)
+            search_terms_with_progress(Config, Screen, manual_refresh, no,
+                SearchTokens, MaybeThreads, !IO)
         ;
             ParseRes = error(Error),
             SearchTokens = [],
@@ -217,13 +223,14 @@ open_index(Config, NotmuchConfig, Crypto, Screen, LimitString,
     ),
     setup_index_scrollable(Time, Threads, Scrollable, !IO),
     SearchTime = Time,
+    LastActiveTime = Time,
     NextPollTime = next_poll_time(Config, Time),
     PollCount = 0,
     MaybeSearch = no,
     IndexInfo = index_info(Config, Crypto, Scrollable, LimitString,
-        SearchTokens, SearchTime, NextPollTime, PollCount, MaybeSearch,
-        dir_forward, show_authors, !.CommonHistory),
-    index_loop(Screen, redraw, IndexInfo, !IO).
+        SearchTokens, SearchTime, LastActiveTime, NextPollTime, PollCount,
+        MaybeSearch, dir_forward, show_authors, !.CommonHistory),
+    index_loop(Screen, redraw, update_activity, IndexInfo, !IO).
 
 :- pred search_new_limit_string(screen::in, string::in, maybe(string)::in,
     index_info::in, index_info::out, io::di, io::uo) is det.
@@ -234,8 +241,8 @@ search_new_limit_string(Screen, LimitString, MaybeDesc, !IndexInfo, !IO) :-
     predigest_search_string(Config, no, LimitString, ParseRes, !IO),
     (
         ParseRes = ok(Tokens),
-        search_terms_with_progress(Config, Screen, MaybeDesc, Tokens,
-            MaybeThreads, !IO),
+        search_terms_with_progress(Config, Screen, manual_refresh, MaybeDesc,
+            Tokens, MaybeThreads, !IO),
         (
             MaybeThreads = yes(Threads),
             setup_index_scrollable(Time, Threads, Scrollable, !IO),
@@ -254,27 +261,36 @@ search_new_limit_string(Screen, LimitString, MaybeDesc, !IndexInfo, !IO) :-
     ).
 
 :- pred search_terms_with_progress(prog_config::in, screen::in,
-    maybe(string)::in, list(token)::in, maybe(list(thread))::out,
-    io::di, io::uo) is det.
+    refresh_type::in, maybe(string)::in, list(token)::in,
+    maybe(list(thread))::out, io::di, io::uo) is det.
 
-search_terms_with_progress(Config, Screen, MaybeDesc, Tokens, MaybeThreads,
-        !IO) :-
+search_terms_with_progress(Config, Screen, RefreshType, MaybeDesc, Tokens,
+        MaybeThreads, !IO) :-
     flush_async_with_progress(Screen, !IO),
     (
+        RefreshType = manual_refresh,
+        MessagePrefix = "Searching"
+    ;
+        RefreshType = auto_refresh,
+        MessagePrefix = "Auto-refreshing"
+    ),
+    (
         MaybeDesc = no,
-        Message = "Searching..."
+        Message = MessagePrefix ++ "..."
     ;
         MaybeDesc = yes(Desc),
-        Message = "Searching " ++ Desc ++ "..."
+        Message = MessagePrefix ++ " " ++ Desc ++ "..."
     ),
     update_message_immed(Screen, set_info(Message), !IO),
-    search_terms_quiet(Config, Tokens, MaybeThreads, MessageUpdate, !IO),
+    search_terms_quiet(Config, RefreshType, Tokens, MaybeThreads,
+        MessageUpdate, !IO),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred search_terms_quiet(prog_config::in, list(token)::in,
+:- pred search_terms_quiet(prog_config::in, refresh_type::in, list(token)::in,
     maybe(list(thread))::out, message_update::out, io::di, io::uo) is det.
 
-search_terms_quiet(Config, Tokens, MaybeThreads, MessageUpdate, !IO) :-
+search_terms_quiet(Config, RefreshType, Tokens, MaybeThreads, MessageUpdate,
+        !IO) :-
     tokens_to_search_terms(Tokens, Terms, ApplyCap, !IO),
     (
         ApplyCap = yes,
@@ -299,9 +315,16 @@ search_terms_quiet(Config, Tokens, MaybeThreads, MessageUpdate, !IO) :-
             NumThreads = default_max_threads
         ->
             string.format("Found %d threads (capped). Use ~A to disable cap.",
-                [i(NumThreads)], Message)
+                [i(NumThreads)], Message0)
         ;
-            string.format("Found %d threads.", [i(NumThreads)], Message)
+            string.format("Found %d threads.", [i(NumThreads)], Message0)
+        ),
+        (
+            RefreshType = manual_refresh,
+            Message = Message0
+        ;
+            RefreshType = auto_refresh,
+            Message = Message0 ++ " [auto-refresh]"
         ),
         MessageUpdate = set_info(Message)
     ;
@@ -356,10 +379,14 @@ default_max_threads = 300.
     --->    redraw
     ;       no_draw.
 
-:- pred index_loop(screen::in, on_entry::in, index_info::in, io::di, io::uo)
-    is det.
+:- type maybe_update_activity
+    --->    update_activity
+    ;       no_update_activity.
 
-index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
+:- pred index_loop(screen::in, on_entry::in, maybe_update_activity::in,
+    index_info::in, io::di, io::uo) is det.
+
+index_loop(Screen, OnEntry, MaybeUpdateActivity, !.IndexInfo, !IO) :-
     (
         OnEntry = redraw,
         draw_index_view(Screen, !.IndexInfo, !IO),
@@ -369,24 +396,53 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
     ),
 
     poll_async_with_progress(Screen, handle_poll_result, !IndexInfo, !IO),
-    get_keycode_async_aware(!.IndexInfo ^ i_next_poll_time, KeyCode, !IO),
-    get_main_rows(Screen, NumMainRows, !IO),
-    index_view_input(NumMainRows, KeyCode, MessageUpdate, Action, !IndexInfo),
-    update_message(Screen, MessageUpdate, !IO),
+
+    current_timestamp(Time0, !IO),
+    (
+        MaybeUpdateActivity = update_activity,
+        !IndexInfo ^ i_last_active_time := Time0
+    ;
+        MaybeUpdateActivity = no_update_activity
+    ),
+    get_next_input_deadline(!.IndexInfo, MaybeDeadline),
+    get_keycode_async_aware(MaybeDeadline, KeyCode, !IO),
+    ( KeyCode = timeout_or_error ->
+        % XXX can we distinguish timeout from error?
+        current_timestamp(Time1, !IO),
+        should_auto_refresh(!.IndexInfo, Time1, ShouldAutoRefresh),
+        (
+            ShouldAutoRefresh = yes,
+            Action = refresh_all(auto_refresh)
+        ;
+            ShouldAutoRefresh = no,
+            Action = continue_inactive
+        )
+    ;
+        get_main_rows(Screen, NumMainRows, !IO),
+        index_view_input(NumMainRows, KeyCode, MessageUpdate, Action,
+            !IndexInfo),
+        update_message(Screen, MessageUpdate, !IO)
+    ),
 
     (
         Action = continue,
         maybe_sched_poll(!IndexInfo, !IO),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = continue_no_draw,
         maybe_sched_poll(!IndexInfo, !IO),
-        index_loop(Screen, no_draw, !.IndexInfo, !IO)
+        index_loop(Screen, no_draw, update_activity, !.IndexInfo, !IO)
+    ;
+        Action = continue_inactive,
+        maybe_sched_poll(!IndexInfo, !IO),
+        index_loop(Screen, no_draw, no_update_activity, !.IndexInfo, !IO)
     ;
         Action = resize,
         recreate_screen_for_resize(Screen, !IO),
         recreate_index_view(Screen, !IndexInfo, !IO),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        % The window may be resized inadvertently, so it should probably not
+        % prevent auto-refresh.
+        index_loop(Screen, redraw, no_update_activity, !.IndexInfo, !IO)
     ;
         Action = open_pager(ThreadId, IncludeTags),
         flush_async_with_progress(Screen, !IO),
@@ -410,7 +466,7 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
             !IndexInfo, !IO),
         effect_thread_pager_changes(TagUpdates, !IndexInfo, !IO),
         !IndexInfo ^ i_common_history := CommonHistory,
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = enter_limit(MaybeInitial),
         Config = !.IndexInfo ^ i_config,
@@ -435,17 +491,17 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
             Return = no,
             update_message(Screen, clear_message, !IO)
         ),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = limit_alias_char(Char),
         LimitString = "~" ++ string.from_char(Char),
         search_new_limit_string(Screen, LimitString, yes(LimitString),
             !IndexInfo, !IO),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
-        Action = refresh_all,
-        refresh_all(Screen, verbose, !IndexInfo, !IO),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        Action = refresh_all(RefreshType),
+        refresh_all(Screen, verbose, RefreshType, !IndexInfo, !IO),
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = start_compose,
         flush_async_with_progress(Screen, !IO),
@@ -458,11 +514,11 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         handle_screen_transition(Screen, Transition, Sent, !IndexInfo, !IO),
         (
             Sent = sent,
-            refresh_all(Screen, quiet, !IndexInfo, !IO)
+            refresh_all(Screen, quiet, auto_refresh, !IndexInfo, !IO)
         ;
             Sent = not_sent
         ),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = start_reply(ReplyKind),
         flush_async_with_progress(Screen, !IO),
@@ -473,54 +529,54 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         ;
             MaybeRefresh = no
         ),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = start_recall,
         flush_async_with_progress(Screen, !IO),
         handle_recall(Screen, Sent, !IndexInfo, !IO),
         (
             Sent = sent,
-            refresh_all(Screen, quiet, !IndexInfo, !IO)
+            refresh_all(Screen, quiet, auto_refresh, !IndexInfo, !IO)
         ;
             Sent = not_sent
         ),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = addressbook_add,
         addressbook_add(Screen, !.IndexInfo, !IO),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = prompt_internal_search(SearchDir),
         prompt_internal_search(Screen, SearchDir, !IndexInfo, !IO),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = toggle_unread,
         modify_tag_cursor_line(toggle_unread, Screen, !IndexInfo, !IO),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = toggle_archive,
         modify_tag_cursor_line(toggle_archive, Screen, !IndexInfo, !IO),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = toggle_flagged,
         modify_tag_cursor_line(toggle_flagged, Screen, !IndexInfo, !IO),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = set_deleted,
         modify_tag_cursor_line(set_deleted, Screen, !IndexInfo, !IO),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = unset_deleted,
         modify_tag_cursor_line(unset_deleted, Screen, !IndexInfo, !IO),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = mark_spam,
         modify_tag_cursor_line(mark_spam, Screen, !IndexInfo, !IO),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = prompt_tag(Initial),
         prompt_tag(Screen, Initial, !IndexInfo, !IO),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = bulk_tag(KeepSelection),
         bulk_tag(Screen, Done, !IndexInfo, !IO),
@@ -532,14 +588,64 @@ index_loop(Screen, OnEntry, !.IndexInfo, !IO) :-
         ;
             true
         ),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = pipe_thread_id,
         pipe_thread_id(Screen, !IndexInfo, !IO),
-        index_loop(Screen, redraw, !.IndexInfo, !IO)
+        index_loop(Screen, redraw, update_activity, !.IndexInfo, !IO)
     ;
         Action = quit,
         flush_async_with_progress(Screen, !IO)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred get_next_input_deadline(index_info::in, maybe(timestamp)::out) is det.
+
+get_next_input_deadline(Info, MaybeDeadline) :-
+    Config = Info ^ i_config,
+    MaybeNextPollTime = Info ^ i_next_poll_time,
+    PollCount = Info ^ i_poll_count,
+    (
+        PollCount > 0,
+        get_auto_refresh_inactive_secs(Config, yes(AutoRefreshInactiveSecs))
+    ->
+        LastActiveTime = Info ^ i_last_active_time,
+        AutoRefreshTime = LastActiveTime + float(AutoRefreshInactiveSecs),
+        earlier_timestamp(MaybeNextPollTime, AutoRefreshTime, Deadline),
+        MaybeDeadline = yes(Deadline)
+    ;
+        MaybeDeadline = MaybeNextPollTime
+    ).
+
+:- pred earlier_timestamp(maybe(timestamp)::in, timestamp::in, timestamp::out)
+    is det.
+
+earlier_timestamp(MaybeT0, T1, T) :-
+    (
+        MaybeT0 = yes(T0),
+        T0 =< T1
+    ->
+        T = T0
+    ;
+        T = T1
+    ).
+
+:- pred should_auto_refresh(index_info::in, timestamp::in, bool::out) is det.
+
+should_auto_refresh(Info, CurrTime, ShouldAutoRefresh) :-
+    Config = Info ^ i_config,
+    PollCount = Info ^ i_poll_count,
+    LastActiveTime = Info ^ i_last_active_time,
+    (
+        PollCount > 0,
+        get_auto_refresh_inactive_secs(Config, yes(AutoRefreshInactiveSecs)),
+        AutoRefreshTime = LastActiveTime + float(AutoRefreshInactiveSecs),
+        AutoRefreshTime =< CurrTime
+    ->
+        ShouldAutoRefresh = yes
+    ;
+        ShouldAutoRefresh = no
     ).
 
 %-----------------------------------------------------------------------------%
@@ -610,7 +716,7 @@ index_view_input(NumRows, KeyCode, MessageUpdate, Action, !IndexInfo) :-
         ;
             Binding = refresh_all,
             MessageUpdate = no_change,
-            Action = refresh_all
+            Action = refresh_all(manual_refresh)
         ;
             Binding = start_compose,
             MessageUpdate = no_change,
@@ -692,10 +798,9 @@ index_view_input(NumRows, KeyCode, MessageUpdate, Action, !IndexInfo) :-
     ;
         ( KeyCode = code(curs.key_resize) ->
             Action = resize
-        ; KeyCode = timeout_or_error ->
-            Action = continue_no_draw
         ;
-            Action = continue
+            % KeyCode = timeout_or_error assumed to be handled earlier.
+            Action = continue_no_draw
         ),
         MessageUpdate = no_change
     ).
@@ -1693,10 +1798,10 @@ toggle_show_authors(MessageUpdate, !Info) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred refresh_all(screen::in, verbosity::in, index_info::in, index_info::out,
-    io::di, io::uo) is det.
+:- pred refresh_all(screen::in, refresh_verbosity::in, refresh_type::in,
+    index_info::in, index_info::out, io::di, io::uo) is det.
 
-refresh_all(Screen, Verbose, !Info, !IO) :-
+refresh_all(Screen, Verbose, RefreshType, !Info, !IO) :-
     flush_async_with_progress(Screen, !IO),
     current_timestamp(Time, !IO),
     % The user might have changed search aliases and is trying to force a
@@ -1708,12 +1813,12 @@ refresh_all(Screen, Verbose, !Info, !IO) :-
         ParseRes = ok(Tokens),
         (
             Verbose = verbose,
-            search_terms_with_progress(Config, Screen, no, Tokens,
+            search_terms_with_progress(Config, Screen, RefreshType, no, Tokens,
                 MaybeThreads, !IO)
         ;
             Verbose = quiet,
-            search_terms_quiet(Config, Tokens, MaybeThreads, _MessageUpdate,
-                !IO)
+            search_terms_quiet(Config, RefreshType, Tokens, MaybeThreads,
+                _MessageUpdate, !IO)
         ),
         (
             MaybeThreads = yes(Threads),
@@ -2077,7 +2182,11 @@ draw_display_tag(Screen, Panel, Tag, !IO) :-
 draw_index_bar(Screen, Info, !IO) :-
     Count = Info ^ i_poll_count,
     ( Count = 0 ->
-        MaybeText = no
+        ( semidet_fail ->
+            MaybeText = yes(debug_timestamps_text(Info))
+        ;
+            MaybeText = no
+        )
     ;
         MaybeText = yes(count_messages_since_refresh(Count))
     ),
@@ -2087,6 +2196,27 @@ draw_index_bar(Screen, Info, !IO) :-
 
 count_messages_since_refresh(Count) =
     string.format("%+d messages since refresh", [i(Count)]).
+
+:- func debug_timestamps_text(index_info) = string.
+
+debug_timestamps_text(Info) = Text :-
+    SearchTime = Info ^ i_search_time,
+    SearchTimeStr = timestamp_to_int_string(SearchTime),
+
+    LastActiveTime = Info ^ i_last_active_time,
+    LastActiveTimeStr = timestamp_to_int_string(LastActiveTime),
+
+    MaybeNextPollTime = Info ^ i_next_poll_time,
+    MaybeNextPollTimeStr = maybe_default("-",
+        map_maybe(timestamp_to_int_string, MaybeNextPollTime)),
+
+    PollCount = Info ^ i_poll_count,
+
+    Text = string.format(
+        "search_time: %s, last_active_time: %s, " ++
+        "next_poll_time: %s, poll_count: %d",
+        [s(SearchTimeStr), s(LastActiveTimeStr),
+        s(MaybeNextPollTimeStr), i(PollCount)]).
 
 :- func unless(bool, curs.attr) = maybe(curs.attr).
 

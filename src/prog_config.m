@@ -72,6 +72,9 @@
 
 :- pred get_poll_period_secs(prog_config::in, maybe(int)::out) is det.
 
+:- pred get_auto_refresh_inactive_secs(prog_config::in, maybe(int)::out)
+    is det.
+
 :- pred get_wrap_width(prog_config::in, int::in, int::out) is det.
 
 :- pred get_thread_ordering(prog_config::in, thread_ordering::out) is det.
@@ -161,6 +164,7 @@
 
                 % [ui]
                 poll_period_secs :: maybe(int),
+                auto_refresh_inactive_secs :: maybe(int),
                 wrap_width      :: maybe(int),
                 thread_ordering :: thread_ordering,
 
@@ -342,6 +346,16 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ),
 
     (
+        search_config(Config, "ui", "auto_refresh_inactive_secs",
+            AutoRefreshInactiveSecs0)
+    ->
+        check_auto_refresh_inactive_secs(AutoRefreshInactiveSecs0,
+            AutoRefreshInactiveSecs, !Errors)
+    ;
+        AutoRefreshInactiveSecs = default_auto_refresh_inactive_secs
+    ),
+
+    (
         search_config(Config, "ui", "wrap_width", WrapWidth0),
         string.to_int(WrapWidth0, WrapWidthInt),
         WrapWidthInt > 0
@@ -490,6 +504,7 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ProgConfig ^ use_alt_html_filter = UseAltHtmlFilter,
     ProgConfig ^ poll_notify = PollNotify,
     ProgConfig ^ poll_period_secs = PollSecs,
+    ProgConfig ^ auto_refresh_inactive_secs = AutoRefreshInactiveSecs,
     ProgConfig ^ wrap_width = WrapWidth,
     ProgConfig ^ thread_ordering = Ordering,
     ProgConfig ^ text_filters = Filters,
@@ -593,6 +608,20 @@ check_poll_period_secs(Value, PollPeriodSecs, !Errors) :-
         Error = "poll_period_secs invalid: " ++ Value,
         cons(Error, !Errors),
         PollPeriodSecs = default_poll_period_secs
+    ).
+
+:- pred check_auto_refresh_inactive_secs(string::in, maybe(int)::out,
+    list(string)::in, list(string)::out) is det.
+
+check_auto_refresh_inactive_secs(Value, AutoRefreshSecs, !Errors) :-
+    ( string.to_lower(Value, "off") ->
+        AutoRefreshSecs = no
+    ; string.to_int(Value, Int), Int > 0 ->
+        AutoRefreshSecs = yes(Int)
+    ;
+        Error = "auto_refresh_inactive_secs invalid: " ++ Value,
+        cons(Error, !Errors),
+        AutoRefreshSecs = default_auto_refresh_inactive_secs
     ).
 
 %-----------------------------------------------------------------------------%
@@ -875,6 +904,9 @@ get_poll_notify_command(Config, Command) :-
 get_poll_period_secs(Config, PollPeriodSecs) :-
     PollPeriodSecs = Config ^ poll_period_secs.
 
+get_auto_refresh_inactive_secs(Config, AutoRefreshInactiveSecs) :-
+    AutoRefreshInactiveSecs = Config ^ auto_refresh_inactive_secs.
+
 get_wrap_width(Config, Cols, WrapWidth) :-
     MaybeWrapWidth = Config ^ wrap_width,
     (
@@ -1019,6 +1051,10 @@ default_alt_html_filter_command =
 :- func default_poll_period_secs = maybe(int).
 
 default_poll_period_secs = yes(60).
+
+:- func default_auto_refresh_inactive_secs = maybe(int).
+
+default_auto_refresh_inactive_secs = no.
 
 :- func default_sendmail_command = command_prefix.
 

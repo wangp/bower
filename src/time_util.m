@@ -19,6 +19,9 @@
 :- type timestamp
     --->    timestamp(float).
 
+:- pred timestamp =< timestamp.
+:- mode in =< in is semidet.
+
 :- func timestamp + float = timestamp.
 
 :- func timestamp - timestamp = float.
@@ -58,6 +61,9 @@
 ").
 
 %-----------------------------------------------------------------------------%
+
+timestamp(Ta) =< timestamp(Tb) :-
+    Ta =< Tb.
 
 timestamp(T) + Secs = timestamp(T + Secs).
 

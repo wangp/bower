@@ -151,6 +151,12 @@
     #
   ; poll_period_secs = 60
 
+    # Automatically refresh the index view after this many seconds of
+    # inactivity when there are new messages matching the current search terms.
+    # Disable with "off".
+    #
+  ; auto_refresh_inactive_secs = off
+
     # Wrap lines in message bodies at this column, if the terminal is wider.
     #
   ; wrap_width =
