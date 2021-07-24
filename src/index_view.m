@@ -2252,8 +2252,13 @@ debug_timestamps_text(Info) = Text :-
     LastActiveTimeStr = timestamp_to_int_string(LastActiveTime),
 
     MaybeNextPollTime = Info ^ i_next_poll_time,
-    MaybeNextPollTimeStr = maybe_default("-",
-        map_maybe(timestamp_to_int_string, MaybeNextPollTime)),
+    (
+        MaybeNextPollTime = yes(NextPollTime),
+        NextPollTimeStr = timestamp_to_int_string(NextPollTime)
+    ;
+        MaybeNextPollTime = no,
+        NextPollTimeStr = "-"
+    ),
 
     PollCount = Info ^ i_poll_count,
 
@@ -2261,7 +2266,7 @@ debug_timestamps_text(Info) = Text :-
         "search_time: %s, last_active_time: %s, " ++
         "next_poll_time: %s, poll_count: %d",
         [s(SearchTimeStr), s(LastActiveTimeStr),
-        s(MaybeNextPollTimeStr), i(PollCount)]).
+        s(NextPollTimeStr), i(PollCount)]).
 
 :- func unless(bool, curs.attr) = maybe(curs.attr).
 
