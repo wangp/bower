@@ -1,17 +1,21 @@
-Bower 0.13-unreleased
+Bower 0.13 (2021-07-24)
 =======================
-Please note the key binding changes.
+Please note there are a few key binding changes.
 
 * Support composing messages with text/html alternative;
   see alt_html_filter config option. (Frank Seifferth)
-* Add thread_ordering config option. (Frank Seifferth)
+* Add compose.signature_file config option.
+* Support Alt+Key bindings for fast alias expansion in index. (Frank Seifferth)
 * Use 'U' to toggle unread instead of 'N'. (Frank Seifferth)
 * Add 'N' to search in opposite direction. (Frank Seifferth)
-* index: Add Alt+Key binding for fast alias expansion. (Frank Seifferth)
-* compose: Use B for "edit Bcc". (Frank Seifferth)
-* thread/pager: Increase thread pane size for long threads. (Frank Seifferth)
-* Add '$' to mark threads or messages as spam (Sean E. Russell).
-* Add compose.signature_file config option.
+* Add 'w' as an alias to save parts. (Frank Seifferth)
+* Add '$' to mark threads or messages as spam. (Sean E. Russell)
+* compose: Use 'B' for "edit Bcc". (Frank Seifferth)
+* Add thread_ordering config option. (Frank Seifferth)
+* Increase thread pane size for long threads. (Frank Seifferth)
+* Auto-refresh index view after a period of inactivity (off by default).
+* Drop "Non-text part" and "Attachment" lines in reply templates.
+* Minor improvements.
 
 Bower 0.12 (2020-08-01)
 =======================
