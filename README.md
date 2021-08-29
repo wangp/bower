@@ -67,6 +67,12 @@ To generate a man page, run:
 
 This will produce `bower.1` for installation into your `man` search path.
 
+Packages are also available in the
+[AUR](https://aur.archlinux.org/packages/?K=bower),
+[Gentoo](https://packages.gentoo.org/packages/mail-client/bower),
+[GuixRUS](https://git.sr.ht/~whereiseveryone/guixrus), and
+[Nixpkgs](https://search.nixos.org/packages?query=notmuch%2Dbower).
+
 
 Configuration
 =============
