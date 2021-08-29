@@ -67,14 +67,7 @@ To generate a man page, run:
 
 This will produce `bower.1` for installation into your `man` search path.
 
-Alternative Installation
-========================
-
-The [guixrus channel](https://git.sr.ht/~whereiseveryone/guixrus) also provides bower.
-
-After [adding guixrus](https://git.sr.ht/~whereiseveryone/guixrus#permanent) to your [channels.scm](https://guix.gnu.org/manual/en/html_node/Using-a-Custom-Guix-Channel.html) run the following:
-
-`guix install bower-guixrus`
+Packages are also available in the [AUR](https://aur.archlinux.org/packages/?K=bower), [Gentoo](https://packages.gentoo.org/packages/mail-client/bower), [GuixRUS](https://git.sr.ht/~whereiseveryone/guixrus), and [Nixpkgs](https://search.nixos.org/packages?query=notmuch%2Dbower).
 
 
 Configuration
