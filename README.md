@@ -67,7 +67,8 @@ To generate a man page, run:
 
 This will produce `bower.1` for installation into your `man` search path.
 
-Packages are also available in the
+Packages are also available in
+[Alpine Linux](https://pkgs.alpinelinux.org/package/edge/community/x86_64/bower),
 [AUR](https://aur.archlinux.org/packages/?K=bower),
 [Gentoo](https://packages.gentoo.org/packages/mail-client/bower),
 [GuixRUS](https://git.sr.ht/~whereiseveryone/guixrus), and
