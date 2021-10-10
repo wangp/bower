@@ -130,9 +130,14 @@
   ; sendmail = /usr/bin/msmtp
 
     # Command to execute after the sendmail command is successful.
-    # The default is to use "notmuch insert" to add the sent message to the
-    # maildir (see README.md for the folder). You can override the command
-    # or disable it by setting it to the empty string.
+    # By default, the sent message will be added to the maildir with
+    # "notmuch insert" (see README.md for the folder), and tags applied
+    # to the message.
+    #
+    # You can set the post_sendmail key to run another command instead of
+    # "notmuch insert", or leave the value empty to do nothing.
+    # Tags will then be applied to the sent message as a separate step after
+    # the post_sendmail command.
     #
   ; post_sendmail =
 

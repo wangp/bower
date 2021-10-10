@@ -565,7 +565,7 @@ create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHtmlFilter,
     make_parsed_headers(Headers0, ParsedHeaders0),
     create_temp_message_file(Config, prepare_edit(MaybeAppendSignature),
         Headers0, ParsedHeaders0, Text0, no, Attachments, !.CryptoInfo,
-        ResFilename, _MaybeWarning, !IO),
+        _MessageId, ResFilename, _MaybeWarning, !IO),
     (
         ResFilename = ok(Filename),
         call_editor(Config, Filename, ResEdit, !IO),
@@ -2131,8 +2131,8 @@ postpone(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
         CryptoInfo, Res, MessageUpdate, !IO) :-
     MaybeAltHtml = no,
     create_temp_message_file(Config, prepare_postpone, Headers, ParsedHeaders,
-        Text, MaybeAltHtml, Attachments, CryptoInfo, ResFilename, Warnings,
-        !IO),
+        Text, MaybeAltHtml, Attachments, CryptoInfo, _MessageId, ResFilename,
+        Warnings, !IO),
     (
         ResFilename = ok(Filename),
         (
@@ -2199,8 +2199,8 @@ maybe_remove_draft(StagingInfo, !IO) :-
 send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text, MaybeAltHtml,
         Attachments, CryptoInfo, InteractiveTags, Res, MessageUpdate, !IO) :-
     create_temp_message_file(Config, prepare_send, Headers, ParsedHeaders,
-        Text, MaybeAltHtml, Attachments, CryptoInfo, ResFilename, Warnings,
-        !IO),
+        Text, MaybeAltHtml, Attachments, CryptoInfo, MessageId, ResFilename,
+        Warnings, !IO),
     (
         ResFilename = ok(Filename),
         prompt_confirm_warnings(Screen, Warnings, ConfirmAll, !IO),
@@ -2210,8 +2210,8 @@ send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text, MaybeAltHtml,
                 sent_tag_deltas ++
                 map(tag_to_plus_tag_delta, InteractiveTags),
             update_message_immed(Screen, set_info("Sending message..."), !IO),
-            call_sendmail_and_post_actions(Config, Account, Filename,
-                TagDeltas, SendRes, !IO),
+            call_sendmail_and_post_actions(Config, Account, MessageId,
+                Filename, TagDeltas, SendRes, !IO),
             (
                 SendRes = ok,
                 MessageUpdate = set_info("Mail sent."),
@@ -2280,10 +2280,11 @@ sent_tag_deltas =
     [tag_delta("+sent"), tag_delta("-unread")].
 
 :- pred call_sendmail_and_post_actions(prog_config::in, account::in,
-    string::in, list(tag_delta)::in, call_res::out, io::di, io::uo) is det.
+    message_id::in, string::in, list(tag_delta)::in, call_res::out,
+    io::di, io::uo) is det.
 
-call_sendmail_and_post_actions(Config, Account, Filename, TagDeltas, Res, !IO)
-        :-
+call_sendmail_and_post_actions(Config, Account, MessageId, Filename, TagDeltas,
+        Res, !IO) :-
     get_sendmail_command(Account, sendmail_read_recipients, Sendmail),
     make_quoted_command(Sendmail, [], redirect_input(Filename), no_redirect,
         Command),
@@ -2292,8 +2293,8 @@ call_sendmail_and_post_actions(Config, Account, Filename, TagDeltas, Res, !IO)
     (
         ResSend = ok(ExitStatus),
         ( ExitStatus = 0 ->
-            do_post_sendmail(Config, Account, Filename, TagDeltas, ResAfter,
-                !IO),
+            do_post_sendmail(Config, Account, MessageId, Filename, TagDeltas,
+                ResAfter, !IO),
             (
                 ResAfter = ok,
                 Res = ok
@@ -2312,10 +2313,10 @@ call_sendmail_and_post_actions(Config, Account, Filename, TagDeltas, Res, !IO)
         Res = error(Msg)
     ).
 
-:- pred do_post_sendmail(prog_config::in, account::in, string::in,
-    list(tag_delta)::in, maybe_error::out, io::di, io::uo) is det.
+:- pred do_post_sendmail(prog_config::in, account::in, message_id::in,
+    string::in, list(tag_delta)::in, maybe_error::out, io::di, io::uo) is det.
 
-do_post_sendmail(Config, Account, Filename, TagDeltas, Res, !IO) :-
+do_post_sendmail(Config, Account, MessageId, Filename, TagDeltas, Res, !IO) :-
     get_post_sendmail_action(Account, Action),
     (
         Action = default,
@@ -2323,8 +2324,7 @@ do_post_sendmail(Config, Account, Filename, TagDeltas, Res, !IO) :-
         add_sent(Config, Filename, TagDeltas, Res, !IO)
     ;
         Action = nothing,
-        % TODO: apply tag deltas
-        Res = ok
+        tag_messages(Config, TagDeltas, [MessageId], Res, !IO)
     ;
         Action = command(CommandPrefix),
         make_quoted_command(CommandPrefix, [], redirect_input(Filename),
@@ -2332,9 +2332,8 @@ do_post_sendmail(Config, Account, Filename, TagDeltas, Res, !IO) :-
         curs.soft_suspend(io.call_system(Command), ResCall, !IO),
         (
             ResCall = ok(ExitStatus),
-            % TODO: apply tag deltas
             ( ExitStatus = 0 ->
-                Res = ok
+                tag_messages(Config, TagDeltas, [MessageId], Res, !IO)
             ;
                 Msg = string.format("%s: returned with exit status %d",
                     [s(Command), i(ExitStatus)]),
@@ -2379,11 +2378,12 @@ tag_replied_message(Config, Headers, Res, !IO) :-
 
 :- pred create_temp_message_file(prog_config::in, prepare_temp::in,
     headers::in, parsed_headers::in, string::in, maybe(string)::in,
-    list(attachment)::in, crypto_info::in, maybe_error(string)::out,
-    list(string)::out, io::di, io::uo) is det.
+    list(attachment)::in, crypto_info::in, message_id::out,
+    maybe_error(string)::out, list(string)::out, io::di, io::uo) is det.
 
 create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
-        Text, MaybeAltHtml, Attachments, CryptoInfo, Res, Warnings, !IO) :-
+        Text, MaybeAltHtml, Attachments, CryptoInfo, MessageId, Res,
+        Warnings, !IO) :-
     % We only use this to generate MIME boundaries.
     current_timestamp(timestamp(Seed), !IO),
     splitmix64.init(truncate_to_int(Seed), RS0),
@@ -2515,7 +2515,7 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
 %-----------------------------------------------------------------------------%
 
 :- pred make_headers(prepare_temp::in, headers::in, parsed_headers::in,
-    header_value::in, header_value::in, list(header)::out) is det.
+    header_value::in, message_id::in, list(header)::out) is det.
 
 make_headers(Prepare, Headers, ParsedHeaders, Date, MessageId, WriteHeaders) :-
     Headers = headers(_Date, _From, _To, _Cc, _Bcc, Subject, _ReplyTo,
@@ -2534,8 +2534,9 @@ make_headers(Prepare, Headers, ParsedHeaders, Date, MessageId, WriteHeaders) :-
         ),
         (
             Prepare = prepare_send,
-            cons(header(field_name("Message-ID"), unstructured(MessageId,
-                no_encoding)), !Acc)
+            cons(header(field_name("Message-ID"),
+                unstructured(wrap_angle_brackets(MessageId), no_encoding)),
+                !Acc)
         ;
             ( Prepare = prepare_edit(_)
             ; Prepare = prepare_postpone

@@ -127,11 +127,9 @@ find_drafts(Config, MaybeThreadId, Res, !IO) :-
 %-----------------------------------------------------------------------------%
 
 tag_messages(Config, TagDeltas, MessageIds, Res, !IO) :-
-    (
-        MessageIds = [],
+    ( if MessageIds = [] ; TagDeltas = [] then
         Res = ok
-    ;
-        MessageIds = [_ | _],
+    else
         IdStrings = list.map(message_id_to_search_term, MessageIds),
         do_tag(Config, TagDeltas, IdStrings, Res, !IO)
     ).

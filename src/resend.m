@@ -275,7 +275,8 @@ write_resent_headers(Config, FromAddress, ToAddresses, Res, !IO) :-
 
 generate_resent_headers(Config, Stream, FromAddress, ToAddresses, !IO) :-
     get_message_id_right_part(Config, RightPart),
-    generate_date_msg_id(RightPart, Date, ResentMessageId, !IO),
+    generate_date_msg_id(RightPart, Date, ResentMessageId0, !IO),
+    ResentMessageId = wrap_angle_brackets(ResentMessageId0),
 
     write_address_list_header(rfc2047_encoding, Stream,
         "Resent-From", FromAddress, ok, _FromError, !IO),
