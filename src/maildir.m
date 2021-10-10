@@ -14,8 +14,8 @@
 
 %-----------------------------------------------------------------------------%
 
-:- pred add_sent(prog_config::in, string::in, maybe_error::out,
-    io::di, io::uo) is det.
+:- pred add_sent(prog_config::in, string::in, list(tag_delta)::in,
+    maybe_error::out, io::di, io::uo) is det.
 
 :- pred add_draft(prog_config::in, string::in, list(tag_delta)::in,
     maybe_error::out, io::di, io::uo) is det.
@@ -41,7 +41,7 @@
 
 %-----------------------------------------------------------------------------%
 
-add_sent(Config, FileName, Res, !IO) :-
+add_sent(Config, FileName, TagDeltas, Res, !IO) :-
     get_notmuch_config(Config, "bower:maildir.sent_folder", ConfigRes, !IO),
     (
         ConfigRes = ok(SentFolder)
@@ -49,8 +49,7 @@ add_sent(Config, FileName, Res, !IO) :-
         ConfigRes = error(_),
         SentFolder = default_sent_folder
     ),
-    call_notmuch_insert(Config, FileName, SentFolder,
-        [tag_delta("+sent"), tag_delta("-unread")], Res, !IO).
+    call_notmuch_insert(Config, FileName, SentFolder, TagDeltas, Res, !IO).
 
 add_draft(Config, FileName, TagDeltas0, Res, !IO) :-
     get_notmuch_config(Config, "bower:maildir.drafts_folder", ConfigRes, !IO),

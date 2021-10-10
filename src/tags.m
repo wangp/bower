@@ -42,6 +42,8 @@
 
 :- func tag_delta_to_string(tag_delta) = string.
 
+:- func tag_to_plus_tag_delta(tag) = tag_delta.
+
     % There should be more of these instead of bare strings.
 :- func draft_tag = tag.
 :- func draft_sign_tag = tag.
@@ -67,6 +69,8 @@
 %-----------------------------------------------------------------------------%
 
 tag_delta_to_string(tag_delta(String)) = String.
+
+tag_to_plus_tag_delta(tag(Tag)) = tag_delta("+" ++ Tag).
 
 %-----------------------------------------------------------------------------%
 

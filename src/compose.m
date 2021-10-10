@@ -993,10 +993,10 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
         Attachments = get_lines_list(!.AttachInfo),
         (
             MaybeAccount = yes(Account),
-            _InteractiveTags = !.StagingInfo ^ si_tags,
+            InteractiveTags = !.StagingInfo ^ si_tags,
             send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text,
-                MaybeAltHtml, Attachments, !.CryptoInfo, Sent0, MessageUpdate0,
-                !IO)
+                MaybeAltHtml, Attachments, !.CryptoInfo, InteractiveTags,
+                Sent0, MessageUpdate0, !IO)
         ;
             MaybeAccount = no,
             Sent0 = not_sent,
@@ -2193,10 +2193,11 @@ maybe_remove_draft(StagingInfo, !IO) :-
 
 :- pred send_mail(prog_config::in, account::in, screen::in, headers::in,
     parsed_headers::in, string::in, maybe(string)::in, list(attachment)::in,
-    crypto_info::in, sent::out, message_update::out, io::di, io::uo) is det.
+    crypto_info::in, list(tag)::in, sent::out, message_update::out,
+    io::di, io::uo) is det.
 
 send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text, MaybeAltHtml,
-        Attachments, CryptoInfo, Res, MessageUpdate, !IO) :-
+        Attachments, CryptoInfo, InteractiveTags, Res, MessageUpdate, !IO) :-
     create_temp_message_file(Config, prepare_send, Headers, ParsedHeaders,
         Text, MaybeAltHtml, Attachments, CryptoInfo, ResFilename, Warnings,
         !IO),
@@ -2205,8 +2206,12 @@ send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text, MaybeAltHtml,
         prompt_confirm_warnings(Screen, Warnings, ConfirmAll, !IO),
         (
             ConfirmAll = yes,
+            TagDeltas =
+                sent_tag_deltas ++
+                map(tag_to_plus_tag_delta, InteractiveTags),
             update_message_immed(Screen, set_info("Sending message..."), !IO),
-            call_send_mail(Config, Account, Filename, SendRes, !IO),
+            call_sendmail_and_post_actions(Config, Account, Filename,
+                TagDeltas, SendRes, !IO),
             (
                 SendRes = ok,
                 MessageUpdate = set_info("Mail sent."),
@@ -2268,10 +2273,17 @@ prompt_confirm(Screen, Prompt, Res, !IO) :-
         Res = no
     ).
 
-:- pred call_send_mail(prog_config::in, account::in, string::in, call_res::out,
-    io::di, io::uo) is det.
+:- func sent_tag_deltas = list(tag_delta).
 
-call_send_mail(Config, Account, Filename, Res, !IO) :-
+sent_tag_deltas =
+    % (I forget if there is a reason for -unread.)
+    [tag_delta("+sent"), tag_delta("-unread")].
+
+:- pred call_sendmail_and_post_actions(prog_config::in, account::in,
+    string::in, list(tag_delta)::in, call_res::out, io::di, io::uo) is det.
+
+call_sendmail_and_post_actions(Config, Account, Filename, TagDeltas, Res, !IO)
+        :-
     get_sendmail_command(Account, sendmail_read_recipients, Sendmail),
     make_quoted_command(Sendmail, [], redirect_input(Filename), no_redirect,
         Command),
@@ -2280,7 +2292,8 @@ call_send_mail(Config, Account, Filename, Res, !IO) :-
     (
         ResSend = ok(ExitStatus),
         ( ExitStatus = 0 ->
-            do_post_sendmail(Config, Account, Filename, ResAfter, !IO),
+            do_post_sendmail(Config, Account, Filename, TagDeltas, ResAfter,
+                !IO),
             (
                 ResAfter = ok,
                 Res = ok
@@ -2300,16 +2313,17 @@ call_send_mail(Config, Account, Filename, Res, !IO) :-
     ).
 
 :- pred do_post_sendmail(prog_config::in, account::in, string::in,
-    maybe_error::out, io::di, io::uo) is det.
+    list(tag_delta)::in, maybe_error::out, io::di, io::uo) is det.
 
-do_post_sendmail(Config, Account, Filename, Res, !IO) :-
+do_post_sendmail(Config, Account, Filename, TagDeltas, Res, !IO) :-
     get_post_sendmail_action(Account, Action),
     (
         Action = default,
         % Default behaviour.
-        add_sent(Config, Filename, Res, !IO)
+        add_sent(Config, Filename, TagDeltas, Res, !IO)
     ;
         Action = nothing,
+        % TODO: apply tag deltas
         Res = ok
     ;
         Action = command(CommandPrefix),
@@ -2318,6 +2332,7 @@ do_post_sendmail(Config, Account, Filename, Res, !IO) :-
         curs.soft_suspend(io.call_system(Command), ResCall, !IO),
         (
             ResCall = ok(ExitStatus),
+            % TODO: apply tag deltas
             ( ExitStatus = 0 ->
                 Res = ok
             ;
