@@ -128,6 +128,7 @@
                 si_text         :: string,
                 si_alt_html     :: maybe(string),
                 si_make_alt_html:: use_alt_html_filter,
+                si_tags         :: list(tag),
                 si_old_msgid    :: maybe(message_id),
                 si_attach_hist  :: history
             ).
@@ -663,7 +664,7 @@ reenter_staging_screen(Config, Screen, Headers0, Text, UseAltHtmlFilter,
 
     % XXX loses attach history
     StagingInfo0 = staging_info(Config, MaybeAccount, Headers, Parsed,
-        Text, no, UseAltHtmlFilter, MaybeOldDraft, init_history),
+        Text, no, UseAltHtmlFilter, [], MaybeOldDraft, init_history),
     maybe_make_alt_html(FilterRes, StagingInfo0, StagingInfo, !IO),
     MaybeAltHtml = StagingInfo ^ si_alt_html,
     AttachInfo = scrollable.init_with_cursor(Attachments),
@@ -880,15 +881,17 @@ maybe_expand_mailbox(Config, Opt, Mailbox0, Mailbox, !Cache, !IO) :-
 staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
         Transition, !CryptoInfo, !History, !IO) :-
     !.StagingInfo = staging_info(Config, MaybeAccount, Headers, ParsedHeaders,
-        Text, MaybeAltHtml, UseAltHtmlFilter, MaybeOldDraft, _AttachHistory),
+        Text, MaybeAltHtml, UseAltHtmlFilter, Tags, MaybeOldDraft,
+        _AttachHistory),
     Attrs = compose_attrs(Config),
     PagerAttrs = pager_attrs(Config),
 
     get_main_panels(Screen, MainPanels, !IO),
-    split_panels(MainPanels, HeaderPanels, AttachmentPanels, MaybeSepPanel,
-        PagerPanels),
+    split_panels(MainPanels, HeaderPanels, MaybeTagsPanel, AttachmentPanels,
+        MaybeSepPanel, PagerPanels),
     draw_header_lines(Screen, HeaderPanels, Attrs, Headers, ParsedHeaders,
         MaybeAccount, !.CryptoInfo, !IO),
+    draw_tags_line(Screen, MaybeTagsPanel, Tags, Attrs, !IO),
     scrollable.draw(draw_attachment_line(Attrs), Screen, AttachmentPanels,
         !.AttachInfo, !IO),
     draw_attachments_label(Screen, AttachmentPanels, Attrs, !IO),
@@ -941,6 +944,12 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
             update_message(Screen, MessageUpdate0, !IO),
             Action = continue
         )
+    ; KeyCode = char('+') ->
+        edit_tags(Screen, no, !StagingInfo, !History, !IO),
+        Action = continue
+    ; KeyCode = char('-') ->
+        edit_tags(Screen, yes("-"), !StagingInfo, !History, !IO),
+        Action = continue
     ; KeyCode = char('=') ->
         Action = recreate(clear_message)
     ;
@@ -984,6 +993,7 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
         Attachments = get_lines_list(!.AttachInfo),
         (
             MaybeAccount = yes(Account),
+            _InteractiveTags = !.StagingInfo ^ si_tags,
             send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text,
                 MaybeAltHtml, Attachments, !.CryptoInfo, Sent0, MessageUpdate0,
                 !IO)
@@ -1104,8 +1114,8 @@ resize_staging_screen(Screen, StagingInfo, PartsChanged, PagerInfo0, PagerInfo,
     recreate_screen_for_resize(Screen, !IO),
     get_cols(Screen, Cols, !IO),
     get_main_panels(Screen, MainPanels, !IO),
-    split_panels(MainPanels, _HeaderPanels, _AttachmentPanels, _MaybeSepPanel,
-        PagerPanels),
+    split_panels(MainPanels, _HeaderPanels, _MaybeTagsPanel, _AttachmentPanels,
+        _MaybeSepPanel, PagerPanels),
     NumPagerRows = list.length(PagerPanels),
     Config = StagingInfo ^ si_config,
     Text = StagingInfo ^ si_text,
@@ -1286,6 +1296,63 @@ toggle_alt_html(Message, NeedsResize, !StagingInfo, !IO) :-
             NeedsResize = no
         )
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred edit_tags(screen::in, maybe(string)::in,
+    staging_info::in, staging_info::out,
+    common_history::in, common_history::out, io::di, io::uo) is det.
+
+edit_tags(Screen, MaybePromptAddition, !StagingInfo, !History, !IO) :-
+    Config = !.StagingInfo ^ si_config,
+    Tags0 = !.StagingInfo ^ si_tags,
+    History0 = !.History ^ ch_tag_history,
+    make_initial_edit_tags_string(Tags0, MaybePromptAddition, Initial),
+    list.map(tag_to_string, Tags0, TagStrings),
+    TagStringSet = set.from_list(TagStrings),
+    Completion = complete_tags_smart(Config, TagStringSet, TagStringSet),
+    FirstTime = no,
+    text_entry_full(Screen, "Tags: ", History0, Initial, Completion,
+        FirstTime, Return, !IO),
+    (
+        Return = yes(String),
+        Words = string.words(String),
+        (
+            Words = []
+        ;
+            Words = [_ | _],
+            add_history_nodup(String, History0, History),
+            !History ^ ch_tag_history := History
+        ),
+        ( validate_tag_deltas(Words, _TagDeltas, AddTags, RemoveTags) ->
+            set.difference(AddTags, RemoveTags, Tags),
+            !StagingInfo ^ si_tags := set.to_sorted_list(Tags)
+        ;
+            update_message(Screen, set_warning("Invalid tag found."), !IO)
+        )
+    ;
+        Return = no
+    ).
+
+:- pred make_initial_edit_tags_string(list(tag)::in, maybe(string)::in,
+    string::out) is det.
+
+make_initial_edit_tags_string(Tags, MaybePromptAddition, String) :-
+    list.map(tag_to_string, Tags, Words0),
+    (
+        MaybePromptAddition = yes(PromptAddition),
+        Words = Words0 ++ [PromptAddition]
+    ;
+        MaybePromptAddition = no,
+        (
+            Words0 = [],
+            Words = []
+        ;
+            Words0 = [_ | _],
+            Words = Words0 ++ [""]
+        )
+    ),
+    String = string.join_list(" ", Words).
 
 %-----------------------------------------------------------------------------%
 
@@ -1569,21 +1636,28 @@ accept_media_type(String, MimeType) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred split_panels(list(vpanel)::in, list(vpanel)::out, list(vpanel)::out,
-    maybe(vpanel)::out, list(vpanel)::out) is det.
+:- pred split_panels(list(vpanel)::in, list(vpanel)::out, maybe(vpanel)::out,
+    list(vpanel)::out, maybe(vpanel)::out, list(vpanel)::out) is det.
 
-split_panels(Panels0, HeaderPanels, AttachmentPanels, MaybeSepPanel,
-        PagerPanels) :-
-    list.split_upto(7, Panels0, HeaderPanels, Panels1),
-    list.split_upto(3, Panels1, AttachmentPanels, Panels2),
+split_panels(!.Panels, HeaderPanels, MaybeTagsPanel, AttachmentPanels,
+        MaybeSepPanel, PagerPanels) :-
+    list.split_upto(7, !.Panels, HeaderPanels, !:Panels),
     (
-        Panels2 = [SepPanel | PagerPanels],
+        !.Panels = [TagsPanel | !:Panels],
+        MaybeTagsPanel = yes(TagsPanel)
+    ;
+        !.Panels = [],
+        MaybeTagsPanel = no
+    ),
+    list.split_upto(3, !.Panels, AttachmentPanels, !:Panels),
+    (
+        !.Panels = [SepPanel | !:Panels],
         MaybeSepPanel = yes(SepPanel)
     ;
-        Panels2 = [],
-        MaybeSepPanel = no,
-        PagerPanels = []
-    ).
+        !.Panels = [],
+        MaybeSepPanel = no
+    ),
+    PagerPanels = !.Panels.
 
 :- pred draw_header_lines(screen::in, list(vpanel)::in, compose_attrs::in,
     headers::in, parsed_headers::in, maybe(account)::in, crypto_info::in,
@@ -1896,6 +1970,31 @@ draw_crypto_line(Attrs, Screen, Panel, CryptoInfo, !IO) :-
     draw(Screen, Panel, Attrs ^ c_generic ^ field_name, "  Crypto: ", !IO),
     draw(Screen, Panel, Attrs ^ c_generic ^ field_body, Body, !IO).
 
+:- pred draw_tags_line(screen::in, maybe(vpanel)::in, list(tag)::in,
+    compose_attrs::in, io::di, io::uo) is det.
+
+draw_tags_line(_, no, _, _, !IO).
+draw_tags_line(Screen, yes(Panel), Tags, Attrs, !IO) :-
+    erase(Screen, Panel, !IO),
+    draw(Screen, Panel, Attrs ^ c_generic ^ field_name, "    Tags: ", !IO),
+    attr(Screen, Panel, Attrs ^ c_generic ^ field_body, !IO),
+    draw_tags(Screen, Panel, Tags, !IO).
+
+:- pred draw_tags(screen::in, vpanel::in, list(tag)::in, io::di, io::uo)
+    is det.
+
+draw_tags(_, _, [], !IO).
+draw_tags(Screen, Panel, [Head | Tail], !IO) :-
+    Head = tag(Tag),
+    draw(Screen, Panel, Tag, !IO),
+    (
+        Tail = []
+    ;
+        Tail = [_ | _],
+        draw(Screen, Panel, " ", !IO),
+        draw_tags(Screen, Panel, Tail, !IO)
+    ).
+
 :- pred draw_attachment_line(compose_attrs::in, screen::in, vpanel::in,
     attachment::in, int::in, bool::in, io::di, io::uo) is det.
 
@@ -1991,14 +2090,16 @@ draw_sep_bar(_, no, _, !IO).
 draw_sep_bar(Screen, yes(Panel), Attrs, !IO) :-
     get_cols(Screen, Cols, !IO),
     erase(Screen, Panel, !IO),
-    ( Cols =< 86 ->
-        EditFields = "(ftcBsr)"
+    ( Cols =< 96 ->
+        EditFields = "(ftcBsr)",
+        AttachKeys = "(a)ttach, (d)etach, (T)ype"
     ;
-        EditFields = "(ftcBsr) edit fields"
+        EditFields = "(ftcBsr) edit fields",
+        AttachKeys = "(a)ttach, (d)etach, media (T)ype"
     ),
     draw(Screen, Panel, Attrs ^ c_status ^ bar,
-        "-- " ++ EditFields ++ "; (E)ncrypt, (S)ign; " ++
-        "(a)ttach, (d)etach, media (T)ype, (H)TML ", !IO),
+        "-- " ++ EditFields ++ "; (E)ncrypt, (S)ign; (+-) tag; " ++
+        AttachKeys ++ "; (H)TML ", !IO),
     hline(Screen, Panel, '-', Cols, !IO).
 
 :- pred draw_staging_bar(compose_attrs::in, screen::in, staging_info::in,
