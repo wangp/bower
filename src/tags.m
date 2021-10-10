@@ -127,19 +127,21 @@ validate_tag_deltas(Words, TagDeltas, AddTags, RemoveTags) :-
 :- pred validate_tag_delta(string::in, tag_delta::out,
     set(tag)::in, set(tag)::out, set(tag)::in, set(tag)::out) is semidet.
 
-validate_tag_delta(Word, tag_delta(Word), !AddTags, !RemoveTags) :-
-    (
-        string.remove_prefix("+", Word, Tag),
-        not blacklist_tag(Tag)
-    ->
+validate_tag_delta(Word, TagDelta, !AddTags, !RemoveTags) :-
+    ( string.remove_prefix("-", Word, Tag) ->
+        not blacklist_tag(Tag),
+        set.insert(tag(Tag), !RemoveTags),
+        TagDelta = tag_delta(Word)
+    ;
+        ( string.remove_prefix("+", Word, WordSuffix) ->
+            Tag = WordSuffix,
+            TagDelta = tag_delta(Word)
+        ;
+            Tag = Word,
+            TagDelta = tag_delta("+" ++ Word)
+        ),
+        not blacklist_tag(Tag),
         set.insert(tag(Tag), !AddTags)
-    ;
-        string.remove_prefix("-", Word, Tag),
-        not blacklist_tag(Tag)
-    ->
-        set.insert(tag(Tag), !RemoveTags)
-    ;
-        fail
     ).
 
 :- pred blacklist_tag(string::in) is semidet.
