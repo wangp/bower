@@ -897,13 +897,14 @@ get_entered_tags(Before, After, TagSet) :-
 :- pred is_entered_tag(string::in, string::out) is semidet.
 
 is_entered_tag(Word, Tag) :-
-    ( string.remove_prefix("-", Word, Tag0) ->
-        Tag = Tag0
-    ; string.remove_prefix("+", Word, Tag0) ->
-        Tag = Tag0
+    ( string.remove_prefix("-", Word, WordSuffix) ->
+        Tag = WordSuffix
+    ; string.remove_prefix("+", Word, WordSuffix) ->
+        Tag = WordSuffix
     ;
-        fail
-    ).
+        Tag = Word
+    ),
+    Tag \= "".
 
 :- pred generate_smart_tag_choices(prog_config::in,
     set(string)::in, set(string)::in, set(string)::in, string::in,
@@ -919,16 +920,19 @@ generate_smart_tag_choices(Config, AndTagSet, OrTagSet, EnteredTagSet,
         list.filter_map(filter_tag_choice("-", TagPrefix),
             CandidateList, Choices)
     ;
-        string.remove_prefix("+", OrigString, TagPrefix)
-    ->
+        ( string.remove_prefix("+", OrigString, Suffix) ->
+            Trigger = "+",
+            TagPrefix = Suffix
+        ;
+            Trigger = "",
+            TagPrefix = OrigString
+        ),
         get_notmuch_all_tags(Config, AllTagsList, !IO),
         set.difference(from_list(AllTagsList), AndTagSet, CandidateSet0),
         set.difference(CandidateSet0, EnteredTagSet, CandidateSet),
         set.to_sorted_list(CandidateSet, CandidateList),
-        list.filter_map(filter_tag_choice("+", TagPrefix),
+        list.filter_map(filter_tag_choice(Trigger, TagPrefix),
             CandidateList, Choices)
-    ;
-        Choices = []
     ).
 
     % XXX Could cache tags list.
