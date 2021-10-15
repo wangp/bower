@@ -1325,7 +1325,8 @@ edit_tags(Screen, MaybePromptAddition, !StagingInfo, !History, !IO) :-
             !History ^ ch_tag_history := History
         ),
         ( validate_tag_deltas(Words, _TagDeltas, AddTags, RemoveTags) ->
-            set.difference(AddTags, RemoveTags, Tags),
+            set.difference(AddTags, RemoveTags, Tags1),
+            set.filter(include_user_tag_at_compose, Tags1, Tags),
             !StagingInfo ^ si_tags := set.to_sorted_list(Tags)
         ;
             update_message(Screen, set_warning("Invalid tag found."), !IO)

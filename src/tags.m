@@ -51,6 +51,8 @@
 
 :- pred display_tag(tag::in) is semidet.
 
+:- pred include_user_tag_at_compose(tag::in) is semidet.
+
 :- pred get_standard_tags(set(tag)::in, standard_tags::out, int::out) is det.
 
 :- pred validate_tag_deltas(list(string)::in, list(tag_delta)::out,
@@ -94,6 +96,24 @@ nondisplay_tag(tag("signed")).
 nondisplay_tag(tag("unread")).
 nondisplay_tag(tag(String)) :-
     string.prefix(String, ".").
+
+%-----------------------------------------------------------------------------%
+
+include_user_tag_at_compose(Tag) :-
+    not exclude_user_tag_at_compose(Tag).
+
+:- pred exclude_user_tag_at_compose(tag::in) is semidet.
+
+exclude_user_tag_at_compose(tag("attachment")).
+exclude_user_tag_at_compose(tag("deleted")).
+exclude_user_tag_at_compose(tag("draft")).
+exclude_user_tag_at_compose(tag("draft-sign")).
+exclude_user_tag_at_compose(tag("encrypted")).
+exclude_user_tag_at_compose(tag("new")).
+exclude_user_tag_at_compose(tag("replied")).
+exclude_user_tag_at_compose(tag("sent")).
+exclude_user_tag_at_compose(tag("signed")).
+exclude_user_tag_at_compose(tag("unread")).
 
 %-----------------------------------------------------------------------------%
 
