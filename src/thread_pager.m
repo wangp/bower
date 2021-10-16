@@ -2246,9 +2246,10 @@ forward(Info, Action, MessageUpdate) :-
     message_update::out) is det.
 
 resend(Info, Action, MessageUpdate) :-
-    PagerInfo = Info ^ tp_pager,
+    Scrollable = Info ^ tp_scrollable,
     (
-        get_top_message(PagerInfo, Message),
+        get_cursor_line(Scrollable, _Cursor, CursorLine),
+        Message = CursorLine ^ tp_message,
         MessageId = Message ^ m_id
     ->
         MessageUpdate = clear_message,
