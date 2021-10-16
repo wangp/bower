@@ -39,7 +39,7 @@
     common_history::in, common_history::out, io::di, io::uo) is det.
 
 :- pred start_forward(prog_config::in, crypto::in, screen::in,
-    message::in(message), part_visibility_map::in,
+    message::in(message), part_visibility_map::in, set(tag)::in,
     screen_transition(sent)::out, common_history::in, common_history::out,
     io::di, io::uo) is det.
 
@@ -452,8 +452,8 @@ start_reply_to_message_id(Config, Crypto, Screen, MessageId, ReplyKind,
 
 %-----------------------------------------------------------------------------%
 
-start_forward(Config, Crypto, Screen, Message, PartVisibilityMap, Transition,
-        !History, !IO) :-
+start_forward(Config, Crypto, Screen, Message, PartVisibilityMap, CurrTags,
+        Transition, !History, !IO) :-
     get_default_account(Config, MaybeAccount),
     (
         MaybeAccount = yes(Account),
@@ -467,7 +467,8 @@ start_forward(Config, Crypto, Screen, Message, PartVisibilityMap, Transition,
     % Should we append signature when forwarding?
     MaybeAppendSignature = do_not_append_signature,
     list.map(to_old_attachment, AttachmentParts, Attachments),
-    Tags = [],
+    set.to_sorted_list(CurrTags, CurrTagsList),
+    list.filter(include_user_tag_at_compose, CurrTagsList, Tags),
     MaybeOldDraft = no,
     WasEncrypted = contains(Message ^ m_tags, encrypted_tag),
     DraftSign = no,

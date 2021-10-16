@@ -136,7 +136,7 @@
     ;       continue_no_draw
     ;       resize
     ;       start_reply(reply_kind, message, set(tag))
-    ;       start_forward(message)
+    ;       start_forward(message, set(tag))
     ;       prompt_resend(message_id)
     ;       start_recall
     ;       edit_as_template(message)
@@ -811,7 +811,7 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
         ),
         thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
-        Action = start_forward(Message),
+        Action = start_forward(Message, CurrTags),
         (
             Message = message(MessageId, _, _, _, _, _),
             flush_async_with_progress(Screen, !IO),
@@ -821,7 +821,7 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
             History0 = !.Info ^ tp_common_history,
             get_part_visibility_map(Pager, MessageId, PartVisibilityMap),
             start_forward(Config, Crypto, Screen, Message, PartVisibilityMap,
-                Transition, History0, History, !IO),
+                CurrTags, Transition, History0, History, !IO),
             !Info ^ tp_common_history := History,
             handle_screen_transition(Screen, Transition, _Sent, !Info, !IO)
         ;
@@ -2229,10 +2229,12 @@ reply(Info, ReplyKind, Action, MessageUpdate) :-
     message_update::out) is det.
 
 forward(Info, Action, MessageUpdate) :-
-    PagerInfo = Info ^ tp_pager,
-    ( get_top_message(PagerInfo, Message) ->
-        MessageUpdate = clear_message,
-        Action = start_forward(Message)
+    Scrollable = Info ^ tp_scrollable,
+    ( get_cursor_line(Scrollable, _Cursor, CursorLine) ->
+        Message = CursorLine ^ tp_message,
+        CurrTags = CursorLine ^ tp_curr_tags,
+        Action = start_forward(Message, CurrTags),
+        MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("No message to forward."),
         Action = continue
