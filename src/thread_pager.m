@@ -139,7 +139,7 @@
     ;       start_forward(message, set(tag))
     ;       prompt_resend(message_id)
     ;       start_recall
-    ;       edit_as_template(message)
+    ;       edit_as_template(message, set(tag))
     ;       prompt_tag(string)
     ;       bulk_tag(keep_selection)
     ;       prompt_search(search_direction)
@@ -848,9 +848,9 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
         ),
         thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
-        Action = edit_as_template(Message),
+        Action = edit_as_template(Message, CurrTags),
         flush_async_with_progress(Screen, !IO),
-        handle_edit_as_template(Screen, Message, Sent, !Info, !IO),
+        handle_edit_as_template(Screen, Message, CurrTags, Sent, !Info, !IO),
         (
             Sent = sent,
             AddedMessages0 = !.Info ^ tp_added_messages,
@@ -2308,27 +2308,29 @@ handle_recall(Screen, ThreadId, Sent, !Info, !IO) :-
     message_update::out) is det.
 
 edit_as_template(Info, Action, MessageUpdate) :-
-    PagerInfo = Info ^ tp_pager,
-    ( get_top_message(PagerInfo, Message) ->
-        MessageUpdate = clear_message,
-        Action = edit_as_template(Message)
+    Scrollable = Info ^ tp_scrollable,
+    ( get_cursor_line(Scrollable, _Cursor, CursorLine) ->
+        Message = CursorLine ^ tp_message,
+        CurrTags = CursorLine ^ tp_curr_tags,
+        Action = edit_as_template(Message,  CurrTags),
+        MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("No message to edit."),
         Action = continue
     ).
 
-:- pred handle_edit_as_template(screen::in, message::in, sent::out,
-    thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
+:- pred handle_edit_as_template(screen::in, message::in, set(tag)::in,
+    sent::out, thread_pager_info::in, thread_pager_info::out, io::di, io::uo)
+    is det.
 
-handle_edit_as_template(Screen, Message, Sent, !Info, !IO) :-
+handle_edit_as_template(Screen, Message, CurrTags, Sent, !Info, !IO) :-
     Config = !.Info ^ tp_config,
     Crypto = !.Info ^ tp_crypto,
     Pager = !.Info ^ tp_pager,
     History0 = !.Info ^ tp_common_history,
     (
-        Message = message(MessageId, _, _, _Tags, _, _),
+        Message = message(MessageId, _, _, _, _, _),
         get_part_visibility_map(Pager, MessageId, PartVisibilityMap),
-        CurrTags = set.init,
         continue_from_message(Config, Crypto, Screen, arbitrary_message,
             Message, PartVisibilityMap, CurrTags, Transition,
             History0, History, !IO),
