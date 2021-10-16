@@ -51,7 +51,7 @@ add_sent(Config, FileName, TagDeltas, Res, !IO) :-
     ),
     call_notmuch_insert(Config, FileName, SentFolder, TagDeltas, Res, !IO).
 
-add_draft(Config, FileName, TagDeltas0, Res, !IO) :-
+add_draft(Config, FileName, TagDeltas, Res, !IO) :-
     get_notmuch_config(Config, "bower:maildir.drafts_folder", ConfigRes, !IO),
     (
         ConfigRes = ok(DraftsFolder)
@@ -59,11 +59,6 @@ add_draft(Config, FileName, TagDeltas0, Res, !IO) :-
         ConfigRes = error(_),
         DraftsFolder = default_drafts_folder
     ),
-    TagDeltas = TagDeltas0 ++ [
-        tag_delta("+draft"),
-        tag_delta("-inbox"),
-        tag_delta("-unread")
-    ],
     call_notmuch_insert(Config, FileName, DraftsFolder, TagDeltas, Res, !IO).
 
 :- pred call_notmuch_insert(prog_config::in, string::in, string::in,

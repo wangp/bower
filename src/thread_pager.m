@@ -2281,11 +2281,11 @@ handle_recall(Screen, ThreadId, Sent, !Info, !IO) :-
     (
         MaybeSelected = yes(Message),
         (
-            Message = message(_, _, _, _, _, _),
+            Message = message(_, _, _, CurrTags, _, _),
             PartVisibilityMap = map.init,
             continue_from_message(Config, Crypto, Screen, postponed_message,
-                Message, PartVisibilityMap, TransitionB, History0, History,
-                !IO),
+                Message, PartVisibilityMap, CurrTags, TransitionB,
+                History0, History, !IO),
             !Info ^ tp_common_history := History,
             handle_screen_transition(Screen, TransitionB, Sent, !Info, !IO)
         ;
@@ -2321,10 +2321,12 @@ handle_edit_as_template(Screen, Message, Sent, !Info, !IO) :-
     Pager = !.Info ^ tp_pager,
     History0 = !.Info ^ tp_common_history,
     (
-        Message = message(MessageId, _, _, _, _, _),
+        Message = message(MessageId, _, _, _Tags, _, _),
         get_part_visibility_map(Pager, MessageId, PartVisibilityMap),
+        CurrTags = set.init,
         continue_from_message(Config, Crypto, Screen, arbitrary_message,
-            Message, PartVisibilityMap, Transition, History0, History, !IO),
+            Message, PartVisibilityMap, CurrTags, Transition,
+            History0, History, !IO),
         !Info ^ tp_common_history := History,
         handle_screen_transition(Screen, Transition, Sent, !Info, !IO)
     ;

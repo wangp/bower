@@ -6,6 +6,7 @@
 
 :- import_module bool.
 :- import_module io.
+:- import_module set.
 
 :- import_module crypto.
 :- import_module data.
@@ -48,8 +49,8 @@
 
 :- pred continue_from_message(prog_config::in, crypto::in, screen::in,
     continue_base::in, message::in(message), part_visibility_map::in,
-    screen_transition(sent)::out, common_history::in, common_history::out,
-    io::di, io::uo) is det.
+    set(tag)::in, screen_transition(sent)::out,
+    common_history::in, common_history::out, io::di, io::uo) is det.
 
     % Exported for resend.
     %
@@ -71,7 +72,6 @@
 :- import_module map.
 :- import_module maybe.
 :- import_module pair.
-:- import_module set.
 :- import_module string.
 
 :- import_module addressbook.
@@ -247,10 +247,11 @@ start_compose_3(Config, Crypto, Screen, !.Headers, Body, Transition,
     ),
     !Headers ^ h_from := header_value(From),
     Attachments = [],
+    Tags = [],
     MaybeOldDraft = no,
     create_edit_stage(Config, Crypto, Screen, !.Headers, Body,
-        do_append_signature, Attachments, MaybeOldDraft, no, no, Transition,
-        !History, !IO).
+        do_append_signature, Attachments, Tags, MaybeOldDraft, no, no,
+        Transition, !History, !IO).
 
 %-----------------------------------------------------------------------------%
 
@@ -334,10 +335,11 @@ start_reply(Config, Crypto, Screen, Message, ReplyKind, PartVisibilityMap,
             set_headers_for_list_reply(OrigFrom, Headers0, Headers)
         ),
         Attachments = [],
+        Tags = [],
         MaybeOldDraft = no,
         SignInit = no,
         create_edit_stage(Config, Crypto, Screen, Headers, Body,
-            do_append_signature, Attachments, MaybeOldDraft,
+            do_append_signature, Attachments, Tags, MaybeOldDraft,
             WasEncrypted, SignInit, Transition, !History, !IO)
     ;
         ResParse = error(Error),
@@ -462,17 +464,18 @@ start_forward(Config, Crypto, Screen, Message, PartVisibilityMap, Transition,
     % Should we append signature when forwarding?
     MaybeAppendSignature = do_not_append_signature,
     list.map(to_old_attachment, AttachmentParts, Attachments),
+    Tags = [],
     MaybeOldDraft = no,
     WasEncrypted = contains(Message ^ m_tags, encrypted_tag),
     DraftSign = no,
     create_edit_stage(Config, Crypto, Screen, Headers, Body,
-        MaybeAppendSignature, Attachments, MaybeOldDraft,
+        MaybeAppendSignature, Attachments, Tags, MaybeOldDraft,
         WasEncrypted, DraftSign, Transition, !History, !IO).
 
 %-----------------------------------------------------------------------------%
 
 continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
-        PartVisibilityMap, Transition, !History, !IO) :-
+        PartVisibilityMap, CurrTags, Transition, !History, !IO) :-
     Message = message(MessageId, _Timestamp, Headers0, Tags0, Body0, _Replies0),
     select_main_part_and_attachments(PartVisibilityMap, [Body0], MaybeMainPart,
         AttachmentParts),
@@ -488,6 +491,8 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
     list.map(to_old_attachment, AttachmentParts, Attachments),
     WasEncrypted = contains(Tags0, encrypted_tag),
     DraftSign = contains(Tags0, draft_sign_tag),
+    set.to_sorted_list(CurrTags, CurrTagsList),
+    list.filter(include_user_tag_at_compose, CurrTagsList, Tags),
 
     % XXX notmuch show --format=json does not return References and In-Reply-To
     % so we parse them from the raw output.
@@ -518,7 +523,7 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
             MaybeOldDraft = no
         ),
         create_edit_stage(Config, Crypto, Screen, Headers, Text,
-            do_not_append_signature, Attachments, MaybeOldDraft,
+            do_not_append_signature, Attachments, Tags, MaybeOldDraft,
             WasEncrypted, DraftSign, Transition, !History, !IO)
     ;
         CallRes = error(Error),
@@ -534,12 +539,12 @@ to_old_attachment(Part, old_attachment(Part)).
 %-----------------------------------------------------------------------------%
 
 :- pred create_edit_stage(prog_config::in, crypto::in, screen::in, headers::in,
-    string::in, maybe_append_signature::in, list(attachment)::in,
+    string::in, maybe_append_signature::in, list(attachment)::in, list(tag)::in,
     maybe(message_id)::in, bool::in, bool::in, screen_transition(sent)::out,
     common_history::in, common_history::out, io::di, io::uo) is det.
 
 create_edit_stage(Config, Crypto, Screen, Headers0, Text0,
-        MaybeAppendSignature, Attachments, MaybeOldDraft,
+        MaybeAppendSignature, Attachments, Tags, MaybeOldDraft,
         EncryptInit, SignInit, Transition, !History, !IO) :-
     get_encrypt_by_default(Config, EncryptByDefault),
     get_sign_by_default(Config, SignByDefault),
@@ -548,19 +553,19 @@ create_edit_stage(Config, Crypto, Screen, Headers0, Text0,
         SignByDefault `or` SignInit),
     get_use_alt_html_filter(Config, UseAltHtmlFilter),
     create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHtmlFilter,
-        MaybeAppendSignature, Attachments, MaybeOldDraft, Transition,
+        MaybeAppendSignature, Attachments, Tags, MaybeOldDraft, Transition,
         CryptoInfo0, CryptoInfo, !History, !IO),
     unref_keys(CryptoInfo, !IO).
 
 :- pred create_edit_stage_2(prog_config::in, screen::in,
     headers::in, string::in, use_alt_html_filter::in,
-    maybe_append_signature::in,
-    list(attachment)::in, maybe(message_id)::in,
-    screen_transition(sent)::out, crypto_info::in, crypto_info::out,
-    common_history::in, common_history::out, io::di, io::uo) is det.
+    maybe_append_signature::in, list(attachment)::in, list(tag)::in,
+    maybe(message_id)::in, screen_transition(sent)::out,
+    crypto_info::in, crypto_info::out, common_history::in, common_history::out,
+    io::di, io::uo) is det.
 
 create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHtmlFilter,
-        MaybeAppendSignature, Attachments, MaybeOldDraft, Transition,
+        MaybeAppendSignature, Attachments, Tags, MaybeOldDraft, Transition,
         !CryptoInfo, !History, !IO) :-
     make_parsed_headers(Headers0, ParsedHeaders0),
     create_temp_message_file(Config, prepare_edit(MaybeAppendSignature),
@@ -577,8 +582,8 @@ create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHtmlFilter,
                 io.remove_file(Filename, _, !IO),
                 update_references(Headers0, Headers1, Headers2),
                 reenter_staging_screen(Config, Screen, Headers2, Text,
-                    UseAltHtmlFilter, Attachments, MaybeOldDraft, Transition,
-                    !CryptoInfo, !History, !IO)
+                    UseAltHtmlFilter, Attachments, Tags, MaybeOldDraft,
+                    Transition, !CryptoInfo, !History, !IO)
             ;
                 ResParse = error(Error),
                 io.error_message(Error, Msg),
@@ -650,13 +655,14 @@ update_references(Headers0, !Headers) :-
 %-----------------------------------------------------------------------------%
 
 :- pred reenter_staging_screen(prog_config::in, screen::in, headers::in,
-    string::in, use_alt_html_filter::in, list(attachment)::in,
+    string::in, use_alt_html_filter::in, list(attachment)::in, list(tag)::in,
     maybe(message_id)::in, screen_transition(sent)::out,
     crypto_info::in, crypto_info::out, common_history::in, common_history::out,
     io::di, io::uo) is det.
 
 reenter_staging_screen(Config, Screen, Headers0, Text, UseAltHtmlFilter,
-        Attachments, MaybeOldDraft, Transition, !CryptoInfo, !History, !IO) :-
+        Attachments, Tags, MaybeOldDraft, Transition, !CryptoInfo, !History,
+        !IO) :-
     parse_and_expand_headers(Config, Headers0, Headers, Parsed, !IO),
     get_some_matching_account(Config, Parsed ^ ph_from, MaybeAccount),
     maintain_encrypt_keys(Parsed, !CryptoInfo, !IO),
@@ -664,7 +670,7 @@ reenter_staging_screen(Config, Screen, Headers0, Text, UseAltHtmlFilter,
 
     % XXX loses attach history
     StagingInfo0 = staging_info(Config, MaybeAccount, Headers, Parsed,
-        Text, no, UseAltHtmlFilter, [], MaybeOldDraft, init_history),
+        Text, no, UseAltHtmlFilter, Tags, MaybeOldDraft, init_history),
     maybe_make_alt_html(FilterRes, StagingInfo0, StagingInfo, !IO),
     MaybeAltHtml = StagingInfo ^ si_alt_html,
     AttachInfo = scrollable.init_with_cursor(Attachments),
@@ -978,8 +984,9 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
         Action = continue
     ; KeyCode = char('p') ->
         Attachments = get_lines_list(!.AttachInfo),
-        postpone(Config, Screen, Headers, ParsedHeaders, Text,
-            Attachments, !.CryptoInfo, Res, PostponeMsg, !IO),
+        InteractiveTags = !.StagingInfo ^ si_tags,
+        postpone(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
+            !.CryptoInfo, InteractiveTags, Res, PostponeMsg, !IO),
         (
             Res = yes,
             maybe_remove_draft(!.StagingInfo, !IO),
@@ -1079,7 +1086,7 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
         EditAttachments = get_lines_list(!.AttachInfo),
         % XXX make this tail-recursive in hlc
         create_edit_stage_2(Config, Screen, Headers, Text, UseAltHtmlFilter,
-            do_not_append_signature, EditAttachments, MaybeOldDraft,
+            do_not_append_signature, EditAttachments, Tags, MaybeOldDraft,
             Transition, !CryptoInfo, !History, !IO)
     ;
         Action = leave(Sent, TransitionMessage),
@@ -2125,11 +2132,11 @@ draw_staging_bar(Attrs, Screen, StagingInfo, !IO) :-
 %-----------------------------------------------------------------------------%
 
 :- pred postpone(prog_config::in, screen::in, headers::in, parsed_headers::in,
-    string::in, list(attachment)::in, crypto_info::in, bool::out,
-    message_update::out, io::di, io::uo) is det.
+    string::in, list(attachment)::in, crypto_info::in, list(tag)::in,
+    bool::out, message_update::out, io::di, io::uo) is det.
 
 postpone(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
-        CryptoInfo, Res, MessageUpdate, !IO) :-
+        CryptoInfo, InteractiveTags, Res, MessageUpdate, !IO) :-
     MaybeAltHtml = no,
     create_temp_message_file(Config, prepare_postpone, Headers, ParsedHeaders,
         Text, MaybeAltHtml, Attachments, CryptoInfo, _MessageId, ResFilename,
@@ -2151,12 +2158,15 @@ postpone(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
             Sign = CryptoInfo ^ ci_sign,
             (
                 Sign = yes,
-                ExtraTagDeltas = [tag_delta("+draft-sign")]
+                MaybeSignTag = [tag_delta("+draft-sign")]
             ;
                 Sign = no,
-                ExtraTagDeltas = []
+                MaybeSignTag = []
             ),
-            add_draft(Config, Filename, ExtraTagDeltas, DraftRes, !IO),
+            TagDeltas =
+                draft_tag_deltas ++ MaybeSignTag ++
+                map(tag_to_plus_tag_delta, InteractiveTags),
+            add_draft(Config, Filename, TagDeltas, DraftRes, !IO),
             (
                 DraftRes = ok,
                 MessageUpdate = set_info("Message postponed."),
@@ -2177,6 +2187,12 @@ postpone(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
         MessageUpdate = set_warning(Error),
         Res = no
     ).
+
+:- func draft_tag_deltas = list(tag_delta).
+
+draft_tag_deltas =
+    % (I forget if there is a reason for -inbox -unread.)
+    [tag_delta("+draft"), tag_delta("-inbox"), tag_delta("-unread")].
 
 :- pred maybe_remove_draft(staging_info::in, io::di, io::uo) is det.
 

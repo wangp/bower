@@ -1064,11 +1064,11 @@ handle_recall(Screen, Sent, !IndexInfo, !IO) :-
     (
         MaybeSelected = yes(Message),
         (
-            Message = message(_, _, _, _, _, _),
+            Message = message(_, _, _, CurrTags, _, _),
             PartVisibilityMap = map.init,
             continue_from_message(Config, Crypto, Screen, postponed_message,
-                Message, PartVisibilityMap, TransitionB, History0, History,
-                !IO),
+                Message, PartVisibilityMap, CurrTags, TransitionB,
+                History0, History, !IO),
             !IndexInfo ^ i_common_history := History,
             handle_screen_transition(Screen, TransitionB, Sent, !IndexInfo,
                 !IO)
