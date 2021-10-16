@@ -30,9 +30,9 @@
     io::di, io::uo) is det.
 
 :- pred start_reply(prog_config::in, crypto::in, screen::in,
-    message::in(message), reply_kind::in, part_visibility_map::in,
-    screen_transition(sent)::out, common_history::in, common_history::out,
-    io::di, io::uo) is det.
+    reply_kind::in, message::in(message), part_visibility_map::in,
+    set(tag)::in, screen_transition(sent)::out,
+    common_history::in, common_history::out, io::di, io::uo) is det.
 
 :- pred start_reply_to_message_id(prog_config::in, crypto::in, screen::in,
     message_id::in, reply_kind::in, screen_transition(sent)::out,
@@ -307,10 +307,11 @@ expand_aliases(Config, QuoteOpt, Input, Output, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-start_reply(Config, Crypto, Screen, Message, ReplyKind, PartVisibilityMap,
-        Transition, !History, !IO) :-
-    Message ^ m_id = MessageId,
-    WasEncrypted = contains(Message ^ m_tags, encrypted_tag),
+start_reply(Config, Crypto, Screen, ReplyKind, Message, PartVisibilityMap,
+        CurrTags, Transition, !History, !IO) :-
+    Message = message(MessageId, _Timestamp, MessageHeaders, MessageTags,
+        _MessageBody, _MessageReplies),
+    WasEncrypted = contains(MessageTags, encrypted_tag),
     run_notmuch(Config,
         [
             "reply", "--format=json",
@@ -331,11 +332,13 @@ start_reply(Config, Crypto, Screen, Message, ReplyKind, PartVisibilityMap,
             set_headers_for_group_reply(Headers0, Headers)
         ;
             ReplyKind = list_reply,
-            OrigFrom = Message ^ m_headers ^ h_from,
+            OrigFrom = MessageHeaders ^ h_from,
             set_headers_for_list_reply(OrigFrom, Headers0, Headers)
         ),
         Attachments = [],
-        Tags = [],
+        % CurrTags includes uncommitted tag changes, unlike MessageTags.
+        set.to_sorted_list(CurrTags, Tags0),
+        list.filter(include_user_tag_at_compose, Tags0, Tags),
         MaybeOldDraft = no,
         SignInit = no,
         create_edit_stage(Config, Crypto, Screen, Headers, Body,
@@ -432,10 +435,10 @@ start_reply_to_message_id(Config, Crypto, Screen, MessageId, ReplyKind,
     (
         Res = ok(Message),
         (
-            Message = message(_, _, _, _, _, _),
+            Message = message(_, _, _, CurrTags, _, _),
             PartVisibilityMap = map.init,
-            start_reply(Config, Crypto, Screen, Message, ReplyKind,
-                PartVisibilityMap, Transition, !History, !IO)
+            start_reply(Config, Crypto, Screen, ReplyKind, Message,
+                PartVisibilityMap, CurrTags, Transition, !History, !IO)
         ;
             Message = excluded_message(_, _, _, _, _),
             Warning = "Excluded message.",

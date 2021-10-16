@@ -135,7 +135,7 @@
     --->    continue
     ;       continue_no_draw
     ;       resize
-    ;       start_reply(message, reply_kind)
+    ;       start_reply(reply_kind, message, set(tag))
     ;       start_forward(message)
     ;       prompt_resend(message_id)
     ;       start_recall
@@ -783,7 +783,7 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
         resize_thread_pager(Screen, !Info, !IO),
         thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
-        Action = start_reply(Message, ReplyKind),
+        Action = start_reply(ReplyKind, Message, CurrTags),
         (
             Message = message(MessageId, _, _, _, _, _),
             flush_async_with_progress(Screen, !IO),
@@ -792,8 +792,9 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
             Pager = !.Info ^ tp_pager,
             History0 = !.Info ^ tp_common_history,
             get_part_visibility_map(Pager, MessageId, PartVisibilityMap),
-            start_reply(Config, Crypto, Screen, Message, ReplyKind,
-                PartVisibilityMap, Transition, History0, History, !IO),
+            start_reply(Config, Crypto, Screen, ReplyKind, Message,
+                PartVisibilityMap, CurrTags, Transition, History0, History,
+                !IO),
             !Info ^ tp_common_history := History,
             handle_screen_transition(Screen, Transition, Sent, !Info, !IO),
             (
@@ -2211,10 +2212,12 @@ make_tag_delta(Op, tag(Tag)) = tag_delta(Op ++ Tag).
     message_update::out) is det.
 
 reply(Info, ReplyKind, Action, MessageUpdate) :-
-    PagerInfo = Info ^ tp_pager,
-    ( get_top_message(PagerInfo, Message) ->
-        MessageUpdate = clear_message,
-        Action = start_reply(Message, ReplyKind)
+    Scrollable = Info ^ tp_scrollable,
+    ( get_cursor_line(Scrollable, _Cursor, CursorLine) ->
+        Message = CursorLine ^ tp_message,
+        CurrTags = CursorLine ^ tp_curr_tags,
+        Action = start_reply(ReplyKind, Message, CurrTags),
+        MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("Nothing to reply to."),
         Action = continue
