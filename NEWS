@@ -1,3 +1,11 @@
+Bower 0.14-unreleased
+=====================
+
+* Allow omitting "+" prefix on tag additions.
+* Support tag editing on compose screen.
+* Inherit tags from message being replied to or forwarded.
+* Also apply tags to sent message when using a custom post_sendmail action.
+
 Bower 0.13 (2021-07-24)
 =======================
 Please note there are a few key binding changes.
