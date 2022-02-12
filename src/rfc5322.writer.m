@@ -25,6 +25,8 @@
 
 :- pred addr_spec_to_string(addr_spec::in, string::out, bool::out) is det.
 
+:- pred domain_to_message_id_right(domain::in, string::out) is semidet.
+
 %-----------------------------------------------------------------------------%
 
     % Exported for rfc2045.
@@ -283,6 +285,13 @@ domain(domain_literal(Literal), !Acc, !Ok) :-
         !:Ok = no
     ),
     add("]", !Acc).
+
+domain_to_message_id_right(Domain, MessageIdRight) :-
+    % id-right is like domain but does not include CFWS or FWS.
+    % Whitespace is stripped when we parse domain.
+    domain(Domain, [], Acc, yes, Ok),
+    Ok = yes, % ASCII only
+    MessageIdRight = to_string(Acc).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

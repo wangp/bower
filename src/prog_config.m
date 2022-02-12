@@ -92,8 +92,6 @@
 
 :- pred get_verify_by_default(prog_config::in, bool::out) is det.
 
-:- pred get_message_id_right_part(prog_config::in, string::out) is det.
-
 :- pred get_all_accounts(prog_config::in, list(account)::out) is det.
 
 :- pred get_default_account(prog_config::in, maybe(account)::out) is det.
@@ -144,7 +142,6 @@
 :- import_module path_expand.
 :- import_module rfc5322.parser.
 :- import_module rfc5322.writer.
-:- import_module sys_util.
 :- import_module xdg.
 
 :- type prog_config
@@ -176,9 +173,6 @@
                 sign_by_default :: bool,
                 decrypt_by_default :: bool,
                 verify_by_default :: bool,
-
-                % from FQDN
-                message_id_right :: string,
 
                 % [account.*]
                 accounts        :: list(account),
@@ -454,21 +448,6 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
         VerifyByDefault = no
     ),
 
-    % Perhaps this ought to be configurable?  Alternatively we might use the
-    % domain from an email address.
-    get_hostname_fqdn(MaybeHostName, MaybeFQDN, !IO),
-    (
-        MaybeFQDN = yes(MessageIdRight)
-    ;
-        MaybeFQDN = no,
-        MaybeHostName = yes(MessageIdRight)
-    ;
-        MaybeFQDN = no,
-        MaybeHostName = no,
-        MessageIdRight = "localhost",
-        cons("unable to determine host name", !Errors)
-    ),
-
     get_notmuch_config(Notmuch, ResNotmuchConfig, !IO),
     (
         ResNotmuchConfig = ok(NotmuchConfig)
@@ -513,7 +492,6 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ProgConfig ^ sign_by_default = SignByDefault,
     ProgConfig ^ decrypt_by_default = DecryptByDefault,
     ProgConfig ^ verify_by_default = VerifyByDefault,
-    ProgConfig ^ message_id_right = MessageIdRight,
     ProgConfig ^ accounts = Accounts,
     ProgConfig ^ default_account = DefaultAccount,
     ProgConfig ^ exclude_tags = ExcludeTags,
@@ -938,10 +916,6 @@ get_decrypt_by_default(Config, DecryptByDefault) :-
 
 get_verify_by_default(Config, VerifyByDefault) :-
     VerifyByDefault = Config ^ verify_by_default.
-
-%-----------------------------------------------------------------------------%
-
-get_message_id_right_part(Config, Config ^ message_id_right).
 
 %-----------------------------------------------------------------------------%
 

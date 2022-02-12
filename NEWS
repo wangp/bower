@@ -5,6 +5,7 @@ Bower 0.14-unreleased
 * Support tag editing on compose screen.
 * Inherit tags from message being replied to or forwarded.
 * Also apply tags to sent message when using a custom post_sendmail action.
+* Use domain of From address for right part of Message-ID.
 
 Bower 0.13 (2021-07-24)
 =======================

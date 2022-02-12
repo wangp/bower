@@ -58,6 +58,8 @@
     string::in, string::out, address_list::out, bool::out, io::di, io::uo)
     is det.
 
+:- pred get_message_id_right_part(address_list::in, string::out) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -2408,7 +2410,7 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
     % We only use this to generate MIME boundaries.
     current_timestamp(timestamp(Seed), !IO),
     splitmix64.init(truncate_to_int(Seed), RS0),
-    get_message_id_right_part(Config, MessageIdRight),
+    get_message_id_right_part(ParsedHeaders ^ ph_from, MessageIdRight),
     generate_date_msg_id(MessageIdRight, Date, MessageId, !IO),
     make_headers(Prepare, Headers, ParsedHeaders, Date, MessageId,
         WriteHeaders),
@@ -2531,6 +2533,42 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
                 )
             )
         )
+    ).
+
+%-----------------------------------------------------------------------------%
+
+get_message_id_right_part(FromAddresses, MessageIdRight) :-
+    (
+        list.find_first_map(get_addr_spec, FromAddresses, FromAddress),
+        FromAddress = addr_spec(_LocalPart, Domain),
+        domain_to_message_id_right(Domain, MessageIdRight0)
+    ->
+        MessageIdRight = MessageIdRight0
+    ;
+        MessageIdRight = "localhost.localdomain"
+    ).
+
+:- pred get_addr_spec(address::in, addr_spec::out) is semidet.
+
+get_addr_spec(Address, AddrSpec) :-
+    require_complete_switch [Address]
+    (
+        Address = mailbox(Mailbox),
+        get_addr_spec_in_mailbox(Mailbox, AddrSpec)
+    ;
+        Address = group(_DisplayName, Mailboxes),
+        list.find_first_map(get_addr_spec_in_mailbox, Mailboxes, AddrSpec)
+    ).
+
+:- pred get_addr_spec_in_mailbox(mailbox::in, addr_spec::out) is semidet.
+
+get_addr_spec_in_mailbox(Mailbox, AddrSpec) :-
+    require_complete_switch [Mailbox]
+    (
+        Mailbox = mailbox(_DisplayName, AddrSpec)
+    ;
+        Mailbox = bad_mailbox(_),
+        fail
     ).
 
 %-----------------------------------------------------------------------------%
