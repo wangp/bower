@@ -101,7 +101,7 @@ cases = [
     % Domain literals
     ("user@[]"),
     ("user@[127.0.0.1]"),
-    ("user@[ 127.0.0.1 ]"),
+    ("user@[ 127 . 1.2 .3 ]"),
     ("user@["),
     ("user@[\\]"),
     ("user@[[]"),

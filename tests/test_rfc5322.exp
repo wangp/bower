@@ -158,13 +158,13 @@ valid: «user@[127.0.0.1]»
      addr_spec(lpart_atom(dot_atom(ascii("user"))), 
        domain_literal(ascii("127.0.0.1")))))]
 --------
-input: «user@[ 127.0.0.1 ]»
-valid: «user@[ 127.0.0.1 ]»
+input: «user@[ 127 . 1.2 .3 ]»
+valid: «user@[127.1.2.3]»
 
 [mailbox(
    mailbox(no, 
      addr_spec(lpart_atom(dot_atom(ascii("user"))), 
-       domain_literal(ascii(" 127.0.0.1 ")))))]
+       domain_literal(ascii("127.1.2.3")))))]
 --------
 input: «user@[»
 invalid: «user@[»

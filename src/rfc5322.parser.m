@@ -538,26 +538,26 @@ domain(Opt, Src, Domain, !PS) :-
 domain_literal(Opt, Src, domain_literal(Literal), !PS) :-
     skip_CFWS(Opt, Src, !PS),
     next_char(Src, '[', !PS),
-
-    current_offset(Src, Start, !PS),
-    domain_literal_body(Src, yes, AllAscii, !PS),
-    current_offset(Src, End, !PS),
-
+    domain_literal_body_loop(Src, Chars, yes, AllAscii, !PS),
+    skip_FWS(Src, !PS),
     next_char(Src, ']', !PS),
     skip_CFWS(Opt, Src, !PS),
-
-    input_substring(Src, Start, End, String),
+    string.from_char_list(Chars, String),
     ascii_unicode(AllAscii, String, Literal).
 
-:- pred domain_literal_body(src::in, bool::in, bool::out, ps::in, ps::out)
-    is semidet.
+:- pred domain_literal_body_loop(src::in, list(char)::out,
+    bool::in, bool::out, ps::in, ps::out) is semidet.
 
-domain_literal_body(Src, !AllAscii, !PS) :-
-    skip_FWS(Src, !PS),
-    ( while1(dtext_or_nonascii, Src, !AllAscii, !PS) ->
-        domain_literal_body(Src, !AllAscii, !PS)
+domain_literal_body_loop(Src, Chars, !AllAscii, !PS) :-
+    (
+        skip_FWS(Src, !PS),
+        next_char(Src, C, !PS),
+        dtext_or_nonascii(C, !AllAscii)
+    ->
+        domain_literal_body_loop(Src, CharsTail, !AllAscii, !PS),
+        Chars = [C | CharsTail]
     ;
-        true
+        Chars = []
     ).
 
 :- pred dtext_or_nonascii(char::in, bool::in, bool::out) is semidet.
