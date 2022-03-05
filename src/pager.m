@@ -2504,8 +2504,9 @@ do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, Tempfile,
             call_open_command(Screen, CommandWords, FileName, MaybeError, !IO),
             (
                 MaybeError = ok,
-                Msg = "Press any key to continue (deletes temporary file)",
-                MessageUpdate = set_info(Msg),
+                %Msg = "Press any key to continue (deletes temporary file)",
+                %MessageUpdate = set_info(Msg),
+                MessageUpdate = clear_message,
                 Tempfile = yes(FileName)
             ;
                 MaybeError = error(Msg),

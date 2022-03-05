@@ -97,7 +97,9 @@
                 tp_search           :: maybe(string),
                 tp_search_dir       :: search_direction,
                 tp_common_history   :: common_history,
-                tp_added_messages   :: int
+                tp_added_messages   :: int,
+
+                tp_files_to_remove  :: list(string)
             ).
 
 :- type thread_line
@@ -195,12 +197,14 @@ open_thread_pager(Config, Crypto, Screen, ThreadId, IncludeTags,
         ["AND", timestamp_to_int_string(RefreshTime) ++ ".."]),
     IndexPollCount = 0,
     AddedMessages0 = 0,
+    FilesToRemove0 = [],
 
     Info0 = thread_pager_info(Config, Crypto, ThreadId, IncludeTags, Messages,
         Ordering, Scrollable, NumThreadRows, PagerInfo, NumPagerRows,
         RefreshTime, NextPollTime, ThreadPollCount,
         IndexPollString, IndexPollCount,
-        MaybeSearch, dir_forward, CommonHistory0, AddedMessages0),
+        MaybeSearch, dir_forward, CommonHistory0, AddedMessages0,
+        FilesToRemove0),
 
     (
         ParseResult = ok,
@@ -211,8 +215,9 @@ open_thread_pager(Config, Crypto, Screen, ThreadId, IncludeTags,
     ),
     update_message(Screen, MessageUpdate, !IO),
 
-    thread_pager_loop(Screen, redraw, Info0, Info, !IO),
+    thread_pager_loop(Screen, redraw, Info0, Info1, !IO),
     flush_async_with_progress(Screen, !IO),
+    delete_files(Info1, Info, !IO),
 
     get_effects(Info, Effects),
     Transition = screen_transition(Effects, no_change),
@@ -227,7 +232,8 @@ reopen_thread_pager(Screen, KeepCached, !Info, !IO) :-
         Scrollable0, _NumThreadRows0, Pager0, _NumPagerRows0,
         _RefreshTime0, _NextPollTime0, _ThreadPollCount0,
         _IndexPollString, _IndexPollCount,
-        _Search, _SearchDir, _CommonHistory, _AddedMessages),
+        _Search, _SearchDir, _CommonHistory, _AddedMessages,
+        _FilestoRemove),
 
     (
         KeepCached = yes,
@@ -771,7 +777,7 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
         Action = press_key_to_delete(FileName),
         get_keycode_blocking_handle_resize(Screen, no_change, NextKey,
             !Info, !IO),
-        io.remove_file(FileName, _, !IO),
+        add_file_to_remove(FileName, !Info),
         thread_pager_loop(Screen, no_draw_have_key(NextKey), !Info, !IO)
     ;
         Action = continue_no_draw,
@@ -2568,6 +2574,28 @@ get_keycode_blocking_handle_resize(Screen, Message, Key, !Info, !IO) :-
     ;
         Key = Key0
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred add_file_to_remove(string::in,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+add_file_to_remove(FileName, !Info) :-
+    FileNames = !.Info ^ tp_files_to_remove,
+    !Info ^ tp_files_to_remove := [FileName | FileNames].
+
+:- pred delete_files(thread_pager_info::in, thread_pager_info::out,
+    io::di, io::uo) is det.
+
+delete_files(!Info, !IO) :-
+    FileNames = !.Info ^ tp_files_to_remove,
+    list.foldl(remove_file_ignore_result, FileNames, !IO),
+    !Info ^ tp_files_to_remove := [].
+
+:- pred remove_file_ignore_result(string::in, io::di, io::uo) is det.
+
+remove_file_ignore_result(FileName, !IO) :-
+    io.remove_file(FileName, _, !IO).
 
 %-----------------------------------------------------------------------------%
 
