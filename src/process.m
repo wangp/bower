@@ -119,7 +119,8 @@
     #include <sys/types.h>
     #include <unistd.h>
 
-    /* for ioctl */
+    /* for fcntl, ioctl */
+    #include <sys/fcntl.h>
     #include <sys/ioctl.h>
 ").
 
