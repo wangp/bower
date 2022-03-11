@@ -406,9 +406,5 @@ normal(F, B) = fg_bg(F, B).
 
 bold(F) = fg_bg(F, default) + bold.
 
-:- func bold(colour, colour) = attr.
-
-bold(F, B) = fg_bg(F, B) + bold.
-
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
