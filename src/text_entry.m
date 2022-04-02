@@ -762,14 +762,14 @@ cyclic_next(Back0, Forward0, Back, Curr, Forward) :-
 :- pred generate_path_choices(home::in, string::in, list(string)::out,
     io::di, io::uo) is det.
 
-generate_path_choices(Home, OrigString, Choices, !IO) :-
-    ( string.rstrip_pred(unify('/'), OrigString) = "~" ->
-        Home = home(HomeDir),
-        Choices = [HomeDir / ""]
+generate_path_choices(Home, String0, Choices, !IO) :-
+    ( string.rstrip_pred(unify('/'), String0) = "~" ->
+        String = "~"
     ;
-        expand_tilde_home(Home, OrigString, ExpandedString),
-        generate_path_choices_2(ExpandedString, Choices, !IO)
-    ).
+        String = String0
+    ),
+    expand_tilde_home(Home, String, ExpandedString),
+    generate_path_choices_2(ExpandedString, Choices, !IO).
 
 :- pred generate_path_choices_2(string::in, list(string)::out, io::di, io::uo)
     is det.

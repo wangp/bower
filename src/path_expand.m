@@ -7,7 +7,8 @@
 :- import_module io.
 
 :- type home
-    --->    home(string).
+    --->    home(string)
+    ;       no_home.
 
 :- pred get_home_dir(home::out, io::di, io::uo) is det.
 
@@ -23,27 +24,31 @@
 
 %-----------------------------------------------------------------------------%
 
-get_home_dir(home(Home), !IO) :-
-    io.get_environment_var("HOME", MaybeHome, !IO),
+get_home_dir(MaybeHome, !IO) :-
+    io.get_environment_var("HOME", MaybeEnvValue, !IO),
     (
-        MaybeHome = yes(Home)
+        MaybeEnvValue = yes(EnvValue),
+        % Sanity check.
+        string.prefix(EnvValue, "/")
+    ->
+        MaybeHome = home(EnvValue)
     ;
-        MaybeHome = no,
-        % Not really, but not reachable in practice.
-        Home = "~"
+        MaybeHome = no_home
     ).
 
-expand_tilde_home(home(HomeDir), String0, String) :-
+expand_tilde_home(MaybeHome, String0, String) :-
     (
-        string.remove_prefix("~", String0, String1),
-        (
-            string.unsafe_index_next(String1, 0, _, NextChar)
-        =>
-            NextChar = ('/')
+        MaybeHome = home(HomeDir),
+        % We don't support ~USERNAME prefix.
+        ( string.remove_prefix("~/", String0, String1) ->
+            String = HomeDir ++ "/" ++ String1
+        ; String0 = "~" ->
+            String = HomeDir
+        ;
+            String = String0
         )
-    ->
-        String = HomeDir ++ "/" ++ String1
     ;
+        MaybeHome = no_home,
         String = String0
     ).
 
