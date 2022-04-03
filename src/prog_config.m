@@ -231,7 +231,9 @@ load_prog_config(Res, !IO) :-
     io::di, io::uo) is cc_multi.
 
 load_prog_config_2(Config, Res, !IO) :-
-    make_prog_config(Config, ProgConfig, NotmuchConfig, [], RevErrors, !IO),
+    get_home_dir(Home, !IO),
+    make_prog_config(Home, Config, ProgConfig, NotmuchConfig,
+        [], RevErrors, !IO),
     (
         RevErrors = [],
         Res = ok(ProgConfig, NotmuchConfig)
@@ -240,12 +242,13 @@ load_prog_config_2(Config, Res, !IO) :-
         Res = errors(reverse(RevErrors))
     ).
 
-:- pred make_prog_config(config::in, prog_config::out, notmuch_config::out,
-    list(string)::in, list(string)::out, io::di, io::uo) is cc_multi.
+:- pred make_prog_config(home::in, config::in, prog_config::out,
+    notmuch_config::out, list(string)::in, list(string)::out, io::di, io::uo)
+    is cc_multi.
 
-make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
+make_prog_config(Home, Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ( search_config(Config, "command", "notmuch", Notmuch0) ->
-        parse_command(Notmuch0, Notmuch, !Errors)
+        parse_command(Home, Notmuch0, Notmuch, !Errors)
     ;
         Notmuch = default_notmuch_command
     ),
@@ -258,12 +261,12 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ),
 
     ( search_config(Config, "command", "editor", Editor0) ->
-        parse_command(Editor0, Editor, !Errors)
+        parse_command(Home, Editor0, Editor, !Errors)
     ;
         io.get_environment_var("EDITOR", MaybeEditor, !IO),
         (
             MaybeEditor = yes(Editor0),
-            parse_command(Editor0, Editor, !Errors)
+            parse_command(Home, Editor0, Editor, !Errors)
         ;
             MaybeEditor = no,
             Editor = default_editor_command
@@ -290,7 +293,7 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
 
     ( search_config(Config, "command", "alt_html_filter", AltHtmlFilter0) ->
         ( AltHtmlFilter0 \= "" ->
-            parse_command(AltHtmlFilter0, AltHtmlFilter1, !Errors),
+            parse_command(Home, AltHtmlFilter0, AltHtmlFilter1, !Errors),
             AltHtmlFilter = yes(AltHtmlFilter1)
         ;
             AltHtmlFilter = no
@@ -324,7 +327,7 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
         search_config(Config, "command", "poll_notify", PollNotify0),
         PollNotify0 \= ""
     ->
-        parse_command(PollNotify0, PollNotify1, !Errors),
+        parse_command(Home, PollNotify0, PollNotify1, !Errors),
         PollNotify = yes(PollNotify1)
     ;
         PollNotify = no
@@ -375,14 +378,14 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
             ( HtmlDump0 = "" ->
                 map.delete(text_html, !Filters)
             ;
-                parse_command(HtmlDump0, HtmlDump, !Errors),
+                parse_command(Home, HtmlDump0, HtmlDump, !Errors),
                 set(text_html, HtmlDump, !Filters)
             )
         ;
             true
         ),
         ( search(Config, "filter", FilterSection) ->
-            parse_filters(FilterSection, !Filters, !Errors)
+            parse_filters(Home, FilterSection, !Filters, !Errors)
         ;
             true
         ),
@@ -390,7 +393,6 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ),
 
     ( search_config(Config, "compose", "signature_file", SignatureFile0) ->
-        get_home_dir(Home, !IO),
         expand_tilde_home(Home, SignatureFile0, SignatureFile),
         ( dir.path_name_is_absolute(SignatureFile) ->
             MaybeSignatureFile = yes(SignatureFile)
@@ -457,7 +459,7 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
         NotmuchConfig = empty_notmuch_config
     ),
 
-    parse_accounts(Config, Accounts0, AccountErrors),
+    parse_accounts(Home, Config, Accounts0, AccountErrors),
     (
         AccountErrors = [],
         fill_default_mailbox(NotmuchConfig, Accounts0, Accounts, !Errors),
@@ -499,11 +501,11 @@ make_prog_config(Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred parse_command(string::in, command_prefix::out,
+:- pred parse_command(home::in, string::in, command_prefix::out,
     list(string)::in, list(string)::out) is cc_multi.
 
-parse_command(String, CommandPrefix, !Errors) :-
-    do_parse_command(String, Res),
+parse_command(Home, String, CommandPrefix, !Errors) :-
+    do_parse_command(Home, String, Res),
     (
         Res = ok(CommandPrefix)
     ;
@@ -513,12 +515,14 @@ parse_command(String, CommandPrefix, !Errors) :-
         CommandPrefix = command_prefix(shell_quoted("false"), quote_once)
     ).
 
-:- pred do_parse_command(string::in, maybe_error(command_prefix)::out) is cc_multi.
+:- pred do_parse_command(home::in, string::in,
+    maybe_error(command_prefix)::out) is cc_multi.
 
-do_parse_command(S0, Res) :-
+do_parse_command(Home, S0, Res) :-
     shell_word.split(S0, ParseResult),
     (
-        ParseResult = ok(Words),
+        ParseResult = ok(Words0),
+        expand_tilde_home_in_shell_words(Home, Words0, Words),
         Args = list.map(word_string, Words),
         S = string.join_list(" ", list.map(quote_arg, Args)),
         QuoteTimes = ( detect_ssh(Words) -> quote_twice ; quote_once ),
@@ -541,24 +545,24 @@ detect_ssh([FirstWord | _]) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred parse_filters(map(string, string)::in,
+:- pred parse_filters(home::in, map(string, string)::in,
     map(mime_type, command_prefix)::in, map(mime_type, command_prefix)::out,
     list(string)::in, list(string)::out) is cc_multi.
 
-parse_filters(Section, !Filters, !Errors) :-
-    map.foldl2(parse_filter, Section, !Filters, !Errors).
+parse_filters(Home, Section, !Filters, !Errors) :-
+    map.foldl2(parse_filter(Home), Section, !Filters, !Errors).
 
-:- pred parse_filter(string::in, string::in,
+:- pred parse_filter(home::in, string::in, string::in,
     map(mime_type, command_prefix)::in, map(mime_type, command_prefix)::out,
     list(string)::in, list(string)::out) is cc_multi.
 
-parse_filter(Name, Value, !Filters, !Errors) :-
+parse_filter(Home, Name, Value, !Filters, !Errors) :-
     ( parse_mime_type(Name, MimeType, _Type, _SubType) ->
         ( Value = "" ->
             % This is mainly to delete the default command for text/html.
             map.delete(MimeType, !Filters)
         ;
-            do_parse_command(Value, ResParse),
+            do_parse_command(Home, Value, ResParse),
             (
                 ResParse = ok(CommandPrefix),
                 set(MimeType, CommandPrefix, !Filters)
@@ -604,27 +608,28 @@ check_auto_refresh_inactive_secs(Value, AutoRefreshSecs, !Errors) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred parse_accounts(config::in, list(account(maybe(mailbox)))::out,
-    list(string)::out) is cc_multi.
+:- pred parse_accounts(home::in, config::in,
+    list(account(maybe(mailbox)))::out, list(string)::out) is cc_multi.
 
-parse_accounts(Config, Accounts, !:Errors) :-
-    map.foldl2(parse_if_account_section, Config, [], Accounts0, [], !:Errors),
+parse_accounts(Home, Config, Accounts, !:Errors) :-
+    map.foldl2(parse_if_account_section(Home), Config,
+        [], Accounts0, [], !:Errors),
     (
         Accounts0 = [],
-        parse_compat_account(Config, Account, !Errors),
+        parse_compat_account(Config, Home, Account, !Errors),
         Accounts = [Account]
     ;
         Accounts0 = [_ | _],
         list.sort(Accounts0, Accounts) % sort by name
     ).
 
-:- pred parse_if_account_section(section::in, map(string, string)::in,
+:- pred parse_if_account_section(home::in, section::in, map(string, string)::in,
     list(account(maybe(mailbox)))::in, list(account(maybe(mailbox)))::out,
     list(string)::in, list(string)::out) is cc_multi.
 
-parse_if_account_section(SectionName, SectionMap, !Accounts, !Errors) :-
+parse_if_account_section(Home, SectionName, SectionMap, !Accounts, !Errors) :-
     ( is_account_section(SectionName, Name) ->
-        parse_account(Name, SectionMap, Account, !Errors),
+        parse_account(Home, Name, SectionMap, Account, !Errors),
         cons(Account, !Accounts)
     ;
         true
@@ -635,11 +640,11 @@ parse_if_account_section(SectionName, SectionMap, !Accounts, !Errors) :-
 is_account_section(SectionName, Name) :-
     string.remove_prefix("account.", SectionName, Name).
 
-:- pred parse_account(string::in, map(string, string)::in,
+:- pred parse_account(home::in, string::in, map(string, string)::in,
     account(maybe(mailbox))::out, list(string)::in, list(string)::out)
     is cc_multi.
 
-parse_account(Name, Section, Account, !Errors) :-
+parse_account(Home, Name, Section, Account, !Errors) :-
     ( map.search(Section, "from_address", FromString) ->
         (
             parse_address(backslash_quote_all, FromString, FromAddress),
@@ -673,12 +678,14 @@ parse_account(Name, Section, Account, !Errors) :-
         Default = unset
     ),
 
-    parse_account_rest(Name, Section, MaybeFrom, Default, Account, !Errors).
+    parse_account_rest(Home, Name, Section, MaybeFrom, Default, Account,
+        !Errors).
 
-:- pred parse_compat_account(config::in, account(maybe(mailbox))::out,
-    list(string)::in, list(string)::out) is cc_multi.
+:- pred parse_compat_account(config::in, home::in,
+    account(maybe(mailbox))::out, list(string)::in, list(string)::out)
+    is cc_multi.
 
-parse_compat_account(Config, Account, !Errors) :-
+parse_compat_account(Config, Home, Account, !Errors) :-
     ( map.search(Config, "command", Section0) ->
         Section = Section0
     ;
@@ -686,16 +693,17 @@ parse_compat_account(Config, Account, !Errors) :-
     ),
     MaybeFrom = no,
     Default = unset,
-    parse_account_rest("default", Section, MaybeFrom, Default, Account,
+    parse_account_rest(Home, "default", Section, MaybeFrom, Default, Account,
         !Errors).
 
-:- pred parse_account_rest(string::in, map(string, string)::in,
+:- pred parse_account_rest(home::in, string::in, map(string, string)::in,
     maybe(mailbox)::in, default_setting::in, account(maybe(mailbox))::out,
     list(string)::in, list(string)::out) is cc_multi.
 
-parse_account_rest(Name, Section, MaybeFrom, Default, Account, !Errors) :-
+parse_account_rest(Home, Name, Section, MaybeFrom, Default, Account,
+        !Errors) :-
     ( map.search(Section, "sendmail", Sendmail0) ->
-        parse_command(Sendmail0, Sendmail, !Errors),
+        parse_command(Home, Sendmail0, Sendmail, !Errors),
         check_sendmail_command(Sendmail, !Errors)
     ;
         Sendmail = default_sendmail_command
@@ -705,7 +713,7 @@ parse_account_rest(Name, Section, MaybeFrom, Default, Account, !Errors) :-
         ( PostSendmail0 = "" ->
             PostSendmail = nothing
         ;
-            parse_command(PostSendmail0, PostSendmail1, !Errors),
+            parse_command(Home, PostSendmail0, PostSendmail1, !Errors),
             PostSendmail = command(PostSendmail1)
         )
     ;

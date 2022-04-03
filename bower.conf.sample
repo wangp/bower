@@ -14,6 +14,9 @@
 # - outside of quotes, backslash escapes the next character
 # - no escape sequences are supported, i.e. "\n" is the same as "n".
 #
+# "~" at the start of an unquoted word will be replaced with the value
+# of the HOME environment variable.
+#
 # If the first word of a command contains the unquoted and unescaped
 # string "ssh" then an additional level of shell quoting will be applied
 # to any arguments that bower adds to the command.
