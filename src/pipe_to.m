@@ -23,6 +23,7 @@
 :- import_module string.
 
 :- import_module call_system.
+:- import_module path_expand.
 :- import_module process.
 :- import_module prog_config.
 :- import_module quote_arg.
@@ -57,13 +58,17 @@ pipe_to_command(Command, Strings, MaybeError, !IO) :-
     promise_equivalent_solutions [MaybeError, !:IO] (
         shell_word.split(Command, ParseResult),
         (
-            ParseResult = ok([]),
-            % Should not happen.
-            MaybeError = ok
-        ;
-            ParseResult = ok(CommandWords),
-            CommandWords = [_ | _],
-            pipe_to_command_2(CommandWords, Strings, MaybeError, !IO)
+            ParseResult = ok(CommandWords0),
+            get_home_dir(Home, !IO),
+            expand_tilde_home_in_shell_words(Home, CommandWords0,
+                CommandWords),
+            (
+                CommandWords = [],
+                MaybeError = ok
+            ;
+                CommandWords = [_ | _],
+                pipe_to_command_2(CommandWords, Strings, MaybeError, !IO)
+            )
         ;
             (
                 ParseResult = error(yes(Error), _Line, Column),

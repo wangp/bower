@@ -2457,15 +2457,19 @@ do_open_part(Config, Screen, Part, Command, MessageUpdate, Tempfile,
     promise_equivalent_solutions [MessageUpdate, Tempfile, !:Info, !:IO] (
         shell_word.split(Command, ParseResult),
         (
-            ParseResult = ok([]),
-            % Should not happen.
-            MessageUpdate = clear_message,
-            Tempfile = no
-        ;
-            ParseResult = ok(CommandWords),
-            CommandWords = [_ | _],
-            do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate,
-                Tempfile, !Info, !IO)
+            ParseResult = ok(CommandWords0),
+            get_home_dir(Home, !IO),
+            expand_tilde_home_in_shell_words(Home, CommandWords0,
+                CommandWords),
+            (
+                CommandWords = [],
+                MessageUpdate = clear_message,
+                Tempfile = no
+            ;
+                CommandWords = [_ | _],
+                do_open_part_2(Config, Screen, Part, CommandWords,
+                    MessageUpdate, Tempfile, !Info, !IO)
+            )
         ;
             (
                 ParseResult = error(yes(Error), _Line, Column),
@@ -2639,19 +2643,23 @@ do_open_url(Screen, Command, Url, MessageUpdate, !IO) :-
     promise_equivalent_solutions [MessageUpdate, !:IO] (
         shell_word.split(Command, ParseResult),
         (
-            ParseResult = ok([]),
-            % Should not happen.
-            MessageUpdate = clear_message
-        ;
-            ParseResult = ok(CommandWords),
-            CommandWords = [_ | _],
-            call_open_command(Screen, CommandWords, Url, MaybeError, !IO),
+            ParseResult = ok(CommandWords0),
+            get_home_dir(Home, !IO),
+            expand_tilde_home_in_shell_words(Home, CommandWords0,
+                CommandWords),
             (
-                MaybeError = ok,
-                MessageUpdate = no_change
+                CommandWords = [],
+                MessageUpdate = clear_message
             ;
-                MaybeError = error(Msg),
-                MessageUpdate = set_warning(Msg)
+                CommandWords = [_ | _],
+                call_open_command(Screen, CommandWords, Url, MaybeError, !IO),
+                (
+                    MaybeError = ok,
+                    MessageUpdate = no_change
+                ;
+                    MaybeError = error(Msg),
+                    MessageUpdate = set_warning(Msg)
+                )
             )
         ;
             (
