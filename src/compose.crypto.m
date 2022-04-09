@@ -111,7 +111,7 @@ maintain_encrypt_key(Crypto, AddrSpec, !EncryptKeys, !IO) :-
         true
     ;
         addr_spec_to_string(AddrSpec, Email, _Valid),
-        find_suitable_key(Crypto, Email, pick_encrypt_key(Email), ResKey, !IO),
+        find_suitable_key(Crypto, Email, pick_key(encrypt), ResKey, !IO),
         (
             ResKey = ok(KeyUserId),
             map.det_insert(AddrSpec, KeyUserId, !EncryptKeys)
@@ -153,7 +153,7 @@ maintain_sign_key(Crypto, AddrSpec, !SignKeys, !IO) :-
         true
     ;
         addr_spec_to_string(AddrSpec, Email, _Valid),
-        find_suitable_key(Crypto, Email, pick_sign_key(Email), ResKey, !IO),
+        find_suitable_key(Crypto, Email, pick_key(sign), ResKey, !IO),
         (
             ResKey = ok(KeyUserId),
             map.det_insert(AddrSpec, KeyUserId, !SignKeys)
@@ -164,16 +164,21 @@ maintain_sign_key(Crypto, AddrSpec, !SignKeys, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred find_suitable_key(crypto, string, pred(list(gpgme.key), key_userid),
+:- type pick_key_for_purpose
+    --->    encrypt
+    ;       sign.
+
+:- pred find_suitable_key(crypto, string,
+    pred(string, list(gpgme.key), key_userid),
     maybe_error(key_userid), io, io).
-:- mode find_suitable_key(in, in, pred(in, out) is semidet, out, di, uo)
-    is det.
+:- mode find_suitable_key(in, in,
+    pred(in, in, out) is semidet, out, di, uo) is det.
 
 find_suitable_key(Context, Email, Pick, Res, !IO) :-
     gpgme_op_keylist(Context, yes(Email), not_secret_only, ResKeys, !IO),
     (
         ResKeys = ok(Keys),
-        ( Pick(Keys, KeyUserId) ->
+        ( Pick(Email, Keys, KeyUserId) ->
             Res = ok(KeyUserId),
             KeyUserId = key_userid(Key, _UserId),
             list.delete_all(Keys, Key, UnusedKeys)
@@ -187,50 +192,57 @@ find_suitable_key(Context, Email, Pick, Res, !IO) :-
         Res = error(Error)
     ).
 
-:- pred pick_encrypt_key(string::in, list(gpgme.key)::in, key_userid::out)
-    is semidet.
+:- pred pick_key(pick_key_for_purpose::in, string::in, list(gpgme.key)::in,
+    key_userid::out) is semidet.
 
-pick_encrypt_key(Email, [Key | Keys], KeyUserId) :-
-    KeyInfo = get_key_info(Key),
+pick_key(Purpose, Email, CandidateKeys, KeyUserId) :-
+    % First, try to match the email address exactly.
+    % Secondarily, try to match the email ignoring case in ASCII range.
     (
-        KeyInfo ^ key_revoked = no,
-        KeyInfo ^ key_expired = no,
-        KeyInfo ^ key_disabled = no,
-        KeyInfo ^ key_invalid = no,
-        KeyInfo ^ key_can_encrypt = yes,
-        list.find_first_match(suitable_user_id(Email),
-            KeyInfo ^ key_userids, UserId)
+        list.find_first_map(is_suitable_key(Purpose, Email, no),
+            CandidateKeys, KeyUserId0)
     ->
-        KeyUserId = key_userid(Key, UserId)
+        KeyUserId = KeyUserId0
     ;
-        pick_encrypt_key(Email, Keys, KeyUserId)
+        list.find_first_map(is_suitable_key(Purpose, Email, yes),
+            CandidateKeys, KeyUserId)
     ).
 
-:- pred pick_sign_key(string::in, list(gpgme.key)::in, key_userid::out)
+:- pred is_suitable_key(pick_key_for_purpose::in, string::in, bool::in,
+    gpgme.key::in, key_userid::out) is semidet.
+
+is_suitable_key(Purpose, Email, IgnoreCase, Key, KeyUserId) :-
+    KeyInfo = get_key_info(Key),
+    KeyInfo ^ key_revoked = no,
+    KeyInfo ^ key_expired = no,
+    KeyInfo ^ key_disabled = no,
+    KeyInfo ^ key_invalid = no,
+    require_complete_switch [Purpose]
+    (
+        Purpose = encrypt,
+        KeyInfo ^ key_can_encrypt = yes
+    ;
+        Purpose = sign,
+        KeyInfo ^ key_can_sign = yes
+    ),
+    list.find_first_match(is_valid_userid_matching_email(Email, IgnoreCase),
+        KeyInfo ^ key_userids, UserId),
+    KeyUserId = key_userid(Key, UserId).
+
+:- pred is_valid_userid_matching_email(string::in, bool::in, user_id::in)
     is semidet.
 
-pick_sign_key(Email, [Key | Keys], KeyUserId) :-
-    KeyInfo = get_key_info(Key),
-    (
-        KeyInfo ^ key_revoked = no,
-        KeyInfo ^ key_expired = no,
-        KeyInfo ^ key_disabled = no,
-        KeyInfo ^ key_invalid = no,
-        KeyInfo ^ key_can_sign = yes,
-        list.find_first_match(suitable_user_id(Email),
-            KeyInfo ^ key_userids, UserId)
-    ->
-        KeyUserId = key_userid(Key, UserId)
-    ;
-        pick_sign_key(Email, Keys, KeyUserId)
-    ).
-
-:- pred suitable_user_id(string::in, user_id::in) is semidet.
-
-suitable_user_id(Email, UserId) :-
+is_valid_userid_matching_email(Email, IgnoreCase, UserId) :-
     UserId ^ uid_revoked = no,
     UserId ^ uid_invalid = no,
-    UserId ^ email = yes(Email).
+    UserId ^ email = yes(CandidateEmail),
+    (
+        IgnoreCase = no,
+        Email = CandidateEmail
+    ;
+        IgnoreCase = yes,
+        string.compare_ignore_case_ascii((=), Email, CandidateEmail)
+    ).
 
 %-----------------------------------------------------------------------------%
 
