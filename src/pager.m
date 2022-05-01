@@ -2216,6 +2216,7 @@ save_part(Screen, Action, MessageUpdate, !Info, !History, !IO) :-
     io::di, io::uo) is det.
 
 prompt_save_part(Screen, Part, MaybeSubject, !Info, !History, !IO) :-
+    Config = !.Info ^ p_config,
     MessageId = Part ^ pt_msgid,
     MaybePartId = Part ^ pt_part,
     MaybePartFilename = Part ^ pt_filename,
@@ -2246,7 +2247,7 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !History, !IO) :-
         suggest_filename(PartFilename0, PartFilename)
     ),
     SaveHistory0 = !.History ^ ch_save_history,
-    make_save_part_initial_prompt(SaveHistory0, PartFilename, Initial),
+    make_save_part_initial_prompt(Config, SaveHistory0, PartFilename, Initial),
     get_home_dir(Home, !IO),
     text_entry_initial(Screen, "Save to file: ", SaveHistory0, Initial,
         complete_path(Home), Return, !IO),
@@ -2267,7 +2268,6 @@ prompt_save_part(Screen, Part, MaybeSubject, !Info, !History, !IO) :-
         ;
             ResType = error(_),
             % This assumes the file doesn't exist.
-            Config = !.Info ^ p_config,
             do_save_part(Config, Part, FileName, Res, !IO),
             (
                 Res = ok,
@@ -2314,16 +2314,23 @@ replace_filename_char(C0, C) :-
         C = ('-')
     ).
 
-:- pred make_save_part_initial_prompt(history::in, string::in, string::out)
-    is det.
+:- pred make_save_part_initial_prompt(prog_config::in, history::in,
+    string::in, string::out) is det.
 
-make_save_part_initial_prompt(History, PartFilename, Initial) :-
-    choose_text_initial(History, "", PrevFilename),
-    dir.dirname(PrevFilename, PrevDirName),
-    ( PrevDirName = "." ->
+make_save_part_initial_prompt(Config, History, PartFilename, Initial) :-
+    ( history_latest(History, PrevFilename) ->
+        dir.dirname(PrevFilename, DirName)
+    ;
+        get_default_save_directory(Config, DirName)
+    ),
+    (
+        ( DirName = ""
+        ; DirName = "."
+        )
+    ->
         Initial = PartFilename
     ;
-        Initial = PrevDirName / PartFilename
+        Initial = DirName / PartFilename
     ).
 
 :- pred do_save_part(prog_config::in, part::in, string::in, maybe_error::out,

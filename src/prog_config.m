@@ -79,6 +79,8 @@
 
 :- pred get_thread_ordering(prog_config::in, thread_ordering::out) is det.
 
+:- pred get_default_save_directory(prog_config::in, string::out) is det.
+
 :- pred get_text_filter_command(prog_config::in, mime_type::in,
     command_prefix::out) is semidet.
 
@@ -164,6 +166,7 @@
                 auto_refresh_inactive_secs :: maybe(int),
                 wrap_width      :: maybe(int),
                 thread_ordering :: thread_ordering,
+                default_save_directory :: string,
 
                 % [compose]
                 maybe_signature_file  :: maybe(string), % absolute path
@@ -371,6 +374,13 @@ make_prog_config(Home, Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
         Ordering = thread_ordering_threaded
     ),
 
+    ( search_config(Config, "ui", "default_save_directory", DefaultSaveDir0) ->
+        % Empty string is okay.
+        DefaultSaveDir = DefaultSaveDir0
+    ;
+        DefaultSaveDir = ""
+    ),
+
     some [!Filters] (
         !:Filters = map.singleton(text_html, default_html_dump_command),
         % For backwards compatibility.
@@ -488,6 +498,7 @@ make_prog_config(Home, Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ProgConfig ^ auto_refresh_inactive_secs = AutoRefreshInactiveSecs,
     ProgConfig ^ wrap_width = WrapWidth,
     ProgConfig ^ thread_ordering = Ordering,
+    ProgConfig ^ default_save_directory = DefaultSaveDir,
     ProgConfig ^ text_filters = Filters,
     ProgConfig ^ maybe_signature_file = MaybeSignatureFile,
     ProgConfig ^ encrypt_by_default = EncryptByDefault,
@@ -905,6 +916,9 @@ get_wrap_width(Config, Cols, WrapWidth) :-
 
 get_thread_ordering(Config, Ordering) :-
     Ordering = Config ^ thread_ordering.
+
+get_default_save_directory(Config, DefaultSaveDir) :-
+    DefaultSaveDir = Config ^ default_save_directory.
 
 get_text_filter_command(Config, MimeType, Command) :-
     Filters = Config ^ text_filters,

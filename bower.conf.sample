@@ -175,6 +175,10 @@
     #
   ; thread_ordering = threaded
 
+    # Directory to save attachments into by default.
+    #
+  ; default_save_directory =
+
 #-----------------------------------------------------------------------------#
 
 [compose]
