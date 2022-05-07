@@ -96,8 +96,7 @@
 
 [filter]
 
-    # HTML is formatted using this command by default.
-    # Set the value to an empty string to disable.
+    # Command to "dump" HTML as plain text.
     #
   ; text/html = lynx -dump -force-html -stdin -display-charset=utf-8
 

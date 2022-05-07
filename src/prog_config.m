@@ -382,15 +382,14 @@ make_prog_config(Home, Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ),
 
     some [!Filters] (
-        !:Filters = map.singleton(text_html, default_html_dump_command),
+        !:Filters = map.init,
         % For backwards compatibility.
-        ( search_config(Config, "command", "html_dump", HtmlDump0) ->
-            ( HtmlDump0 = "" ->
-                map.delete(text_html, !Filters)
-            ;
-                parse_command(Home, HtmlDump0, HtmlDump, !Errors),
-                set(text_html, HtmlDump, !Filters)
-            )
+        (
+            search_config(Config, "command", "html_dump", HtmlDump0),
+            HtmlDump0 \= ""
+        ->
+            parse_command(Home, HtmlDump0, HtmlDump, !Errors),
+            set(text_html, HtmlDump, !Filters)
         ;
             true
         ),
@@ -570,8 +569,7 @@ parse_filters(Home, Section, !Filters, !Errors) :-
 parse_filter(Home, Name, Value, !Filters, !Errors) :-
     ( parse_mime_type(Name, MimeType, _Type, _SubType) ->
         ( Value = "" ->
-            % This is mainly to delete the default command for text/html.
-            map.delete(MimeType, !Filters)
+            true
         ;
             do_parse_command(Home, Value, ResParse),
             (
@@ -1021,11 +1019,6 @@ default_notmuch_command =
 
 default_editor_command =
     command_prefix(shell_quoted("vi"), quote_once).
-
-:- func default_html_dump_command = command_prefix.
-
-default_html_dump_command = command_prefix(shell_quoted(Lynx), quote_once) :-
-    Lynx = "lynx -dump -force-html -stdin -display-charset=utf-8".
 
 :- func default_open_part_command = string.
 

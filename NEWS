@@ -7,6 +7,7 @@ Bower 0.14-unreleased
 * Also apply tags to sent message when using a custom post_sendmail action.
 * Use domain of From address for right part of Message-ID.
 * config: Add ui.default_save_directory option.
+* Removed default HTML filter (was lynx).
 
 Bower 0.13 (2021-07-24)
 =======================

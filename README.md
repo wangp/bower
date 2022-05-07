@@ -30,7 +30,6 @@ At run time:
 * gpgme (GnuPG Made Easy)
 * GNU coreutils: base64
 * SMTP client to send messages (configurable)
-* lynx to dump HTML emails (configurable)
 * file(1) to detect MIME types when adding attachments
 
 To create a man page from this readme, you will need:
