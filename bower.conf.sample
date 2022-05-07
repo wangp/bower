@@ -98,6 +98,7 @@
 
     # Command to "dump" HTML as plain text.
     #
+  ; text/html = w3m -dump -T text/html -O UTF-8 -o display_link_number=1
   ; text/html = lynx -dump -force-html -stdin -display-charset=utf-8
 
     # You can specify commands to filter other media types.
