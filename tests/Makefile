@@ -12,7 +12,8 @@ TESTS = test_base64 \
 	test_rfc3986 \
 	test_rfc6068 \
 	test_json \
-	test_process
+	test_process \
+	test_search_term
 
 .PHONY: default
 default: $(addsuffix .runtest,$(TESTS))

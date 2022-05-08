@@ -1,5 +1,7 @@
 -include ../src/Mercury.options
 MAIN_TARGET =
 
+MLLIBS-test_search_term += -lncursesw -lpanelw
+
 # Add workspace-specific options here.
 -include Mercury.params

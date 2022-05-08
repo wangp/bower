@@ -1,0 +1,230 @@
+input:  «»
+tokens: []
+terms:  «»
+apply limit: yes
+
+--------------------
+input:  «x  y»
+tokens: [literal("x"), whitespace, literal("y")]
+terms:  «x y»
+apply limit: yes
+
+--------------------
+input:  «{x(y)z}»
+tokens: [open_brace, literal("x"), open_paren, literal("y"), close_paren, literal("z"), close_brace]
+terms:  «{x(y)z}»
+apply limit: yes
+
+--------------------
+input:  «abc(x{yz})def»
+tokens: [literal("abc"), open_paren, literal("x"), open_brace, literal("yz"), close_brace, close_paren, literal("def")]
+terms:  «abc(x{yz})def»
+apply limit: yes
+
+--------------------
+input:  «"»
+error: Error parsing search string.
+
+--------------------
+input:  «x""y»
+tokens: [literal("x"), literal("\"\""), literal("y")]
+terms:  «x""y»
+apply limit: yes
+
+--------------------
+input:  «x"a b""cde"y»
+tokens: [literal("x"), literal("\"a b\"\"cde\""), literal("y")]
+terms:  «x"a b""cde"y»
+apply limit: yes
+
+--------------------
+input:  «~x»
+tokens: [macro("x")]
+terms:  «~x»
+apply limit: yes
+
+--------------------
+input:  «~x~y»
+tokens: [macro("x~y")]
+terms:  «~x~y»
+apply limit: yes
+
+--------------------
+input:  «x~y»
+tokens: [literal("x~y")]
+terms:  «x~y»
+apply limit: yes
+
+--------------------
+input:  «x ~y»
+tokens: [literal("x"), whitespace, macro("y")]
+terms:  «x ~y»
+apply limit: yes
+
+--------------------
+input:  «"~x"»
+tokens: [literal("\"~x\"")]
+terms:  «"~x"»
+apply limit: yes
+
+--------------------
+input:  «"x"~y»
+tokens: [literal("\"x\""), literal("~y")]
+terms:  «"x"~y»
+apply limit: yes
+
+--------------------
+input:  «(~x ~D ~F ~U ~A)»
+tokens: [open_paren, macro("x"), whitespace, literal("tag:deleted"), whitespace, literal("tag:flagged"), whitespace, literal("tag:unread"), whitespace, do_not_apply_limit, close_paren]
+terms:  «(~x tag:deleted tag:flagged tag:unread )»
+apply limit: no
+
+--------------------
+input:  «x:~y»
+tokens: [literal("x:~y")]
+terms:  «x:~y»
+apply limit: yes
+
+--------------------
+input:  «x:"~y"»
+tokens: [literal("x:"), literal("\"~y\"")]
+terms:  «x:"~y"»
+apply limit: yes
+
+--------------------
+input:  «x:/~y/»
+tokens: [literal("x:/~y/")]
+terms:  «x:/~y/»
+apply limit: yes
+
+--------------------
+input:  «x:(~y)»
+tokens: [literal("x:"), open_paren, macro("y"), close_paren]
+terms:  «x:(~y)»
+apply limit: yes
+
+--------------------
+input:  «x:{~y}»
+tokens: [literal("x:"), open_brace, macro("y"), close_brace]
+terms:  «x:{~y}»
+apply limit: yes
+
+--------------------
+input:  «~»
+tokens: [literal("~")]
+terms:  «~»
+apply limit: yes
+
+--------------------
+input:  «~xyz:»
+tokens: [macro("xyz:")]
+terms:  «~xyz:»
+apply limit: yes
+
+--------------------
+input:  «~xyz(»
+tokens: [macro("xyz"), open_paren]
+terms:  «~xyz(»
+apply limit: yes
+
+--------------------
+input:  «~xyz)»
+tokens: [macro("xyz"), close_paren]
+terms:  «~xyz)»
+apply limit: yes
+
+--------------------
+input:  «~xyz{»
+tokens: [macro("xyz"), open_brace]
+terms:  «~xyz{»
+apply limit: yes
+
+--------------------
+input:  «~xyz}»
+tokens: [macro("xyz"), close_brace]
+terms:  «~xyz}»
+apply limit: yes
+
+--------------------
+input:  «~xyz"abc"»
+tokens: [macro("xyz"), literal("\"abc\"")]
+terms:  «~xyz"abc"»
+apply limit: yes
+
+--------------------
+input:  «~d»
+tokens: [macro("d")]
+terms:  «~d»
+apply limit: yes
+
+--------------------
+input:  «~dtoday»
+tokens: [macro("dtoday")]
+terms:  «~dtoday»
+apply limit: yes
+
+--------------------
+input:  «~d today»
+tokens: [date_range("today", "today")]
+terms:  «date:today..today»
+apply limit: yes
+
+--------------------
+input:  «~d{today}»
+tokens: [date_range("today", "today")]
+terms:  «date:today..today»
+apply limit: yes
+
+--------------------
+input:  «~d..»
+error: Error parsing search string.
+
+--------------------
+input:  «~d..today»
+tokens: [date_range("", "today")]
+terms:  «date:..today»
+apply limit: yes
+
+--------------------
+input:  «~d {last week}..»
+tokens: [date_range("last week", "")]
+terms:  «date:last_week..»
+apply limit: yes
+
+--------------------
+input:  «~d {3 days ago}..{next year}»
+tokens: [date_range("3 days ago", "next year")]
+terms:  «date:3_days_ago..next_year»
+apply limit: yes
+
+--------------------
+input:  «~d 3.days.ago..next.year»
+tokens: [date_range("3.days.ago", "next.year")]
+terms:  «date:3.days.ago..next.year»
+apply limit: yes
+
+--------------------
+input:  «x ~A»
+tokens: [literal("x"), whitespace, do_not_apply_limit]
+terms:  «x »
+apply limit: no
+
+--------------------
+input:  «( ~A )»
+tokens: [open_paren, whitespace, do_not_apply_limit, whitespace, close_paren]
+terms:  «(  )»
+apply limit: no
+
+--------------------
+input:  «{ ~A }»
+tokens: [open_brace, whitespace, do_not_apply_limit, whitespace, close_brace]
+terms:  «{  }»
+apply limit: no
+
+--------------------
+input:  «x:(~A)»
+tokens: [literal("x:"), open_paren, do_not_apply_limit, close_paren]
+terms:  «x:()»
+apply limit: no
+
+--------------------

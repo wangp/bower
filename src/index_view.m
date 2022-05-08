@@ -199,7 +199,7 @@ open_index(Config, NotmuchConfig, Crypto, Screen, LimitString,
         SearchTokens = [],
         Threads = []
     ;
-        predigest_search_string(Config, yes(NotmuchConfig), LimitString,
+        parse_search_string_and_expand(Config, yes(NotmuchConfig), LimitString,
             ParseRes, !IO),
         (
             ParseRes = ok(SearchTokens),
@@ -239,7 +239,7 @@ open_index(Config, NotmuchConfig, Crypto, Screen, LimitString,
 search_new_limit_string(Screen, LimitString, MaybeDesc, !IndexInfo, !IO) :-
     Config = !.IndexInfo ^ i_config,
     current_timestamp(Time, !IO),
-    predigest_search_string(Config, no, LimitString, ParseRes, !IO),
+    parse_search_string_and_expand(Config, no, LimitString, ParseRes, !IO),
     (
         ParseRes = ok(Tokens),
         search_terms_with_progress(Config, Screen, manual_refresh, MaybeDesc,
@@ -294,12 +294,13 @@ search_terms_with_progress(Config, Screen, RefreshType, MaybeDesc, Tokens,
 
 search_terms_quiet(Config, RefreshType, Tokens, MaybeThreads, MessageUpdate,
         !IO) :-
-    tokens_to_search_terms(Tokens, Terms, ApplyCap, !IO),
+    tokens_to_search_terms(Tokens, Terms),
+    check_apply_limit(Tokens, ApplyLimit),
     (
-        ApplyCap = yes,
+        ApplyLimit = yes,
         LimitOption = ["--limit=" ++ from_int(default_max_threads)]
     ;
-        ApplyCap = no,
+        ApplyLimit = no,
         LimitOption = []
     ),
     ignore_sigint(yes, !IO),
@@ -314,7 +315,7 @@ search_terms_quiet(Config, RefreshType, Tokens, MaybeThreads, MessageUpdate,
         MaybeThreads = yes(Threads),
         NumThreads = list.length(Threads),
         (
-            ApplyCap = yes,
+            ApplyLimit = yes,
             NumThreads = default_max_threads
         ->
             string.format("Found %d threads (capped). Use ~A to disable cap.",
@@ -1817,7 +1818,7 @@ refresh_all(Screen, Verbose, RefreshType, !Info, !IO) :-
     % refresh, so expand the search terms from the beginning.
     Config = !.Info ^ i_config,
     Terms = !.Info ^ i_search_terms,
-    predigest_search_string(Config, no, Terms, ParseRes, !IO),
+    parse_search_string_and_expand(Config, no, Terms, ParseRes, !IO),
     (
         ParseRes = ok(Tokens),
         (
@@ -2015,7 +2016,7 @@ sched_poll(Time, !Info, !IO) :-
 :- mode index_poll_terms(in, out, di, uo) is det.
 
 index_poll_terms(Tokens, IndexPollTerms, !IO) :-
-    tokens_to_search_terms(Tokens, SearchTerms, _ApplyCap, !IO),
+    tokens_to_search_terms(Tokens, SearchTerms),
     IndexPollTerms = ["(", SearchTerms, ")", "AND", "tag:unread"].
 
 :- pred handle_poll_result(screen::in, string::in,

@@ -8,6 +8,10 @@ Bower 0.14-unreleased
 * Use domain of From address for right part of Message-ID.
 * config: Add ui.default_save_directory option.
 * Removed default HTML filter (was lynx).
+* Improve search string parser.
+* Fix bug where "body:(foo bar)" was unparsed as "body: ( foo bar )".
+* Restrict places in search string where "~" is special to after
+  whitespace or open parenthesis/brace.
 
 Bower 0.13 (2021-07-24)
 =======================
