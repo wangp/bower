@@ -518,8 +518,8 @@ index_loop(Screen, OnEntry, MaybeUpdateActivity, !.IndexInfo, !IO) :-
         Config = !.IndexInfo ^ i_config,
         Crypto = !.IndexInfo ^ i_crypto,
         History0 = !.IndexInfo ^ i_common_history,
-        start_compose(Config, Crypto, Screen, Transition, History0, History,
-            !IO),
+        start_compose(Config, Crypto, Screen, no, Transition,
+            History0, History, !IO),
         !IndexInfo ^ i_common_history := History,
         handle_screen_transition(Screen, Transition, Sent, !IndexInfo, !IO),
         (

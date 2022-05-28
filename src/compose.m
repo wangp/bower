@@ -6,6 +6,7 @@
 
 :- import_module bool.
 :- import_module io.
+:- import_module maybe.
 :- import_module set.
 
 :- import_module crypto.
@@ -26,8 +27,8 @@
     ;       not_sent.
 
 :- pred start_compose(prog_config::in, crypto::in, screen::in,
-    screen_transition(sent)::out, common_history::in, common_history::out,
-    io::di, io::uo) is det.
+    maybe(string)::in, screen_transition(sent)::out,
+    common_history::in, common_history::out, io::di, io::uo) is det.
 
 :- pred start_reply(prog_config::in, crypto::in, screen::in,
     reply_kind::in, message::in(message), part_visibility_map::in,
@@ -72,7 +73,6 @@
 :- import_module int.
 :- import_module list.
 :- import_module map.
-:- import_module maybe.
 :- import_module pair.
 :- import_module string.
 
@@ -177,10 +177,16 @@
 
 %-----------------------------------------------------------------------------%
 
-start_compose(Config, Crypto, Screen, Transition, !History, !IO) :-
+start_compose(Config, Crypto, Screen, MaybeInput0, Transition, !History, !IO) :-
     ToHistory0 = !.History ^ ch_to_history,
-    text_entry_initial(Screen, "To: ", ToHistory0, "",
-        complete_address(Config), MaybeInput, !IO),
+    (
+        MaybeInput0 = no,
+        text_entry_initial(Screen, "To: ", ToHistory0, "",
+            complete_address(Config), MaybeInput, !IO)
+    ;
+        MaybeInput0 = yes(_),
+        MaybeInput = MaybeInput0
+    ),
     (
         MaybeInput = yes(Input),
         add_history_nodup(Input, ToHistory0, ToHistory),

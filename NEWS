@@ -1,6 +1,7 @@
 Bower 0.14-unreleased
 =====================
 
+* Accept mailto: argument on command line.
 * Allow omitting "+" prefix on tag additions.
 * Support tag editing on compose screen.
 * Inherit tags from message being replied to or forwarded.

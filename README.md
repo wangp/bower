@@ -119,9 +119,17 @@ these search exclusions:
 Usage
 =====
 
-Run `bower` or `bower SEARCH-TERMS` to start.  By default, Bower displays the
-last week's worth of mail.  You can change that by setting the `~default`
-search alias; see below.
+    bower [SEARCH-TERMS...]
+    bower mailto:MAILTO
+
+Run `bower` to start, optionally passing a list of initial search terms.
+If no search terms are provided, bower will use the search string `~default`,
+where `~default` is a search term alias (see below). By default, `~default`
+is equivalent to searching for messages from the last week
+but you are free to change it.
+
+Running `bower` with a single `mailto:` argument will go directly to the
+compose screen.
 
 
 Views
