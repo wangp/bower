@@ -10,7 +10,8 @@
 
 :- type prog_options
     --->    prog_options(
-                help :: bool
+                help :: bool,
+                version :: bool
             ).
 
 :- pred parse_options(list(string)::in, list(string)::out,
@@ -27,7 +28,8 @@
 %-----------------------------------------------------------------------------%
 
 :- type option
-    --->    help.
+    --->    help
+    ;       version.
 
 :- pred short_option(char::in, option::out) is semidet.
 
@@ -36,10 +38,12 @@ short_option('h', help).
 :- pred long_option(string::in, option::out) is semidet.
 
 long_option("help", help).
+long_option("version", version).
 
 :- pred option_default(option::out, option_data::out) is multi.
 
 option_default(help, bool(no)).
+option_default(version, bool(no)).
 
 %-----------------------------------------------------------------------------%
 
@@ -49,7 +53,8 @@ parse_options(Args, NonOptionArgs, Res) :-
     (
         MaybeOptionTable = ok(OptionTable),
         getopt.lookup_bool_option(OptionTable, help, Help),
-        Options = prog_options(Help),
+        getopt.lookup_bool_option(OptionTable, version, Version),
+        Options = prog_options(Help, Version),
         Res = ok(Options)
     ;
         MaybeOptionTable = error(OptionError),

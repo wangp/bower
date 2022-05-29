@@ -26,6 +26,7 @@
 :- import_module notmuch_config.
 :- import_module prog_config.
 :- import_module prog_options.
+:- import_module prog_version.
 :- import_module rfc6068.
 :- import_module screen.
 :- import_module search_term.
@@ -55,13 +56,13 @@ main(!IO) :-
     parse_options(Args, NonOptionArgs, OptionsRes),
     (
         OptionsRes = ok(Options),
-        Help = Options ^ help,
-        (
-            Help = yes,
+        ( Options ^ help = yes ->
             io.progname_base("bower", ProgName, !IO),
             print_help(ProgName, !IO)
+        ; Options ^ version = yes ->
+            io.write_string(version_string, !IO),
+            io.nl(!IO)
         ;
-            Help = no,
             main_1(NonOptionArgs, !IO)
         )
     ;

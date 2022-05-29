@@ -23,6 +23,7 @@ print_help(ProgName, !IO) :-
         "",
         "Options:",
         "  -h, --help                  Display usage and options.",
+        "  --version                   Display version.",
         ""
     ],
     io.output_stream(Stream, !IO),

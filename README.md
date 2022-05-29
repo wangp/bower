@@ -131,7 +131,7 @@ but you are free to change it.
 Running `bower` with a single `mailto:` argument will go directly to the
 compose screen.
 
-The only option supported so far is `-h, --help`.
+The only options supported so far are `-h, --help` and `--version`.
 
 
 Views
