@@ -21,9 +21,11 @@
 :- import_module async.
 :- import_module compose.
 :- import_module crypto.
+:- import_module help.
 :- import_module index_view.
 :- import_module notmuch_config.
 :- import_module prog_config.
+:- import_module prog_options.
 :- import_module rfc6068.
 :- import_module screen.
 :- import_module search_term.
@@ -50,6 +52,28 @@
 main(!IO) :-
     setlocale(!IO),
     io.command_line_arguments(Args, !IO),
+    parse_options(Args, NonOptionArgs, OptionsRes),
+    (
+        OptionsRes = ok(Options),
+        Help = Options ^ help,
+        (
+            Help = yes,
+            io.progname_base("bower", ProgName, !IO),
+            print_help(ProgName, !IO)
+        ;
+            Help = no,
+            main_1(NonOptionArgs, !IO)
+        )
+    ;
+        OptionsRes = error(Error),
+        io.stderr_stream(Stream, !IO),
+        print_error(Stream, Error, !IO),
+        io.set_exit_status(1, !IO)
+    ).
+
+:- pred main_1(list(string)::in, io::di, io::uo) is cc_multi.
+
+main_1(Args, !IO) :-
     (
         Args = [FirstArg | RestArgs],
         is_mailto_uri(FirstArg)

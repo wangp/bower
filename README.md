@@ -119,8 +119,8 @@ these search exclusions:
 Usage
 =====
 
-    bower [SEARCH-TERMS...]
-    bower mailto:MAILTO
+    bower [OPTION...] [SEARCH-TERMS...]
+    bower [OPTION...] mailto:MAILTO
 
 Run `bower` to start, optionally passing a list of initial search terms.
 If no search terms are provided, bower will use the search string `~default`,
@@ -130,6 +130,8 @@ but you are free to change it.
 
 Running `bower` with a single `mailto:` argument will go directly to the
 compose screen.
+
+The only option supported so far is `-h, --help`.
 
 
 Views
