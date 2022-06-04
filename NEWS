@@ -1,6 +1,7 @@
 Bower 0.14-unreleased
 =====================
 
+* Accept --help and --version options.
 * Accept mailto: argument on command line.
 * Allow omitting "+" prefix on tag additions.
 * Support tag editing on compose screen.
