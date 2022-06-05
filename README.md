@@ -119,8 +119,8 @@ these search exclusions:
 Usage
 =====
 
-    bower [OPTION...] [SEARCH-TERMS...]
-    bower [OPTION...] mailto:MAILTO
+    bower [OPTION]... [SEARCH-TERM]...
+    bower [OPTION]... mailto:MAILTO
 
 Run `bower` to start, optionally passing a list of initial search terms.
 If no search terms are provided, bower will use the search string `~default`,

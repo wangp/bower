@@ -18,8 +18,8 @@
 
 print_help(ProgName, !IO) :-
     Lines = [
-        "Usage: " ++ ProgName ++ " [OPTION...] [SEARCH-TERMS...]",
-        "       " ++ ProgName ++ " [OPTION...] mailto:MAILTO",
+        "Usage: " ++ ProgName ++ " [OPTION]... [SEARCH-TERM]...",
+        "       " ++ ProgName ++ " [OPTION]... mailto:MAILTO",
         "",
         "Options:",
         "  -h, --help                  Display usage and options.",
