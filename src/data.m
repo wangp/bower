@@ -22,7 +22,8 @@
                 t_subject   :: string,
                 t_tags      :: set(tag),
                 t_matched   :: int,
-                t_total     :: int
+                t_total     :: int,
+                t_unmatched_ids :: list(message_id)
             ).
 
 :- type thread_id

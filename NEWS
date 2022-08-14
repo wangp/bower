@@ -14,6 +14,9 @@ Bower 0.14-unreleased
 * Fix bug where "body:(foo bar)" was unparsed as "body: ( foo bar )".
 * Restrict places in search string where "~" is special to after
   whitespace or open parenthesis/brace.
+* Add Alt-Enter to open thread in "obscured" mode: messages that did not match
+  search query are displayed differently and not interactable.
+* thread/pager: Add 'M' to toggle obscured mode.
 
 Bower 0.13 (2021-07-24)
 =======================

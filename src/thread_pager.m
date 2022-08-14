@@ -31,8 +31,13 @@
                 added_messages  :: int
             ).
 
+:- type obscure_mode_bool
+    --->    do_not_obscure
+    ;       obscure_unmatched_messages.
+
 :- pred open_thread_pager(prog_config::in, crypto::in, screen::in,
-    thread_id::in, set(tag)::in, list(string)::in, maybe(string)::in,
+    thread_id::in, set(tag)::in, set(message_id)::in, list(string)::in,
+    obscure_mode_bool::in, maybe(string)::in,
     screen_transition(thread_pager_effects)::out,
     common_history::in, common_history::out, io::di, io::uo) is det.
 
@@ -80,8 +85,12 @@
                 tp_crypto           :: crypto,
                 tp_thread_id        :: thread_id,
                 tp_include_tags     :: set(tag),
+                % Messages that were unmatched by the search terms in the index
+                % view, does not change.
+                tp_unmatched_ids    :: set(message_id),
                 tp_messages         :: list(message),
                 tp_ordering         :: thread_ordering,
+                tp_obscure          :: obscure_mode,
 
                 tp_scrollable       :: scrollable(thread_line),
                 tp_num_thread_rows  :: int,
@@ -99,6 +108,10 @@
                 tp_common_history   :: common_history,
                 tp_added_messages   :: int
             ).
+
+:- type obscure_mode
+    --->    do_not_obscure
+    ;       obscure_unmatched_messages(set(message_id)).
 
 :- type thread_line
     --->    thread_line(
@@ -146,6 +159,7 @@
     ;       decrypt_part
     ;       verify_part
     ;       toggle_ordering
+    ;       toggle_obscure_mode
     ;       addressbook_add
     ;       pipe_ids
     ;       refresh_results
@@ -178,14 +192,24 @@
 %-----------------------------------------------------------------------------%
 
 open_thread_pager(Config, Crypto, Screen, ThreadId, IncludeTags,
-        IndexPollTerms, MaybeSearch, Transition, CommonHistory0, CommonHistory,
-        !IO) :-
+        UnmatchedMessageIds, IndexPollTerms, ObscureMessagesBool, MaybeSearch,
+        Transition, CommonHistory0, CommonHistory, !IO) :-
     current_timestamp(RefreshTime, !IO),
     get_thread_messages(Config, ThreadId, IncludeTags, ParseResult, Messages,
         !IO),
 
     get_thread_ordering(Config, Ordering),
-    create_pager_and_thread_lines(Config, Screen, Messages, Ordering,
+
+    (
+        ObscureMessagesBool = do_not_obscure,
+        ObscureMode = do_not_obscure
+    ;
+        ObscureMessagesBool = obscure_unmatched_messages,
+        ObscureMode = obscure_unmatched_messages(UnmatchedMessageIds)
+    ),
+
+    create_pager_and_thread_lines(Config, Screen,
+        Messages, UnmatchedMessageIds, Ordering, ObscureMode,
         Scrollable, NumThreadRows, PagerInfo, NumPagerRows, !IO),
     NumMessages = get_num_lines(Scrollable),
 
@@ -195,9 +219,10 @@ open_thread_pager(Config, Crypto, Screen, ThreadId, IncludeTags,
         ["AND", timestamp_to_int_string(RefreshTime) ++ ".."]),
     IndexPollCount = 0,
     AddedMessages0 = 0,
-
-    Info0 = thread_pager_info(Config, Crypto, ThreadId, IncludeTags, Messages,
-        Ordering, Scrollable, NumThreadRows, PagerInfo, NumPagerRows,
+    Info0 = thread_pager_info(Config, Crypto,
+        ThreadId, IncludeTags, UnmatchedMessageIds, Messages,
+        Ordering, ObscureMode,
+        Scrollable, NumThreadRows, PagerInfo, NumPagerRows,
         RefreshTime, NextPollTime, ThreadPollCount,
         IndexPollString, IndexPollCount,
         MaybeSearch, dir_forward, CommonHistory0, AddedMessages0),
@@ -222,8 +247,9 @@ open_thread_pager(Config, Crypto, Screen, ThreadId, IncludeTags,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
 
 reopen_thread_pager(Screen, KeepCached, !Info, !IO) :-
-    !.Info = thread_pager_info(Config, _Crypto, ThreadId, IncludeTags,
-        Messages0, Ordering,
+    !.Info = thread_pager_info(Config, _Crypto,
+        ThreadId, IncludeTags, UnmatchedMessageIds, Messages0,
+        Ordering, ObscureMessageSet,
         Scrollable0, _NumThreadRows0, Pager0, _NumPagerRows0,
         _RefreshTime0, _NextPollTime0, _ThreadPollCount0,
         _IndexPollString, _IndexPollCount,
@@ -248,7 +274,8 @@ reopen_thread_pager(Screen, KeepCached, !Info, !IO) :-
         % RefreshTime.
     ),
 
-    create_pager_and_thread_lines(Config, Screen, Messages, Ordering,
+    create_pager_and_thread_lines(Config, Screen,
+        Messages, UnmatchedMessageIds, Ordering, ObscureMessageSet,
         Scrollable1, NumThreadRows, Pager1, NumPagerRows, !IO),
 
     % Reapply tag changes from previous state.
@@ -265,10 +292,10 @@ reopen_thread_pager(Screen, KeepCached, !Info, !IO) :-
         Message0 = CursorLine0 ^ tp_message,
         Message0 = message(MessageId0, _, _, _, _, _)
     ->
-        pager.skip_to_message(MessageId0, Pager1, Pager2),
+        pager.goto_message_start(MessageId0, _Moved, Pager1, Pager2),
         ( get_top_offset(Pager0, TopOffset) ->
-            pager.scroll_but_stop_at_message(NumPagerRows, TopOffset, _,
-                Pager2, Pager)
+            pager.scroll_but_stop_at_message(NumPagerRows, TopOffset,
+                _MessageUpdate, Pager2, Pager)
         ;
             Pager = Pager2
         )
@@ -331,7 +358,8 @@ get_thread_messages(Config, ThreadId, IncludeTags, Res, Messages, !IO) :-
             "show", "--format=json", "--entire-thread=true", "--exclude=false",
             decrypt_arg_bool(DecryptByDefault),
             verify_arg(VerifyByDefault),
-            "--", thread_id_to_search_term(ThreadId)
+            "--",
+            thread_id_to_search_term(ThreadId)
         ],
         RedirectStderr, SuspendCurs,
         parse_thread_set(yes(ExcludeTags)), ParseResult, !IO),
@@ -362,11 +390,12 @@ verify_arg(no) = "--verify=false".
 %-----------------------------------------------------------------------------%
 
 :- pred create_pager_and_thread_lines(prog_config::in, screen::in,
-    list(message)::in, thread_ordering::in,
-    scrollable(thread_line)::out, int::out, pager_info::out, int::out,
-    io::di, io::uo) is det.
+    list(message)::in, set(message_id)::in, thread_ordering::in,
+    obscure_mode::in, scrollable(thread_line)::out, int::out,
+    pager_info::out, int::out, io::di, io::uo) is det.
 
-create_pager_and_thread_lines(Config, Screen, Messages, Ordering,
+create_pager_and_thread_lines(Config, Screen,
+        Messages, UnmatchedMessageIds, Ordering, ObscureMode,
         Scrollable, NumThreadRows, PagerInfo, NumPagerRows, !IO) :-
     get_rows_cols(Screen, Rows0, Cols, !IO),
     % Subtract rows for status bar and message.
@@ -377,17 +406,18 @@ create_pager_and_thread_lines(Config, Screen, Messages, Ordering,
         Ordering = thread_ordering_threaded,
         append_threaded_messages(Nowish, Messages, ThreadLines, !IO),
         setup_pager(Config, Cols, include_replies, do_folding, Messages,
-            PagerInfo0, !IO)
+            UnmatchedMessageIds, PagerInfo0, !IO)
     ;
         Ordering = thread_ordering_flat,
-        append_flat_messages(Nowish, Messages, ThreadLines,
-            SortedFlatMessages, !IO),
+        append_flat_messages(Nowish, Messages, ThreadLines, SortedFlatMessages,
+            !IO),
         setup_pager(Config, Cols, toplevel_only, do_folding,
-            SortedFlatMessages, PagerInfo0, !IO)
+            SortedFlatMessages, UnmatchedMessageIds, PagerInfo0, !IO)
     ),
     Scrollable0 = scrollable.init_with_cursor(ThreadLines),
     compute_num_rows(Rows, Scrollable0, NumThreadRows, NumPagerRows),
-    list.filter(not_excluded_thread_line, ThreadLines, NonExcludedThreadLines),
+    list.filter(not_excluded_not_obscured_thread_line(ObscureMode),
+        ThreadLines, NonExcludedThreadLines),
     (
         NonExcludedThreadLines = [],
         Scrollable = Scrollable0,
@@ -395,7 +425,8 @@ create_pager_and_thread_lines(Config, Screen, Messages, Ordering,
     ;
         NonExcludedThreadLines = [FirstLine | RestLines],
         (
-            list.find_first_match(is_unread_and_not_excluded,
+            list.find_first_match(
+                is_unread_not_excluded_not_obscured(ObscureMode),
                 NonExcludedThreadLines, UnreadLine)
         ->
             CursorLine = UnreadLine
@@ -407,7 +438,7 @@ create_pager_and_thread_lines(Config, Screen, Messages, Ordering,
         (
             Message = message(MessageId, _, _, _, _, _),
             goto_message(MessageId, NumThreadRows, Scrollable0, Scrollable),
-            pager.skip_to_message(MessageId, PagerInfo0, PagerInfo)
+            pager.goto_message_start(MessageId, _Moved, PagerInfo0, PagerInfo)
         ;
             Message = excluded_message(_, _, _, _, _),
             Scrollable = Scrollable0,
@@ -415,10 +446,19 @@ create_pager_and_thread_lines(Config, Screen, Messages, Ordering,
         )
     ).
 
-:- pred not_excluded_thread_line(thread_line::in) is semidet.
+:- pred not_excluded_not_obscured_thread_line(obscure_mode::in,
+    thread_line::in) is semidet.
 
-not_excluded_thread_line(Line) :-
-    non_excluded_message(Line ^ tp_message).
+not_excluded_not_obscured_thread_line(ObscureMode, Line) :-
+    Message = Line ^ tp_message,
+    non_excluded_message(Message),
+    require_complete_switch [ObscureMode]
+    (
+        ObscureMode = do_not_obscure
+    ;
+        ObscureMode = obscure_unmatched_messages(ObscureMessageIds),
+        not set.contains(ObscureMessageIds, Message ^ m_id)
+    ).
 
 :- pred get_latest_line(thread_line::in, thread_line::in, thread_line::out)
     is det.
@@ -431,6 +471,8 @@ get_latest_line(LineA, LineB, Line) :-
     ;
         Line = LineB
     ).
+
+%-----------------------------------------------------------------------------%
 
 :- pred resize_thread_pager(screen::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
@@ -470,6 +512,8 @@ max_thread_lines(Rows) = MaxRows :-
     else
         MaxRows = Rows // 5
     ).
+
+%-----------------------------------------------------------------------------%
 
 :- pred append_threaded_messages(tm::in, list(message)::in,
     list(thread_line)::out, io::di, io::uo) is det.
@@ -544,6 +588,8 @@ not_blank_at_column(Graphics, Col) :-
     list.index0(Graphics, Col, Graphic),
     Graphic \= blank.
 
+%-----------------------------------------------------------------------------%
+
 :- pred append_flat_messages(tm::in, list(message)::in,
     list(thread_line)::out, list(message)::out, io::di, io::uo) is det.
 
@@ -587,6 +633,8 @@ append_flat_message(Nowish, MessageFlat, MaybePrevSubject, MaybeSubject,
     cons(Line, !RevAcc).
 
 :- func mf_message(message_flat) = message. % accessor
+
+%-----------------------------------------------------------------------------%
 
 :- pred make_thread_line(tm::in, message::in, maybe(message_id)::in,
     maybe(list(graphic))::in, maybe(header_value)::in, thread_line::out,
@@ -896,8 +944,14 @@ thread_pager_loop(Screen, OnEntry, !Info, !IO) :-
         thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = toggle_ordering,
-        toggle_ordering(!Info),
+        toggle_ordering(MessageUpdateB, !Info),
+        update_message(Screen, MessageUpdateB, !IO),
         reopen_thread_pager(Screen, yes, !Info, !IO),
+        thread_pager_loop(Screen, redraw, !Info, !IO)
+    ;
+        Action = toggle_obscure_mode,
+        toggle_obscure_mode(MessageUpdateB, !Info),
+        update_message(Screen, MessageUpdateB, !IO),
         thread_pager_loop(Screen, redraw, !Info, !IO)
     ;
         Action = addressbook_add,
@@ -928,14 +982,14 @@ thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO) :-
         Key = char('J')
     ->
         set_current_line_read(!Info),
-        pager_next_message(MessageUpdate, !Info),
+        goto_next_message(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('K')
     ->
         set_current_line_read(!Info),
-        plain_pager_binding(Screen, char('k'), Action, MessageUpdate,
-            !Info, !IO)
+        goto_prev_message(MessageUpdate, !Info),
+        Action = continue
     ;
         Key = char(']')
     ->
@@ -969,21 +1023,38 @@ thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO) :-
         ; Key = char('g')
         )
     ->
-        goto_first_message(!Info),
-        MessageUpdate = clear_message,
+        goto_first_message(MessageUpdate, !Info),
         Action = continue
     ;
         ( Key = code(curs.key_end)
         ; Key = char('G')
         )
     ->
-        goto_end(!Info),
-        MessageUpdate = clear_message,
+        goto_last_message_or_end(MessageUpdate, !Info),
+        Action = continue
+    ;
+        ( Key = code(curs.key_down)
+        ; Key = char('j')
+        )
+    ->
+        goto_next_message(MessageUpdate, !Info),
+        Action = continue
+    ;
+        ( Key = code(curs.key_up)
+        ; Key = char('k')
+        )
+    ->
+        goto_prev_message(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('p')
     ->
         goto_parent_message(MessageUpdate, !Info),
+        Action = continue
+    ;
+        Key = char('S')
+    ->
+        skip_quoted_text(MessageUpdate, !Info),
         Action = continue
     ;
         ( Key = char('\t')
@@ -995,26 +1066,28 @@ thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO) :-
     ;
         Key = char('\x12\') % ^R
     ->
+        % The current line may be obscured; we mark it read anyway.
+        set_current_line_read(!Info),
         mark_preceding_read(!Info),
-        pager_next_message(MessageUpdate, !Info),
+        goto_next_message(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('U')
     ->
         toggle_unread(!Info),
-        pager_next_message(MessageUpdate, !Info),
+        goto_next_message(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('a')
     ->
         toggle_archive(!Info),
-        pager_next_message(MessageUpdate, !Info),
+        goto_next_message(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('d')
     ->
         change_deleted(deleted, !Info),
-        pager_next_message(MessageUpdate, !Info),
+        goto_next_message(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('u')
@@ -1032,7 +1105,7 @@ thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO) :-
         Key = char('$')
     ->
         mark_spam(!Info),
-        pager_next_message(MessageUpdate, !Info),
+        goto_next_message(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('+')
@@ -1048,7 +1121,7 @@ thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO) :-
         Key = char('t')
     ->
         toggle_select(!Info),
-        pager_next_message(MessageUpdate, !Info),
+        goto_next_message(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('T')
@@ -1069,6 +1142,11 @@ thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO) :-
         Key = char('V')
     ->
         highlight_major(MessageUpdate, !Info),
+        Action = continue
+    ;
+        Key = char('v')
+    ->
+        highlight_minor(MessageUpdate, !Info),
         Action = continue
     ;
         Key = char('y')
@@ -1099,6 +1177,11 @@ thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO) :-
         Key = char('O')
     ->
         Action = toggle_ordering,
+        MessageUpdate = no_change
+    ;
+        Key = char('M')
+    ->
+        Action = toggle_obscure_mode,
         MessageUpdate = no_change
     ;
         Key = char('=')
@@ -1171,21 +1254,11 @@ thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO) :-
             Action = continue_no_draw,
             MessageUpdate = no_change
         ;
-            plain_pager_binding(Screen, Key, Action, MessageUpdate,
-                !Info, !IO)
+            plain_pager_binding(Screen, Key, Action, MessageUpdate, !Info, !IO)
         )
     ).
 
 %-----------------------------------------------------------------------------%
-
-:- pred pager_next_message(message_update::out,
-    thread_pager_info::in, thread_pager_info::out) is det.
-
-pager_next_message(MessageUpdate, !Info) :-
-    PagerInfo0 = !.Info ^ tp_pager,
-    next_message(MessageUpdate, PagerInfo0, PagerInfo),
-    !Info ^ tp_pager := PagerInfo,
-    sync_thread_to_pager(!Info).
 
 :- pred plain_pager_binding(screen::in, keycode::in, thread_pager_action::out,
     message_update::out, thread_pager_info::in, thread_pager_info::out,
@@ -1215,6 +1288,8 @@ plain_pager_binding(Screen, KeyCode, ThreadPagerAction, MessageUpdate,
     !ThreadPagerInfo ^ tp_common_history := History,
     sync_thread_to_pager(!ThreadPagerInfo).
 
+%-----------------------------------------------------------------------------%
+
 :- pred scroll_but_stop_at_message(int::in, message_update::out,
     thread_pager_info::in, thread_pager_info::out) is det.
 
@@ -1226,71 +1301,18 @@ scroll_but_stop_at_message(Delta, MessageUpdate, !Info) :-
     !Info ^ tp_pager := PagerInfo,
     sync_thread_to_pager(!Info).
 
-:- pred goto_first_message(thread_pager_info::in, thread_pager_info::out)
-    is det.
-
-goto_first_message(!Info) :-
-    PagerInfo0 = !.Info ^ tp_pager,
-    pager.goto_first_message(PagerInfo0, PagerInfo),
-    !Info ^ tp_pager := PagerInfo,
-    sync_thread_to_pager(!Info).
-
-:- pred goto_end(thread_pager_info::in, thread_pager_info::out) is det.
-
-goto_end(!Info) :-
-    PagerInfo0 = !.Info ^ tp_pager,
-    NumPagerRows = !.Info ^ tp_num_pager_rows,
-    pager.goto_end(NumPagerRows, PagerInfo0, PagerInfo),
-    !Info ^ tp_pager := PagerInfo,
-    sync_thread_to_pager(!Info).
-
-:- pred goto_parent_message(message_update::out,
-    thread_pager_info::in, thread_pager_info::out) is det.
-
-goto_parent_message(MessageUpdate, !Info) :-
-    Scrollable0 = !.Info ^ tp_scrollable,
-    NumThreadRows = !.Info ^ tp_num_thread_rows,
-    PagerInfo0 = !.Info ^ tp_pager,
-    (
-        get_cursor_line(Scrollable0, Cursor0, ThreadLine0),
-        ThreadLine0 ^ tp_parent = yes(ParentId),
-        find_non_excluded_ancestor(Scrollable0, ParentId, Cursor0, Cursor,
-            AncestorId)
-    ->
-        set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
-        skip_to_message(AncestorId, PagerInfo0, PagerInfo),
-        !Info ^ tp_scrollable := Scrollable,
-        !Info ^ tp_pager := PagerInfo,
-        MessageUpdate = clear_message
-    ;
-        MessageUpdate = set_warning("Message has no parent.")
-    ).
-
-:- pred find_non_excluded_ancestor(scrollable(thread_line)::in, message_id::in,
-    int::in, int::out, message_id::out) is semidet.
-
-find_non_excluded_ancestor(Scrollable, ParentId, !Cursor, AncestorId) :-
-    search_reverse(thread_line_has_message_id(ParentId), Scrollable, !Cursor),
-    get_line(Scrollable, !.Cursor, ThreadLine),
-    ( non_excluded_message(ThreadLine ^ tp_message) ->
-        AncestorId = ParentId
-    ;
-        ThreadLine ^ tp_parent = yes(GP),
-        find_non_excluded_ancestor(Scrollable, GP, !Cursor, AncestorId)
-    ).
-
 :- pred sync_thread_to_pager(thread_pager_info::in, thread_pager_info::out)
     is det.
 
 sync_thread_to_pager(!Info) :-
     PagerInfo = !.Info ^ tp_pager,
-    Scrollable0 = !.Info ^ tp_scrollable,
-    NumThreadRows = !.Info ^ tp_num_thread_rows,
     (
         % XXX inefficient
         get_top_message(PagerInfo, Message),
         MessageId = Message ^ m_id
     ->
+        Scrollable0 = !.Info ^ tp_scrollable,
+        NumThreadRows = !.Info ^ tp_num_thread_rows,
         goto_message(MessageId, NumThreadRows, Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
     ;
@@ -1310,31 +1332,6 @@ goto_message(MessageId, NumThreadRows, !Scrollable) :-
         true
     ).
 
-:- pred skip_to_unread(message_update::out,
-    thread_pager_info::in, thread_pager_info::out) is det.
-
-skip_to_unread(MessageUpdate, !Info) :-
-    Scrollable0 = !.Info ^ tp_scrollable,
-    NumThreadRows = !.Info ^ tp_num_thread_rows,
-    PagerInfo0 = !.Info ^ tp_pager,
-    (
-        get_cursor(Scrollable0, Cursor0),
-        search_forward(is_unread_and_not_excluded, Scrollable0,
-            Cursor0 + 1, Cursor, ThreadLine)
-    ->
-        set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
-        ( MessageId = ThreadLine ^ tp_message ^ m_id ->
-            skip_to_message(MessageId, PagerInfo0, PagerInfo),
-            !Info ^ tp_scrollable := Scrollable,
-            !Info ^ tp_pager := PagerInfo
-        ;
-            true
-        ),
-        MessageUpdate = clear_message
-    ;
-        MessageUpdate = set_warning("No more unread messages.")
-    ).
-
 :- pred thread_line_has_message_id(message_id::in, thread_line::in) is semidet.
 
 thread_line_has_message_id(MessageId, Line) :-
@@ -1346,11 +1343,230 @@ thread_line_has_message_id(MessageId, Line) :-
         Message = excluded_message(yes(MessageId), _, _, _, _)
     ).
 
-:- pred is_unread_and_not_excluded(thread_line::in) is semidet.
+%-----------------------------------------------------------------------------%
 
-is_unread_and_not_excluded(Line) :-
-    non_excluded_message(Line ^ tp_message),
-    Line ^ tp_std_tags ^ unread = unread.
+:- pred goto_first_message(message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+goto_first_message(MessageUpdate, !Info) :-
+    ObscureMode = !.Info ^ tp_obscure,
+    Scrollable0 = !.Info ^ tp_scrollable,
+    (
+        search_forward(not_excluded_not_obscured_thread_line(ObscureMode),
+            Scrollable0, 0, Cursor, ThreadLine),
+        MessageId = ThreadLine ^ tp_message ^ m_id
+    ->
+        goto_message_start(Cursor, MessageId, Moved, !Info),
+        (
+            Moved = yes,
+            MessageUpdate = clear_message
+        ;
+            Moved = no,
+            MessageUpdate = set_warning("Top of message is shown.")
+        )
+    ;
+        MessageUpdate = clear_message
+    ).
+
+:- pred goto_last_message_or_end(message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+goto_last_message_or_end(MessageUpdate, !Info) :-
+    ObscureMode = !.Info ^ tp_obscure,
+    Scrollable0 = !.Info ^ tp_scrollable,
+    NumThreadLines = get_num_lines(Scrollable0),
+    (
+        get_cursor(Scrollable0, Cursor0),
+        search_reverse(not_excluded_not_obscured_thread_line(ObscureMode),
+            Scrollable0, NumThreadLines, Cursor, ThreadLine),
+        MessageId = ThreadLine ^ tp_message ^ m_id
+    ->
+        ( Cursor0 = Cursor ->
+            % Go to end of the current message.
+            PagerInfo0 = !.Info ^ tp_pager,
+            NumPagerRows = !.Info ^ tp_num_pager_rows,
+            pager.goto_message_end(MessageId, NumPagerRows, Moved,
+                PagerInfo0, PagerInfo),
+            !Info ^ tp_pager := PagerInfo
+        ;
+            goto_message_start(Cursor, MessageId, Moved, !Info)
+        ),
+        (
+            Moved = yes,
+            MessageUpdate = clear_message
+        ;
+            Moved = no,
+            MessageUpdate = set_warning("Bottom of message is shown.")
+        )
+    ;
+        MessageUpdate = clear_message
+    ).
+
+:- pred goto_next_message(message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+goto_next_message(MessageUpdate, !Info) :-
+    ( goto_next_message_2(!Info) ->
+        MessageUpdate = clear_message
+    ;
+        MessageUpdate = set_warning("No more messages.")
+    ).
+
+:- pred goto_next_message_2(thread_pager_info::in, thread_pager_info::out)
+    is semidet.
+
+goto_next_message_2(!Info) :-
+    ObscureMode = !.Info ^ tp_obscure,
+    Scrollable0 = !.Info ^ tp_scrollable,
+    get_cursor(Scrollable0, Cursor0),
+    search_forward(not_excluded_not_obscured_thread_line(ObscureMode),
+        Scrollable0, Cursor0 + 1, Cursor, ThreadLine),
+    MessageId = ThreadLine ^ tp_message ^ m_id,
+    goto_message_start(Cursor, MessageId, _Moved, !Info).
+
+:- pred goto_prev_message(message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+goto_prev_message(MessageUpdate, !Info) :-
+    ( goto_prev_message_2(!Info) ->
+        MessageUpdate = clear_message
+    ;
+        MessageUpdate = set_warning("No previous message.")
+    ).
+
+:- pred goto_prev_message_2(thread_pager_info::in, thread_pager_info::out)
+    is semidet.
+
+goto_prev_message_2(!Info) :-
+    ObscureMode = !.Info ^ tp_obscure,
+    Scrollable0 = !.Info ^ tp_scrollable,
+    get_cursor(Scrollable0, Cursor0),
+    get_line(Scrollable0, Cursor0, ThreadLine0),
+    (
+        % First try to move to the top of the current message.
+        not_excluded_not_obscured_thread_line(ObscureMode, ThreadLine0),
+        MessageId0 = ThreadLine0 ^ tp_message ^ m_id,
+        goto_message_start(Cursor0, MessageId0, Moved, !Info),
+        Moved = yes
+    ->
+        true
+    ;
+        search_reverse(not_excluded_not_obscured_thread_line(ObscureMode),
+            Scrollable0, Cursor0, Cursor, ThreadLine),
+        MessageId = ThreadLine ^ tp_message ^ m_id,
+        goto_message_start(Cursor, MessageId, _Moved, !Info)
+    ).
+
+:- pred goto_message_start(int::in, message_id::in, bool::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+goto_message_start(Cursor, MessageId, Moved, !Info) :-
+    NumThreadRows = !.Info ^ tp_num_thread_rows,
+    Scrollable0 = !.Info ^ tp_scrollable,
+    set_cursor_centred(Cursor, NumThreadRows, Scrollable0, Scrollable),
+    !Info ^ tp_scrollable := Scrollable,
+
+    PagerInfo0 = !.Info ^ tp_pager,
+    pager.goto_message_start(MessageId, Moved, PagerInfo0, PagerInfo),
+    !Info ^ tp_pager := PagerInfo.
+
+%-----------------------------------------------------------------------------%
+
+:- pred goto_parent_message(message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+goto_parent_message(MessageUpdate, !Info) :-
+    ObscureMode = !.Info ^ tp_obscure,
+    Scrollable0 = !.Info ^ tp_scrollable,
+    ( get_cursor_line(Scrollable0, Cursor0, ThreadLine0) ->
+        (
+            ThreadLine0 ^ tp_parent = yes(ParentId),
+            find_ancestor_message(ObscureMode,
+                Scrollable0, ParentId, Cursor0, Cursor, AncestorId)
+        ->
+            goto_message_start(Cursor, AncestorId, _Moved, !Info),
+            MessageUpdate = clear_message
+        ;
+            % TODO: display different message if parent is obscured
+            MessageUpdate = set_warning("Message has no parent.")
+        )
+    ;
+        MessageUpdate = clear_message
+    ).
+
+:- pred find_ancestor_message(obscure_mode::in, scrollable(thread_line)::in,
+    message_id::in, int::in, int::out, message_id::out) is semidet.
+
+find_ancestor_message(ObscureMode, Scrollable, ParentId, !Cursor,
+        AncestorId) :-
+    search_reverse(thread_line_has_message_id(ParentId),
+        Scrollable, !Cursor, ThreadLine),
+    ( not_excluded_not_obscured_thread_line(ObscureMode, ThreadLine) ->
+        AncestorId = ParentId
+    ;
+        ThreadLine ^ tp_parent = yes(GP),
+        find_ancestor_message(ObscureMode, Scrollable, GP, !Cursor, AncestorId)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred skip_quoted_text(message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+skip_quoted_text(MessageUpdate, !Info) :-
+    Info0 = !.Info,
+    PagerInfo0 = !.Info ^ tp_pager,
+    pager.skip_quoted_text(MessageUpdate0, PagerInfo0, PagerInfo),
+    !Info ^ tp_pager := PagerInfo,
+    sync_thread_to_pager(!Info),
+    % If the pager skipped us to an obscured message then try to go to the next
+    % non-obscured message instead.
+    ( current_message_not_obscured(!.Info) ->
+        MessageUpdate = MessageUpdate0
+    ;
+        goto_next_message(MessageUpdate, Info0, !:Info)
+    ).
+
+:- pred current_message_not_obscured(thread_pager_info::in) is semidet.
+
+current_message_not_obscured(Info) :-
+    ObscureMode = Info ^ tp_obscure,
+    Scrollable = Info ^ tp_scrollable,
+    get_cursor(Scrollable, Cursor),
+    get_line(Scrollable, Cursor, ThreadLine),
+    not_excluded_not_obscured_thread_line(ObscureMode, ThreadLine).
+
+%-----------------------------------------------------------------------------%
+
+:- pred skip_to_unread(message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+skip_to_unread(MessageUpdate, !Info) :-
+    ObscureMode = !.Info ^ tp_obscure,
+    Scrollable0 = !.Info ^ tp_scrollable,
+    ( get_cursor(Scrollable0, Cursor0) ->
+        (
+            search_forward(is_unread_not_excluded_not_obscured(ObscureMode),
+                Scrollable0, Cursor0 + 1, Cursor, ThreadLine),
+            MessageId = ThreadLine ^ tp_message ^ m_id
+        ->
+            goto_message_start(Cursor, MessageId, _Moved, !Info),
+            MessageUpdate = clear_message
+        ;
+            MessageUpdate = set_warning("No more unread messages.")
+        )
+    ;
+        MessageUpdate = clear_message
+    ).
+
+:- pred is_unread_not_excluded_not_obscured(obscure_mode::in, thread_line::in)
+    is semidet.
+
+is_unread_not_excluded_not_obscured(ObscureMode, Line) :-
+    Line ^ tp_std_tags ^ unread = unread,
+    not_excluded_not_obscured_thread_line(ObscureMode, Line).
+
+%-----------------------------------------------------------------------------%
 
 :- pred set_current_line_read(thread_pager_info::in, thread_pager_info::out)
     is det.
@@ -1365,32 +1581,38 @@ set_current_line_read(!Info) :-
         true
     ).
 
+%-----------------------------------------------------------------------------%
+
 :- pred mark_preceding_read(thread_pager_info::in, thread_pager_info::out)
     is det.
 
 mark_preceding_read(!Info) :-
+    ObscureMode = !.Info ^ tp_obscure,
     Scrollable0 = !.Info ^ tp_scrollable,
     ( get_cursor(Scrollable0, Cursor) ->
-        mark_preceding_read_2(Cursor, Scrollable0, Scrollable),
+        mark_preceding_read_loop(ObscureMode, Cursor - 1,
+            Scrollable0, Scrollable),
         !Info ^ tp_scrollable := Scrollable
     ;
         true
     ).
 
-:- pred mark_preceding_read_2(int::in,
+:- pred mark_preceding_read_loop(obscure_mode::in, int::in,
     scrollable(thread_line)::in, scrollable(thread_line)::out) is det.
 
-mark_preceding_read_2(LineNum, !Scrollable) :-
+mark_preceding_read_loop(ObscureMode, LineNum, !Scrollable) :-
     (
         get_line(!.Scrollable, LineNum, Line0),
-        is_unread_and_not_excluded(Line0)
+        is_unread_not_excluded_not_obscured(ObscureMode, Line0)
     ->
         set_line_read(Line0, Line),
         set_line(LineNum, Line, !Scrollable),
-        mark_preceding_read_2(LineNum - 1, !Scrollable)
+        mark_preceding_read_loop(ObscureMode, LineNum - 1, !Scrollable)
     ;
         true
     ).
+
+%-----------------------------------------------------------------------------%
 
 :- pred mark_all_read(thread_pager_info::in, thread_pager_info::out) is det.
 
@@ -1398,16 +1620,6 @@ mark_all_read(!Info) :-
     Scrollable0 = !.Info ^ tp_scrollable,
     scrollable.map_lines(set_line_read, Scrollable0, Scrollable),
     !Info ^ tp_scrollable := Scrollable.
-
-:- pred set_line_read(thread_line::in, thread_line::out) is det.
-
-set_line_read(!Line) :-
-    remove_tag(tag("unread"), !Line).
-
-:- pred set_line_unread(thread_line::in, thread_line::out) is det.
-
-set_line_unread(!Line) :-
-    add_tag(tag("unread"), !Line).
 
 :- pred toggle_unread(thread_pager_info::in, thread_pager_info::out) is det.
 
@@ -1427,6 +1639,18 @@ toggle_unread(!Info) :-
     ;
         true
     ).
+
+:- pred set_line_read(thread_line::in, thread_line::out) is det.
+
+set_line_read(!Line) :-
+    remove_tag(tag("unread"), !Line).
+
+:- pred set_line_unread(thread_line::in, thread_line::out) is det.
+
+set_line_unread(!Line) :-
+    add_tag(tag("unread"), !Line).
+
+%-----------------------------------------------------------------------------%
 
 :- pred toggle_archive(thread_pager_info::in, thread_pager_info::out) is det.
 
@@ -1470,6 +1694,8 @@ set_line_archived(!Line) :-
 set_line_unarchived(!Line) :-
     add_tag(tag("inbox"), !Line).
 
+%-----------------------------------------------------------------------------%
+
 :- pred toggle_flagged(thread_pager_info::in, thread_pager_info::out) is det.
 
 toggle_flagged(!Info) :-
@@ -1488,6 +1714,8 @@ toggle_flagged(!Info) :-
     ;
         true
     ).
+
+%-----------------------------------------------------------------------------%
 
 :- pred change_deleted(deleted::in,
     thread_pager_info::in, thread_pager_info::out) is det.
@@ -1508,9 +1736,12 @@ change_deleted(Deleted, !Info) :-
         true
     ).
 
+%-----------------------------------------------------------------------------%
+
 :- pred mark_spam(thread_pager_info::in, thread_pager_info::out) is det.
 
 mark_spam(!Info) :-
+    % TODO: why is entire thread marked spam?
     Scrollable0 = !.Info ^ tp_scrollable,
     scrollable.map_lines(set_line_spam, Scrollable0, Scrollable),
     !Info ^ tp_scrollable := Scrollable.
@@ -1520,6 +1751,8 @@ mark_spam(!Info) :-
 set_line_spam(!Line) :-
     remove_tag(tag("unread"), !Line),
     add_tag(tag("spam"), !Line).
+
+%-----------------------------------------------------------------------------%
 
 :- pred add_tag(tag::in, thread_line::in, thread_line::out) is det.
 
@@ -1545,6 +1778,8 @@ set_tags(TagSet, !Line) :-
     !Line ^ tp_curr_tags := TagSet,
     !Line ^ tp_std_tags := StdTags,
     !Line ^ tp_nonstd_tags_width := NonstdTagsWidth.
+
+%-----------------------------------------------------------------------------%
 
 :- pred prompt_tag(screen::in, string::in,
     thread_pager_info::in, thread_pager_info::out, io::di, io::uo) is det.
@@ -1865,8 +2100,26 @@ common_unread_state([H | T], State0, State) :-
 highlight_major(MessageUpdate, !Info) :-
     Pager0 = !.Info ^ tp_pager,
     NumRows = !.Info ^ tp_num_pager_rows,
-    highlight_major(NumRows, MessageUpdate, Pager0, Pager),
+    ObscureMode = !.Info ^ tp_obscure,
+    pager.highlight_major(NumRows, to_pager_obscure_mode(ObscureMode),
+        MessageUpdate, Pager0, Pager),
     !Info ^ tp_pager := Pager.
+
+:- pred highlight_minor(message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+highlight_minor(MessageUpdate, !Info) :-
+    Pager0 = !.Info ^ tp_pager,
+    NumRows = !.Info ^ tp_num_pager_rows,
+    ObscureMode = !.Info ^ tp_obscure,
+    pager.highlight_minor(NumRows, to_pager_obscure_mode(ObscureMode),
+        MessageUpdate, Pager0, Pager),
+    !Info ^ tp_pager := Pager.
+
+:- func to_pager_obscure_mode(obscure_mode) = pager.obscure_mode_bool.
+
+to_pager_obscure_mode(do_not_obscure) = do_not_obscure.
+to_pager_obscure_mode(obscure_unmatched_messages(_)) = obscure_unmatched_lines.
 
 %-----------------------------------------------------------------------------%
 
@@ -1909,8 +2162,9 @@ skip_to_search(SearchKind, RelSearchDir, MessageUpdate, !Info) :-
             RelSearchDir = opposite_dir,
             SearchDir = opposite_search_direction(SearchDir0)
         ),
+        ObscureMode = !.Info ^ tp_obscure,
         pager.skip_to_search(NumRows, SearchKind, Search, SearchDir,
-            MessageUpdate, Pager0, Pager),
+            to_pager_obscure_mode(ObscureMode), MessageUpdate, Pager0, Pager),
         !Info ^ tp_pager := Pager,
         sync_thread_to_pager(!Info)
     ;
@@ -2127,18 +2381,41 @@ good_signature(Signature) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred toggle_ordering(thread_pager_info::in, thread_pager_info::out) is det.
+:- pred toggle_ordering(message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
 
-toggle_ordering(!Info) :-
+toggle_ordering(MessageUpdate, !Info) :-
     Ordering0 = !.Info ^ tp_ordering,
     (
         Ordering0 = thread_ordering_flat,
-        Ordering = thread_ordering_threaded
+        Ordering = thread_ordering_threaded,
+        MessageUpdate = set_info("Showing messages in threaded view.")
     ;
         Ordering0 = thread_ordering_threaded,
-        Ordering = thread_ordering_flat
+        Ordering = thread_ordering_flat,
+        MessageUpdate = set_info("Showing messages in flat view.")
     ),
     !Info ^ tp_ordering := Ordering.
+
+%-----------------------------------------------------------------------------%
+
+:- pred toggle_obscure_mode(message_update::out,
+    thread_pager_info::in, thread_pager_info::out) is det.
+
+toggle_obscure_mode(MessageUpdate, !Info) :-
+    ObscureMode0 = !.Info ^ tp_obscure,
+    (
+        ObscureMode0 = do_not_obscure,
+        UnmatchedMessageIds = !.Info ^ tp_unmatched_ids,
+        ObscureMode = obscure_unmatched_messages(UnmatchedMessageIds),
+        MessageUpdate =
+            set_info("Obscuring messages that did not match the search query.")
+    ;
+        ObscureMode0 = obscure_unmatched_messages(_),
+        ObscureMode = do_not_obscure,
+        MessageUpdate = set_info("Showing all messages.")
+    ),
+    !Info ^ tp_obscure := ObscureMode.
 
 %-----------------------------------------------------------------------------%
 
@@ -2580,14 +2857,16 @@ draw_thread_pager(Screen, Info, !IO) :-
     Config = Info ^ tp_config,
     Attrs = thread_attrs(Config),
     PagerAttrs = pager_attrs(Config),
+    ObscureMode = Info ^ tp_obscure,
 
     get_main_panels(Screen, MainPanels, !IO),
     split_panels(Info, MainPanels, ThreadPanels, SepPanel, PagerPanels),
-    scrollable.draw(draw_thread_line(Attrs), Screen, ThreadPanels, Scrollable,
-        !IO),
+    scrollable.draw(draw_thread_line(Attrs, ObscureMode),
+        Screen, ThreadPanels, Scrollable, !IO),
     get_cols(Screen, Cols, !IO),
     draw_sep(Screen, SepPanel, Attrs, Cols, !IO),
-    draw_pager_lines(Screen, PagerPanels, PagerAttrs, PagerInfo, !IO),
+    draw_pager_lines(Screen, PagerPanels, PagerAttrs,
+        to_pager_obscure_mode(ObscureMode), PagerInfo, !IO),
     draw_thread_pager_bar(Screen, Info, !IO).
 
 :- pred draw_sep(screen::in, maybe(vpanel)::in, thread_attrs::in, int::in,
@@ -2603,31 +2882,45 @@ draw_sep(Screen, MaybeSepPanel, Attrs, Cols, !IO) :-
         MaybeSepPanel = no
     ).
 
-:- pred draw_thread_line(thread_attrs::in, screen::in, vpanel::in,
-    thread_line::in, int::in, bool::in, io::di, io::uo) is det.
+:- pred draw_thread_line(thread_attrs::in, obscure_mode::in,
+    screen::in, vpanel::in, thread_line::in, int::in, bool::in, io::di, io::uo)
+    is det.
 
-draw_thread_line(TAttrs, Screen, Panel, Line, _LineNr, IsCursor, !IO) :-
+draw_thread_line(TAttrs, ObscureMode, Screen, Panel, Line, _LineNr, IsCursor,
+        !IO) :-
     Line = thread_line(Message, _ParentId, presentable_string(From),
         _PrevTags, CurrTags, StdTags, NonstdTagsWidth,
         Selected, MaybeGraphics, RelDate, MaybeSubject),
+
     Attrs = TAttrs ^ t_generic,
     (
         IsCursor = yes,
-        RelDateAttr = Attrs ^ current
+        attr(Screen, Panel, Attrs ^ current, !IO),
+        MaybeAttr = no_change_attr
     ;
         IsCursor = no,
-        RelDateAttr = Attrs ^ relative_date
+        (
+            ObscureMode = obscure_unmatched_messages(ObscureMessageIds),
+            set.contains(ObscureMessageIds, Message ^ m_id)
+        ->
+            attr(Screen, Panel, TAttrs ^ t_obscured, !IO),
+            MaybeAttr = no_change_attr
+        ;
+            MaybeAttr = yes_change_attr
+        )
     ),
-    draw_fixed(Screen, Panel, RelDateAttr, 13, RelDate, ' ', !IO),
+
+    mattr_draw_fixed(Screen, Panel, MaybeAttr(Attrs ^ relative_date),
+        13, RelDate, ' ', !IO),
 
     (
         Selected = selected,
-        mattr_draw(Screen, Panel, unless(IsCursor, Attrs ^ selected), "*", !IO)
+        mattr_draw(Screen, Panel, MaybeAttr(Attrs ^ selected), "*", !IO)
     ;
         Selected = not_selected,
         draw(Screen, Panel, " ", !IO)
     ),
-    mattr(Screen, Panel, unless(IsCursor, Attrs ^ standard_tag), !IO),
+    mattr(Screen, Panel, MaybeAttr(Attrs ^ standard_tag), !IO),
 
     StdTags = standard_tags(Unread, Replied, Deleted, Flagged),
     (
@@ -2653,13 +2946,13 @@ draw_thread_line(TAttrs, Screen, Panel, Line, _LineNr, IsCursor, !IO) :-
     ),
     (
         Flagged = flagged,
-        mattr_draw(Screen, Panel, unless(IsCursor, Attrs ^ flagged), "! ", !IO)
+        mattr_draw(Screen, Panel, MaybeAttr(Attrs ^ flagged), "! ", !IO)
     ;
         Flagged = unflagged,
         draw(Screen, Panel, "  ", !IO)
     ),
 
-    mattr(Screen, Panel, unless(IsCursor, TAttrs ^ t_tree), !IO),
+    mattr(Screen, Panel, MaybeAttr(TAttrs ^ t_tree), !IO),
     (
         MaybeGraphics = yes(Graphics),
         list.foldl(draw_graphic(Screen, Panel), Graphics, !IO)
@@ -2683,14 +2976,12 @@ draw_thread_line(TAttrs, Screen, Panel, Line, _LineNr, IsCursor, !IO) :-
         Unread = read,
         Highlight = curs.normal
     ),
-    mattr_draw(Screen, Panel,
-        unless(IsCursor, curs.(Attrs ^ author + Highlight)),
+    mattr_draw(Screen, Panel, MaybeAttr(curs.(Attrs ^ author + Highlight)),
         From, !IO),
     (
         MaybeSubject = yes(presentable_string(Subject)),
         draw(Screen, Panel, ". ", !IO),
-        mattr_draw(Screen, Panel, unless(IsCursor, Attrs ^ subject),
-            Subject, !IO)
+        mattr_draw(Screen, Panel, MaybeAttr(Attrs ^ subject), Subject, !IO)
     ;
         MaybeSubject = no
     ),
@@ -2738,10 +3029,13 @@ graphic_to_char(vert) = "│".
 graphic_to_char(tee) = "├".
 graphic_to_char(ell) = "└".
 
-:- func unless(bool, curs.attr) = maybe(curs.attr).
+:- func no_change_attr(curs.attr) = maybe(curs.attr).
 
-unless(no, X) = yes(X).
-unless(yes, _) = no.
+no_change_attr(_) = no.
+
+:- func yes_change_attr(curs.attr) = maybe(curs.attr).
+
+yes_change_attr(Attr) = yes(Attr).
 
 :- pred draw_thread_pager_bar(screen::in, thread_pager_info::in,
     io::di, io::uo) is det.

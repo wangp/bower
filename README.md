@@ -150,6 +150,7 @@ The keys are:
     [, ]            scroll half page up, down
     Tab, comma      go to next unread thread
     Enter           open thread
+    Alt+Enter       open thread in obscured mode
     l, ~            change search terms ("limit")
     Alt+Key         invoke search term alias named by Key
     =               refresh search results
@@ -200,6 +201,7 @@ This view pages through an entire thread.  The keys are:
     p               go to parent message
     S               skip quoted text
     O               toggle ordering of messages (threaded or flat)
+    M               toggle obscuring of unmatched messages
     =               refresh search results
 
     /, ?            search for string
@@ -254,6 +256,10 @@ message template for messages that are manually decrypted in the thread view.
 A workaround is to set `crypto.decrypt_by_default = true` in the bower
 configuration so that encrypted messages are automatically decrypted upon
 opening a thread.
+
+In "obscured" mode, messages unmatched by the search query in the index view
+will be displayed in a different colour, and ignored by navigation keys
+(e.g. j, k, and string search). The mode can be toggled with the 'M' key.
 
 
 Limit command syntax extensions

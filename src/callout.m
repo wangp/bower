@@ -65,6 +65,7 @@
 :- implementation.
 
 :- import_module bool.
+:- import_module char.
 :- import_module float.
 :- import_module integer.
 :- import_module map.
@@ -330,6 +331,11 @@ parse_message_for_recall(JSON, Message) :-
     ;
         exception.throw(notmuch_json_error("parse_message_for_recall"))
     ).
+
+:- pred parse_tag(json::in, tag::out) is semidet.
+
+parse_tag(Json, tag(Tag)) :-
+    Json = unesc_string(Tag).
 
     % notmuch/devel/schemata: headers
     % The headers of a message or part
@@ -696,19 +702,45 @@ parse_thread_summary(Json, Thread) :-
         Json/"authors" = unesc_string(Authors),
         Json/"subject" = unesc_string(Subject),
         Json/"tags" = list(TagsList),
-        list.map(parse_tag, TagsList, Tags)
+        list.map(parse_tag, TagsList, Tags),
+        % "query" was introduced in schema version 2
+        Json/"query" = list(Query0),
+        parse_thread_summary_query(Query0, UnmatchedMessageIds)
     ->
         TagSet = set.from_list(Tags),
         Thread = thread(ThreadId, Timestamp, Authors, Subject, TagSet,
-            Matched, Total)
+            Matched, Total, UnmatchedMessageIds)
     ;
         exception.throw(notmuch_json_error("parse_thread_summary"))
     ).
 
-:- pred parse_tag(json::in, tag::out) is semidet.
+%-----------------------------------------------------------------------------%
 
-parse_tag(Json, tag(Tag)) :-
-    Json = unesc_string(Tag).
+    % notmuch/devel/schemata: thread_summary.query
+    %
+:- pred parse_thread_summary_query(list(json)::in, list(message_id)::out)
+    is semidet.
+
+parse_thread_summary_query([_MatchedOrNull, UnmatchedOrNull],
+        UnmatchedMessageIds) :-
+    % We don't need the "matched" set.
+    ( UnmatchedOrNull = null ->
+        UnmatchedMessageIds = []
+    ;
+        parse_query_message_ids(UnmatchedOrNull, UnmatchedMessageIds)
+    ).
+
+:- pred parse_query_message_ids(json::in, list(message_id)::out) is semidet.
+
+parse_query_message_ids(string(EscString), MessageIds) :-
+    IsSpace = unify(' '),
+    Words = string.words_separator(IsSpace, unescape(EscString)),
+    map(parse_query_message_id, Words, MessageIds).
+
+:- pred parse_query_message_id(string::in, message_id::out) is semidet.
+
+parse_query_message_id(Str, message_id(Id)) :-
+    string.remove_prefix("id:", Str, Id).
 
 %-----------------------------------------------------------------------------%
 

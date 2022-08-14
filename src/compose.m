@@ -488,7 +488,8 @@ start_forward(Config, Crypto, Screen, Message, PartVisibilityMap, CurrTags,
 
 continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
         PartVisibilityMap, CurrTags, Transition, !History, !IO) :-
-    Message = message(MessageId, _Timestamp, Headers0, Tags0, Body0, _Replies0),
+    Message = message(MessageId, _Timestamp, Headers0, Tags0, Body0,
+        _Replies0),
     select_main_part_and_attachments(PartVisibilityMap, [Body0], MaybeMainPart,
         AttachmentParts),
     (
@@ -914,7 +915,8 @@ staging_screen(Screen, MaybeKey, !.StagingInfo, !.AttachInfo, !.PagerInfo,
         !.AttachInfo, !IO),
     draw_attachments_label(Screen, AttachmentPanels, Attrs, !IO),
     draw_sep_bar(Screen, MaybeSepPanel, Attrs, !IO),
-    draw_pager_lines(Screen, PagerPanels, PagerAttrs, !.PagerInfo, !IO),
+    draw_pager_lines(Screen, PagerPanels, PagerAttrs, do_not_obscure,
+        !.PagerInfo, !IO),
     draw_staging_bar(Attrs, Screen, !.StagingInfo, !IO),
     update_panels(Screen, !IO),
 

@@ -73,19 +73,35 @@
 
 :- func opposite_search_direction(search_direction) = search_direction.
 
-:- pred search(pred(T)::in(pred(in) is semidet), search_direction::in,
-    scrollable(T)::in, int::in, int::out) is semidet.
+:- pred search(pred(T)::in(pred(in) is semidet),
+    search_direction::in, scrollable(T)::in, int::in, int::out) is semidet.
+
+:- pred search_with_linenrs(pred(int, T)::in(pred(in, in) is semidet),
+    search_direction::in, scrollable(T)::in, int::in, int::out) is semidet.
 
 :- pred search_forward(pred(T)::in(pred(in) is semidet),
+    scrollable(T)::in, int::in, int::out, T::out) is semidet.
+
+:- pred search_forward_with_linenrs(pred(int, T)::in(pred(in, in) is semidet),
     scrollable(T)::in, int::in, int::out, T::out) is semidet.
 
 :- pred search_forward_limit(pred(T)::in(pred(in) is semidet),
     scrollable(T)::in, int::in, int::in, int::out, T::out) is semidet.
 
+:- pred search_forward_limit_with_linenrs(
+    pred(int, T)::in(pred(in, in) is semidet),
+    scrollable(T)::in, int::in, int::in, int::out, T::out) is semidet.
+
 :- pred search_reverse(pred(T)::in(pred(in) is semidet),
-    scrollable(T)::in, int::in, int::out) is semidet.
+    scrollable(T)::in, int::in, int::out, T::out) is semidet.
+
+:- pred search_reverse_with_linenrs(pred(int, T)::in(pred(in, in) is semidet),
+    scrollable(T)::in, int::in, int::out, T::out) is semidet.
 
 :- pred search_reverse_limit(pred(T)::in(pred(in) is semidet),
+    scrollable(T)::in, int::in, int::in, int::out, T::out) is semidet.
+
+:- pred search_reverse_limit_with_linenrs(pred(int, T)::in(pred(in, in) is semidet),
     scrollable(T)::in, int::in, int::in, int::out, T::out) is semidet.
 
 :- pred append_line(T::in, scrollable(T)::in, scrollable(T)::out) is det.
@@ -282,61 +298,100 @@ move_cursor(NumRows, Delta, HitLimit, !Scrollable) :-
         HitLimit = no
     ).
 
+%-----------------------------------------------------------------------------%
+
 opposite_search_direction(dir_forward) = dir_reverse.
 opposite_search_direction(dir_reverse) = dir_forward.
 
-search(P, dir_forward, Scrollable, I0, I) :-
-    search_forward(P, Scrollable, I0, I, _MatchLine).
-search(P, dir_reverse, Scrollable, I0, I) :-
-    search_reverse(P, Scrollable, I0, I).
+search(P, Dir, Scrollable, !I) :-
+    (
+        Dir = dir_forward,
+        search_forward(P, Scrollable, !I, _MatchLine)
+    ;
+        Dir = dir_reverse,
+        search_reverse(P, Scrollable, !I, _MatchLine)
+    ).
+
+search_with_linenrs(P, Dir, Scrollable, !I) :-
+    (
+        Dir = dir_forward,
+        search_forward_with_linenrs(P, Scrollable, !I, _MatchLine)
+    ;
+        Dir = dir_reverse,
+        search_reverse_with_linenrs(P, Scrollable, !I, _MatchLine)
+    ).
 
 search_forward(P, Scrollable, I0, I, MatchLine) :-
     search_forward_limit(P, Scrollable, I0, int.max_int, I, MatchLine).
 
+search_forward_with_linenrs(P, Scrollable, I0, I, MatchLine) :-
+    search_forward_limit_with_linenrs(P, Scrollable, I0, int.max_int, I,
+        MatchLine).
+
 search_forward_limit(P, Scrollable, I0, Limit, I, MatchLine) :-
+    search_forward_limit_with_linenrs(ignore_linenr(P), Scrollable,
+        I0, Limit, I, MatchLine).
+
+search_forward_limit_with_linenrs(P, Scrollable, I0, Limit, I, MatchLine) :-
     Scrollable = scrollable(Lines, _Top, _MaybeCursor),
     Size = version_array.size(Lines),
-    search_forward_2(P, Lines, int.min(Limit, Size), I0, I, MatchLine).
+    search_forward_loop(P, Lines, int.min(Limit, Size), I0, I, MatchLine).
 
-:- pred search_forward_2(pred(T)::in(pred(in) is semidet),
+:- pred search_forward_loop(pred(int, T)::in(pred(in, in) is semidet),
     version_array(T)::in, int::in, int::in, int::out, T::out) is semidet.
 
-search_forward_2(P, Array, Limit, N0, N, MatchX) :-
+search_forward_loop(P, Array, Limit, N0, N, MatchX) :-
     ( N0 < Limit ->
         X = version_array.lookup(Array, N0),
-        ( P(X) ->
+        ( P(N0, X) ->
             N = N0,
             MatchX = X
         ;
-            search_forward_2(P, Array, Limit, N0 + 1, N, MatchX)
+            search_forward_loop(P, Array, Limit, N0 + 1, N, MatchX)
         )
     ;
         fail
     ).
 
-search_reverse(P, Scrollable, I0, I) :-
+search_reverse(P, Scrollable, I0, I, MatchLine) :-
+    search_reverse_with_linenrs(ignore_linenr(P),
+        Scrollable, I0, I, MatchLine).
+
+search_reverse_with_linenrs(P, Scrollable, I0, I, MatchLine) :-
     Limit = 0,
-    search_reverse_limit(P, Scrollable, I0, Limit, I, _MatchLine).
+    search_reverse_limit_with_linenrs(P, Scrollable, I0, Limit, I, MatchLine).
 
 search_reverse_limit(P, Scrollable, I0, Limit, I, MatchLine) :-
-    Scrollable = scrollable(Lines, _Top, _MaybeCursor),
-    search_reverse_2(P, Lines, Limit, I0 - 1, I, MatchLine).
+    search_reverse_limit_with_linenrs(ignore_linenr(P),
+        Scrollable, I0, Limit, I, MatchLine).
 
-:- pred search_reverse_2(pred(T)::in(pred(in) is semidet),
+search_reverse_limit_with_linenrs(P, Scrollable, I0, Limit, I, MatchLine) :-
+    Scrollable = scrollable(Lines, _Top, _MaybeCursor),
+    search_reverse_loop(P, Lines, Limit, I0 - 1, I, MatchLine).
+
+:- pred search_reverse_loop(pred(int, T)::in(pred(in, in) is semidet),
     version_array(T)::in, int::in, int::in, int::out, T::out) is semidet.
 
-search_reverse_2(P, Array, Limit, N0, N, MatchX) :-
+search_reverse_loop(P, Array, Limit, N0, N, MatchX) :-
     ( N0 >= Limit ->
         X = version_array.lookup(Array, N0),
-        ( P(X) ->
+        ( P(N0, X) ->
             N = N0,
             MatchX = X
         ;
-            search_reverse_2(P, Array, Limit, N0 - 1, N, MatchX)
+            search_reverse_loop(P, Array, Limit, N0 - 1, N, MatchX)
         )
     ;
         fail
     ).
+
+:- pred ignore_linenr(pred(T), int, T).
+:- mode ignore_linenr(in(pred(in) is semidet), in, in) is semidet.
+
+ignore_linenr(P, _LineNr, X) :-
+    P(X).
+
+%-----------------------------------------------------------------------------%
 
 append_line(NewLine, Scrollable0, Scrollable) :-
     Scrollable0 = scrollable(Array0, Top, MaybeCursor),

@@ -48,7 +48,8 @@
                 p_part_head_low :: attr,
                 p_part_message  :: attr,
                 p_fold          :: attr,
-                p_separator     :: attr
+                p_separator     :: attr,
+                p_obscured      :: attr
             ).
 
 :- type index_attrs
@@ -62,7 +63,8 @@
     --->    thread_attrs(
                 t_generic       :: generic_attrs,
                 t_status        :: status_attrs,
-                t_tree          :: attr
+                t_tree          :: attr,
+                t_obscured      :: attr
             ).
 
 :- type compose_attrs
@@ -171,10 +173,11 @@ make_pager_attrs(Config, GenericAttrs0, Attrs) :-
     cfg(Config, Def ^ p_part_message, Sections, "part_message", PartMsg),
     cfg(Config, Def ^ p_fold, Sections, "fold", Fold),
     cfg(Config, Def ^ p_separator, Sections, "separator", Separator),
+    cfg(Config, Def ^ p_obscured,  Sections, "obscured", Obscured),
 
     Attrs = pager_attrs(GenericAttrs, Body, QuoteOdd, QuoteEven,
         DiffCommon, DiffAdd, DiffRem, DiffHunk, DiffIndex, Url,
-        PartHead, PartHeadLow, PartMsg, Fold, Separator).
+        PartHead, PartHeadLow, PartMsg, Fold, Separator, Obscured).
 
 :- pred make_index_attrs(config::in, generic_attrs::in, index_attrs::out)
     is det.
@@ -212,7 +215,8 @@ make_thread_attrs(Config, !.GenericAttrs, StatusAttrs, Attrs) :-
     Def = default_thread_attrs(!.GenericAttrs, StatusAttrs),
     Sections = [Section, generic_section],
     cfg(Config, Def ^ t_tree, Sections, "tree", Tree),
-    Attrs = thread_attrs(!.GenericAttrs, StatusAttrs, Tree).
+    cfg(Config, Def ^ t_obscured, Sections, "obscured", Obscured),
+    Attrs = thread_attrs(!.GenericAttrs, StatusAttrs, Tree, Obscured).
 
 :- pred make_compose_attrs(config::in, generic_attrs::in, status_attrs::in,
     compose_attrs::out) is det.
@@ -363,7 +367,8 @@ default_pager_attrs(GenericAttrs) =
         normal(magenta), % part_head_low
         normal(magenta),
         normal(magenta),
-        bold(blue)
+        bold(blue),
+        bold(black)
     ).
 
 :- func default_index_attrs(generic_attrs) = index_attrs.
@@ -381,7 +386,8 @@ default_thread_attrs(GenericAttrs, StatusAttrs) = Attrs :-
     Attrs = thread_attrs(
         GenericAttrs,
         StatusAttrs,
-        normal(magenta)
+        normal(magenta),
+        bold(black)
     ).
 
 :- func default_compose_attrs(generic_attrs, status_attrs) = compose_attrs.

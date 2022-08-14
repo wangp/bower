@@ -258,6 +258,7 @@
   ; part_message = magenta
   ; fold = magenta
   ; separator = bold blue
+  ; obscured = bold black
 
 [color.index]
   ; count = green
@@ -267,6 +268,7 @@
   ; tree = magenta
   ; author = normal
   ; subject = green
+  ; obscured = bold black
 
 [color.compose]
   ; address = bold blue

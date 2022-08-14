@@ -90,7 +90,8 @@
                 i_std_tags  :: standard_tags, % cached from i_tags
                 i_nonstd_tags_width :: int,   % cached from i_nonstd_tags_width
                 i_matched   :: int,
-                i_total     :: int
+                i_total     :: int,
+                i_unmatched_ids :: list(message_id)
             ).
 
 :- type selected
@@ -111,7 +112,7 @@
     ;       half_page_up
     ;       half_page_down
     ;       skip_to_unread
-    ;       enter
+    ;       open_thread_pager(obscure_mode_bool)
     ;       enter_limit
     ;       enter_limit_tilde
     ;       limit_alias_char(char)
@@ -141,7 +142,12 @@
     ;       continue_no_draw    % active
     ;       continue_inactive
     ;       resize
-    ;       open_pager(thread_id, set(tag))
+    ;       open_thread_pager(
+                thread_id,
+                set(tag),           % include tags
+                list(message_id),   % unmatched message ids
+                obscure_mode_bool
+            )
     ;       enter_limit(maybe(string))
     ;       limit_alias_char(char)
     ;       refresh_all(refresh_type)
@@ -365,7 +371,8 @@ add_thread(Nowish, SelectedThreadIds, Thread, !Lines, !IO) :-
     index_line::out, io::di, io::uo) is det.
 
 thread_to_index_line(Nowish, SelectedThreadIds, Thread, Line, !IO) :-
-    Thread = thread(ThreadId, Timestamp, Authors, Subject, Tags, Matched, Total),
+    Thread = thread(ThreadId, Timestamp, Authors, Subject, Tags,
+        Matched, Total, UnmatchedMessageIds),
     localtime(Timestamp, TM, !IO),
     Shorter = yes,
     make_reldate(Nowish, TM, Shorter, Date),
@@ -377,7 +384,7 @@ thread_to_index_line(Nowish, SelectedThreadIds, Thread, Line, !IO) :-
     ),
     Line = index_line(ThreadId, Selected, Date, make_presentable(Authors),
         make_presentable(Subject), Tags, StdTags, DisplayTagsWidth,
-        Matched, Total).
+        Matched, Total, UnmatchedMessageIds).
 
 :- func default_max_threads = int.
 
@@ -454,7 +461,8 @@ index_loop(Screen, OnEntry, MaybeUpdateActivity, !.IndexInfo, !IO) :-
         % prevent auto-refresh.
         index_loop(Screen, redraw, no_update_activity, !.IndexInfo, !IO)
     ;
-        Action = open_pager(ThreadId, IncludeTags),
+        Action = open_thread_pager(ThreadId, IncludeTags, UnmatchedMessageIds,
+            ObscureMode),
         flush_async_with_progress(Screen, !IO),
         Config = !.IndexInfo ^ i_config,
         Crypto = !.IndexInfo ^ i_crypto,
@@ -470,8 +478,8 @@ index_loop(Screen, OnEntry, MaybeUpdateActivity, !.IndexInfo, !IO) :-
             MaybeSearch = no
         ),
         open_thread_pager(Config, Crypto, Screen, ThreadId, IncludeTags,
-            IndexPollTerms, MaybeSearch, Transition,
-            CommonHistory0, CommonHistory, !IO),
+            list_to_set(UnmatchedMessageIds), IndexPollTerms, ObscureMode,
+            MaybeSearch, Transition, CommonHistory0, CommonHistory, !IO),
         handle_screen_transition(Screen, Transition, TagUpdates,
             !IndexInfo, !IO),
         effect_thread_pager_changes(TagUpdates, !IndexInfo, !IO),
@@ -708,8 +716,8 @@ index_view_input(NumRows, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             skip_to_unread(NumRows, MessageUpdate, !IndexInfo),
             Action = continue
         ;
-            Binding = enter,
-            enter(!.IndexInfo, Action),
+            Binding = open_thread_pager(ObscureMode),
+            open_thread_pager(!.IndexInfo, ObscureMode, Action),
             MessageUpdate = clear_message
         ;
             Binding = enter_limit,
@@ -836,9 +844,13 @@ key_binding(code(Code), Binding) :-
         fail
     ).
 key_binding(meta(Char), Binding) :-
-    % Prevent Alt-Backspace, etc.
-    is_printable(Char),
-    Binding = limit_alias_char(Char).
+    ( Char = ('\r') ->
+        Binding = open_thread_pager(obscure_unmatched_messages)
+    ;
+        % Prevent Alt-Backspace, etc.
+        is_printable(Char),
+        Binding = limit_alias_char(Char)
+    ).
 
 :- pred key_binding_char(char::in, binding::out) is semidet.
 
@@ -851,7 +863,7 @@ key_binding_char('[', half_page_up).
 key_binding_char(']', half_page_down).
 key_binding_char('\t', skip_to_unread).
 key_binding_char(',', skip_to_unread).
-key_binding_char('\r', enter).
+key_binding_char('\r', open_thread_pager(do_not_obscure)).
 key_binding_char('l', enter_limit).
 key_binding_char('~', enter_limit_tilde).
 key_binding_char('m', start_compose).
@@ -930,14 +942,17 @@ skip_to_unread(NumRows, MessageUpdate, !Info) :-
 is_unread_line(Line) :-
     Line ^ i_std_tags ^ unread = unread.
 
-:- pred enter(index_info::in, action::out) is det.
+:- pred open_thread_pager(index_info::in, obscure_mode_bool::in, action::out)
+    is det.
 
-enter(Info, Action) :-
+open_thread_pager(Info, ObscureMode, Action) :-
     Scrollable = Info ^ i_scrollable,
     ( get_cursor_line(Scrollable, _, CursorLine) ->
         ThreadId = CursorLine ^ i_id,
         IncludeTags = CursorLine ^ i_tags,
-        Action = open_pager(ThreadId, IncludeTags)
+        UnmatchedMessageIds = CursorLine ^ i_unmatched_ids,
+        Action = open_thread_pager(ThreadId, IncludeTags, UnmatchedMessageIds,
+            ObscureMode)
     ;
         Action = continue
     ).
@@ -1193,14 +1208,14 @@ skip_to_internal_search(NumRows, RelSearchDir, MessageUpdate, !Info) :-
 skip_to_internal_search_2(Search, SearchDir, Start, WrapStart, WrapMessage,
         NumRows, MessageUpdate, Scrollable0, Scrollable) :-
     (
-        scrollable.search(line_matches_internal_search(Search), SearchDir,
-            Scrollable0, Start, Cursor)
+        scrollable.search(line_matches_internal_search(Search),
+            SearchDir, Scrollable0, Start, Cursor)
     ->
         set_cursor_visible(Cursor, NumRows, Scrollable0, Scrollable),
         MessageUpdate = clear_message
     ;
-        scrollable.search(line_matches_internal_search(Search), SearchDir,
-            Scrollable0, WrapStart, Cursor)
+        scrollable.search(line_matches_internal_search(Search),
+            SearchDir, Scrollable0, WrapStart, Cursor)
     ->
         set_cursor_visible(Cursor, NumRows, Scrollable0, Scrollable),
         MessageUpdate = set_info(WrapMessage)
@@ -1214,7 +1229,7 @@ skip_to_internal_search_2(Search, SearchDir, Start, WrapStart, WrapMessage,
 line_matches_internal_search(Search, Line) :-
     Line = index_line(_Id, _Selected, _Date, presentable_string(Authors),
         presentable_string(Subject), Tags, _StdTags, _TagsWidth,
-        _Matched, _Total),
+        _Matched, _Total, _UnmatchedMessageIds),
     (
         strcase_str(Authors, Search)
     ;
@@ -2117,7 +2132,7 @@ draw_index_line(IAttrs, AuthorWidth, Screen, Panel, Line, _LineNr, IsCursor,
         !IO) :-
     Line = index_line(_Id, Selected, Date, presentable_string(Authors),
         presentable_string(Subject), Tags, StdTags, NonstdTagsWidth,
-        Matched, Total),
+        Matched, Total, _UnmatchedMessageIds),
     Attrs = IAttrs ^ i_generic,
     (
         IsCursor = yes,

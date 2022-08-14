@@ -4,9 +4,11 @@
 :- module pager.
 :- interface.
 
+:- import_module bool.
 :- import_module io.
 :- import_module list.
 :- import_module maybe.
+:- import_module set.
 
 :- import_module color.
 :- import_module data.
@@ -36,7 +38,8 @@
     ;       recreate.
 
 :- pred setup_pager(prog_config::in, int::in, setup_mode::in, folding::in,
-    list(message)::in, pager_info::out, io::di, io::uo) is det.
+    list(message)::in, set(message_id)::in, pager_info::out, io::di, io::uo)
+    is det.
 
 :- pred setup_pager_for_staging(prog_config::in, int::in, folding::in,
     string::in, maybe(string)::in, retain_pager_pos::in, pager_info::out,
@@ -58,16 +61,6 @@
 :- pred scroll_but_stop_at_message(int::in, int::in, message_update::out,
     pager_info::in, pager_info::out) is det.
 
-:- pred next_message(message_update::out, pager_info::in, pager_info::out)
-    is det.
-
-:- pred prev_message(message_update::out, pager_info::in, pager_info::out)
-    is det.
-
-:- pred goto_first_message(pager_info::in, pager_info::out) is det.
-
-:- pred goto_end(int::in, pager_info::in, pager_info::out) is det.
-
 :- pred skip_quoted_text(message_update::out, pager_info::in, pager_info::out)
     is det.
 
@@ -75,22 +68,29 @@
 
 :- pred get_top_offset(pager_info::in, int::out) is semidet.
 
-:- pred skip_to_message(message_id::in, pager_info::in, pager_info::out)
-    is det.
+:- pred goto_message_start(message_id::in, bool::out,
+    pager_info::in, pager_info::out) is det.
+
+:- pred goto_message_end(message_id::in, int::in, bool::out,
+    pager_info::in, pager_info::out) is det.
 
 :- type search_kind
     --->    new_search
     ;       continue_search.
 
+:- type obscure_mode_bool
+    --->    do_not_obscure
+    ;       obscure_unmatched_lines.
+
 :- pred skip_to_search(int::in, search_kind::in, string::in,
-    search_direction::in, message_update::out, pager_info::in, pager_info::out)
-    is det.
-
-:- pred highlight_minor(int::in, message_update::out,
+    search_direction::in, obscure_mode_bool::in, message_update::out,
     pager_info::in, pager_info::out) is det.
 
-:- pred highlight_major(int::in, message_update::out,
-    pager_info::in, pager_info::out) is det.
+:- pred highlight_minor(int::in, obscure_mode_bool::in,
+    message_update::out, pager_info::in, pager_info::out) is det.
+
+:- pred highlight_major(int::in, obscure_mode_bool::in,
+    message_update::out, pager_info::in, pager_info::out) is det.
 
 :- type highlighted_thing
     --->    highlighted_part(part, maybe(header_value)) % maybe(subject)
@@ -126,21 +126,19 @@
     part_visibility_map::out) is det.
 
 :- pred draw_pager_lines(screen::in, list(vpanel)::in, pager_attrs::in,
-    pager_info::in, io::di, io::uo) is det.
+    obscure_mode_bool::in, pager_info::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
-:- import_module bool.
 :- import_module char.
 :- import_module cord.
 :- import_module counter.
 :- import_module float.
 :- import_module int.
 :- import_module map.
-:- import_module set.
 :- import_module string.
 :- import_module time.
 :- import_module version_array.
@@ -156,6 +154,7 @@
 :- import_module string_util.
 :- import_module time_util.
 
+:- import_module diet.
 :- import_module dir.
 :- import_module parsing_utils.
 :- import_module make_temp.
@@ -174,6 +173,8 @@
                 p_id_counter    :: counter,
                 p_scrollable    :: scrollable(id_pager_line),
                 p_extents       :: map(message_id, message_extents),
+                p_unmatched_ids :: set(message_id),
+                p_unmatched_linenrs :: unmatched_linenrs,
                 p_last_blank    :: bool     % Introduced for compose view,
                                             % allows to remove the initial
                                             % blank line.
@@ -239,6 +240,10 @@
                 end_excl_line   :: int
             ).
 
+    % Line numbers corresponding to unmatched messages.
+    %
+:- type unmatched_linenrs == diet(int).
+
 :- type binding
     --->    scroll_down
     ;       scroll_up
@@ -248,8 +253,6 @@
     ;       half_page_up
     ;       home
     ;       end
-    ;       next_message
-    ;       prev_message
     ;       skip_quoted_text
     ;       highlight_minor
     ;       cycle_alternatives
@@ -344,7 +347,8 @@ replace_node(FindId, NewTree, Tree0, Tree) :-
 
 %-----------------------------------------------------------------------------%
 
-setup_pager(Config, Cols, Mode, Folding, Messages, Info, !IO) :-
+setup_pager(Config, Cols, Mode, Folding, Messages, UnmatchedMessageIds, Info,
+        !IO) :-
     counter.init(0, Counter0),
     allocate_node_id(NodeId, Counter0, Counter1),
     list.map_foldl2(make_message_tree(Config, Cols, Mode, Folding),
@@ -353,10 +357,12 @@ setup_pager(Config, Cols, Mode, Folding, Messages, Info, !IO) :-
     Flattened = flatten(Tree, no),
     Scrollable = scrollable.init(Flattened),
     make_extents(Flattened, Extents),
-    Info = pager_info(Config, Tree, Counter, Scrollable, Extents, no).
+    make_unmatched_linenrs(Extents, UnmatchedMessageIds, UnmatchedLineNrs),
+    Info = pager_info(Config, Tree, Counter, Scrollable, Extents,
+        UnmatchedMessageIds, UnmatchedLineNrs, no).
 
-:- pred make_message_tree(prog_config::in, int::in, setup_mode::in, folding::in,
-    message::in, tree::out, counter::in, counter::out,
+:- pred make_message_tree(prog_config::in, int::in, setup_mode::in,
+    folding::in, message::in, tree::out, counter::in, counter::out,
     io::di, io::uo) is det.
 
 make_message_tree(Config, Cols, Mode, Folding, Message, Tree, !Counter, !IO) :-
@@ -892,7 +898,10 @@ new_info_for_staging(Config, Cols, Folding, Text, MaybeAltHtml, ShowHtml, Info,
     Flattened = flatten(Tree, LastBlank0),
     Scrollable = scrollable.init(Flattened),
     make_extents(Flattened, Extents),
-    Info = pager_info(Config, Tree, Counter, Scrollable, Extents, LastBlank0).
+    set.init(UnmatchedMessageIds),
+    diet.init(UnmatchedLineNrs),
+    Info = pager_info(Config, Tree, Counter, Scrollable, Extents,
+        UnmatchedMessageIds, UnmatchedLineNrs, LastBlank0).
 
 setup_pager_for_staging(Config, Cols, Folding, Text, MaybeAltHtml,
         RetainPagerPos, Info, !IO) :-
@@ -955,20 +964,12 @@ pager_input(Screen, NumRows, KeyCode, Folding, Action, MessageUpdate,
             scroll_end(NumRows, MessageUpdate, !Info),
             Action = continue
         ;
-            Binding = next_message,
-            next_message(MessageUpdate, !Info),
-            Action = continue
-        ;
-            Binding = prev_message,
-            prev_message(MessageUpdate, !Info),
-            Action = continue
-        ;
             Binding = skip_quoted_text,
             skip_quoted_text(MessageUpdate, !Info),
             Action = continue
         ;
             Binding = highlight_minor,
-            highlight_minor(NumRows, MessageUpdate, !Info),
+            highlight_minor(NumRows, do_not_obscure, MessageUpdate, !Info),
             Action = continue
         ;
             Binding = save_part,
@@ -1014,11 +1015,7 @@ key_binding(KeyCode, Binding) :-
         char_binding(Char, Binding)
     ;
         KeyCode = code(Code),
-        ( Code = curs.key_down ->
-            Binding = next_message
-        ; Code = curs.key_up ->
-            Binding = prev_message
-        ; Code = curs.key_pagedown ->
+        ( Code = curs.key_pagedown ->
             Binding = page_down
         ; Code = curs.key_pageup ->
             Binding = page_up
@@ -1040,8 +1037,6 @@ char_binding(' ', page_down).
 char_binding('b', page_up).
 char_binding(']', half_page_down).
 char_binding('[', half_page_up).
-char_binding('j', next_message).
-char_binding('k', prev_message).
 char_binding('S', skip_quoted_text).
 char_binding('v', highlight_minor).
 char_binding('g', home).
@@ -1116,12 +1111,12 @@ scroll_but_stop_at_message(NumRows, Delta, MessageUpdate, !Info) :-
     (
         ( Delta > 0 ->
             Limit = Top0 + Delta,
-            search_forward_limit(is_message_start, Scrollable0, Top0 + 1,
-                Limit, MessageTop, _)
+            search_forward_limit(is_message_start,
+                Scrollable0, Top0 + 1, Limit, MessageTop, _)
         ; Delta < 0 ->
             Limit = int.max(0, Top0 + Delta),
-            search_reverse_limit(is_message_start, Scrollable0, Top0,
-                Limit, MessageTop, _)
+            search_reverse_limit(is_message_start,
+                Scrollable0, Top0, Limit, MessageTop, _)
         ;
             fail
         )
@@ -1133,61 +1128,21 @@ scroll_but_stop_at_message(NumRows, Delta, MessageUpdate, !Info) :-
         scroll(NumRows, Delta, MessageUpdate, !Info)
     ).
 
-next_message(MessageUpdate, !Info) :-
-    Scrollable0 = !.Info ^ p_scrollable,
-    Top0 = get_top(Scrollable0),
-    ( search_forward(is_message_start, Scrollable0, Top0 + 1, Top, _) ->
-        set_top(Top, Scrollable0, Scrollable),
-        !Info ^ p_scrollable := Scrollable,
-        MessageUpdate = clear_message
-    ;
-        MessageUpdate = set_warning("Already at last message.")
-    ).
-
-prev_message(MessageUpdate, !Info) :-
-    Scrollable0 = !.Info ^ p_scrollable,
-    Top0 = get_top(Scrollable0),
-    ( search_reverse(is_message_start, Scrollable0, Top0 - 1, Top) ->
-        set_top(Top, Scrollable0, Scrollable),
-        !Info ^ p_scrollable := Scrollable,
-        MessageUpdate = clear_message
-    ;
-        MessageUpdate = set_warning("Already at first message.")
-    ).
-
-goto_first_message(!Info) :-
-    Scrollable0 = !.Info ^ p_scrollable,
-    set_top(0, Scrollable0, Scrollable),
-    !Info ^ p_scrollable := Scrollable.
-
-goto_end(NumRows, !Info) :-
-    Scrollable0 = !.Info ^ p_scrollable,
-    Top0 = get_top(Scrollable0),
-    NumLines = scrollable.get_num_lines(Scrollable0),
-    ( search_reverse(is_message_start, Scrollable0, NumLines, TopMin) ->
-        ( Top0 < TopMin ->
-            Top = TopMin
-        ;
-            Top = max(TopMin, NumLines - NumRows)
-        ),
-        set_top(Top, Scrollable0, Scrollable),
-        !Info ^ p_scrollable := Scrollable
-    ;
-        true
-    ).
-
 :- pred is_message_start(id_pager_line::in) is semidet.
 
 is_message_start(IdLine) :-
     is_start_of_message(IdLine, _Message).
 
+%-----------------------------------------------------------------------------%
+
 skip_quoted_text(MessageUpdate, !Info) :-
     Scrollable0 = !.Info ^ p_scrollable,
     Top0 = get_top(Scrollable0),
     (
-        search_forward(is_quoted_text_or_message_start, Scrollable0,
-            Top0 + 1, Top1, _),
-        search_forward(is_not_quoted_text_id, Scrollable0, Top1, Top, _)
+        search_forward(is_quoted_text_or_message_start,
+            Scrollable0, Top0 + 1, Top1, _),
+        search_forward(is_not_quoted_text_id,
+            Scrollable0, Top1, Top, _)
     ->
         set_top(Top, Scrollable0, Scrollable),
         !Info ^ p_scrollable := Scrollable,
@@ -1262,34 +1217,63 @@ scan_back_for_message_start(Lines, I, J, Message) :-
 
 %-----------------------------------------------------------------------------%
 
-skip_to_message(MessageId, !Info) :-
+goto_message_start(MessageId, Moved, !Info) :-
     Scrollable0 = !.Info ^ p_scrollable,
     Extents0 = !.Info ^ p_extents,
-    ( map.search(Extents0, MessageId, message_extents(Start, _EndExcl)) ->
+    Top0 = get_top(Scrollable0),
+    (
+        map.search(Extents0, MessageId, message_extents(Start, _EndExcl)),
+        Start \= Top0
+    ->
         set_top(Start, Scrollable0, Scrollable),
-        !Info ^ p_scrollable := Scrollable
+        !Info ^ p_scrollable := Scrollable,
+        Moved = yes
     ;
-        true
+        Moved = no
+    ).
+
+goto_message_end(MessageId, NumPagerRows, Moved, !Info) :-
+    Scrollable0 = !.Info ^ p_scrollable,
+    Extents0 = !.Info ^ p_extents,
+    Top0 = get_top(Scrollable0),
+    (
+        map.search(Extents0, MessageId, message_extents(Start, EndExcl)),
+        NumSeparatorLines = 3,
+        Top = max(Start, EndExcl + NumSeparatorLines - NumPagerRows),
+        Top \= Top0
+    ->
+        set_top(Top, Scrollable0, Scrollable),
+        !Info ^ p_scrollable := Scrollable,
+        Moved = yes
+    ;
+        Moved = no
     ).
 
 %-----------------------------------------------------------------------------%
 
-skip_to_search(NumRows, SearchKind, Search, SearchDir, MessageUpdate, !Info) :-
+skip_to_search(NumRows, SearchKind, SearchString, SearchDir, ObscureMode,
+        MessageUpdate, !Info) :-
     Scrollable0 = !.Info ^ p_scrollable,
     Top0 = get_top(Scrollable0),
     Bot = Top0 + NumRows,
     choose_search_start(Scrollable0, Top0, Bot, SearchKind, SearchDir, Start),
+
     (
-        search(id_pager_line_matches_search(Search), SearchDir, Scrollable0,
-            Start, Cursor)
-    ->
+        ObscureMode = do_not_obscure,
+        ObscureLineNrs = diet.init
+    ;
+        ObscureMode = obscure_unmatched_lines,
+        ObscureLineNrs = !.Info ^ p_unmatched_linenrs
+    ),
+    SearchPred = id_pager_line_matches_search_string(ObscureLineNrs, SearchString),
+    ( search_with_linenrs(SearchPred, SearchDir, Scrollable0, Start, Cursor) ->
         (
             % Jump to the message containing the match, if it wasn't already.
             SearchDir = dir_forward,
-            search_reverse(is_message_start, Scrollable0, Cursor + 1,
-                NewMsgStart),
-            search_reverse(is_message_start, Scrollable0, Top0 + 1,
-                OldMsgStart),
+            search_reverse(is_message_start,
+                Scrollable0, Cursor + 1, NewMsgStart, _),
+            search_reverse(is_message_start,
+                Scrollable0, Top0 + 1, OldMsgStart, _),
             NewMsgStart \= OldMsgStart
         ->
             set_top(NewMsgStart, Scrollable0, Scrollable1)
@@ -1332,39 +1316,41 @@ choose_search_start(Scrollable, Top, Bot, continue_search, SearchDir, Start) :-
         choose_search_start(Scrollable, Top, Bot, new_search, SearchDir, Start)
     ).
 
-:- pred id_pager_line_matches_search(string::in, id_pager_line::in) is semidet.
+:- pred id_pager_line_matches_search_string(diet(int)::in, string::in,
+    int::in, id_pager_line::in) is semidet.
 
-id_pager_line_matches_search(Search, _Id - Line) :-
-    line_matches_search(Search, Line).
+id_pager_line_matches_search_string(ObscureLineNrs, SearchString, LineNr, _Id - Line) :-
+    not diet.contains(ObscureLineNrs, LineNr),
+    line_matches_search_string(SearchString, Line).
 
-:- pred line_matches_search(string::in, pager_line::in) is semidet.
+:- pred line_matches_search_string(string::in, pager_line::in) is semidet.
 
-line_matches_search(Search, Line) :-
+line_matches_search_string(SearchString, Line) :-
     require_complete_switch [Line]
     (
         Line = start_of_message_header(Message, _Name, Value),
         (
-            strcase_str(Value, Search)
+            strcase_str(Value, SearchString)
         ;
             % XXX this won't match current tags
             Tags = Message ^ m_tags,
             set.member(tag(TagName), Tags),
-            strcase_str(TagName, Search)
+            strcase_str(TagName, SearchString)
         )
     ;
         Line = subseq_message_header(_Continue, _Name, Value),
-        strcase_str(Value, Search)
+        strcase_str(Value, SearchString)
     ;
-        Line = text(pager_text(_, String, _, _)),
-        strcase_str(String, Search)
+        Line = text(pager_text(_, Text, _, _)),
+        strcase_str(Text, SearchString)
     ;
         Line = part_head(Part, _, _, _),
         (
             Part ^ pt_content_type = PartType,
-            strcase_str(to_string(PartType), Search)
+            strcase_str(to_string(PartType), SearchString)
         ;
             Part ^ pt_filename = yes(filename(FileName)),
-            strcase_str(FileName, Search)
+            strcase_str(FileName, SearchString)
         )
     ;
         Line = fold_marker(_, _),
@@ -1379,24 +1365,25 @@ line_matches_search(Search, Line) :-
 
 %-----------------------------------------------------------------------------%
 
-highlight_minor(NumRows, MessageUpdate, !Info) :-
-    ( do_highlight(is_highlightable_minor, NumRows, !Info) ->
+highlight_minor(NumRows, ObscureMode, MessageUpdate, !Info) :-
+    ( do_highlight(is_highlightable_minor, NumRows, ObscureMode, !Info) ->
         MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("No attachment or URL visible.")
     ).
 
-highlight_major(NumRows, MessageUpdate, !Info) :-
-    ( do_highlight(is_highlightable_major, NumRows, !Info) ->
+highlight_major(NumRows, ObscureMode, MessageUpdate, !Info) :-
+    ( do_highlight(is_highlightable_major, NumRows, ObscureMode, !Info) ->
         MessageUpdate = clear_message
     ;
         MessageUpdate = set_warning("No attachment or top of message visible.")
     ).
 
-:- pred do_highlight(pred(id_pager_line)::in(pred(in) is semidet), int::in,
-    pager_info::in, pager_info::out) is semidet.
+:- pred do_highlight(pred(id_pager_line)::in(pred(in) is semidet),
+    int::in, obscure_mode_bool::in, pager_info::in, pager_info::out)
+    is semidet.
 
-do_highlight(Highlightable, NumRows, !Info) :-
+do_highlight(Highlightable, NumRows, ObscureMode, !Info) :-
     Scrollable0 = !.Info ^ p_scrollable,
     Top = get_top(Scrollable0),
     Bot = Top + NumRows,
@@ -1409,14 +1396,29 @@ do_highlight(Highlightable, NumRows, !Info) :-
     ;
         Start = Top
     ),
-    ( search_forward_limit(Highlightable, Scrollable0, Start, Bot, Cur, _) ->
+    (
+        ObscureMode = do_not_obscure,
+        ObscureLineNrs = diet.init
+    ;
+        ObscureMode = obscure_unmatched_lines,
+        ObscureLineNrs = !.Info ^ p_unmatched_linenrs
+    ),
+    Pred = not_obscured_line_and(ObscureLineNrs, Highlightable),
+    ( search_forward_limit_with_linenrs(Pred, Scrollable0, Start, Bot, Cur, _) ->
         set_cursor(Cur, Scrollable0, Scrollable)
-    ; search_forward_limit(Highlightable, Scrollable0, Top, Bot, Cur, _) ->
+    ; search_forward_limit_with_linenrs(Pred, Scrollable0, Top, Bot, Cur, _) ->
         set_cursor(Cur, Scrollable0, Scrollable)
     ;
         fail
     ),
     !Info ^ p_scrollable := Scrollable.
+
+:- pred not_obscured_line_and(unmatched_linenrs, pred(T), int, T).
+:- mode not_obscured_line_and(in, pred(in) is semidet, in, in) is semidet.
+
+not_obscured_line_and(ObscureLineNrs, P, LineNr, X) :-
+    not diet.contains(ObscureLineNrs, LineNr),
+    P(X).
 
 :- pred is_highlightable_minor(id_pager_line::in) is semidet.
 
@@ -1495,7 +1497,7 @@ get_highlighted_thing(Info, Thing) :-
 
 replace_node_under_cursor(NumRows, Cols, Folding, Part, Info0, Info, !IO) :-
     Info0 = pager_info(Config, Tree0, Counter0, Scrollable0, _Extents0,
-        LastBlank0),
+        UnmatchedMessageIds, _UnmatchedLineNrs0, LastBlank0),
     ( get_cursor_line(Scrollable0, _, NodeId - _Line) ->
         make_part_tree(Config, Cols, Folding, Part, NewNode,
             no, _ElideInitialHeadLine, Counter0, Counter, !IO),
@@ -1503,8 +1505,9 @@ replace_node_under_cursor(NumRows, Cols, Folding, Part, Info0, Info, !IO) :-
         Flattened = flatten(Tree, LastBlank0),
         scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
         make_extents(Flattened, Extents),
+        make_unmatched_linenrs(Extents, UnmatchedMessageIds, UnmatchedLineNrs),
         Info = pager_info(Config, Tree, Counter, Scrollable, Extents,
-            LastBlank0)
+            UnmatchedMessageIds, UnmatchedLineNrs, LastBlank0)
     ;
         Info = Info0
     ).
@@ -1599,7 +1602,7 @@ toggle_part(ToggleType, NumRows, Cols, Folding, NodeId, Line, MessageUpdate,
     ->
         HiddenParts = HiddenParts1 ++ [Part0],
         Info0 = pager_info(Config, Tree0, Counter0, Scrollable0, _Extents0,
-            LastBlank0),
+            UnmatchedMessageIds, _UnmatchedLineNrs0, LastBlank0),
         make_part_tree_with_alts(Config, Cols, Folding, HiddenParts, Part,
             expand_unsupported, NewNode, no, _ElideInitialHeadLine,
             Counter0, Counter, !IO),
@@ -1607,8 +1610,9 @@ toggle_part(ToggleType, NumRows, Cols, Folding, NodeId, Line, MessageUpdate,
         Flattened = flatten(Tree, LastBlank0),
         scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
         make_extents(Flattened, Extents),
+        make_unmatched_linenrs(Extents, UnmatchedMessageIds, UnmatchedLineNrs),
         Info = pager_info(Config, Tree, Counter, Scrollable, Extents,
-            LastBlank0),
+            UnmatchedMessageIds, UnmatchedLineNrs, LastBlank0),
         Type = mime_type.to_string(Part ^ pt_content_type),
         MessageUpdate = set_info("Showing " ++ Type ++ " alternative.")
     ;
@@ -1625,7 +1629,7 @@ toggle_part_expanded(NumRows, Cols, Folding, NodeId, Line0, MessageUpdate,
         Info0, Info, !IO) :-
     Line0 = part_head(Part, HiddenParts, WasExpanded, Importance),
     Info0 = pager_info(Config, Tree0, Counter0, Scrollable0, _Extents0,
-        LastBlank0),
+        UnmatchedMessageIds, _UnmatchedLineNrs0, LastBlank0),
     (
         WasExpanded = part_not_expanded,
         MessageUpdate = set_info("Showing part."),
@@ -1644,8 +1648,9 @@ toggle_part_expanded(NumRows, Cols, Folding, NodeId, Line0, MessageUpdate,
     Flattened = flatten(Tree, LastBlank0),
     scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
     make_extents(Flattened, Extents),
+    make_unmatched_linenrs(Extents, UnmatchedMessageIds, UnmatchedLineNrs),
     Info = pager_info(Config, Tree, Counter, Scrollable, Extents,
-        LastBlank0).
+        UnmatchedMessageIds, UnmatchedLineNrs, LastBlank0).
 
 :- inst fold_marker
     --->    fold_marker(ground, ground).
@@ -1667,13 +1672,14 @@ toggle_folding(NumRows, NodeId, Line, Info0, Info) :-
     NewNode = node(NodeId, [SubTree], no),
 
     Info0 = pager_info(Config, Tree0, Counter, Scrollable0, _Extents0,
-        LastBlank0),
+        UnmatchedMessageIds, _UnmatchedLineNrs0, LastBlank0),
     replace_node(NodeId, NewNode, Tree0, Tree),
     Flattened = flatten(Tree, LastBlank0),
     scrollable.reinit(Flattened, NumRows, Scrollable0, Scrollable),
     make_extents(Flattened, Extents),
+    make_unmatched_linenrs(Extents, UnmatchedMessageIds, UnmatchedLineNrs),
     Info = pager_info(Config, Tree, Counter, Scrollable, Extents,
-        LastBlank0).
+        UnmatchedMessageIds, UnmatchedLineNrs, LastBlank0).
 
 %-----------------------------------------------------------------------------%
 
@@ -1760,6 +1766,28 @@ is_part_of_message(_NodeId - Line) :-
     ;
         Line = message_separator,
         fail
+    ).
+
+%-----------------------------------------------------------------------------%
+
+:- pred make_unmatched_linenrs(map(message_id, message_extents)::in,
+    set(message_id)::in, unmatched_linenrs::out) is det.
+
+make_unmatched_linenrs(Extents, UnmatchedMessageIds, UnmatchedLineNrs) :-
+    set.foldl(make_unmatched_linenrs_2(Extents), UnmatchedMessageIds,
+        diet.init, UnmatchedLineNrs).
+
+:- pred make_unmatched_linenrs_2(map(message_id, message_extents)::in,
+    message_id::in, unmatched_linenrs::in, unmatched_linenrs::out) is det.
+
+make_unmatched_linenrs_2(Extents, MessageId, !UnmatchedLineNrs) :-
+    % Messages that were unmatched when the search was originally performed
+    % might not exist anymore.
+    ( map.search(Extents, MessageId, MessageExtents) ->
+        MessageExtents = message_extents(Start, EndExcl),
+        diet.insert_interval(Start, EndExcl - 1, !UnmatchedLineNrs)
+    ;
+        true
     ).
 
 %-----------------------------------------------------------------------------%
@@ -1853,21 +1881,35 @@ add_part_visibility(PartVisibility, Part, !Map) :-
 
 %-----------------------------------------------------------------------------%
 
-draw_pager_lines(Screen, Panels, Attrs, Info, !IO) :-
+draw_pager_lines(Screen, Panels, Attrs, ObscureMode, Info, !IO) :-
     Scrollable = Info ^ p_scrollable,
-    scrollable.draw(draw_id_pager_line(Attrs), Screen, Panels, Scrollable,
-        !IO).
+    (
+        ObscureMode = do_not_obscure,
+        ObscureLineNrs = diet.init
+    ;
+        ObscureMode = obscure_unmatched_lines,
+        ObscureLineNrs = Info ^ p_unmatched_linenrs
+    ),
+    scrollable.draw(draw_id_pager_line(Attrs, ObscureLineNrs),
+        Screen, Panels, Scrollable, !IO).
 
-:- pred draw_id_pager_line(pager_attrs::in, screen::in, vpanel::in,
-    id_pager_line::in, int::in, bool::in, io::di, io::uo) is det.
+:- pred draw_id_pager_line(pager_attrs::in, unmatched_linenrs::in,
+    screen::in, vpanel::in, id_pager_line::in, int::in, bool::in,
+    io::di, io::uo) is det.
 
-draw_id_pager_line(Attrs, Screen, Panel, _Id - Line, _LineNr, IsCursor, !IO) :-
-    draw_pager_line(Attrs, Screen, Panel, Line, IsCursor, !IO).
+draw_id_pager_line(Attrs, ObscureLines, Screen, Panel, _Id - Line, LineNr,
+        IsCursor, !IO) :-
+    ( diet.contains(ObscureLines, LineNr) ->
+        ObscureLine = yes
+    ;
+        ObscureLine = no
+    ),
+    draw_pager_line(Attrs, Screen, Panel, Line, IsCursor, ObscureLine, !IO).
 
 :- pred draw_pager_line(pager_attrs::in, screen::in, vpanel::in,
-    pager_line::in, bool::in, io::di, io::uo) is det.
+    pager_line::in, bool::in, bool::in, io::di, io::uo) is det.
 
-draw_pager_line(Attrs, Screen, Panel, Line, IsCursor, !IO) :-
+draw_pager_line(Attrs, Screen, Panel, Line, IsCursor, ObscureLine, !IO) :-
     GAttrs = Attrs ^ p_generic,
     (
         (
@@ -1886,7 +1928,13 @@ draw_pager_line(Attrs, Screen, Panel, Line, IsCursor, !IO) :-
             getyx(Screen, Panel, Y, X, !IO),
             move(Screen, Panel, Y, X + string_wcwidth(Name) + 2, !IO)
         ),
-        BodyAttr = GAttrs ^ field_body,
+        (
+            ObscureLine = no,
+            BodyAttr = GAttrs ^ field_body
+        ;
+            ObscureLine = yes,
+            BodyAttr = Attrs ^ p_obscured
+        ),
         (
             IsCursor = yes,
             Highlight = curs.reverse
@@ -1901,38 +1949,50 @@ draw_pager_line(Attrs, Screen, Panel, Line, IsCursor, !IO) :-
         draw(Screen, Panel, curs.(BodyAttr + Highlight), Value, !IO)
     ;
         Line = text(pager_text(QuoteLevel, Text, QuoteMarkerEnd, TextType)),
-        Attr0 = quote_level_to_attr(Attrs, QuoteLevel),
         (
-            IsCursor = yes,
-            Attr1 = curs.reverse
+            ObscureLine = no,
+            TextAttr = quote_level_to_attr(Attrs, QuoteLevel)
         ;
-            IsCursor = no,
-            Attr1 = curs.normal
+            ObscureLine = yes,
+            TextAttr = Attrs ^ p_obscured
         ),
         (
             TextType = plain,
-            draw(Screen, Panel, curs.(Attr0 + Attr1), Text, !IO)
+            draw(Screen, Panel, maybe_reverse(IsCursor, TextAttr), Text, !IO)
         ;
             TextType = diff(DiffLine),
-            DiffAttr = diff_line_to_attr(Attrs, DiffLine),
+            (
+                ObscureLine = no,
+                DiffAttr = diff_line_to_attr(Attrs, DiffLine)
+            ;
+                ObscureLine = yes,
+                DiffAttr = Attrs ^ p_obscured
+            ),
             ( QuoteMarkerEnd = 0 ->
-                draw(Screen, Panel, curs.(DiffAttr + Attr1), Text, !IO)
+                draw(Screen, Panel, maybe_reverse(IsCursor, DiffAttr),
+                    Text, !IO)
             ;
                 End = string.length(Text),
-                draw(Screen, Panel, curs.(Attr0 + Attr1),
+                draw(Screen, Panel, maybe_reverse(IsCursor, TextAttr),
                     Text, 0, QuoteMarkerEnd, !IO),
-                draw(Screen, Panel, curs.(DiffAttr + Attr1),
+                draw(Screen, Panel, maybe_reverse(IsCursor, DiffAttr),
                     Text, QuoteMarkerEnd, End, !IO)
             )
         ;
             TextType = url(UrlStart, UrlEnd),
-            UrlAttr = Attrs ^ p_url,
+            (
+                ObscureLine = no,
+                UrlAttr = Attrs ^ p_url
+            ;
+                ObscureLine = yes,
+                UrlAttr = Attrs ^ p_obscured
+            ),
             End = string.length(Text),
-            draw(Screen, Panel, curs.(Attr0 + Attr1),
+            draw(Screen, Panel, maybe_reverse(IsCursor, TextAttr),
                 Text, 0, UrlStart, !IO),
-            draw(Screen, Panel, curs.(UrlAttr + Attr1),
+            draw(Screen, Panel, maybe_reverse(IsCursor, UrlAttr),
                 Text, UrlStart, UrlEnd, !IO),
-            draw(Screen, Panel, curs.(Attr0 + Attr1),
+            draw(Screen, Panel, maybe_reverse(IsCursor, TextAttr),
                 Text, UrlEnd, End, !IO)
         )
     ;
@@ -1941,19 +2001,19 @@ draw_pager_line(Attrs, Screen, Panel, Line, IsCursor, !IO) :-
             _MaybeContentDisposition, _Content, MaybeFilename,
             MaybeContentLength, MaybeCTE, _IsDecrypted),
         (
-            Importance = importance_normal,
-            Attr0 = Attrs ^ p_part_head
+            ObscureLine = no,
+            (
+                Importance = importance_normal,
+                Attr0 = Attrs ^ p_part_head
+            ;
+                Importance = importance_low,
+                Attr0 = Attrs ^ p_part_head_low
+            )
         ;
-            Importance = importance_low,
-            Attr0 = Attrs ^ p_part_head_low
+            ObscureLine = yes,
+            Attr0 = Attrs ^ p_obscured
         ),
-        (
-            IsCursor = yes,
-            Attr = curs.(Attr0 + curs.reverse)
-        ;
-            IsCursor = no,
-            Attr = Attr0
-        ),
+        Attr = maybe_reverse(IsCursor, Attr0),
         draw(Screen, Panel, Attr, "[-- ", !IO),
         draw(Screen, Panel, mime_type.to_string(ContentType), !IO),
         (
@@ -1996,7 +2056,14 @@ draw_pager_line(Attrs, Screen, Panel, Line, IsCursor, !IO) :-
         ),
         draw(Screen, Panel, " --]", !IO),
         ( make_part_message(Part, HiddenParts, Expanded, Message) ->
-            attr(Screen, Panel, Attrs ^ p_part_message, !IO),
+            (
+                ObscureLine = no,
+                PartMessageAttr = Attrs ^ p_part_message
+            ;
+                ObscureLine = yes,
+                PartMessageAttr = Attrs ^ p_obscured
+            ),
+            attr(Screen, Panel, PartMessageAttr, !IO),
             draw2(Screen, Panel, "  ", Message, !IO)
         ;
             true
@@ -2004,18 +2071,25 @@ draw_pager_line(Attrs, Screen, Panel, Line, IsCursor, !IO) :-
     ;
         Line = fold_marker(_, _),
         (
-            IsCursor = yes,
-            Attr = curs.(Attrs ^ p_fold + curs.reverse)
+            ObscureLine = no,
+            Attr0 = Attrs ^ p_fold
         ;
-            IsCursor = no,
-            Attr = Attrs ^ p_fold
+            ObscureLine = yes,
+            Attr0 = Attrs ^ p_obscured
         ),
+        Attr = maybe_reverse(IsCursor, Attr0),
         draw(Screen, Panel, Attr, "...", !IO)
     ;
         Line = signature(signature(Status, MaybeSigErrors)),
-        BodyAttr = GAttrs ^ field_body,
         GoodAttr = GAttrs ^ good_key,
         BadAttr = GAttrs ^ bad_key,
+        (
+            ObscureLine = no,
+            BodyAttr = GAttrs ^ field_body
+        ;
+            ObscureLine = yes,
+            BodyAttr = Attrs ^ p_obscured
+        ),
         (
             Status = none,
             draw(Screen, Panel, BadAttr, " ─• No signature ", !IO)
@@ -2090,6 +2164,11 @@ draw_pager_line(Attrs, Screen, Panel, Line, IsCursor, !IO) :-
         Attr = Attrs ^ p_separator,
         draw(Screen, Panel, Attr, "~", !IO)
     ).
+
+:- func maybe_reverse(bool, curs.attr) = curs.attr.
+
+maybe_reverse(no, Attr) = Attr.
+maybe_reverse(yes, Attr) = curs.(Attr + curs.reverse).
 
 :- func quote_level_to_attr(pager_attrs, quote_level) = curs.attr.
 
