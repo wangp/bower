@@ -346,7 +346,7 @@ start_reply(Config, Crypto, Screen, ReplyKind, Message, PartVisibilityMap,
         Attachments = [],
         % CurrTags includes uncommitted tag changes, unlike MessageTags.
         set.to_sorted_list(CurrTags, Tags0),
-        list.filter(include_user_tag_at_compose, Tags0, Tags),
+        list.filter(copy_tag_for_reply_or_forward, Tags0, Tags),
         MaybeOldDraft = no,
         SignInit = no,
         create_edit_stage(Config, Crypto, Screen, Headers, Body,
@@ -424,6 +424,14 @@ set_headers_for_list_reply(OrigFrom, !Headers) :-
 similar_mailbox(AddrSpec, OtherAddress) :-
     OtherAddress = mailbox(mailbox(_DisplayName, AddrSpec)).
 
+:- pred copy_tag_for_reply_or_forward(tag::in) is semidet.
+
+copy_tag_for_reply_or_forward(Tag) :-
+    include_user_tag_at_compose(Tag),
+    % When replying to a flagged message, the user probably does not want
+    % the reply to be flagged as well.
+    Tag \= tag("flagged").
+
 :- func contains(set(T), T) = bool.
 
 contains(Set, X) = pred_to_bool(contains(Set, X)).
@@ -476,7 +484,7 @@ start_forward(Config, Crypto, Screen, Message, PartVisibilityMap, CurrTags,
     MaybeAppendSignature = do_not_append_signature,
     list.map(to_old_attachment, AttachmentParts, Attachments),
     set.to_sorted_list(CurrTags, CurrTagsList),
-    list.filter(include_user_tag_at_compose, CurrTagsList, Tags),
+    list.filter(copy_tag_for_reply_or_forward, CurrTagsList, Tags),
     MaybeOldDraft = no,
     WasEncrypted = contains(Message ^ m_tags, encrypted_tag),
     DraftSign = no,
@@ -505,7 +513,7 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
     WasEncrypted = contains(Tags0, encrypted_tag),
     DraftSign = contains(Tags0, draft_sign_tag),
     set.to_sorted_list(CurrTags, CurrTagsList),
-    list.filter(include_user_tag_at_compose, CurrTagsList, Tags),
+    list.filter(copy_tag_for_reply_or_forward, CurrTagsList, Tags),
 
     % XXX notmuch show --format=json does not return References and In-Reply-To
     % so we parse them from the raw output.
