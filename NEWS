@@ -1,22 +1,26 @@
-Bower 0.14-unreleased
-=====================
+Bower 1.0 (2022-08-21)
+======================
+The first commit to this project was made 11 years ago. Let's call this v1.0.
 
-* Accept --help and --version options.
-* Accept mailto: argument on command line.
-* Allow omitting "+" prefix on tag additions.
+* index: Use Alt+Enter to open a thread in "obscured" mode.
+  Messages that did not match the search query are displayed differently and
+  not interactable.
+* thread/pager: Use 'M' key to toggle obscured mode.
+* Allow omitting "+" prefix when entering tag additions.
 * Support tag editing on compose screen.
 * Inherit tags from message being replied to or forwarded.
 * Also apply tags to sent message when using a custom post_sendmail action.
 * Use domain of From address for right part of Message-ID.
+* Expand ~ in config values.
+* Expand ~ in interactively entered commands.
 * config: Add ui.default_save_directory option.
-* Removed default HTML filter (was lynx).
+* Remove lynx as the default HTML-to-text filter.
 * Improve search string parser.
 * Fix bug where "body:(foo bar)" was unparsed as "body: ( foo bar )".
-* Restrict places in search string where "~" is special to after
-  whitespace or open parenthesis/brace.
-* Add Alt-Enter to open thread in "obscured" mode: messages that did not match
-  search query are displayed differently and not interactable.
-* thread/pager: Add 'M' to toggle obscured mode.
+* Restrict places in search string where "~" names a Bower search term alias
+  to after whitespace or open parenthesis/brace.
+* Accept mailto: argument on command line.
+* Accept --help and --version options.
 
 Bower 0.13 (2021-07-24)
 =======================
