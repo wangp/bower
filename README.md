@@ -55,9 +55,9 @@ where PARALLEL=-j6 reflects the number of parallel jobs to use.
 
 With Mercury installed and `mmc` in your PATH, run:
 
-    make PARALLEL=-j6
+    make
 
-You may want to edit `Mercury.options` to suit your system.
+You may want to edit `src/Mercury.options` to suit your system.
 If successful, you will get a binary named `bower`.
 
 To generate a man page, run:

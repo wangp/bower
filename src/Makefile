@@ -1,5 +1,6 @@
 MMC = mmc
-PARALLEL =
+PARALLEL = -j $(shell nproc 2>/dev/null || echo 1)
+
 files = $(wildcard *.m) prog_version.m
 
 ../bower: bower
