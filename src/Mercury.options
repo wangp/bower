@@ -1,6 +1,10 @@
 # Default target for mmc --make.
 MAIN_TARGET = bower
 
+# Default grade. You can override this in the environment.
+GRADE = hlc.gc
+MCFLAGS += --grade $(GRADE)
+
 # Link with curses.
 MLLIBS-bower += -lncursesw -lpanelw
 
