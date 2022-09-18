@@ -67,7 +67,12 @@ pipe_to_command(Command, Strings, MaybeError, !IO) :-
                 MaybeError = ok
             ;
                 CommandTokens = [_ | _],
-                pipe_to_command_2(CommandTokens, Strings, MaybeError, !IO)
+                ( shell_word.contains_graphic_metachars(CommandTokens) ->
+                    Message = "Command contains unquoted metacharacters.",
+                    MaybeError = error(Message)
+                ;
+                    pipe_to_command_2(CommandTokens, Strings, MaybeError, !IO)
+                )
             )
         ;
             (

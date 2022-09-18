@@ -2622,7 +2622,12 @@ parse_open_command(CommandStr, ParseRes) :-
             ParseRes = empty_command
         ;
             CommandTokens = [_ | _],
-            ParseRes = command(CommandTokens, Bg)
+            ( shell_word.contains_graphic_metachars(CommandTokens) ->
+                Message = "Command contains unquoted metacharacters.",
+                ParseRes = error(Message)
+            ;
+                ParseRes = command(CommandTokens, Bg)
+            )
         )
     ;
         (
