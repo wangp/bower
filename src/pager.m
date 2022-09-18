@@ -2537,145 +2537,149 @@ prompt_open_part(Screen, Part, MessageUpdate, Tempfile, !Info, !History, !IO)
     message_update::out, maybe(string)::out, pager_info::in, pager_info::out,
     io::di, io::uo) is det.
 
-do_open_part(Config, Screen, Part, Command, MessageUpdate, Tempfile,
+do_open_part(Config, Screen, Part, CommandStr, MessageUpdate, Tempfile,
         !Info, !IO) :-
-    promise_equivalent_solutions [MessageUpdate, Tempfile, !:Info, !:IO] (
-        shell_word.tokenise(Command, ParseResult),
-        (
-            ParseResult = ok(CommandTokens0),
-            get_home_dir(Home, !IO),
-            expand_tilde_home_in_shell_tokens(Home, CommandTokens0,
-                CommandTokens),
-            (
-                CommandTokens = [],
-                MessageUpdate = clear_message,
-                Tempfile = no
-            ;
-                CommandTokens = [_ | _],
-                do_open_part_2(Config, Screen, Part, CommandTokens,
-                    MessageUpdate, Tempfile, !Info, !IO)
-            )
-        ;
-            (
-                ParseResult = error(yes(Error), _Line, Column),
-                Message = string.format("parse error at column %d: %s",
-                    [i(Column), s(Error)])
-            ;
-                ParseResult = error(no, _Line, Column),
-                Message = string.format("parse error at column %d",
-                    [i(Column)])
-            ),
-            MessageUpdate = set_warning(Message),
-            Tempfile = no
-        )
+    parse_open_command(CommandStr, ParseRes),
+    (
+        ParseRes = empty_command,
+        MessageUpdate = clear_message,
+        Tempfile = no
+    ;
+        ParseRes = command(CommandTokens, Bg),
+        do_open_part_2(Config, Screen, Part, CommandTokens, Bg, MessageUpdate,
+            Tempfile, !Info, !IO)
+    ;
+        ParseRes = error(Message),
+        MessageUpdate = set_warning(Message),
+        Tempfile = no
     ).
 
 :- pred do_open_part_2(prog_config::in, screen::in, part::in,
-    list(shell_token)::in(non_empty_list), message_update::out,
+    list(shell_token)::in, run_in_background::in, message_update::out,
     maybe(string)::out, pager_info::in, pager_info::out, io::di, io::uo) is det.
 
-do_open_part_2(Config, Screen, Part, CommandTokens, MessageUpdate, Tempfile,
-        !Info, !IO) :-
+do_open_part_2(Config, Screen, Part, CommandTokens, Bg, MessageUpdate,
+        Tempfile, !Info, !IO) :-
     MaybePartFileName = Part ^ pt_filename,
     (
         MaybePartFileName = yes(filename(PartFilename)),
         get_extension(PartFilename, Ext)
     ->
-        make_temp_suffix(Ext, Res0, !IO)
+        make_temp_suffix(Ext, MakeTempRes, !IO)
     ;
-        make_temp_suffix("", Res0, !IO)
+        make_temp_suffix("", MakeTempRes, !IO)
     ),
     (
-        Res0 = ok(FileName),
-        do_save_part(Config, Part, FileName, Res, !IO),
+        MakeTempRes = ok(FileName),
+        do_save_part(Config, Part, FileName, SaveRes, !IO),
         (
-            Res = ok,
-            call_open_command(Screen, CommandTokens, FileName, MaybeError,
+            SaveRes = ok,
+            call_open_command(Screen, CommandTokens, FileName, Bg, CallRes,
                 !IO),
             (
-                MaybeError = ok,
+                CallRes = ok,
                 Msg = "Press any key to continue (deletes temporary file)",
                 MessageUpdate = set_info(Msg),
                 Tempfile = yes(FileName)
             ;
-                MaybeError = error(Msg),
+                CallRes = error(Msg),
                 MessageUpdate = set_warning(Msg),
+                io.remove_file(FileName, _, !IO),
                 Tempfile = no
             )
         ;
-            Res = error(Error),
+            SaveRes = error(Error),
             string.format("Error saving to %s: %s", [s(FileName), s(Error)],
                 Msg),
+            % Should we delete FileName?
             MessageUpdate = set_warning(Msg),
             Tempfile = no
         )
     ;
-        Res0 = error(Error),
+        MakeTempRes = error(Error),
         string.format("Error opening temporary file: %s", [s(Error)], Msg),
         MessageUpdate = set_warning(Msg),
         Tempfile = no
     ).
 
-:- pred call_open_command(screen::in, list(shell_token)::in(non_empty_list),
-    string::in, maybe_error::out, io::di, io::uo) is det.
+:- type parse_open_command_result
+    --->    empty_command
+    ;       command(list(shell_token), run_in_background)
+    ;       error(string).
 
-call_open_command(Screen, CommandTokens, Arg, MaybeError, !IO) :-
-    make_open_command(CommandTokens, Arg, CommandToShow, CommandToRun, Bg),
-    CallMessage = set_info("Calling " ++ CommandToShow ++ "..."),
-    update_message_immed(Screen, CallMessage, !IO),
-    (
-        Bg = run_in_background,
-        io.call_system(CommandToRun, CallRes, !IO)
-    ;
-        Bg = run_in_foreground,
-        curs.suspend(io.call_system(CommandToRun), CallRes, !IO)
+:- pred parse_open_command(string::in, parse_open_command_result::out)
+    is det.
+
+parse_open_command(CommandStr, ParseRes) :-
+    promise_equivalent_solutions [ParseRes0] (
+        shell_word.tokenise(CommandStr, ParseRes0)
     ),
     (
-        CallRes = ok(ExitStatus),
-        ( ExitStatus = 0 ->
-            MaybeError = ok
+        ParseRes0 = ok(CommandTokens0),
+        remove_bg_operator(CommandTokens0, CommandTokens, Bg),
+        (
+            CommandTokens = [],
+            ParseRes = empty_command
         ;
-            string.format("%s returned with exit status %d",
-                [s(CommandToShow), i(ExitStatus)], Msg),
-            MaybeError = error(Msg)
+            CommandTokens = [_ | _],
+            ParseRes = command(CommandTokens, Bg)
         )
     ;
-        CallRes = error(Error),
-        MaybeError = error("Error: " ++ io.error_message(Error))
+        (
+            ParseRes0 = error(yes(Error), _Line, Column),
+            Message = string.format("parse error at column %d: %s",
+                [i(Column), s(Error)])
+        ;
+            ParseRes0 = error(no, _Line, Column),
+            Message = string.format("parse error at column %d",
+                [i(Column)])
+        ),
+        ParseRes = error(Message)
     ).
 
-:- pred make_open_command(list(shell_token)::in(non_empty_list), string::in,
-    string::out, string::out, run_in_background::out) is det.
+:- pred call_open_command(screen::in, list(shell_token)::in, string::in,
+    run_in_background::in, maybe_error::out, io::di, io::uo) is det.
 
-make_open_command(CommandTokens0, Arg, CommandToShow, CommandToRun, Bg) :-
-    remove_bg_operator(CommandTokens0, CommandTokens, Bg),
-    (
-        CommandTokens = [],
-        % TODO: just do nothing instead
-        QuotedCommandStr = "true"
-    ;
-        CommandTokens = [_ | _],
-        % TODO: reject command with unquoted graphic metachars instead of
-        % treating them as word chars?
-        serialise_quote_all(CommandTokens, QuotedCommandStr)
-    ),
-    CommandToShow = QuotedCommandStr,
+call_open_command(Screen, CommandTokens0, Arg, Bg, Res, !IO) :-
+    get_home_dir(Home, !IO),
+    expand_tilde_home_in_shell_tokens(Home, CommandTokens0, CommandTokens),
+    serialise_quote_all(CommandTokens, QuotedCommandStr),
     QuoteTimes = ( detect_ssh(CommandTokens) -> quote_twice ; quote_once ),
     CommandPrefix = command_prefix(shell_quoted(QuotedCommandStr), QuoteTimes),
+
+    CommandToShow = QuotedCommandStr,
+    CallMessage = set_info("Calling " ++ CommandToShow ++ "..."),
+    update_message_immed(Screen, CallMessage, !IO),
+
     (
         Bg = run_in_background,
         make_quoted_command(CommandPrefix, [Arg],
             redirect_input("/dev/null"), redirect_output("/dev/null"),
             redirect_stderr("/dev/null"), run_in_background,
-            CommandToRun)
+            CommandToRun),
+        io.call_system(CommandToRun, CallRes, !IO)
     ;
         Bg = run_in_foreground,
-        make_quoted_command(CommandPrefix, [Arg], no_redirect, no_redirect,
-            CommandToRun)
+        make_quoted_command(CommandPrefix, [Arg],
+            no_redirect, no_redirect, CommandToRun),
+        curs.suspend(io.call_system(CommandToRun), CallRes, !IO)
+    ),
+    (
+        CallRes = ok(ExitStatus),
+        ( ExitStatus = 0 ->
+            Res = ok
+        ;
+            string.format("%s returned with exit status %d",
+                [s(CommandToShow), i(ExitStatus)], Msg),
+            Res = error(Msg)
+        )
+    ;
+        CallRes = error(Error),
+        Res = error("Error: " ++ io.error_message(Error))
     ).
 
-:- pred remove_bg_operator(list(shell_token)::in(non_empty_list),
-    list(shell_token)::out, run_in_background::out) is det.
+:- pred remove_bg_operator(list(shell_token)::in, list(shell_token)::out,
+    run_in_background::out) is det.
 
 remove_bg_operator(Tokens0, Tokens, Bg) :-
     reverse(Tokens0, RevTokens0),
@@ -2727,40 +2731,24 @@ prompt_open_url(Screen, Url, MessageUpdate, !Info, !History, !IO) :-
 :- pred do_open_url(screen::in, string::in, string::in, message_update::out,
     io::di, io::uo) is det.
 
-do_open_url(Screen, Command, Url, MessageUpdate, !IO) :-
-    promise_equivalent_solutions [MessageUpdate, !:IO] (
-        shell_word.tokenise(Command, ParseResult),
+do_open_url(Screen, CommandStr, Url, MessageUpdate, !IO) :-
+    parse_open_command(CommandStr, ParseRes),
+    (
+        ParseRes = empty_command,
+        MessageUpdate = clear_message
+    ;
+        ParseRes = command(CommandTokens, Bg),
+        call_open_command(Screen, CommandTokens, Url, Bg, CallRes, !IO),
         (
-            ParseResult = ok(CommandTokens0),
-            get_home_dir(Home, !IO),
-            expand_tilde_home_in_shell_tokens(Home, CommandTokens0,
-                CommandTokens),
-            (
-                CommandTokens = [],
-                MessageUpdate = clear_message
-            ;
-                CommandTokens = [_ | _],
-                call_open_command(Screen, CommandTokens, Url, MaybeError, !IO),
-                (
-                    MaybeError = ok,
-                    MessageUpdate = no_change
-                ;
-                    MaybeError = error(Msg),
-                    MessageUpdate = set_warning(Msg)
-                )
-            )
+            CallRes = ok,
+            MessageUpdate = no_change
         ;
-            (
-                ParseResult = error(yes(Error), _Line, Column),
-                Message = string.format("parse error at column %d: %s",
-                    [i(Column), s(Error)])
-            ;
-                ParseResult = error(no, _Line, Column),
-                Message = string.format("parse error at column %d",
-                    [i(Column)])
-            ),
-            MessageUpdate = set_warning(Message)
+            CallRes = error(Msg),
+            MessageUpdate = set_warning(Msg)
         )
+    ;
+        ParseRes = error(Msg),
+        MessageUpdate = set_warning(Msg)
     ).
 
 %-----------------------------------------------------------------------------%
