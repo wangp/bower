@@ -1,0 +1,112 @@
+input: «abc def? x#y»
+tokens: [word([unquoted("abc")]), whitespace, word([unquoted("def?")]), whitespace, word([unquoted("x#y")])]
+serialise: «abc def? x#y»
+quote all: «abc 'def?' 'x#y'»
+
+--------------------
+input: « abc def   123  456  »
+tokens: [word([unquoted("abc")]), whitespace, word([unquoted("def")]), whitespace, word([unquoted("123")]), whitespace, word([unquoted("456")])]
+serialise: «abc def 123 456»
+quote all: «abc def 123 456»
+
+--------------------
+input: «abc|&;()<>xyz»
+tokens: [word([unquoted("abc")]), gmeta("|&;()<>"), word([unquoted("xyz")])]
+serialise: «abc|&;()<>xyz»
+quote all: «abc'|&;()<>'xyz»
+
+--------------------
+input: «\»
+error: missing escaped character
+
+--------------------
+input: «a\\b»
+tokens: [word([unquoted("a"), quoted("\\\\"), unquoted("b")])]
+serialise: «a\\b»
+quote all: «a\\b»
+
+--------------------
+input: «a\;b»
+tokens: [word([unquoted("a"), quoted("\\;"), unquoted("b")])]
+serialise: «a\;b»
+quote all: «a\;b»
+
+--------------------
+input: «a\'b»
+tokens: [word([unquoted("a"), quoted("\\\'"), unquoted("b")])]
+serialise: «a\'b»
+quote all: «a\'b»
+
+--------------------
+input: «'»
+error: unmatched single quote
+
+--------------------
+input: «a''b»
+tokens: [word([unquoted("a"), quoted("\'\'"), unquoted("b")])]
+serialise: «a''b»
+quote all: «a''b»
+
+--------------------
+input: «a' 'b»
+tokens: [word([unquoted("a"), quoted("\' \'"), unquoted("b")])]
+serialise: «a' 'b»
+quote all: «a' 'b»
+
+--------------------
+input: «a';'b»
+tokens: [word([unquoted("a"), quoted("\';\'"), unquoted("b")])]
+serialise: «a';'b»
+quote all: «a';'b»
+
+--------------------
+input: «a'"'b»
+tokens: [word([unquoted("a"), quoted("\'\"\'"), unquoted("b")])]
+serialise: «a'"'b»
+quote all: «a'"'b»
+
+--------------------
+input: «"»
+error: unmatched double quote
+
+--------------------
+input: «a""b»
+tokens: [word([unquoted("a"), quoted("\"\""), unquoted("b")])]
+serialise: «a""b»
+quote all: «a""b»
+
+--------------------
+input: «a" "b»
+tokens: [word([unquoted("a"), quoted("\" \""), unquoted("b")])]
+serialise: «a" "b»
+quote all: «a" "b»
+
+--------------------
+input: «a";"b»
+tokens: [word([unquoted("a"), quoted("\";\""), unquoted("b")])]
+serialise: «a";"b»
+quote all: «a";"b»
+
+--------------------
+input: «a"'"b»
+tokens: [word([unquoted("a"), quoted("\"\'\""), unquoted("b")])]
+serialise: «a"'"b»
+quote all: «a"'"b»
+
+--------------------
+input: «a"\"b»
+error: unmatched double quote
+
+--------------------
+input: «a"\""b»
+tokens: [word([unquoted("a"), quoted("\"\\\"\""), unquoted("b")])]
+serialise: «a"\""b»
+quote all: «a"\""b»
+
+--------------------
+input: «foo </dev/random 2>&1 && true |{bar; bar}&»
+tokens: [word([unquoted("foo")]), whitespace, gmeta("<"), word([unquoted("/dev/random")]), whitespace, word([unquoted("2")]), gmeta(">&"), word([unquoted("1")]), whitespace, gmeta("&&"), whitespace, word([unquoted("true")]), whitespace, gmeta("|"), word([unquoted("{bar")]), gmeta(";"), whitespace, word([unquoted("bar}")]), gmeta("&")]
+serialise: «foo </dev/random 2>&1 && true |{bar; bar}&»
+quote all: «foo '<'/dev/random 2'>&'1 '&&' true '|''{bar'';' 'bar}''&'»
+
+--------------------

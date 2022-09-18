@@ -13,7 +13,8 @@ TESTS = test_base64 \
 	test_rfc6068 \
 	test_json \
 	test_process \
-	test_search_term
+	test_search_term \
+	test_shell_word
 
 .PHONY: default
 default: $(addsuffix .runtest,$(TESTS))
@@ -33,9 +34,7 @@ test_base64.runtest: test_base64
 
 .PHONY: %.runtest
 %.runtest: %
-	./$(<) > $(<).out && \
-		$(DIFF) $(<).exp $(<).out
-	@$(RM) $(<).out
+	./runtest.sh $(<)
 
 # Prevent building targets in parallel to avoid multiple instances of
 # mmc trying to make the same target files at once.

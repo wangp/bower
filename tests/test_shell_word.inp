@@ -1,0 +1,33 @@
+# unquoted
+abc def? x#y
+
+# spaces
+ abc def   123  456  
+
+# metacharacters
+abc|&;()<>xyz
+
+# escape character
+\
+a\\b
+a\;b
+a\'b
+
+# single quotes
+'
+a''b
+a' 'b
+a';'b
+a'"'b
+
+# double quotes
+"
+a""b
+a" "b
+a";"b
+a"'"b
+a"\"b
+a"\""b
+
+# command
+foo </dev/random 2>&1 && true |{bar; bar}&
