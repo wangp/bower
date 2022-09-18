@@ -26,9 +26,8 @@
 :- import_module path_expand.
 :- import_module process.
 :- import_module prog_config.
-:- import_module quote_arg.
 :- import_module quote_command.
-:- import_module old_shell_word.
+:- import_module shell_word.
 
 :- use_module curs.
 
@@ -57,18 +56,18 @@ prompt_and_pipe_to_command(Screen, PromptCommand, Strings, MessageUpdate,
 
 pipe_to_command(Command, Strings, MaybeError, !IO) :-
     promise_equivalent_solutions [MaybeError, !:IO] (
-        old_shell_word.split(Command, ParseResult),
+        shell_word.tokenise(Command, ParseResult),
         (
-            ParseResult = ok(CommandWords0),
+            ParseResult = ok(CommandTokens0),
             get_home_dir(Home, !IO),
-            expand_tilde_home_in_shell_words(Home, CommandWords0,
-                CommandWords),
+            expand_tilde_home_in_shell_tokens(Home,
+                CommandTokens0, CommandTokens),
             (
-                CommandWords = [],
+                CommandTokens = [],
                 MaybeError = ok
             ;
-                CommandWords = [_ | _],
-                pipe_to_command_2(CommandWords, Strings, MaybeError, !IO)
+                CommandTokens = [_ | _],
+                pipe_to_command_2(CommandTokens, Strings, MaybeError, !IO)
             )
         ;
             (
@@ -84,11 +83,11 @@ pipe_to_command(Command, Strings, MaybeError, !IO) :-
         )
     ).
 
-:- pred pipe_to_command_2(list(word)::in, list(string)::in,
+:- pred pipe_to_command_2(list(shell_token)::in, list(string)::in,
     maybe_error::out, io::di, io::uo) is det.
 
-pipe_to_command_2(CommandWords, Strings, MaybeError, !IO) :-
-    make_pipe_to_command(CommandWords, Command),
+pipe_to_command_2(CommandTokens, Strings, MaybeError, !IO) :-
+    make_pipe_to_command(CommandTokens, Command),
     Input = string.join_list(" ", Strings),
     curs.suspend(call_system_write_to_stdin(Command, environ([]), Input),
         CallRes, !IO),
@@ -100,15 +99,13 @@ pipe_to_command_2(CommandWords, Strings, MaybeError, !IO) :-
         MaybeError = error(io.error_message(Error))
     ).
 
-:- pred make_pipe_to_command(list(word)::in, string::out) is det.
+:- pred make_pipe_to_command(list(shell_token)::in, string::out) is det.
 
-make_pipe_to_command(CommandWords, Command) :-
+make_pipe_to_command(CommandTokens, Command) :-
     % Could check for bg operator.
-    WordStrings = list.map(word_string, CommandWords),
-    CommandPrefix = command_prefix(
-        shell_quoted(string.join_list(" ", list.map(quote_arg, WordStrings))),
-        ( detect_ssh(CommandWords) -> quote_twice ; quote_once )
-    ),
+    serialise_quote_all(CommandTokens, QuotedCommandStr),
+    QuoteTimes = ( detect_ssh(CommandTokens) -> quote_twice ; quote_once ),
+    CommandPrefix = command_prefix(shell_quoted(QuotedCommandStr), QuoteTimes),
     make_quoted_command(CommandPrefix, [], no_redirect, no_redirect, Command).
 
 %-----------------------------------------------------------------------------%

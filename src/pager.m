@@ -153,10 +153,9 @@
 :- import_module mime_type.
 :- import_module pager_text.
 :- import_module path_expand.
-:- import_module quote_arg.
 :- import_module quote_command.
 :- import_module sanitise.
-:- import_module old_shell_word.
+:- import_module shell_word.
 :- import_module size_util.
 :- import_module string_util.
 :- import_module text_entry.
@@ -2541,19 +2540,19 @@ prompt_open_part(Screen, Part, MessageUpdate, Tempfile, !Info, !History, !IO)
 do_open_part(Config, Screen, Part, Command, MessageUpdate, Tempfile,
         !Info, !IO) :-
     promise_equivalent_solutions [MessageUpdate, Tempfile, !:Info, !:IO] (
-        old_shell_word.split(Command, ParseResult),
+        shell_word.tokenise(Command, ParseResult),
         (
-            ParseResult = ok(CommandWords0),
+            ParseResult = ok(CommandTokens0),
             get_home_dir(Home, !IO),
-            expand_tilde_home_in_shell_words(Home, CommandWords0,
-                CommandWords),
+            expand_tilde_home_in_shell_tokens(Home, CommandTokens0,
+                CommandTokens),
             (
-                CommandWords = [],
+                CommandTokens = [],
                 MessageUpdate = clear_message,
                 Tempfile = no
             ;
-                CommandWords = [_ | _],
-                do_open_part_2(Config, Screen, Part, CommandWords,
+                CommandTokens = [_ | _],
+                do_open_part_2(Config, Screen, Part, CommandTokens,
                     MessageUpdate, Tempfile, !Info, !IO)
             )
         ;
@@ -2572,10 +2571,10 @@ do_open_part(Config, Screen, Part, Command, MessageUpdate, Tempfile,
     ).
 
 :- pred do_open_part_2(prog_config::in, screen::in, part::in,
-    list(word)::in(non_empty_list), message_update::out, maybe(string)::out,
-    pager_info::in, pager_info::out, io::di, io::uo) is det.
+    list(shell_token)::in(non_empty_list), message_update::out,
+    maybe(string)::out, pager_info::in, pager_info::out, io::di, io::uo) is det.
 
-do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, Tempfile,
+do_open_part_2(Config, Screen, Part, CommandTokens, MessageUpdate, Tempfile,
         !Info, !IO) :-
     MaybePartFileName = Part ^ pt_filename,
     (
@@ -2591,7 +2590,8 @@ do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, Tempfile,
         do_save_part(Config, Part, FileName, Res, !IO),
         (
             Res = ok,
-            call_open_command(Screen, CommandWords, FileName, MaybeError, !IO),
+            call_open_command(Screen, CommandTokens, FileName, MaybeError,
+                !IO),
             (
                 MaybeError = ok,
                 Msg = "Press any key to continue (deletes temporary file)",
@@ -2616,11 +2616,11 @@ do_open_part_2(Config, Screen, Part, CommandWords, MessageUpdate, Tempfile,
         Tempfile = no
     ).
 
-:- pred call_open_command(screen::in, list(word)::in(non_empty_list),
+:- pred call_open_command(screen::in, list(shell_token)::in(non_empty_list),
     string::in, maybe_error::out, io::di, io::uo) is det.
 
-call_open_command(Screen, CommandWords, Arg, MaybeError, !IO) :-
-    make_open_command(CommandWords, Arg, CommandToShow, CommandToRun, Bg),
+call_open_command(Screen, CommandTokens, Arg, MaybeError, !IO) :-
+    make_open_command(CommandTokens, Arg, CommandToShow, CommandToRun, Bg),
     CallMessage = set_info("Calling " ++ CommandToShow ++ "..."),
     update_message_immed(Screen, CallMessage, !IO),
     (
@@ -2644,17 +2644,24 @@ call_open_command(Screen, CommandWords, Arg, MaybeError, !IO) :-
         MaybeError = error("Error: " ++ io.error_message(Error))
     ).
 
-:- pred make_open_command(list(word)::in(non_empty_list), string::in,
+:- pred make_open_command(list(shell_token)::in(non_empty_list), string::in,
     string::out, string::out, run_in_background::out) is det.
 
-make_open_command(CommandWords0, Arg, CommandToShow, CommandToRun, Bg) :-
-    remove_bg_operator(CommandWords0, CommandWords, Bg),
-    WordStrings = list.map(word_string, CommandWords),
-    CommandToShow = string.join_list(" ", WordStrings),
-    CommandPrefix = command_prefix(
-        shell_quoted(string.join_list(" ", list.map(quote_arg, WordStrings))),
-        ( detect_ssh(CommandWords) -> quote_twice ; quote_once )
+make_open_command(CommandTokens0, Arg, CommandToShow, CommandToRun, Bg) :-
+    remove_bg_operator(CommandTokens0, CommandTokens, Bg),
+    (
+        CommandTokens = [],
+        % TODO: just do nothing instead
+        QuotedCommandStr = "true"
+    ;
+        CommandTokens = [_ | _],
+        % TODO: reject command with unquoted graphic metachars instead of
+        % treating them as word chars?
+        serialise_quote_all(CommandTokens, QuotedCommandStr)
     ),
+    CommandToShow = QuotedCommandStr,
+    QuoteTimes = ( detect_ssh(CommandTokens) -> quote_twice ; quote_once ),
+    CommandPrefix = command_prefix(shell_quoted(QuotedCommandStr), QuoteTimes),
     (
         Bg = run_in_background,
         make_quoted_command(CommandPrefix, [Arg],
@@ -2667,37 +2674,32 @@ make_open_command(CommandWords0, Arg, CommandToShow, CommandToRun, Bg) :-
             CommandToRun)
     ).
 
-:- pred remove_bg_operator(list(word)::in(non_empty_list), list(word)::out,
-    run_in_background::out) is det.
+:- pred remove_bg_operator(list(shell_token)::in(non_empty_list),
+    list(shell_token)::out, run_in_background::out) is det.
 
-remove_bg_operator(Words0, Words, Bg) :-
-    (
-        list.split_last(Words0, ButLast, Last0),
-        remove_bg_operator_2(Last0, Last)
-    ->
-        (
-            Last = word([]),
-            Words = ButLast
-        ;
-            Last = word([_ | _]),
-            Words = ButLast ++ [Last]
-        ),
+remove_bg_operator(Tokens0, Tokens, Bg) :-
+    reverse(Tokens0, RevTokens0),
+    ( remove_bg_operator_rev(RevTokens0, RevTokens1) ->
+        reverse(RevTokens1, Tokens),
         Bg = run_in_background
     ;
-        Words = Words0,
+        Tokens = Tokens0,
         Bg = run_in_foreground
     ).
 
-:- pred remove_bg_operator_2(word::in, word::out) is semidet.
+:- pred remove_bg_operator_rev(list(shell_token)::in, list(shell_token)::out)
+    is semidet.
 
-remove_bg_operator_2(word(Segments0), word(Segments)) :-
-    list.split_last(Segments0, ButLast, Last0),
-    Last0 = unquoted(LastString0),
-    string.remove_suffix(LastString0, "&", LastString),
-    ( LastString = "" ->
-        Segments = ButLast
+remove_bg_operator_rev(RevTokens0, RevTokens) :-
+    RevTokens0 = [gmeta(Str0) | RevTokens1],
+    % If we were allowing arbitrary shell commands, a trailing & could be part
+    % of an operator like &&. But we don't want to run arbitrary shell commands
+    % anyway.
+    string.remove_suffix(Str0, "&", Str),
+    ( Str = "" ->
+        RevTokens = ltrim_whitespace(RevTokens1)
     ;
-        Segments = ButLast ++ [unquoted(LastString)]
+        RevTokens = [gmeta(Str) | RevTokens1]
     ).
 
 %-----------------------------------------------------------------------------%
@@ -2727,18 +2729,18 @@ prompt_open_url(Screen, Url, MessageUpdate, !Info, !History, !IO) :-
 
 do_open_url(Screen, Command, Url, MessageUpdate, !IO) :-
     promise_equivalent_solutions [MessageUpdate, !:IO] (
-        old_shell_word.split(Command, ParseResult),
+        shell_word.tokenise(Command, ParseResult),
         (
-            ParseResult = ok(CommandWords0),
+            ParseResult = ok(CommandTokens0),
             get_home_dir(Home, !IO),
-            expand_tilde_home_in_shell_words(Home, CommandWords0,
-                CommandWords),
+            expand_tilde_home_in_shell_tokens(Home, CommandTokens0,
+                CommandTokens),
             (
-                CommandWords = [],
+                CommandTokens = [],
                 MessageUpdate = clear_message
             ;
-                CommandWords = [_ | _],
-                call_open_command(Screen, CommandWords, Url, MaybeError, !IO),
+                CommandTokens = [_ | _],
+                call_open_command(Screen, CommandTokens, Url, MaybeError, !IO),
                 (
                     MaybeError = ok,
                     MessageUpdate = no_change

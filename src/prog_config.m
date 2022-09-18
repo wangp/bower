@@ -16,7 +16,7 @@
 :- import_module notmuch_config.
 :- import_module quote_command.
 :- import_module rfc5322.
-:- import_module old_shell_word.
+:- import_module shell_word.
 
 %-----------------------------------------------------------------------------%
 
@@ -127,7 +127,7 @@
 %-----------------------------------------------------------------------------%
 
     % Exported for open part / URL commands.
-:- pred detect_ssh(list(old_shell_word.word)::in) is semidet.
+:- pred detect_ssh(list(shell_token)::in) is semidet.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -142,7 +142,6 @@
 
 :- import_module config.
 :- import_module path_expand.
-:- import_module quote_arg.
 :- import_module rfc5322.parser.
 :- import_module rfc5322.writer.
 :- import_module xdg.
@@ -530,14 +529,13 @@ parse_command(Home, String, CommandPrefix, !Errors) :-
     maybe_error(command_prefix)::out) is cc_multi.
 
 do_parse_command(Home, S0, Res) :-
-    old_shell_word.split(S0, ParseResult),
+    shell_word.tokenise(S0, ParseResult),
     (
-        ParseResult = ok(Words0),
-        expand_tilde_home_in_shell_words(Home, Words0, Words),
-        Args = list.map(word_string, Words),
-        S = string.join_list(" ", list.map(quote_arg, Args)),
-        QuoteTimes = ( detect_ssh(Words) -> quote_twice ; quote_once ),
-        Res = ok(command_prefix(shell_quoted(S), QuoteTimes))
+        ParseResult = ok(Tokens0),
+        expand_tilde_home_in_shell_tokens(Home, Tokens0, Tokens),
+        serialise_quote_all(Tokens, QuotedCommandStr),
+        QuoteTimes = ( detect_ssh(Tokens) -> quote_twice ; quote_once ),
+        Res = ok(command_prefix(shell_quoted(QuotedCommandStr), QuoteTimes))
     ;
         (
             ParseResult = error(yes(Message), _Line, _Column)

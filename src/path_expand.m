@@ -7,7 +7,7 @@
 :- import_module io.
 :- import_module list.
 
-:- import_module old_shell_word.
+:- import_module shell_word.
 
 :- type home
     --->    home(string)
@@ -17,14 +17,15 @@
 
 :- pred expand_tilde_home(home::in, string::in, string::out) is det.
 
-:- pred expand_tilde_home_in_shell_words(home::in,
-    list(word)::in, list(word)::out) is det.
+:- pred expand_tilde_home_in_shell_tokens(home::in,
+    list(shell_token)::in, list(shell_token)::out) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
+:- import_module bool.
 :- import_module maybe.
 :- import_module string.
 
@@ -42,13 +43,23 @@ get_home_dir(MaybeHome, !IO) :-
         MaybeHome = no_home
     ).
 
+%-----------------------------------------------------------------------------%
+
 expand_tilde_home(MaybeHome, String0, String) :-
+    FollowedByWordBoundary = yes, % assume nothing follows String0
+    expand_tilde_home_follow(MaybeHome, String0, FollowedByWordBoundary,
+        String).
+
+:- pred expand_tilde_home_follow(home::in, string::in, bool::in, string::out)
+    is det.
+
+expand_tilde_home_follow(MaybeHome, String0, FollowedByWordBoundary, String) :-
     (
         MaybeHome = home(HomeDir),
         % We don't support ~USERNAME prefix.
         ( string.remove_prefix("~/", String0, String1) ->
             String = HomeDir ++ "/" ++ String1
-        ; String0 = "~" ->
+        ; String0 = "~", FollowedByWordBoundary = yes ->
             String = HomeDir
         ;
             String = String0
@@ -60,34 +71,45 @@ expand_tilde_home(MaybeHome, String0, String) :-
 
 %-----------------------------------------------------------------------------%
 
-expand_tilde_home_in_shell_words(Home, Words0, Words) :-
-    list.map(expand_tilde_home_in_word(Home), Words0, Words).
+expand_tilde_home_in_shell_tokens(Home, Tokens0, Tokens) :-
+    list.map(expand_tilde_home_in_shell_token(Home), Tokens0, Tokens).
 
-:- pred expand_tilde_home_in_word(home::in, word::in, word::out) is det.
+:- pred expand_tilde_home_in_shell_token(home::in,
+    shell_token::in, shell_token::out) is det.
 
-expand_tilde_home_in_word(Home, Word0, Word) :-
-    Word0 = word(Segments0),
+expand_tilde_home_in_shell_token(Home, Token0, Token) :-
     (
-        Segments0 = [],
-        Segments = []
+        ( Token0 = whitespace
+        ; Token0 = gmeta(_)
+        ),
+        Token = Token0
     ;
-        Segments0 = [Head0 | Tail],
-        expand_tilde_home_in_word_segment(Home, Head0, Head),
-        Segments = [Head | Tail]
-    ),
-    Word = word(Segments).
+        Token0 = word(Segments0),
+        expand_tilde_home_in_shell_word(Home, Segments0, Segments),
+        Token = word(Segments)
+    ).
 
-:- pred expand_tilde_home_in_word_segment(home::in, segment::in, segment::out)
-    is det.
+:- pred expand_tilde_home_in_shell_word(home::in,
+    list(shell_word_segment)::in, list(shell_word_segment)::out) is det.
 
-expand_tilde_home_in_word_segment(Home, Segment0, Segment) :-
+expand_tilde_home_in_shell_word(Home, Segments0, Segments) :-
     (
-        Segment0 = unquoted(Str0),
-        expand_tilde_home(Home, Str0, Str),
-        Segment = unquoted(Str)
+        Segments0 = [unquoted(Str0) | Tail]
+    ->
+        % ~ should expand
+        % ~/x should expand
+        % ~"x" should not expand
+        (
+            Tail = [],
+            FollowedByWordBoundary = yes
+        ;
+            Tail = [_ | _],
+            FollowedByWordBoundary = no
+        ),
+        expand_tilde_home_follow(Home, Str0, FollowedByWordBoundary, Str),
+        Segments = [unquoted(Str) | Tail]
     ;
-        Segment0 = quoted(_),
-        Segment = Segment0
+        Segments = Segments0
     ).
 
 %-----------------------------------------------------------------------------%
