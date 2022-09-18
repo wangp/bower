@@ -40,7 +40,7 @@
 
 :- import_module callout.
 :- import_module list_util.
-:- import_module quote_arg.
+:- import_module quote_command.
 :- import_module text_entry.    % XXX cyclic
 
 %-----------------------------------------------------------------------------%

@@ -14,7 +14,7 @@
 :- import_module data.
 :- import_module mime_type.
 :- import_module notmuch_config.
-:- import_module quote_arg.
+:- import_module quote_command.
 :- import_module rfc5322.
 :- import_module shell_word.
 
@@ -142,6 +142,7 @@
 
 :- import_module config.
 :- import_module path_expand.
+:- import_module quote_arg.
 :- import_module rfc5322.parser.
 :- import_module rfc5322.writer.
 :- import_module xdg.

@@ -26,7 +26,7 @@
 :- import_module string.
 
 :- import_module async.
-:- import_module quote_arg.
+:- import_module quote_command.
 :- import_module sleep.
 
 %-----------------------------------------------------------------------------%

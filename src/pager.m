@@ -136,9 +136,12 @@
 :- import_module char.
 :- import_module cord.
 :- import_module counter.
+:- import_module diet.
+:- import_module dir.
 :- import_module float.
 :- import_module int.
 :- import_module map.
+:- import_module parsing_utils.
 :- import_module string.
 :- import_module time.
 :- import_module version_array.
@@ -146,21 +149,18 @@
 :- import_module copious_output.
 :- import_module fold_lines.
 :- import_module list_util.
+:- import_module make_temp.
 :- import_module mime_type.
 :- import_module pager_text.
+:- import_module path_expand.
 :- import_module quote_arg.
+:- import_module quote_command.
 :- import_module sanitise.
+:- import_module shell_word.
 :- import_module size_util.
 :- import_module string_util.
-:- import_module time_util.
-
-:- import_module diet.
-:- import_module dir.
-:- import_module parsing_utils.
-:- import_module make_temp.
-:- import_module path_expand.
-:- import_module shell_word.
 :- import_module text_entry.
+:- import_module time_util.
 
 :- use_module curs.
 

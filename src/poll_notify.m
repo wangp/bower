@@ -21,7 +21,7 @@
 :- import_module maybe.
 :- import_module string.
 
-:- import_module quote_arg.
+:- import_module quote_command.
 
 maybe_poll_notify(Config, Message, MessageUpdate, !IO) :-
     get_poll_notify_command(Config, MaybeCommandPrefix),

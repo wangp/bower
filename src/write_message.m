@@ -139,7 +139,7 @@
 :- import_module base64.
 :- import_module call_system.
 :- import_module process.
-:- import_module quote_arg.
+:- import_module quote_command.
 :- import_module rfc2045.
 :- import_module rfc2231.
 

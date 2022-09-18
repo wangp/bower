@@ -76,7 +76,7 @@
 :- import_module list_util.
 :- import_module notmuch_config.
 :- import_module process.
-:- import_module quote_arg.
+:- import_module quote_command.
 :- import_module string_util.
 
 :- use_module curs.

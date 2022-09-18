@@ -28,7 +28,7 @@
 
 :- import_module call_system.
 :- import_module process.
-:- import_module quote_arg.
+:- import_module quote_command.
 
 %-----------------------------------------------------------------------------%
 

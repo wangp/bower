@@ -65,7 +65,7 @@
 :- import_module pager.
 :- import_module pipe_to.
 :- import_module poll_notify.
-:- import_module quote_arg.
+:- import_module quote_command.
 :- import_module recall.
 :- import_module resend.
 :- import_module sanitise.

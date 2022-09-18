@@ -93,7 +93,7 @@
 :- import_module pager.
 :- import_module path_expand.
 :- import_module process.
-:- import_module quote_arg.
+:- import_module quote_command.
 :- import_module rfc2047.
 :- import_module rfc2047.decoder.
 :- import_module rfc5322.writer.

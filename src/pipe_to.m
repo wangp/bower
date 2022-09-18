@@ -27,6 +27,7 @@
 :- import_module process.
 :- import_module prog_config.
 :- import_module quote_arg.
+:- import_module quote_command.
 :- import_module shell_word.
 
 :- use_module curs.

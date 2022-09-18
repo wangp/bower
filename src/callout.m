@@ -13,7 +13,7 @@
 :- import_module data.
 :- import_module json.
 :- import_module prog_config.
-:- import_module quote_arg.
+:- import_module quote_command.
 
 %-----------------------------------------------------------------------------%
 
@@ -76,6 +76,7 @@
 :- import_module call_system.
 :- import_module mime_type.
 :- import_module process.
+:- import_module quote_arg.
 :- import_module time_util.
 
 :- use_module curs.

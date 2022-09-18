@@ -28,7 +28,7 @@
 
 :- import_module compose.
 :- import_module make_temp.
-:- import_module quote_arg.
+:- import_module quote_command.
 :- import_module rfc5322.
 :- import_module rfc5322.parser.
 :- import_module send_util.

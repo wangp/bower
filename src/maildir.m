@@ -37,7 +37,7 @@
 :- import_module string.
 
 :- import_module callout.
-:- import_module quote_arg.
+:- import_module quote_command.
 
 %-----------------------------------------------------------------------------%
 

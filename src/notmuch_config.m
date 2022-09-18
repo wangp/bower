@@ -7,7 +7,7 @@
 :- import_module io.
 :- import_module list.
 
-:- import_module quote_arg.
+:- import_module quote_command.
 
 :- type notmuch_config.
 

@@ -10,7 +10,7 @@
 :- import_module data.
 :- import_module mime_type.
 :- import_module prog_config.
-:- import_module quote_arg.
+:- import_module quote_command.
 
 :- pred expand_part(prog_config::in, message_id::in, part_id::in, mime_type::in,
     maybe(content_charset)::in, maybe(command_prefix)::in,
