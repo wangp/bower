@@ -7,7 +7,7 @@
 :- import_module io.
 :- import_module list.
 
-:- import_module shell_word.
+:- import_module old_shell_word.
 
 :- type home
     --->    home(string)

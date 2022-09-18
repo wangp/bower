@@ -28,7 +28,7 @@
 :- import_module prog_config.
 :- import_module quote_arg.
 :- import_module quote_command.
-:- import_module shell_word.
+:- import_module old_shell_word.
 
 :- use_module curs.
 
@@ -57,7 +57,7 @@ prompt_and_pipe_to_command(Screen, PromptCommand, Strings, MessageUpdate,
 
 pipe_to_command(Command, Strings, MaybeError, !IO) :-
     promise_equivalent_solutions [MaybeError, !:IO] (
-        shell_word.split(Command, ParseResult),
+        old_shell_word.split(Command, ParseResult),
         (
             ParseResult = ok(CommandWords0),
             get_home_dir(Home, !IO),

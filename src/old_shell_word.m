@@ -1,7 +1,7 @@
 % Bower - a frontend for the Notmuch email system
 % Copyright (C) 2014 Peter Wang
 
-:- module shell_word.
+:- module old_shell_word.
 :- interface.
 
 :- import_module list.

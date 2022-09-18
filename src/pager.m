@@ -156,7 +156,7 @@
 :- import_module quote_arg.
 :- import_module quote_command.
 :- import_module sanitise.
-:- import_module shell_word.
+:- import_module old_shell_word.
 :- import_module size_util.
 :- import_module string_util.
 :- import_module text_entry.
@@ -2541,7 +2541,7 @@ prompt_open_part(Screen, Part, MessageUpdate, Tempfile, !Info, !History, !IO)
 do_open_part(Config, Screen, Part, Command, MessageUpdate, Tempfile,
         !Info, !IO) :-
     promise_equivalent_solutions [MessageUpdate, Tempfile, !:Info, !:IO] (
-        shell_word.split(Command, ParseResult),
+        old_shell_word.split(Command, ParseResult),
         (
             ParseResult = ok(CommandWords0),
             get_home_dir(Home, !IO),
@@ -2727,7 +2727,7 @@ prompt_open_url(Screen, Url, MessageUpdate, !Info, !History, !IO) :-
 
 do_open_url(Screen, Command, Url, MessageUpdate, !IO) :-
     promise_equivalent_solutions [MessageUpdate, !:IO] (
-        shell_word.split(Command, ParseResult),
+        old_shell_word.split(Command, ParseResult),
         (
             ParseResult = ok(CommandWords0),
             get_home_dir(Home, !IO),

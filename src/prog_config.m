@@ -16,7 +16,7 @@
 :- import_module notmuch_config.
 :- import_module quote_command.
 :- import_module rfc5322.
-:- import_module shell_word.
+:- import_module old_shell_word.
 
 %-----------------------------------------------------------------------------%
 
@@ -127,7 +127,7 @@
 %-----------------------------------------------------------------------------%
 
     % Exported for open part / URL commands.
-:- pred detect_ssh(list(shell_word.word)::in) is semidet.
+:- pred detect_ssh(list(old_shell_word.word)::in) is semidet.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -530,7 +530,7 @@ parse_command(Home, String, CommandPrefix, !Errors) :-
     maybe_error(command_prefix)::out) is cc_multi.
 
 do_parse_command(Home, S0, Res) :-
-    shell_word.split(S0, ParseResult),
+    old_shell_word.split(S0, ParseResult),
     (
         ParseResult = ok(Words0),
         expand_tilde_home_in_shell_words(Home, Words0, Words),
