@@ -37,9 +37,9 @@ init_common_history(Config, CommonHistory) :-
     CommonHistory ^ ch_tag_history = init_history,
     CommonHistory ^ ch_to_history = init_history,
     CommonHistory ^ ch_subject_history = init_history,
-    CommonHistory ^ ch_open_part_history = init_history(OpenPart),
-    CommonHistory ^ ch_open_url_history = init_history(OpenUrl),
-    CommonHistory ^ ch_pipe_id_history = init_history(PipeId),
+    CommonHistory ^ ch_open_part_history = init_history_list(OpenPart),
+    CommonHistory ^ ch_open_url_history = init_history_list(OpenUrl),
+    CommonHistory ^ ch_pipe_id_history = init_history_list(PipeId),
     CommonHistory ^ ch_save_history = init_history.
 
 %-----------------------------------------------------------------------------%

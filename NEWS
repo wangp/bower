@@ -1,3 +1,8 @@
+Bower 1.1-unreleased
+====================
+
+* config: Support multiple open_part, open_url, pipe_id commands.
+
 Bower 1.0 (2022-08-21)
 ======================
 The first commit to this project was made 11 years ago. Let's call this v1.0.

@@ -55,11 +55,11 @@
 
 :- pred get_editor_command(prog_config::in, command_prefix::out) is det.
 
-:- pred get_open_part_command(prog_config::in, string::out) is det.
+:- pred get_open_part_command(prog_config::in, list(string)::out) is det.
 
-:- pred get_open_url_command(prog_config::in, string::out) is det.
+:- pred get_open_url_command(prog_config::in, list(string)::out) is det.
 
-:- pred get_pipe_id_command(prog_config::in, string::out) is det.
+:- pred get_pipe_id_command(prog_config::in, list(string)::out) is det.
 
 :- pred get_alt_html_filter_command(prog_config::in,
     maybe(command_prefix)::out) is det.
@@ -134,6 +134,7 @@
 
 :- implementation.
 
+:- import_module char.
 :- import_module dir.
 :- import_module int.
 :- import_module map.
@@ -154,9 +155,9 @@
                 notmuch         :: command_prefix,
                 editor          :: command_prefix,
                 text_filters    :: map(mime_type, command_prefix),
-                open_part       :: string, % not shell-quoted
-                open_url        :: string, % not shell-quoted
-                pipe_id         :: string, % not shell-quoted
+                open_part       :: list(string), % not shell-quoted
+                open_url        :: list(string), % not shell-quoted
+                pipe_id         :: list(string), % not shell-quoted
                 alt_html_filter :: maybe(command_prefix),
                 use_alt_html_filter :: use_alt_html_filter,
                 poll_notify     :: maybe(command_prefix),
@@ -277,21 +278,21 @@ make_prog_config(Home, Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ),
 
     ( search_config(Config, "command", "open_part", OpenPart0) ->
-        OpenPart = OpenPart0
+        parse_multi_commands(OpenPart0, OpenPart, !Errors)
     ;
-        OpenPart = default_open_part_command
+        OpenPart = [default_open_part_command]
     ),
 
     ( search_config(Config, "command", "open_url", OpenUrl0) ->
-        OpenUrl = OpenUrl0
+        parse_multi_commands(OpenUrl0, OpenUrl, !Errors)
     ;
-        OpenUrl = default_open_url_command
+        OpenUrl = [default_open_url_command]
     ),
 
     ( search_config(Config, "command", "pipe_id", PipeId0) ->
-        PipeId = PipeId0
+        parse_multi_commands(PipeId0, PipeId, !Errors)
     ;
-        PipeId = default_pipe_id_command
+        PipeId = [default_pipe_id_command]
     ),
 
     ( search_config(Config, "command", "alt_html_filter", AltHtmlFilter0) ->
@@ -551,6 +552,85 @@ detect_ssh([FirstWord | _]) :-
     FirstWord = word(Segments),
     list.member(unquoted(String), Segments),
     string.sub_string_search(String, "ssh", _).
+
+%-----------------------------------------------------------------------------%
+
+:- pred parse_multi_commands(string::in, list(string)::out,
+    list(string)::in, list(string)::out) is cc_multi.
+
+parse_multi_commands(Str, Commands, !Errors) :-
+    shell_word.tokenise(Str, ParseResult),
+    (
+        ParseResult = ok(Tokens0),
+        list.map(break_token_at_semicolons, Tokens0, Tokens),
+        reconstruct_commands(condense(Tokens), Commands)
+    ;
+        (
+            ParseResult = error(yes(Message), _Line, _Column)
+        ;
+            ParseResult = error(no, _Line, _Column),
+            Message = "parse error"
+        ),
+        Error = string.format("%s in value: %s", [s(Message), s(Str)]),
+        cons(Error, !Errors),
+        Commands = []
+    ).
+
+:- pred break_token_at_semicolons(shell_token::in, list(shell_token)::out)
+    is det.
+
+break_token_at_semicolons(Token0, Tokens) :-
+    require_complete_switch [Token0]
+    (
+        ( Token0 = whitespace
+        ; Token0 = word(_)
+        ),
+        Tokens = [Token0]
+    ;
+        Token0 = gmeta(Str0),
+        string.to_char_list(Str0, Cs0),
+        break_gmeta_at_semicolons(Cs0, Tokens)
+    ).
+
+:- pred break_gmeta_at_semicolons(list(char)::in, list(shell_token)::out)
+    is det.
+
+break_gmeta_at_semicolons([], []).
+break_gmeta_at_semicolons([C | Cs], Tokens) :-
+    ( if C = (';') then
+        Token = gmeta_semicolon,
+        TailCs = Cs
+    else
+        take_while_not(unify(';'), Cs, TakeCs, TailCs),
+        Token = gmeta(string.from_char_list([C | TakeCs]))
+    ),
+    break_gmeta_at_semicolons(TailCs, TailTokens),
+    Tokens = [Token | TailTokens].
+
+:- pred reconstruct_commands(list(shell_token)::in, list(string)::out) is det.
+
+reconstruct_commands(Tokens0, Commands) :-
+    (
+        Tokens0 = [],
+        Commands = []
+    ;
+        Tokens0 = [_ | _],
+        take_while_not(unify(gmeta_semicolon), Tokens0, CommandTokens,
+            Tokens1),
+        serialise_as_is(trim_whitespace(CommandTokens), Command),
+        (
+            Tokens1 = [],
+            TailCommands = []
+        ;
+            Tokens1 = [_ | Tokens2],
+            reconstruct_commands(Tokens2, TailCommands)
+        ),
+        Commands = [Command | TailCommands]
+    ).
+
+:- func gmeta_semicolon = shell_token.
+
+gmeta_semicolon = gmeta(";").
 
 %-----------------------------------------------------------------------------%
 

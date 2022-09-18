@@ -59,19 +59,26 @@
     #
   ; use_alt_html_filter = manual
 
-    # Default command to open a part.
+    # Default command(s) to open a part.
     # An unquoted & suffix causes the command to run in the background.
+    # Multiple commands can be added to the input history by separating them
+    # with a semicolon.
     #
   ; open_part = xdg-open&
 
-    # Default command to open a URL.
+    # Default command(s) to open a URL.
     # An unquoted & suffix causes the command to run in the background.
+    # Multiple commands can be added to the input history by separating them
+    # with a semicolon.
     #
   ; open_url = xdg-open&
 
-    # Default command to pass thread or message IDs to using the '|' command.
-    # The command should read from standard input. Multiple IDs are separated
-    # by spaces.
+    # Default command(s) to pass thread or message IDs to using the '|'
+    # command. Multiple commands can be added to the input history by
+    # separating them with a semicolon.
+    #
+    # The executed command will be passed the thread or message IDs
+    # on standard input, separated by spaces.
     #
   ; pipe_id = xclip
 
