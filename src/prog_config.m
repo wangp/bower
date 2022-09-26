@@ -601,7 +601,7 @@ break_gmeta_at_semicolons([C | Cs], Tokens) :-
         Token = gmeta_semicolon,
         TailCs = Cs
     else
-        take_while_not(unify(';'), Cs, TakeCs, TailCs),
+        take_while(is_not(';'), Cs, TakeCs, TailCs),
         Token = gmeta(string.from_char_list([C | TakeCs]))
     ),
     break_gmeta_at_semicolons(TailCs, TailTokens),
@@ -615,8 +615,7 @@ reconstruct_commands(Tokens0, Commands) :-
         Commands = []
     ;
         Tokens0 = [_ | _],
-        take_while_not(unify(gmeta_semicolon), Tokens0, CommandTokens,
-            Tokens1),
+        take_while(is_not(gmeta_semicolon), Tokens0, CommandTokens, Tokens1),
         serialise_as_is(trim_whitespace(CommandTokens), Command),
         (
             Tokens1 = [],
@@ -631,6 +630,11 @@ reconstruct_commands(Tokens0, Commands) :-
 :- func gmeta_semicolon = shell_token.
 
 gmeta_semicolon = gmeta(";").
+
+:- pred is_not(T::in, T::in) is semidet.
+
+is_not(X, Y) :-
+    X \= Y.
 
 %-----------------------------------------------------------------------------%
 
