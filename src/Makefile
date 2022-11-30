@@ -1,5 +1,11 @@
 MMC = mmc
 PARALLEL = -j $(shell nproc 2>/dev/null || echo 1)
+UNAME_S := $(shell uname -s)
+LNFLAGS = -f
+ifeq ($(UNAME_S),Darwin)
+else
+	LNFLAGS += -L
+endif
 
 MMC_MAKE_FLAGS :=
 ifdef WITH_NCURSESW_DIR
@@ -9,7 +15,7 @@ endif
 files = $(wildcard *.m) prog_version.m
 
 ../bower: bower
-	@ln -L -f bower ../bower
+	@ln $(LNFLAGS) bower ../bower
 
 bower: $(files) Mercury.options Mercury.options.ncursesw Mercury.params
 	@$(MMC) --make $(PARALLEL) $(MMC_MAKE_FLAGS) $@ && touch $@
