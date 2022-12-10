@@ -2241,16 +2241,60 @@ make_part_message_2(Part, HiddenParts, Expanded, Message) :-
                 Part ^ pt_content_type = mime_type.multipart_signed,
                 Message = "y to verify"
             ;
-                HiddenParts = [_],
-                Message = "z for alternative"
-            ;
-                HiddenParts = [_, _ | _],
-                Message = "z for alternatives"
+                HiddenParts = [_ | _],
+                make_part_message_for_alternatives(HiddenParts, Message)
             )
         ;
             Expanded = part_not_expanded,
             Message = "z to show"
         )
+    ).
+
+:- pred make_part_message_for_alternatives(list(part)::in, string::out)
+    is semidet.
+
+make_part_message_for_alternatives(HiddenParts, Message) :-
+    (
+        HiddenParts = [_],
+        Message0 = "z for alternative",
+        AttSuffix = ""
+    ;
+        HiddenParts = [_, _ | _],
+        Message0 = "z for alternatives",
+        AttSuffix = " total"
+    ),
+    NumAttachments = sum(map(count_hidden_attachments, HiddenParts)),
+    ( NumAttachments = 0 ->
+        Message = Message0
+    ;
+        ( NumAttachments = 1 ->
+            AttWord = "attachment"
+        ;
+            AttWord = "attachments"
+        ),
+        Message = string.format("%s (%d %s%s)",
+            [s(Message0), i(NumAttachments), s(AttWord), s(AttSuffix)])
+    ).
+
+:- func sum(list(int)) = int.
+
+sum([]) = 0.
+sum([N | Ns]) = N + sum(Ns).
+
+:- func count_hidden_attachments(part) = int.
+
+count_hidden_attachments(Part) = Count :-
+    (
+        Part ^ pt_content_type = multipart_mixed,
+        Part ^ pt_content = subparts(_, _, SubParts),
+        SubParts = [_ | TailSubParts]
+    ->
+        % If a subpart is multipart/mixed, should we count it as one
+        % attachment, or count its subparts? Probably not something that will
+        % occur too often in practice.
+        Count = length(TailSubParts)
+    ;
+        Count = 0
     ).
 
 :- pred draw_sig_error(screen::in, vpanel::in, curs.attr::in,
