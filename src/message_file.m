@@ -186,8 +186,7 @@ add_standard_header(Name, Value, !Headers) :-
     ; strcase_equal(Name, "References") ->
         !Headers ^ h_references := Value
     ; strcase_equal(Name, "Date") ->
-        % Ignore it.
-        true
+        !Headers ^ h_date := Value
     ; strcase_equal(Name, "Message-ID") ->
         % Ignore it.
         true
