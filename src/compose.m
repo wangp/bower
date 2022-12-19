@@ -1713,6 +1713,11 @@ draw_header_lines(Screen, !.Panels, Attrs, Headers, Parsed, Account,
     DrawRecv = draw_addresses(Attrs, show_crypto(yes, no), CryptoInfo),
     DrawSubj = draw_unstruct(Attrs),
     DrawRepl = draw_addresses(Attrs, show_crypto(no, no), CryptoInfo),
+    ( Parsed ^ ph_date = yes(ExplicitDate),
+      hdr(Screen, !Panels, Attrs, draw_unstruct(Attrs),
+          "    Date", header_value(ExplicitDate), !IO)
+    ; Parsed ^ ph_date = no
+    ),
     hdr(Screen, !Panels, Attrs, DrawFrom, "    From", Parsed ^ ph_from, !IO),
     hdr(Screen, !Panels, Attrs, DrawRecv, "      To", Parsed ^ ph_to, !IO),
     hdr(Screen, !Panels, Attrs, DrawRecv, "      Cc", Parsed ^ ph_cc, !IO),
