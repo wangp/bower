@@ -70,6 +70,13 @@
 :- type message_part_id
     --->    message_part_id(message_id, part_id).
 
+:- type parsed_message
+    --->    parsed_message(
+                headers         :: headers,
+                body            :: string,
+                metadata        :: postponed_metadata
+            ).
+
 :- type headers
     --->    headers(
                 % Technically, header fields.
@@ -93,6 +100,15 @@
     ;       decoded_unstructured(string).
             % An unstructured field that may contain RFC 2047 encoded-words,
             % which we keep in decoded form.
+
+:- type postponed_metadata
+    --->    postponed_metadata(
+                retain_date     :: pm_retain_date
+            ).
+
+:- type pm_retain_date
+    --->    retain_date;
+            clear_date.
 
 :- type tag
     --->    tag(string).

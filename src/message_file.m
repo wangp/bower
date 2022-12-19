@@ -5,16 +5,16 @@
 :- interface.
 
 :- import_module io.
-:- import_module pair.
 
 :- import_module data.
 
 %-----------------------------------------------------------------------------%
 
-:- pred parse_message_file(string::in, io.res(pair(headers, string))::out,
+:- pred parse_message_file(string::in, io.res(parsed_message)::out,
     io::di, io::uo) is det.
 
-:- pred parse_message(string::in, headers::out, string::out) is det.
+:- pred parse_message(string::in, headers::out, string::out,
+    postponed_metadata::out) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -41,8 +41,8 @@ parse_message_file(Filename, Res, !IO) :-
         read_file_as_string(Stream, ResRead, !IO),
         (
             ResRead = ok(String),
-            parse_message(String, Headers, Body),
-            Res = ok(Headers - Body)
+            parse_message(String, Headers, Body, PostponedMetadata),
+            Res = ok(parsed_message(Headers, Body, PostponedMetadata))
         ;
             ResRead = error(_, Error),
             Res = error(Error)
@@ -53,15 +53,17 @@ parse_message_file(Filename, Res, !IO) :-
         Res = error(Error)
     ).
 
-parse_message(String, Headers, Body) :-
-    read_headers(String, 0, Pos0, init_headers, Headers),
+parse_message(String, Headers, Body, PostponedMetadata) :-
+    DefaultMetadata = postponed_metadata(clear_date),
+    read_headers(String, 0, Pos0, init_headers, Headers, DefaultMetadata,
+                 PostponedMetadata),
     skip_blank_line(String, Pos0, Pos1),
     string.unsafe_between(String, Pos1, count_code_units(String), Body).
 
-:- pred read_headers(string::in, int::in, int::out, headers::in, headers::out)
-    is det.
+:- pred read_headers(string::in, int::in, int::out, headers::in, headers::out,
+    postponed_metadata::in, postponed_metadata::out) is det.
 
-read_headers(String, !Pos, !Headers) :-
+read_headers(String, !Pos, !Headers, !PostponedMetadata) :-
     ( read_header_field(String, !Pos, Name, RawValue) ->
         % Other headers should be decoded as well.
         ( strcase_equal(Name, "Subject") ->
@@ -70,10 +72,32 @@ read_headers(String, !Pos, !Headers) :-
         ;
             Value = header_value(RawValue)
         ),
-        add_header(Name, Value, !Headers),
-        read_headers(String, !Pos, !Headers)
+        ( strcase_equal(Name, "X-Bower-Metadata") ->
+            read_postponed_metadata(Value, !PostponedMetadata)
+        ;
+            add_header(Name, Value, !Headers)
+        ),
+        read_headers(String, !Pos, !Headers, !PostponedMetadata)
     ;
         true
+    ).
+
+:- pred read_postponed_metadata(header_value::in, postponed_metadata::in,
+    postponed_metadata::out) is det.
+
+read_postponed_metadata(HeaderValue, Metadata0, Metadata) :-
+    MetadataString = header_value_string(HeaderValue),
+    MetadataList = list.map(lstrip, list.map(rstrip,
+                            split_at_char(';', MetadataString))),
+    list.foldl(read_metadata_field, MetadataList, Metadata0, Metadata).
+
+:- pred read_metadata_field(string::in, postponed_metadata::in,
+    postponed_metadata::out) is det.
+
+read_metadata_field(Field, !Metadata) :-
+    ( strcase_equal(Field, "retain_date") ->
+        !Metadata ^ retain_date := retain_date
+    ; true  % Ignore any unknown values
     ).
 
 :- pred read_header_field(string::in, int::in, int::out,
