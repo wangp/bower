@@ -529,12 +529,19 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
         CallRes, !IO),
     (
         CallRes = ok(String),
-        parse_message(String, HeadersB, _Body),
+        parse_message(String, HeadersB, _Body, PostponedMetadata),
         some [!Headers] (
             !:Headers = Headers0,
             !Headers ^ h_replyto := HeadersB ^ h_replyto,
             !Headers ^ h_inreplyto := HeadersB ^ h_inreplyto,
             !Headers ^ h_references := HeadersB ^ h_references,
+            ( ContinueBase = postponed_message ->
+                ( PostponedMetadata ^ retain_date = clear_date,
+                  !Headers ^ h_date := header_value("")
+                ;
+                  PostponedMetadata ^ retain_date = retain_date
+                )
+            ; true ),
             Headers = !.Headers
         ),
         (
@@ -600,7 +607,8 @@ create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHtmlFilter,
             ResEdit = ok,
             parse_message_file(Filename, ResParse, !IO),
             (
-                ResParse = ok(Headers1 - Text),
+                ResParse = ok(parsed_message(Headers1, Text,
+                                             _PostponedMetadata)),
                 io.remove_file(Filename, _, !IO),
                 update_references(Headers0, Headers1, Headers2),
                 reenter_staging_screen(Config, Screen, Headers2, Text,
@@ -2639,9 +2647,24 @@ make_headers(Prepare, Headers, ParsedHeaders, Date, MessageId, WriteHeaders) :-
                 unstructured(wrap_angle_brackets(MessageId), no_encoding)),
                 !Acc)
         ;
-            ( Prepare = prepare_edit(_)
-            ; Prepare = prepare_postpone
-            )
+            Prepare = prepare_postpone,
+            ( ParsedHeaders ^ ph_date = yes(_) ->
+              RetainDate = retain_date
+            ; RetainDate = clear_date ),
+            (
+                % This is a simple and straightforward solution for
+                % setting a single metadata value if needed. Should any
+                % other metadata values be added later, this code would
+                % need to be adjusted accordingly.
+                RetainDate = retain_date
+            ->
+                Metadata = "retain_date",
+                cons(header(field_name("X-Bower-Metadata"),
+                            unstructured(header_value(Metadata),
+                            no_encoding)), !Acc)
+            ; true )
+        ;
+            Prepare = prepare_edit(_)
         ),
         workaround_merge_switches(!Acc),
         (
