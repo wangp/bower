@@ -141,7 +141,8 @@
                 ph_to           :: address_list,
                 ph_cc           :: address_list,
                 ph_bcc          :: address_list,
-                ph_replyto      :: address_list
+                ph_replyto      :: address_list,
+                ph_date         :: maybe(string)
             ).
 
 :- type attach_info == scrollable(attachment).
@@ -619,10 +620,20 @@ create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHtmlFilter,
         Transition = screen_transition(not_sent, set_warning(Error))
     ).
 
+:- pred parse_date_header(header_value::in, maybe(string)::out) is det.
+
+parse_date_header(Date, ParsedDate) :-
+    ParsedDate0 = header_value_string(Date),
+    ( string.all_match(char.is_whitespace, ParsedDate0) ->
+        ParsedDate = no
+    ;
+        ParsedDate = yes(ParsedDate0)
+    ).
+
 :- pred make_parsed_headers(headers::in, parsed_headers::out) is det.
 
 make_parsed_headers(Headers, Parsed) :-
-    Headers = headers(_Date, From, To, Cc, Bcc, _Subject, ReplyTo,
+    Headers = headers(Date, From, To, Cc, Bcc, _Subject, ReplyTo,
         _References, _InReplyTo, _Rest),
 
     % [RFC 6854] allows group syntax in From - saves us work.
@@ -632,9 +643,10 @@ make_parsed_headers(Headers, Parsed) :-
     parse_address_list(Opt, header_value_string(Cc), ParsedCc),
     parse_address_list(Opt, header_value_string(Bcc), ParsedBcc),
     parse_address_list(Opt, header_value_string(ReplyTo), ParsedReplyTo),
+    parse_date_header(Date, ParsedDate),
 
     Parsed = parsed_headers(ParsedFrom, ParsedTo, ParsedCc, ParsedBcc,
-        ParsedReplyTo).
+        ParsedReplyTo, ParsedDate).
 
 :- pred call_editor(prog_config::in, string::in, call_res::out, io::di, io::uo)
     is det.
@@ -815,11 +827,12 @@ parse_and_expand_headers(Config, Headers0, Headers, Parsed, !IO) :-
     Expand(Cc0, Cc, ParsedCc, !IO),
     Expand(Bcc0, Bcc, ParsedBcc, !IO),
     Expand(ReplyTo0, ReplyTo, ParsedReplyTo, !IO),
+    parse_date_header(Date, ParsedDate),
 
     Headers = headers(Date, From, To, Cc, Bcc, Subject, ReplyTo,
         References, InReplyTo, Rest),
     Parsed = parsed_headers(ParsedFrom, ParsedTo, ParsedCc, ParsedBcc,
-        ParsedReplyTo).
+        ParsedReplyTo, ParsedDate).
 
 :- pred parse_and_expand_addresses(prog_config::in, quote_opt::in,
     header_value::in, header_value::out, address_list::out, io::di, io::uo)
@@ -2595,17 +2608,24 @@ get_addr_spec_in_mailbox(Mailbox, AddrSpec) :-
 make_headers(Prepare, Headers, ParsedHeaders, Date, MessageId, WriteHeaders) :-
     Headers = headers(_Date, _From, _To, _Cc, _Bcc, Subject, _ReplyTo,
         InReplyTo, References, RestHeaders),
-    ParsedHeaders = parsed_headers(From, To, Cc, Bcc, ReplyTo),
+    ParsedHeaders = parsed_headers(From, To, Cc, Bcc, ReplyTo, ExplicitDate),
     some [!Acc] (
         !:Acc = [],
         (
-            ( Prepare = prepare_send
-            ; Prepare = prepare_postpone
-            ),
-            cons(header(field_name("Date"), unstructured(Date, no_encoding)),
-                !Acc)
+            ExplicitDate = yes(DateValue0),
+            DateValue = unstructured(header_value(DateValue0), no_encoding),
+            cons(header(field_name("Date"), DateValue), !Acc)
         ;
-            Prepare = prepare_edit(_)
+            ExplicitDate = no,
+            (
+                ( Prepare = prepare_send
+                ; Prepare = prepare_postpone
+                ),
+                cons(header(field_name("Date"),
+                            unstructured(Date, no_encoding)), !Acc)
+            ;
+                Prepare = prepare_edit(_)
+            )
         ),
         workaround_merge_switches(!Acc),
         (
