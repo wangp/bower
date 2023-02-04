@@ -1,5 +1,5 @@
 MMC = mmc
-PARALLEL =
+PARALLEL = -j $(shell nproc 2>/dev/null || echo 1)
 DIFF = diff -u
 
 files = $(wildcard *.m ../src/*.m)
