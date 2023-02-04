@@ -13,7 +13,7 @@
 :- implementation.
 
 :- import_module list.
-:- import_module pretty_printer.
+:- import_module pprint.
 
 :- import_module rfc3986.
 
@@ -30,7 +30,9 @@ test(Input, !IO) :-
     io.write_string("»\n", !IO),
 
     ( split_uri(Input, URI) ->
-        pretty_printer.write_doc(format(URI), !IO),
+        % Note: we use pprint for now instead of pretty_printer as the
+        % output of pretty_printer was changed slightly on 2022-12-27.
+        pprint.write(80, to_doc(URI), !IO),
         io.nl(!IO)
     ;
         io.write_string("failed to parse\n", !IO)

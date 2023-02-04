@@ -459,7 +459,7 @@ map(map([]))
 1:6: parse error
 --------
 «{"a":null}»
-map(map([("a" -> null)]))
+map(map(["a" -> null]))
 
 --------
 «{"a":null, }»
@@ -471,13 +471,13 @@ map(map([("a" -> null)]))
 1:12: duplicate field name
 --------
 «{"a":false ,"b" : true, "cd": null}»
-map(map([("a" -> bool(no)), ("b" -> bool(yes)), ("cd" -> null)]))
+map(map(["a" -> bool(no), "b" -> bool(yes), "cd" -> null]))
 
 --------
 «{"ć":-1234 ,"b" : 5.678, "e": [], "A" : "nine", "d": {}}»
 map(
-  map([("A" -> string(esc_string("nine"))), ("b" -> float(5.678)), 
-    ("d" -> map(map([]))), ("e" -> list([])), ("ć" -> int(-1234))]))
+  map(["A" -> string(esc_string("nine")), "b" -> float(5.678), 
+   "d" -> map(map([])), "e" -> list([]), "ć" -> int(-1234)]))
 
 «nine»
 --------

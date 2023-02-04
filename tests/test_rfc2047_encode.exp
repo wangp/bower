@@ -36,21 +36,26 @@ Phrases
 [word_atom(atom(ascii("=?UTF-8?B?PT9VVEYtOD9RPz89?=")))]
 [word_atom(atom(ascii("=?UTF-8?Q??=")))]
 --------
-[word_quoted_string(
+[
+ word_quoted_string(
    quoted_string(unicode("Svifnökkvinn minn er fullur af álum")))]
-[word_atom(
+[
+ word_atom(
    atom(ascii("=?UTF-8?Q?Svifn=C3=B6kkvinn_minn_er_fullur_af_=C3=A1lum?=")))]
-[word_quoted_string(
+[
+ word_quoted_string(
    quoted_string(unicode("Svifnökkvinn minn er fullur af álum")))]
 --------
 [word_atom(atom(unicode("Svifnökkvinn"))), word_atom(atom(unicode("álum")))]
 [word_atom(atom(ascii("=?UTF-8?Q?Svifn=C3=B6kkvinn_=C3=A1lum?=")))]
 [word_quoted_string(quoted_string(unicode("Svifnökkvinn álum")))]
 --------
-[word_quoted_string(
+[
+ word_quoted_string(
    quoted_string(
      unicode("Τὸ πλοῖόν μου τὸ μετεωριζόμενον ἐστι πλῆρες ἐγχελέων")))]
-[word_atom(
+[
+ word_atom(
    atom(
      ascii(
        "=?UTF-8?B?zqThvbggz4DOu86/4b+Wz4zOvSDOvM6/z4Ugz4ThvbggzrzOtc+EzrXPic+B?="))), 
@@ -59,14 +64,17 @@ Phrases
      ascii(
        "=?UTF-8?B?zrnOts+MzrzOtc69zr/OvSDhvJDPg8+Ezrkgz4DOu+G/hs+BzrXPgiDhvJA=?="))), 
  word_atom(atom(ascii("=?UTF-8?B?zrPPh861zrvOrc+Jzr0=?=")))]
-[word_quoted_string(
+[
+ word_quoted_string(
    quoted_string(
      unicode("Τὸ πλοῖόν μου τὸ μετεωριζόμενον ἐστι πλῆρες ἐγχελέων")))]
 --------
-[word_quoted_string(
+[
+ word_quoted_string(
    quoted_string(
      unicode("Τὸ πλοῖόν μου -- μετεωριζόμενον ---- πλῆρες ἐγχελέων")))]
-[word_atom(
+[
+ word_atom(
    atom(
      ascii(
        "=?UTF-8?B?zqThvbggz4DOu86/4b+Wz4zOvSDOvM6/z4UgLS0gzrzOtc+EzrXPic+Bzrk=?="))), 
@@ -75,49 +83,49 @@ Phrases
      ascii(
        "=?UTF-8?B?zrbPjM68zrXOvc6/zr0gLS0tLSDPgM674b+Gz4HOtc+CIOG8kM6zz4fOtc67?="))), 
  word_atom(atom(ascii("=?UTF-8?B?zq3Pic69?=")))]
-[word_quoted_string(
+[
+ word_quoted_string(
    quoted_string(
      unicode("Τὸ πλοῖόν μου -- μετεωριζόμενον ---- πλῆρες ἐγχελέων")))]
 --------
-[word_atom(
+[
+ word_atom(
    atom(
-     unicode(
-       "123456789-123456789-123456789-123456789-123456789-123456789-123x")))]
-[word_atom(
+     unicode("123456789-123456789-123456789-123456789-123456789-123456789-123x")))]
+[
+ word_atom(
    atom(
      ascii(
        "=?UTF-8?Q?123456789-123456789-123456789-123456789-123456789-123456789-123?="))), 
  word_atom(atom(ascii("=?UTF-8?Q?x?=")))]
-[word_atom(
+[
+ word_atom(
    atom(
-     ascii(
-       "123456789-123456789-123456789-123456789-123456789-123456789-123x")))]
+     ascii("123456789-123456789-123456789-123456789-123456789-123456789-123x")))]
 --------
 [word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz!\"#$%")))]
-[word_atom(
+[
+ word_atom(
    atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz!=22=23=24=25?=")))]
-[word_quoted_string(
-   quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz!\"#$%")))]
+[word_quoted_string(quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz!\"#$%")))]
 --------
-[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz&\'()")))]
-[word_atom(
+[word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz&'()")))]
+[
+ word_atom(
    atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=26=27=28=29?=")))]
-[word_quoted_string(
-   quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz&\'()")))]
+[word_quoted_string(quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz&'()")))]
 --------
 [word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz*+,-./")))]
-[word_atom(
-   atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz*+=2C-=2E/?=")))]
-[word_quoted_string(
-   quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz*+,-./")))]
+[
+ word_atom(atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz*+=2C-=2E/?=")))]
+[word_quoted_string(quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz*+,-./")))]
 --------
 [word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz:;")))]
 [word_atom(atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=3A=3B?=")))]
 [word_quoted_string(quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz:;")))]
 --------
 [word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz<=>")))]
-[word_atom(
-   atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=3C=3D=3E?=")))]
+[word_atom(atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=3C=3D=3E?=")))]
 [word_quoted_string(quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz<=>")))]
 --------
 [word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz?@")))]
@@ -125,17 +133,16 @@ Phrases
 [word_quoted_string(quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz?@")))]
 --------
 [word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz[\\]")))]
-[word_atom(
-   atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=5B=5C=5D?=")))]
+[word_atom(atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=5B=5C=5D?=")))]
 [word_quoted_string(quoted_string(unicode("ábcdefghijklmnopqrstuvwxyz[\\]")))]
 --------
 [word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz^_`")))]
-[word_atom(
-   atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=5E=5F=60?=")))]
+[word_atom(atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=5E=5F=60?=")))]
 [word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz^_`")))]
 --------
 [word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz{|}~")))]
-[word_atom(
+[
+ word_atom(
    atom(ascii("=?UTF-8?Q?=C3=A1bcdefghijklmnopqrstuvwxyz=7B=7C=7D=7E?=")))]
 [word_atom(atom(unicode("ábcdefghijklmnopqrstuvwxyz{|}~")))]
 --------

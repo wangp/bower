@@ -17,7 +17,7 @@
 :- import_module map.
 :- import_module maybe.
 :- import_module parsing_utils.
-:- import_module pretty_printer.
+:- import_module pprint.
 :- import_module string.
 
 :- import_module json.
@@ -36,7 +36,9 @@ test(Input, !IO) :-
     io.write_string("»\n", !IO),
     (
         ParseResult = ok(Value),
-        pretty_printer.write_doc(format(Value), !IO),
+        % Note: we use pprint for now instead of pretty_printer as the
+        % output of pretty_printer was changed slightly on 2022-12-27.
+        pprint.write(80, to_doc(Value), !IO),
         io.nl(!IO),
         io.nl(!IO),
         test_unescaped_strings(Value, !IO)

@@ -13,7 +13,7 @@
 :- implementation.
 
 :- import_module list.
-:- import_module pretty_printer.
+:- import_module pprint.
 :- import_module string.
 
 :- import_module rfc2047.
@@ -43,7 +43,9 @@ test_decode_phrase(Input, !IO) :-
     io.write_string("input: ", !IO),
     io.write(Input, !IO),
     io.nl(!IO),
-    pretty_printer.write_doc(format(Phrase), !IO),
+    % Note: we use pprint for now instead of pretty_printer as the
+    % output of pretty_printer was changed slightly on 2022-12-27.
+    pprint.write(80, to_doc(Phrase), !IO),
     io.nl(!IO),
     io.write_string("--------\n", !IO).
 
