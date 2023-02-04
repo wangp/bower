@@ -16,8 +16,6 @@
 :- import_module list.
 :- import_module maybe.
 
-:- import_module notmuch_config.
-:- import_module prog_config.
 :- import_module search_term.
 
 %-----------------------------------------------------------------------------%
