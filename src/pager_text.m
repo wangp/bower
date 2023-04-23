@@ -87,8 +87,9 @@ append_text(Max, String, Start, LastBreak, Cur, !Context, !Lines) :-
             append_text(Max, String, Start, Cur, Next, !Context, !Lines)
         ;
             % Wrap long lines.
-            % XXX this should actually count with wcwidth
-            Next - Start > Max
+            string.unsafe_between(String, Start, Next, SubString),
+            string.count_codepoints(SubString, SubStringLength),
+            SubStringLength > Max
         ->
             maybe_append_substring(String, Start, LastBreak, !Context, !Lines),
             skip_whitespace(String, LastBreak, NextStart),
