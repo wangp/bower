@@ -13,6 +13,9 @@
 
 :- func string_wcwidth(string) = int.
 
+:- pred unsafe_substring_wcwidth(string::in, int::in, int::in, int::out)
+    is det.
+
 :- pred strcase_equal(string::in, string::in) is semidet.
 
 :- pred strcase_prefix(string::in, string::in) is semidet.
@@ -79,6 +82,23 @@ string_wcwidth(S) = Width :-
 :- pred add_wcwidth(char::in, int::in, int::out) is det.
 
 add_wcwidth(C, Width, Width + wcwidth(C)).
+
+unsafe_substring_wcwidth(S, Index, End, Width) :-
+    unsafe_substring_wcwidth_loop(S, Index, End, 0, Width).
+
+:- pred unsafe_substring_wcwidth_loop(string::in, int::in, int::in,
+    int::in, int::out) is det.
+
+unsafe_substring_wcwidth_loop(S, Index, End, !Width) :-
+    ( if
+        Index < End,
+        string.unsafe_index_next(S, Index, NextIndex, Char)
+    then
+        add_wcwidth(Char, !Width),
+        unsafe_substring_wcwidth_loop(S, NextIndex, End, !Width)
+    else
+        true
+    ).
 
 %-----------------------------------------------------------------------------%
 

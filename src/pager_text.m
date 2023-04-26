@@ -61,41 +61,46 @@ make_text_lines(Max, String, Lines) :-
     Start = 0,
     LastBreak = 0,
     Cur = 0,
+    WidthFromStart = 0,
     QuoteLevel = no,
     DiffLine = no,
     DiffQuoteLevels = set.init,
     Context0 = append_text_context(QuoteLevel, DiffLine, DiffQuoteLevels),
-    append_text(Max, String, Start, LastBreak, Cur, Context0, _Context,
-        cord.init, LinesCord),
+    append_text(Max, String, Start, LastBreak, Cur, WidthFromStart,
+        Context0, _Context, cord.init, LinesCord),
     Lines = cord.list(LinesCord).
 
 :- pred append_text(int::in, string::in, int::in, int::in, int::in,
-    append_text_context::in, append_text_context::out,
+    int::in, append_text_context::in, append_text_context::out,
     cord(pager_text)::in, cord(pager_text)::out) is det.
 
-append_text(Max, String, Start, LastBreak, Cur, !Context, !Lines) :-
+append_text(Max, String, Start, LastBreak, Cur, WidthFromStart0,
+        !Context, !Lines) :-
     ( string.unsafe_index_next(String, Cur, Next, Char) ->
-        (
-            Char = '\n'
-        ->
+        ( Char = '\n' ->
             append_substring(String, Start, Cur, !Context, !Lines),
             reset_context(!Context),
-            append_text(Max, String, Next, Next, Next, !Context, !Lines)
+            WidthFromNext = 0,
+            append_text(Max, String, Next, Next, Next, WidthFromNext,
+                !Context, !Lines)
         ;
-            char.is_whitespace(Char)
-        ->
-            append_text(Max, String, Start, Cur, Next, !Context, !Lines)
-        ;
-            % Wrap long lines.
-            % XXX this should actually count with wcwidth
-            Next - Start > Max
-        ->
-            maybe_append_substring(String, Start, LastBreak, !Context, !Lines),
-            skip_whitespace(String, LastBreak, NextStart),
-            append_text(Max, String, NextStart, NextStart, Next, !Context,
-                !Lines)
-        ;
-            append_text(Max, String, Start, LastBreak, Next, !Context, !Lines)
+            WidthFromStart1 = WidthFromStart0 + wcwidth(Char),
+            ( char.is_whitespace(Char) ->
+                append_text(Max, String, Start, Cur, Next, WidthFromStart1,
+                    !Context, !Lines)
+            ; WidthFromStart1 > Max ->
+                % Wrap long lines.
+                maybe_append_substring(String, Start, LastBreak,
+                    !Context, !Lines),
+                skip_whitespace(String, LastBreak, NextStart),
+                unsafe_substring_wcwidth(String, NextStart, Next,
+                    WidthFromNextStart),
+                append_text(Max, String, NextStart, NextStart, Next,
+                    WidthFromNextStart, !Context, !Lines)
+            ;
+                append_text(Max, String, Start, LastBreak, Next,
+                    WidthFromStart1, !Context, !Lines)
+            )
         )
     ;
         % End of string.
