@@ -112,6 +112,9 @@
     /* for posix_spawn */
     #include <spawn.h>
 
+    /* for sigemptyset, sigaddset, kill */
+    #include <signal.h>
+
     /* for select -- POSIX.1-2001, POSIX.1-2008 */
     #include <sys/select.h>
     /* for select -- earlier standards */
