@@ -2607,6 +2607,7 @@ make_headers(Prepare, Headers, ParsedHeaders, Date, MessageId, WriteHeaders) :-
         ;
             Prepare = prepare_edit(_)
         ),
+        workaround_merge_switches(!Acc),
         (
             Prepare = prepare_send,
             cons(header(field_name("Message-ID"),
@@ -2617,6 +2618,7 @@ make_headers(Prepare, Headers, ParsedHeaders, Date, MessageId, WriteHeaders) :-
             ; Prepare = prepare_postpone
             )
         ),
+        workaround_merge_switches(!Acc),
         (
             ( Prepare = prepare_send
             ; Prepare = prepare_postpone
@@ -2677,6 +2679,14 @@ maybe_cons_unstructured(SkipEmpty, Options, FieldName, Value, !Acc) :-
     ;
         cons(header(field_name(FieldName), unstructured(Value, Options)), !Acc)
     ).
+
+    % Work around Mercury bug 567 -- regression due to commit 43dd12bd
+    % "Merge consecutive switches on the same variable."
+    %
+:- pred workaround_merge_switches(list(header)::in, list(header)::out) is det.
+:- pragma no_inline(workaround_merge_switches/2).
+
+workaround_merge_switches(!Acc).
 
 %-----------------------------------------------------------------------------%
 
