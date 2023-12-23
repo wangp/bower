@@ -30,8 +30,7 @@
 %-----------------------------------------------------------------------------%
 
 init_url_regex(Reg) :-
-    CFlags = [],
-    regcomp("https\\?://", CFlags, CompRes),
+    regcomp("(https?|gemini)://", [reg_extended], CompRes),
     (
         CompRes = ok(Reg)
     ;
