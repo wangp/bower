@@ -44,6 +44,13 @@
 :- pred regexec(regex::in, string::in, list(eflag)::in, regexec_result::out)
     is det.
 
+    % unsafe_regexec_offset(Reg, String, BeginAt, EFlags, Res):
+    % Same as above, but begin searching from an offset into the string.
+    % The offset is UNCHECKED.
+    %
+:- pred unsafe_regexec_offset(regex::in, string::in, int::in, list(eflag)::in,
+    regexec_result::out) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -137,8 +144,11 @@ regcomp(Str, CFlags, Res) :-
 %-----------------------------------------------------------------------------%
 
 regexec(Reg, Str, EFlags, Res) :-
+    unsafe_regexec_offset(Reg, Str, 0, EFlags, Res).
+
+unsafe_regexec_offset(Reg, Str, BeginAt, EFlags, Res) :-
     EFlagsInt = or_list(eflag_to_int, EFlags),
-    regexec0(Reg, Str, EFlagsInt, ErrCode, HaveMatch, Matches),
+    regexec0(Reg, Str, BeginAt, EFlagsInt, ErrCode, HaveMatch, Matches),
     ( if ErrCode = 0 then
         (
             HaveMatch = yes,
@@ -153,12 +163,12 @@ regexec(Reg, Str, EFlags, Res) :-
         Res = error(Error)
     ).
 
-:- pred regexec0(regex::in, string::in, eflags::in, int::out, bool::out,
-    list(regmatch)::out) is det.
+:- pred regexec0(regex::in, string::in, int::in, eflags::in,
+    int::out, bool::out, list(regmatch)::out) is det.
 
 :- pragma foreign_proc("C",
-    regexec0(Reg::in, Str::in, EFlags::in, ErrCode::out, HaveMatch::out,
-        MatchList::out),
+    regexec0(Reg::in, Str::in, BeginAt::in, EFlags::in,
+        ErrCode::out, HaveMatch::out, MatchList::out),
     [may_call_mercury, promise_pure, thread_safe, may_not_export_body],
 "
     regmatch_t *matches;
@@ -170,14 +180,15 @@ regexec(Reg, Str, EFlags, Res) :-
     nmatch = 1 + Reg->re_nsub;
     matches = MR_GC_NEW_ARRAY_ATTRIB(regmatch_t, nmatch, MR_ALLOC_ID);
 
-    rc = regexec(Reg, Str, nmatch, matches, EFlags);
+    rc = regexec(Reg, Str + BeginAt, nmatch, matches, EFlags);
 
     if (rc == 0) {
         ErrCode = 0;
         HaveMatch = MR_YES;
         MatchList = MR_list_empty();
         for (i = nmatch - 1; i >= 0; i--) {
-            MR_Word m = REGEX_make_regmatch(matches[i].rm_so, matches[i].rm_eo);
+            MR_Word m = REGEX_make_regmatch(BeginAt,
+                matches[i].rm_so, matches[i].rm_eo);
             MatchList = MR_list_cons(m, MatchList);
         }
     } else if (rc == REG_NOMATCH) {
@@ -191,11 +202,12 @@ regexec(Reg, Str, EFlags, Res) :-
     }
 ").
 
-:- func make_regmatch(int, int) = regmatch.
-:- pragma foreign_export("C", make_regmatch(in, in) = out,
+:- func make_regmatch(int, int, int) = regmatch.
+:- pragma foreign_export("C", make_regmatch(in, in, in) = out,
     "REGEX_make_regmatch").
 
-make_regmatch(StartOfs, EndOfs) = regmatch(StartOfs, EndOfs).
+make_regmatch(BeginAt, StartOfs, EndOfs) =
+    regmatch(BeginAt + StartOfs, BeginAt + EndOfs).
 
 %-----------------------------------------------------------------------------%
 
