@@ -17,6 +17,7 @@
 :- import_module quote_command.
 :- import_module rfc5322.
 :- import_module shell_word.
+:- import_module uri.
 
 %-----------------------------------------------------------------------------%
 
@@ -124,6 +125,8 @@
 :- func thread_attrs(prog_config) = thread_attrs.
 :- func compose_attrs(prog_config) = compose_attrs.
 
+:- pred get_url_regex(prog_config::in, url_regex::out) is det.
+
 %-----------------------------------------------------------------------------%
 
     % Exported for open part / URL commands.
@@ -186,7 +189,10 @@
                 exclude_tags    :: set(tag),
 
                 % [color]
-                colors          :: colors
+                colors          :: colors,
+
+                % not actually configuration but kept here for convenience
+                url_regex       :: url_regex
             ).
 
 :- type account == account(mailbox).
@@ -486,6 +492,8 @@ make_prog_config(Home, Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
 
     make_colors(Config, Colors),
 
+    init_url_regex(URLReg),
+
     ProgConfig ^ notmuch = Notmuch,
     ProgConfig ^ editor = Editor,
     ProgConfig ^ open_part = OpenPart,
@@ -508,7 +516,8 @@ make_prog_config(Home, Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ProgConfig ^ accounts = Accounts,
     ProgConfig ^ default_account = DefaultAccount,
     ProgConfig ^ exclude_tags = ExcludeTags,
-    ProgConfig ^ colors = Colors.
+    ProgConfig ^ colors = Colors,
+    ProgConfig ^ url_regex = URLReg.
 
 %-----------------------------------------------------------------------------%
 
@@ -1086,6 +1095,11 @@ pager_attrs(Config) = Config ^ colors ^ pager_attrs.
 index_attrs(Config) = Config ^ colors ^ index_attrs.
 thread_attrs(Config) = Config ^ colors ^ thread_attrs.
 compose_attrs(Config) = Config ^ colors ^ compose_attrs.
+
+%-----------------------------------------------------------------------------%
+
+get_url_regex(Config, URLReg) :-
+    URLReg = Config ^ url_regex.
 
 %-----------------------------------------------------------------------------%
 

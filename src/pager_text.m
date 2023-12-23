@@ -6,6 +6,8 @@
 
 :- import_module list.
 
+:- import_module uri.
+
 %---------------------------------------------------------------------------%
 
 :- type pager_text
@@ -27,7 +29,8 @@
     ;       diff_hunk
     ;       diff_index.
 
-:- pred make_text_lines(int::in, string::in, list(pager_text)::out) is det.
+:- pred make_text_lines(url_regex::in, int::in, string::in,
+    list(pager_text)::out) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -43,7 +46,6 @@
 :- import_module string.
 
 :- import_module string_util.
-:- import_module uri.
 
 :- type append_text_context
     --->    append_text_context(
@@ -57,7 +59,7 @@
 
 %---------------------------------------------------------------------------%
 
-make_text_lines(Max, String, Lines) :-
+make_text_lines(URLReg, Max, String, Lines) :-
     Start = 0,
     LastBreak = 0,
     Cur = 0,
@@ -66,45 +68,45 @@ make_text_lines(Max, String, Lines) :-
     DiffLine = no,
     DiffQuoteLevels = set.init,
     Context0 = append_text_context(QuoteLevel, DiffLine, DiffQuoteLevels),
-    append_text(Max, String, Start, LastBreak, Cur, WidthFromStart,
+    append_text(URLReg, Max, String, Start, LastBreak, Cur, WidthFromStart,
         Context0, _Context, cord.init, LinesCord),
     Lines = cord.list(LinesCord).
 
-:- pred append_text(int::in, string::in, int::in, int::in, int::in,
-    int::in, append_text_context::in, append_text_context::out,
+:- pred append_text(url_regex::in, int::in, string::in, int::in, int::in,
+    int::in, int::in, append_text_context::in, append_text_context::out,
     cord(pager_text)::in, cord(pager_text)::out) is det.
 
-append_text(Max, String, Start, LastBreak, Cur, WidthFromStart0,
+append_text(URLReg, Max, String, Start, LastBreak, Cur, WidthFromStart0,
         !Context, !Lines) :-
     ( string.unsafe_index_next(String, Cur, Next, Char) ->
         ( Char = '\n' ->
-            append_substring(String, Start, Cur, !Context, !Lines),
+            append_substring(URLReg, String, Start, Cur, !Context, !Lines),
             reset_context(!Context),
             WidthFromNext = 0,
-            append_text(Max, String, Next, Next, Next, WidthFromNext,
+            append_text(URLReg, Max, String, Next, Next, Next, WidthFromNext,
                 !Context, !Lines)
         ;
             WidthFromStart1 = WidthFromStart0 + wcwidth(Char),
             ( char.is_whitespace(Char) ->
-                append_text(Max, String, Start, Cur, Next, WidthFromStart1,
-                    !Context, !Lines)
+                append_text(URLReg, Max, String, Start, Cur, Next,
+                    WidthFromStart1, !Context, !Lines)
             ; WidthFromStart1 > Max ->
                 % Wrap long lines.
-                maybe_append_substring(String, Start, LastBreak,
+                maybe_append_substring(URLReg, String, Start, LastBreak,
                     !Context, !Lines),
                 skip_whitespace(String, LastBreak, NextStart),
                 unsafe_substring_wcwidth(String, NextStart, Next,
                     WidthFromNextStart),
-                append_text(Max, String, NextStart, NextStart, Next,
+                append_text(URLReg, Max, String, NextStart, NextStart, Next,
                     WidthFromNextStart, !Context, !Lines)
             ;
-                append_text(Max, String, Start, LastBreak, Next,
+                append_text(URLReg, Max, String, Start, LastBreak, Next,
                     WidthFromStart1, !Context, !Lines)
             )
         )
     ;
         % End of string.
-        maybe_append_substring(String, Start, Cur, !Context, !Lines)
+        maybe_append_substring(URLReg, String, Start, Cur, !Context, !Lines)
     ).
 
 :- pred reset_context(append_text_context::in, append_text_context::out)
@@ -114,22 +116,22 @@ reset_context(!Context) :-
     !Context ^ atc_cur_quote_level := no,
     !Context ^ atc_cur_line_type := no.
 
-:- pred maybe_append_substring(string::in, int::in, int::in,
+:- pred maybe_append_substring(url_regex::in, string::in, int::in, int::in,
     append_text_context::in, append_text_context::out,
     cord(pager_text)::in, cord(pager_text)::out) is det.
 
-maybe_append_substring(String, Start, End, !Context, !Lines) :-
+maybe_append_substring(URLReg, String, Start, End, !Context, !Lines) :-
     ( End > Start ->
-        append_substring(String, Start, End, !Context, !Lines)
+        append_substring(URLReg, String, Start, End, !Context, !Lines)
     ;
         true
     ).
 
-:- pred append_substring(string::in, int::in, int::in,
+:- pred append_substring(url_regex::in, string::in, int::in, int::in,
     append_text_context::in, append_text_context::out,
     cord(pager_text)::in, cord(pager_text)::out) is det.
 
-append_substring(String, Start, End, Context0, Context, !Lines) :-
+append_substring(URLReg, String, Start, End, Context0, Context, !Lines) :-
     Context0 = append_text_context(MaybeQuoteLevel0, MaybeLineType0,
         DiffQuoteLevels0),
     string.unsafe_between(String, Start, End, SubString),
@@ -177,7 +179,7 @@ append_substring(String, Start, End, Context0, Context, !Lines) :-
             LineType = diff(diff_common),
             DiffQuoteLevels = DiffQuoteLevels0
         ;
-            detect_url(SubString, UrlStart, UrlEnd)
+            detect_url(URLReg, SubString, UrlStart, UrlEnd)
         ->
             LineType = url(UrlStart, UrlEnd),
             DiffQuoteLevels = DiffQuoteLevels0

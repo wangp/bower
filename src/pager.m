@@ -160,6 +160,7 @@
 :- import_module string_util.
 :- import_module text_entry.
 :- import_module time_util.
+:- import_module uri.
 
 :- use_module curs.
 
@@ -494,8 +495,9 @@ make_part_tree_with_alts(Config, Cols, Folding, AltParts, Part,
             Text = InlineText,
             Filtered = part_not_filtered
         ),
+        get_url_regex(Config, URLReg),
         get_wrap_width(Config, Cols, WrapWidth),
-        make_text_lines(WrapWidth, Text, Lines0),
+        make_text_lines(URLReg, WrapWidth, Text, Lines0),
         list.map(wrap_text, Lines0) = Lines,
         (
             Folding = do_folding,
@@ -804,19 +806,21 @@ make_unsupported_part_tree(Config, Cols, PartNodeId, Part, HandleUnsupported,
         ),
         expand_part(Config, MessageId, PartId, PartType, MaybeContentCharset,
             MaybeFilterCommand, MaybeText, !IO),
+        get_url_regex(Config, URLReg),
         (
             MaybeText = ok(Text),
             get_wrap_width(Config, Cols, WrapWidth),
-            make_text_lines(WrapWidth, Text, TextLines)
+            make_text_lines(URLReg, WrapWidth, Text, TextLines)
         ;
             MaybeText = error(Error),
-            make_text_lines(Cols, "(" ++ Error ++ ")", TextLines)
+            make_text_lines(URLReg, Cols, "(" ++ Error ++ ")", TextLines)
         ),
         Expanded = part_expanded(Filtered)
     ;
         DoExpand = bool.yes,
         MaybePartId = no,
-        make_text_lines(Cols, "(no part id)", TextLines),
+        get_url_regex(Config, URLReg),
+        make_text_lines(URLReg, Cols, "(no part id)", TextLines),
         Expanded = part_expanded(part_not_filtered)
     ;
         DoExpand = bool.no,

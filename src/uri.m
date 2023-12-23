@@ -4,7 +4,11 @@
 :- module uri.
 :- interface.
 
-:- pred detect_url(string::in, int::out, int::out) is semidet.
+:- type url_regex.
+
+:- pred init_url_regex(url_regex::out) is det.
+
+:- pred detect_url(url_regex::in, string::in, int::out, int::out) is semidet.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -13,35 +17,70 @@
 
 :- import_module char.
 :- import_module int.
+:- import_module list.
+:- import_module maybe.
+:- import_module require.
 :- import_module string.
 
+:- import_module regex.
 :- import_module rfc3986.
-:- import_module string_util.
+
+:- type url_regex == regex.
 
 %-----------------------------------------------------------------------------%
 
-detect_url(String, Start, End) :-
-    detect_url_2(String, 0, Start, End).
-
-:- pred detect_url_2(string::in, int::in, int::out, int::out) is semidet.
-
-detect_url_2(String, BeginAt, Start, End) :-
-    % string.sub_string_search_start is unnecessarily safe.
-    string_util.unsafe_strstr(String, "http", BeginAt, Http),
-    AfterHttp = Http + 4,
+init_url_regex(Reg) :-
+    CFlags = [],
+    regcomp("https\\?://", CFlags, CompRes),
     (
-        is_start_of_word(String, Http),
-        s_colon_slash_slash(String, AfterHttp, AfterSlashSlash),
-        detect_url_end(String, AfterSlashSlash, End0)
-    ->
-        Start = Http,
-        ( strip_url_trailing_chars(String, Start, End0, UrlEnd) ->
-            End = UrlEnd
+        CompRes = ok(Reg)
+    ;
+        CompRes = error(Error),
+        unexpected($pred, "regcomp failed: " ++ Error)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+detect_url(Reg, String, Start, End) :-
+    detect_url_loop(Reg, String, 0, Start, End).
+
+:- pred detect_url_loop(regex::in, string::in, int::in, int::out, int::out)
+    is semidet.
+
+detect_url_loop(Reg, String, BeginAt, Start, End) :-
+    % We don't use start-of-line anchors so no need for reg_notbol even when
+    % BeginAt > 0.
+    EFlags = [],
+    unsafe_regexec_offset(Reg, String, BeginAt, EFlags, ExecRes),
+    require_complete_switch [ExecRes]
+    (
+        ExecRes = have_match(Matches),
+        (
+            Matches = [Match | _],
+            Match = regmatch(Http, AfterSlashSlash),
+            (
+                is_start_of_word(String, Http),
+                detect_url_end(String, AfterSlashSlash, End0)
+            ->
+                Start = Http,
+                ( strip_url_trailing_chars(String, Start, End0, UrlEnd) ->
+                    End = UrlEnd
+                ;
+                    End = End0
+                )
+            ;
+                detect_url_loop(Reg, String, AfterSlashSlash, Start, End)
+            )
         ;
-            End = End0
+            Matches = [],
+            fail
         )
     ;
-        detect_url_2(String, AfterHttp, Start, End)
+        ExecRes = no_match,
+        fail
+    ;
+        ExecRes = error(_),
+        fail
     ).
 
 :- pred is_start_of_word(string::in, int::in) is semidet.
@@ -51,19 +90,6 @@ is_start_of_word(String, I) :-
         string.unsafe_prev_index(String, I, _, PrevChar),
         char.is_alnum_or_underscore(PrevChar)
     ).
-
-:- pred s_colon_slash_slash(string::in, int::in, int::out) is semidet.
-
-s_colon_slash_slash(String, !I) :-
-    % Skip s in "https".
-    ( string.unsafe_index_next(String, !I, 's') ->
-        true
-    ;
-        true
-    ),
-    string.unsafe_index_next(String, !I, ':'),
-    string.unsafe_index_next(String, !I, '/'),
-    string.unsafe_index_next(String, !I, '/').
 
 :- pred detect_url_end(string::in, int::in, int::out) is det.
 
