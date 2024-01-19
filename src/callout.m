@@ -453,20 +453,21 @@ parse_part(MessageId, IsDecrypted0, JSON, Part) :-
             exception.throw(notmuch_json_error(
                 "parse_part: expected content for multipart"))
         )
-    ; ContentType = mime_type.message_rfc822 ->
-        ( JSON/"content" = list([EncapMessageJson]) ->
-            parse_message_rfc822_content(MessageId, IsDecrypted0,
-                EncapMessageJson, EncapMessage),
-            Content = encapsulated_message(EncapMessage),
-            MaybeContentCharset = no,
-            MaybeFilename = no,
-            MaybeContentLength = no,
-            MaybeContentTransferEncoding = no,
-            IsDecrypted = IsDecrypted0
-        ;
-            exception.throw(notmuch_json_error(
-                "parse_part: expected content for message/rfc822"))
-        )
+    ;
+        ContentType = mime_type.message_rfc822,
+        % notmuch/devel/schemata suggests that "content" exists when
+        % content-type is "message/rfc822", but that is not true for
+        % attachments.
+        JSON/"content" = list([EncapMessageJson])
+    ->
+        parse_message_rfc822_content(MessageId, IsDecrypted0,
+            EncapMessageJson, EncapMessage),
+        Content = encapsulated_message(EncapMessage),
+        MaybeContentCharset = no,
+        MaybeFilename = no,
+        MaybeContentLength = no,
+        MaybeContentTransferEncoding = no,
+        IsDecrypted = IsDecrypted0
     ;
         % Leaf part.
         ( JSON/"filename" = unesc_string(Filename) ->
