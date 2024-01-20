@@ -3,6 +3,9 @@ Bower 1.1-unreleased
 
 * config: Support multiple open_part, open_url, pipe_id commands.
 * pager: Use wcwidth to count line width for word wrap.
+* Detect gemini protocol URLs.
+* Fix parse failure on threads with message/rfc822 attachments.
+  (Frank Seifferth)
 
 Bower 1.0 (2022-08-21)
 ======================
