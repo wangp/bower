@@ -2449,13 +2449,11 @@ tag_replied_message(Config, Headers, Res, !IO) :-
 create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
         Text, MaybeAltHtml, Attachments, CryptoInfo, MessageId, Res,
         Warnings, !IO) :-
-    % We only use this to generate MIME boundaries.
+    % We only use this timestamp to generate MIME boundaries.
     current_timestamp(timestamp(Seed), !IO),
     splitmix64.init(truncate_to_int(Seed), RS0),
-    get_message_id_right_part(ParsedHeaders ^ ph_from, MessageIdRight),
-    generate_date_msg_id(MessageIdRight, Date, MessageId, !IO),
-    make_headers(Prepare, Headers, ParsedHeaders, Date, MessageId,
-        WriteHeaders),
+    make_headers(Prepare, Headers, ParsedHeaders, MessageId, WriteHeaders,
+        !IO),
     (
         Prepare = prepare_edit(MaybeAppendSignature),
         (
@@ -2616,14 +2614,26 @@ get_addr_spec_in_mailbox(Mailbox, AddrSpec) :-
 %-----------------------------------------------------------------------------%
 
 :- pred make_headers(prepare_temp::in, headers::in, parsed_headers::in,
-    header_value::in, message_id::in, list(header)::out) is det.
+    message_id::out, list(header)::out, io::di, io::uo) is det.
 
-make_headers(Prepare, Headers, ParsedHeaders, Date, MessageId, WriteHeaders) :-
+make_headers(Prepare, Headers, ParsedHeaders, MessageId, WriteHeaders, !IO) :-
     Headers = headers(_Date, _From, _To, _Cc, _Bcc, Subject, _ReplyTo,
         InReplyTo, References, RestHeaders),
     ParsedHeaders = parsed_headers(From, To, Cc, Bcc, ReplyTo, ExplicitDate),
     some [!Acc] (
         !:Acc = [],
+        % XXX The Message-ID created by generate_date_msg_id uses IO to
+        % retrieve the current timestamp. For user-supplied Date values
+        % this causes a mismatch between the timestamp in the Message-ID
+        % and the timestamp in the Date field.
+        % XXX The Message-ID of draft messages must be unique each
+        % time a draft is saved. No two drafts must ever have the same
+        % Message-ID. Currently, this is ensured by always generating the
+        % Message-ID from the current system timestamp. If this policy
+        % should ever be altered, the uniqueness of draft Message-IDs
+        % must be ensured by other means.
+        get_message_id_right_part(ParsedHeaders ^ ph_from, MessageIdRight),
+        generate_date_msg_id(MessageIdRight, Date, MessageId, !IO),
         (
             ExplicitDate = yes(DateValue0),
             DateValue = unstructured(header_value(DateValue0), no_encoding),
