@@ -2642,10 +2642,15 @@ make_headers(Prepare, Headers, ParsedHeaders, Date, MessageId, WriteHeaders) :-
         ),
         workaround_merge_switches(!Acc),
         (
-            Prepare = prepare_send,
+            Prepare = prepare_edit(_)
+        ;
+            ( Prepare = prepare_send; Prepare = prepare_postpone ),
             cons(header(field_name("Message-ID"),
                 unstructured(wrap_angle_brackets(MessageId), no_encoding)),
                 !Acc)
+        ),
+        (
+            Prepare = prepare_send
         ;
             Prepare = prepare_postpone,
             ( ParsedHeaders ^ ph_date = yes(_) ->
