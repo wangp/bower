@@ -97,7 +97,7 @@ maintain_encrypt_keys(ParsedHeaders, !CryptoInfo, !IO) :-
     io::di, io::uo) is det.
 
 maintain_encrypt_keys_map(Crypto, ParsedHeaders, !EncryptKeys, !IO) :-
-    ParsedHeaders = parsed_headers(From, To, Cc, Bcc, _ReplyTo, _Date),
+    ParsedHeaders = parsed_headers(_Date, From, To, Cc, Bcc, _ReplyTo),
     Addresses = From ++ To ++ Cc ++ Bcc,
     solutions(addr_specs(Addresses), AddrSpecs),
     list.foldl2(maintain_encrypt_key(Crypto), AddrSpecs, !EncryptKeys, !IO).
@@ -140,7 +140,7 @@ maintain_sign_keys(ParsedHeaders, !CryptoInfo, !IO) :-
     io::di, io::uo) is det.
 
 maintain_sign_keys_map(Crypto, ParsedHeaders, !SignKeys, !IO) :-
-    ParsedHeaders = parsed_headers(From, _To, _Cc, _Bcc, _ReplyTo, _Date),
+    ParsedHeaders = parsed_headers(_Date, From, _To, _Cc, _Bcc, _ReplyTo),
     solutions(addr_specs(From), AddrSpecs),
     list.foldl2(maintain_sign_key(Crypto), AddrSpecs, !SignKeys, !IO).
 
@@ -249,7 +249,7 @@ is_valid_userid_matching_email(Email, IgnoreCase, UserId) :-
 get_encrypt_keys(CryptoInfo, ParsedHeaders, EncryptForWhom, SelectedKeys,
         Missing, LeakedBccs) :-
     EncryptKeys = CryptoInfo ^ ci_encrypt_keys,
-    ParsedHeaders = parsed_headers(From, To, Cc, Bcc, _ReplyTo, _Date),
+    ParsedHeaders = parsed_headers(_Date, From, To, Cc, Bcc, _ReplyTo),
     (
         EncryptForWhom = from_only,
         Addresses = From
@@ -275,7 +275,7 @@ get_encrypt_keys(CryptoInfo, ParsedHeaders, EncryptForWhom, SelectedKeys,
 
 get_sign_keys(CryptoInfo, ParsedHeaders, SelectedKeys) :-
     SignKeys = CryptoInfo ^ ci_sign_keys,
-    ParsedHeaders = parsed_headers(From, _To, _Cc, _Bcc, _ReplyTo, _Date),
+    ParsedHeaders = parsed_headers(_Date, From, _To, _Cc, _Bcc, _ReplyTo),
     solutions(addr_specs(From), AddrSpecs),
     list.foldl2(get_key(SignKeys), AddrSpecs,
         [], RevSelectedKeys, [], _RevMissing),

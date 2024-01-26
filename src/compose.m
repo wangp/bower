@@ -137,12 +137,12 @@
 
 :- type parsed_headers
     --->    parsed_headers(
+                ph_date         :: maybe(string),
                 ph_from         :: address_list,
                 ph_to           :: address_list,
                 ph_cc           :: address_list,
                 ph_bcc          :: address_list,
-                ph_replyto      :: address_list,
-                ph_date         :: maybe(string)
+                ph_replyto      :: address_list
             ).
 
 :- type attach_info == scrollable(attachment).
@@ -651,6 +651,8 @@ make_parsed_headers(Headers, Parsed) :-
     Headers = headers(Date, From, To, Cc, Bcc, _Subject, ReplyTo,
         _References, _InReplyTo, _Rest),
 
+    parse_date_header(Date, ParsedDate),
+
     % [RFC 6854] allows group syntax in From - saves us work.
     Opt = backslash_quote_all,
     parse_address_list(Opt, header_value_string(From), ParsedFrom),
@@ -658,10 +660,9 @@ make_parsed_headers(Headers, Parsed) :-
     parse_address_list(Opt, header_value_string(Cc), ParsedCc),
     parse_address_list(Opt, header_value_string(Bcc), ParsedBcc),
     parse_address_list(Opt, header_value_string(ReplyTo), ParsedReplyTo),
-    parse_date_header(Date, ParsedDate),
 
-    Parsed = parsed_headers(ParsedFrom, ParsedTo, ParsedCc, ParsedBcc,
-        ParsedReplyTo, ParsedDate).
+    Parsed = parsed_headers(ParsedDate, ParsedFrom, ParsedTo, ParsedCc,
+        ParsedBcc, ParsedReplyTo).
 
 :- pred call_editor(prog_config::in, string::in, call_res::out, io::di, io::uo)
     is det.
@@ -846,8 +847,8 @@ parse_and_expand_headers(Config, Headers0, Headers, Parsed, !IO) :-
 
     Headers = headers(Date, From, To, Cc, Bcc, Subject, ReplyTo,
         References, InReplyTo, Rest),
-    Parsed = parsed_headers(ParsedFrom, ParsedTo, ParsedCc, ParsedBcc,
-        ParsedReplyTo, ParsedDate).
+    Parsed = parsed_headers(ParsedDate, ParsedFrom, ParsedTo, ParsedCc,
+        ParsedBcc, ParsedReplyTo).
 
 :- pred parse_and_expand_addresses(prog_config::in, quote_opt::in,
     header_value::in, header_value::out, address_list::out, io::di, io::uo)
@@ -2628,7 +2629,8 @@ get_addr_spec_in_mailbox(Mailbox, AddrSpec) :-
 make_headers(Prepare, Headers, ParsedHeaders, MessageId, WriteHeaders, !IO) :-
     Headers = headers(_Date, _From, _To, _Cc, _Bcc, Subject, _ReplyTo,
         InReplyTo, References, RestHeaders),
-    ParsedHeaders = parsed_headers(From, To, Cc, Bcc, ReplyTo, ExplicitDate),
+    ParsedHeaders = parsed_headers(MaybeExplicitDate, From, To, Cc, Bcc,
+        ReplyTo),
     some [!Acc] (
         !:Acc = [],
         % XXX The Message-ID created by generate_date_msg_id uses IO to
@@ -2644,11 +2646,11 @@ make_headers(Prepare, Headers, ParsedHeaders, MessageId, WriteHeaders, !IO) :-
         get_message_id_right_part(ParsedHeaders ^ ph_from, MessageIdRight),
         generate_date_msg_id(MessageIdRight, Date, MessageId, !IO),
         (
-            ExplicitDate = yes(DateValue),
+            MaybeExplicitDate = yes(ExplicitDate),
             cons(header(field_name("Date"),
-                unstructured(header_value(DateValue), no_encoding)), !Acc)
+                unstructured(header_value(ExplicitDate), no_encoding)), !Acc)
         ;
-            ExplicitDate = no,
+            MaybeExplicitDate = no,
             (
                 ( Prepare = prepare_send
                 ; Prepare = prepare_postpone
