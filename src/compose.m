@@ -535,13 +535,17 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
             !Headers ^ h_replyto := HeadersB ^ h_replyto,
             !Headers ^ h_inreplyto := HeadersB ^ h_inreplyto,
             !Headers ^ h_references := HeadersB ^ h_references,
-            ( ContinueBase = postponed_message ->
-                ( PostponedMetadata ^ retain_date = clear_date,
-                  !Headers ^ h_date := header_value("")
+            (
+                ContinueBase = postponed_message,
+                (
+                    PostponedMetadata ^ retain_date = clear_date,
+                    !Headers ^ h_date := header_value("")
                 ;
-                  PostponedMetadata ^ retain_date = retain_date
+                    PostponedMetadata ^ retain_date = retain_date
                 )
-            ; true ),
+            ;
+                ContinueBase = arbitrary_message
+            ),
             Headers = !.Headers
         ),
         (
@@ -608,7 +612,7 @@ create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHtmlFilter,
             parse_message_file(Filename, ResParse, !IO),
             (
                 ResParse = ok(parsed_message(Headers1, Text,
-                                             _PostponedMetadata)),
+                    _PostponedMetadata)),
                 io.remove_file(Filename, _, !IO),
                 update_references(Headers0, Headers1, Headers2),
                 reenter_staging_screen(Config, Screen, Headers2, Text,
@@ -631,6 +635,9 @@ create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHtmlFilter,
 :- pred parse_date_header(header_value::in, maybe(string)::out) is det.
 
 parse_date_header(Date, ParsedDate) :-
+    % XXX We don't have a proper Date parser. Setting the Date header manually
+    % is a somewhat hidden feature, so we'll trust that the user knows what
+    % they are doing, for now.
     ParsedDate0 = header_value_string(Date),
     ( string.all_match(char.is_whitespace, ParsedDate0) ->
         ParsedDate = no
@@ -1721,10 +1728,12 @@ draw_header_lines(Screen, !.Panels, Attrs, Headers, Parsed, Account,
     DrawRecv = draw_addresses(Attrs, show_crypto(yes, no), CryptoInfo),
     DrawSubj = draw_unstruct(Attrs),
     DrawRepl = draw_addresses(Attrs, show_crypto(no, no), CryptoInfo),
-    ( Parsed ^ ph_date = yes(ExplicitDate),
-      hdr(Screen, !Panels, Attrs, draw_unstruct(Attrs),
-          "    Date", header_value(ExplicitDate), !IO)
-    ; Parsed ^ ph_date = no
+    (
+        Parsed ^ ph_date = yes(ExplicitDate),
+        hdr(Screen, !Panels, Attrs, draw_unstruct(Attrs),
+            "    Date", header_value(ExplicitDate), !IO)
+    ;
+        Parsed ^ ph_date = no
     ),
     hdr(Screen, !Panels, Attrs, DrawFrom, "    From", Parsed ^ ph_from, !IO),
     hdr(Screen, !Panels, Attrs, DrawRecv, "      To", Parsed ^ ph_to, !IO),
@@ -2635,9 +2644,9 @@ make_headers(Prepare, Headers, ParsedHeaders, MessageId, WriteHeaders, !IO) :-
         get_message_id_right_part(ParsedHeaders ^ ph_from, MessageIdRight),
         generate_date_msg_id(MessageIdRight, Date, MessageId, !IO),
         (
-            ExplicitDate = yes(DateValue0),
-            DateValue = unstructured(header_value(DateValue0), no_encoding),
-            cons(header(field_name("Date"), DateValue), !Acc)
+            ExplicitDate = yes(DateValue),
+            cons(header(field_name("Date"),
+                unstructured(header_value(DateValue), no_encoding)), !Acc)
         ;
             ExplicitDate = no,
             (
@@ -2645,39 +2654,38 @@ make_headers(Prepare, Headers, ParsedHeaders, MessageId, WriteHeaders, !IO) :-
                 ; Prepare = prepare_postpone
                 ),
                 cons(header(field_name("Date"),
-                            unstructured(Date, no_encoding)), !Acc)
+                    unstructured(Date, no_encoding)), !Acc)
             ;
                 Prepare = prepare_edit(_)
             )
         ),
         workaround_merge_switches(!Acc),
         (
-            Prepare = prepare_edit(_)
-        ;
-            ( Prepare = prepare_send; Prepare = prepare_postpone ),
+            ( Prepare = prepare_send
+            ; Prepare = prepare_postpone
+            ),
             cons(header(field_name("Message-ID"),
                 unstructured(wrap_angle_brackets(MessageId), no_encoding)),
                 !Acc)
+        ;
+            Prepare = prepare_edit(_)
         ),
         (
-            Prepare = prepare_send
-        ;
             Prepare = prepare_postpone,
-            ( ParsedHeaders ^ ph_date = yes(_) ->
-              RetainDate = retain_date
-            ; RetainDate = clear_date ),
             (
+                ParsedHeaders ^ ph_date = yes(_),
                 % This is a simple and straightforward solution for
                 % setting a single metadata value if needed. Should any
                 % other metadata values be added later, this code would
                 % need to be adjusted accordingly.
-                RetainDate = retain_date
-            ->
-                Metadata = "retain_date",
                 cons(header(field_name("X-Bower-Metadata"),
-                            unstructured(header_value(Metadata),
-                            no_encoding)), !Acc)
-            ; true )
+                    unstructured(header_value("retain_date"), no_encoding)),
+                    !Acc)
+            ;
+                ParsedHeaders ^ ph_date = no
+            )
+        ;
+            Prepare = prepare_send
         ;
             Prepare = prepare_edit(_)
         ),

@@ -54,9 +54,9 @@ parse_message_file(Filename, Res, !IO) :-
     ).
 
 parse_message(String, Headers, Body, PostponedMetadata) :-
-    DefaultMetadata = postponed_metadata(clear_date),
-    read_headers(String, 0, Pos0, init_headers, Headers, DefaultMetadata,
-                 PostponedMetadata),
+    PostponedMetadata0 = postponed_metadata(clear_date),
+    read_headers(String, 0, Pos0, init_headers, Headers,
+        PostponedMetadata0, PostponedMetadata),
     skip_blank_line(String, Pos0, Pos1),
     string.unsafe_between(String, Pos1, count_code_units(String), Body).
 
@@ -73,7 +73,7 @@ read_headers(String, !Pos, !Headers, !PostponedMetadata) :-
             Value = header_value(RawValue)
         ),
         ( strcase_equal(Name, "X-Bower-Metadata") ->
-            read_postponed_metadata(Value, !PostponedMetadata)
+            read_x_bower_metadata(Value, !PostponedMetadata)
         ;
             add_header(Name, Value, !Headers)
         ),
@@ -82,22 +82,23 @@ read_headers(String, !Pos, !Headers, !PostponedMetadata) :-
         true
     ).
 
-:- pred read_postponed_metadata(header_value::in, postponed_metadata::in,
-    postponed_metadata::out) is det.
+:- pred read_x_bower_metadata(header_value::in,
+    postponed_metadata::in, postponed_metadata::out) is det.
 
-read_postponed_metadata(HeaderValue, Metadata0, Metadata) :-
-    MetadataString = header_value_string(HeaderValue),
-    MetadataList = list.map(lstrip, list.map(rstrip,
-                            split_at_char(';', MetadataString))),
-    list.foldl(read_metadata_field, MetadataList, Metadata0, Metadata).
+read_x_bower_metadata(HeaderValue, !PostponedMetadata) :-
+    Str = header_value_string(HeaderValue),
+    Words = list.map(strip, split_at_char(';', Str)),
+    list.foldl(read_x_bower_metadata_field, Words, !PostponedMetadata).
 
-:- pred read_metadata_field(string::in, postponed_metadata::in,
-    postponed_metadata::out) is det.
+:- pred read_x_bower_metadata_field(string::in,
+    postponed_metadata::in, postponed_metadata::out) is det.
 
-read_metadata_field(Field, !Metadata) :-
+read_x_bower_metadata_field(Field, !PostponedMetadata) :-
     ( strcase_equal(Field, "retain_date") ->
-        !Metadata ^ retain_date := retain_date
-    ; true  % Ignore any unknown values
+        !PostponedMetadata ^ retain_date := retain_date
+    ;
+        % Ignore any unknown values.
+        true
     ).
 
 :- pred read_header_field(string::in, int::in, int::out,

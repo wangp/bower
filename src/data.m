@@ -107,8 +107,8 @@
             ).
 
 :- type pm_retain_date
-    --->    retain_date;
-            clear_date.
+    --->    retain_date
+    ;       clear_date.
 
 :- type tag
     --->    tag(string).
