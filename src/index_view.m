@@ -301,12 +301,13 @@ search_terms_with_progress(Config, Screen, RefreshType, MaybeDesc, Tokens,
 search_terms_quiet(Config, RefreshType, Tokens, MaybeThreads, MessageUpdate,
         !IO) :-
     tokens_to_search_terms(Tokens, Terms),
-    check_apply_limit(Tokens, ApplyLimit),
+    check_apply_limit(Tokens, ApplyLimitOverride),
+    get_default_max_threads(Config, DefaultMaxThreads),
     (
-        ApplyLimit = yes,
-        LimitOption = ["--limit=" ++ from_int(default_max_threads)]
+        ( ApplyLimitOverride = no,
+          DefaultMaxThreads = positive(LimitThreads) ) ->
+        LimitOption = ["--limit=" ++ from_int(LimitThreads)]
     ;
-        ApplyLimit = no,
         LimitOption = []
     ),
     ignore_sigint(yes, !IO),
@@ -321,8 +322,8 @@ search_terms_quiet(Config, RefreshType, Tokens, MaybeThreads, MessageUpdate,
         MaybeThreads = yes(Threads),
         NumThreads = list.length(Threads),
         (
-            ApplyLimit = yes,
-            NumThreads = default_max_threads
+            ( ApplyLimitOverride = no,
+              DefaultMaxThreads = positive(NumThreads) )
         ->
             string.format("Found %d threads (capped). Use ~A to disable cap.",
                 [i(NumThreads)], Message0)
@@ -385,10 +386,6 @@ thread_to_index_line(Nowish, SelectedThreadIds, Thread, Line, !IO) :-
     Line = index_line(ThreadId, Selected, Date, make_presentable(Authors),
         make_presentable(Subject), Tags, StdTags, DisplayTagsWidth,
         Matched, Total, UnmatchedMessageIds).
-
-:- func default_max_threads = int.
-
-default_max_threads = 300.
 
 %-----------------------------------------------------------------------------%
 

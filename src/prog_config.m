@@ -47,6 +47,10 @@
     ;       alt_html_filter_on
     ;       alt_html_filter_always.
 
+:- type default_max_threads
+    --->    positive(int)
+    ;       infinite.
+
 %-----------------------------------------------------------------------------%
 
 :- pred load_prog_config(load_prog_config_result::out, io::di, io::uo)
@@ -81,6 +85,9 @@
 :- pred get_thread_ordering(prog_config::in, thread_ordering::out) is det.
 
 :- pred get_default_save_directory(prog_config::in, string::out) is det.
+
+:- pred get_default_max_threads(prog_config::in, default_max_threads::out)
+    is det.
 
 :- pred get_text_filter_command(prog_config::in, mime_type::in,
     command_prefix::out) is semidet.
@@ -171,6 +178,7 @@
                 wrap_width      :: maybe(int),
                 thread_ordering :: thread_ordering,
                 default_save_directory :: string,
+                default_max_threads :: default_max_threads,
 
                 % [compose]
                 maybe_signature_file  :: maybe(string), % absolute path
@@ -388,6 +396,21 @@ make_prog_config(Home, Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
         DefaultSaveDir = ""
     ),
 
+    ( search_config(Config, "ui", "default_max_threads", DefaultMaxThreads0) ->
+        ( ( DefaultMaxThreads0 = "inf"; DefaultMaxThreads0 = "inifinite";
+            DefaultMaxThreads0 = "-1") ->
+            DefaultMaxThreads = infinite
+        ;
+        ( string.to_int(DefaultMaxThreads0, DefaultMaxThreads1),
+          DefaultMaxThreads1 > 0 ->
+            DefaultMaxThreads = positive(DefaultMaxThreads1)
+        ;
+            DefaultMaxThreads = positive(300)
+        ))
+    ;
+        DefaultMaxThreads = positive(300)
+    ),
+
     some [!Filters] (
         !:Filters = map.init,
         % For backwards compatibility.
@@ -507,6 +530,7 @@ make_prog_config(Home, Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ProgConfig ^ wrap_width = WrapWidth,
     ProgConfig ^ thread_ordering = Ordering,
     ProgConfig ^ default_save_directory = DefaultSaveDir,
+    ProgConfig ^ default_max_threads = DefaultMaxThreads,
     ProgConfig ^ text_filters = Filters,
     ProgConfig ^ maybe_signature_file = MaybeSignatureFile,
     ProgConfig ^ encrypt_by_default = EncryptByDefault,
@@ -1009,6 +1033,9 @@ get_thread_ordering(Config, Ordering) :-
 
 get_default_save_directory(Config, DefaultSaveDir) :-
     DefaultSaveDir = Config ^ default_save_directory.
+
+get_default_max_threads(Config, DefaultMaxThreads) :-
+    DefaultMaxThreads = Config ^ default_max_threads.
 
 get_text_filter_command(Config, MimeType, Command) :-
     Filters = Config ^ text_filters,
