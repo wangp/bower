@@ -536,14 +536,14 @@ add_token(Token, !Acc) :-
 
 %-----------------------------------------------------------------------------%
 
-check_apply_limit(Tokens, ApplyLimitOverride) :-
+check_apply_limit(Tokens, ApplyLimit) :-
     % It's a little strange that ~A has an effect inside a prefix,
     % e.g. body:( ~A ) but it would also be a little strange if we silently
     % ignored it in ( ~A ).
     ( list.contains(Tokens, do_not_apply_limit) ->
-        ApplyLimitOverride = yes
+        ApplyLimit = no
     ;
-        ApplyLimitOverride = no
+        ApplyLimit = yes
     ).
 
 %-----------------------------------------------------------------------------%

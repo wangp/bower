@@ -186,9 +186,9 @@
     #
   ; default_save_directory =
 
-    # Cap search results at this number. Default: "300". Use "inf",
-    # "infinite" or "-1" to disable this cap. If "0" or any invalid
-    # value is specified, the default cap of 300 threads will be used.
+    # Cap search results at this number unless overridden. Default: 300.
+    # Use "none" to disable this cap.
+    #
   ; default_max_threads = 300
 
 #-----------------------------------------------------------------------------#

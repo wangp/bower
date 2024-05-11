@@ -48,8 +48,8 @@
     ;       alt_html_filter_always.
 
 :- type default_max_threads
-    --->    positive(int)
-    ;       infinite.
+    --->    no_max_threads
+    ;       max_threads(int).
 
 %-----------------------------------------------------------------------------%
 
@@ -397,25 +397,20 @@ make_prog_config(Home, Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ),
 
     ( search_config(Config, "ui", "default_max_threads", DefaultMaxThreads0) ->
-        (
-            ( DefaultMaxThreads0 = "inf"
-            ; DefaultMaxThreads0 = "infinite"
-            ; DefaultMaxThreads0 = "-1"
-            )
-        ->
-            DefaultMaxThreads = infinite
+        ( DefaultMaxThreads0 = "none" ->
+            DefaultMaxThreads = no_max_threads
         ;
-            (
-                string.to_int(DefaultMaxThreads0, DefaultMaxThreads1),
-                DefaultMaxThreads1 > 0
-            ->
-                DefaultMaxThreads = positive(DefaultMaxThreads1)
-            ;
-                DefaultMaxThreads = positive(300)
-            )
+            string.to_int(DefaultMaxThreads0, DefaultMaxThreadsInt),
+            DefaultMaxThreadsInt > 0
+        ->
+            DefaultMaxThreads = max_threads(DefaultMaxThreadsInt)
+        ;
+            cons("default_max_threads invalid: " ++ DefaultMaxThreads0,
+                !Errors),
+            DefaultMaxThreads = max_threads(300)
         )
     ;
-        DefaultMaxThreads = positive(300)
+        DefaultMaxThreads = max_threads(300)
     ),
 
     some [!Filters] (
