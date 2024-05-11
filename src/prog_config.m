@@ -397,16 +397,23 @@ make_prog_config(Home, Config, ProgConfig, NotmuchConfig, !Errors, !IO) :-
     ),
 
     ( search_config(Config, "ui", "default_max_threads", DefaultMaxThreads0) ->
-        ( ( DefaultMaxThreads0 = "inf"; DefaultMaxThreads0 = "inifinite";
-            DefaultMaxThreads0 = "-1") ->
+        (
+            ( DefaultMaxThreads0 = "inf"
+            ; DefaultMaxThreads0 = "infinite"
+            ; DefaultMaxThreads0 = "-1"
+            )
+        ->
             DefaultMaxThreads = infinite
         ;
-        ( string.to_int(DefaultMaxThreads0, DefaultMaxThreads1),
-          DefaultMaxThreads1 > 0 ->
-            DefaultMaxThreads = positive(DefaultMaxThreads1)
-        ;
-            DefaultMaxThreads = positive(300)
-        ))
+            (
+                string.to_int(DefaultMaxThreads0, DefaultMaxThreads1),
+                DefaultMaxThreads1 > 0
+            ->
+                DefaultMaxThreads = positive(DefaultMaxThreads1)
+            ;
+                DefaultMaxThreads = positive(300)
+            )
+        )
     ;
         DefaultMaxThreads = positive(300)
     ),

@@ -304,8 +304,9 @@ search_terms_quiet(Config, RefreshType, Tokens, MaybeThreads, MessageUpdate,
     check_apply_limit(Tokens, ApplyLimitOverride),
     get_default_max_threads(Config, DefaultMaxThreads),
     (
-        ( ApplyLimitOverride = no,
-          DefaultMaxThreads = positive(LimitThreads) ) ->
+        ApplyLimitOverride = no,
+        DefaultMaxThreads = positive(LimitThreads)
+    ->
         LimitOption = ["--limit=" ++ from_int(LimitThreads)]
     ;
         LimitOption = []
@@ -322,8 +323,8 @@ search_terms_quiet(Config, RefreshType, Tokens, MaybeThreads, MessageUpdate,
         MaybeThreads = yes(Threads),
         NumThreads = list.length(Threads),
         (
-            ( ApplyLimitOverride = no,
-              DefaultMaxThreads = positive(NumThreads) )
+            ApplyLimitOverride = no,
+            DefaultMaxThreads = positive(NumThreads)
         ->
             string.format("Found %d threads (capped). Use ~A to disable cap.",
                 [i(NumThreads)], Message0)
