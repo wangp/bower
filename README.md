@@ -277,7 +277,8 @@ term syntax with these macros:
     ~d ..DATE
     ~d DATE
 
-By default, a maximum of 300 search results will be displayed.
+By default, the number of threads displayed in the index view is capped
+at 300 threads (configurable).
 Add ~A to the search string to get all results.
 
 The ~d syntax passes dates through to notmuch as a "date:" range;
