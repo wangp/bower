@@ -768,6 +768,7 @@ soft_suspend(Pred, Res, !IO) :-
 "
     wint_t ch;
     int rc;
+    extern int get_wch(wint_t *wch);
 
     rc = get_wch(&ch);
     if (rc == OK) {

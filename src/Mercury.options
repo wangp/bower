@@ -6,7 +6,7 @@ GRADE = hlc.gc
 MCFLAGS += --grade $(GRADE)
 
 # Link with curses.
-MLLIBS-bower += -lncursesw -lpanelw
+MLLIBS-bower += -lncursesw -lpanelw -ltinfo
 
 # Build with gpgme.
 CFLAGS += -D_FILE_OFFSET_BITS=64
