@@ -377,8 +377,13 @@
 
 :- pragma foreign_decl("C", "
 
-#include <ncurses.h>
-#include <panel.h>
+#ifdef WITH_NCURSESW_DIR
+    #include <ncursesw/ncurses.h>
+    #include <ncursesw/panel.h>
+#else
+    #include <ncurses.h>
+    #include <panel.h>
+#endif
 #include <wchar.h>
 
 #ifdef NCURSES_VERSION

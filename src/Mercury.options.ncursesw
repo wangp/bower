@@ -1,0 +1,2 @@
+MCFLAGS += --cflag -DWITH_NCURSESW_DIR
+MLLIBS-bower += -ltinfow

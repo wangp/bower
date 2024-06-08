@@ -57,8 +57,12 @@ With Mercury installed and `mmc` in your PATH, run:
 
     make
 
+On Gentoo, and perhaps some other Linux distributions, run:
+
+    make WITH_NCURSESW_DIR=1
+
 You may want to edit `src/Mercury.options` to suit your system.
-If successful, you will get a binary named `bower`.
+On success, the build will produce a named `bower`.
 
 To generate a man page, run:
 
