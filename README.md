@@ -22,12 +22,12 @@ At compile time:
 
 * Mercury compiler (20.06 or later, including release-of-the-day);
   currently available at <http://dl.mercurylang.org/index.html>
+* ncurses with wide character support
+* gpgme (GnuPG Made Easy)
 
 At run time:
 
 * notmuch
-* ncurses with wide character support
-* gpgme (GnuPG Made Easy)
 * GNU coreutils: base64
 * SMTP client to send messages (configurable)
 * file(1) to detect MIME types when adding attachments
