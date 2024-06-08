@@ -160,7 +160,6 @@
 :- import_module string_util.
 :- import_module text_entry.
 :- import_module time_util.
-:- import_module uri.
 
 :- use_module curs.
 
