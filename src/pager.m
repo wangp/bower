@@ -161,6 +161,10 @@
 :- import_module text_entry.
 :- import_module time_util.
 
+% Work around Mercury compiler abort in high-level C grades.
+% Fixed as of rotd-2023-09-04.
+:- import_module uri.
+
 :- use_module curs.
 
 %-----------------------------------------------------------------------------%
