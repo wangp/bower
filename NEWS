@@ -1,12 +1,15 @@
-Bower 1.1-unreleased
-====================
+Bower 1.1 (2024-07-21)
+======================
 
 * config: Support multiple open_part, open_url, pipe_id commands.
 * config: Add default_max_threads setting. (Frank Seifferth)
 * pager: Use wcwidth to count line width for word wrap.
-* Detect gemini protocol URLs.
+* pager: Indicate attachments in hidden alternative part(s).
+* pager: Detect gemini protocol URLs.
 * Fix parse failure on threads with message/rfc822 attachments. (Frank Seifferth)
 * Allow setting of the Date header field when composing. (Frank Seifferth)
+* Default to building in hlc.gc grade.
+* Add make variable to accomodate building on Gentoo.
 
 Bower 1.0 (2022-08-21)
 ======================
