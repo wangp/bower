@@ -132,7 +132,7 @@ regcomp(Str, CFlags, Res) :-
 
 :- pragma foreign_proc("C",
     regcomp0(Str::in, CFlags::in, ErrCode::out, Reg::out),
-    [will_not_call_mercury, promise_pure, thread_safe, may_not_export_body],
+    [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
 "
     Reg = MR_GC_NEW_ATTRIB(regex_t, MR_ALLOC_ID);
     ErrCode = regcomp(Reg, Str, CFlags);
@@ -169,7 +169,7 @@ unsafe_regexec_offset(Reg, Str, BeginAt, EFlags, Res) :-
 :- pragma foreign_proc("C",
     regexec0(Reg::in, Str::in, BeginAt::in, EFlags::in,
         ErrCode::out, HaveMatch::out, MatchList::out),
-    [may_call_mercury, promise_pure, thread_safe, may_not_export_body],
+    [may_call_mercury, promise_pure, thread_safe, may_not_duplicate],
 "
     regmatch_t *matches;
     int nmatch;
@@ -215,7 +215,7 @@ make_regmatch(BeginAt, StartOfs, EndOfs) =
 
 :- pragma foreign_proc("C",
     regerror(ErrCode::in, Reg::in, Error::out),
-    [will_not_call_mercury, promise_pure, thread_safe, may_not_export_body],
+    [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
 "
     char errbuf[256];
 
