@@ -172,6 +172,7 @@ The keys are:
     $               apply '+spam -unread' tags on current thread
     +, -            add/remove arbitrary tags
     t               select/unselect thread
+    Ctrl+A          select all threads
     T               unselect all threads
     '               bulk tag changes on selected threads
     "               same as ' but retain selections afterwards
@@ -223,6 +224,7 @@ This view pages through an entire thread.  The keys are:
     $               apply '+spam -unread' tags on current message
     +, -            add/remove arbitrary tags
     t               select/unselect message
+    Ctrl+A          select all messages
     T               unselect all messages
     '               bulk tag changes on selected threads
     "               same as ' but retain selections afterwards
