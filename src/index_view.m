@@ -131,6 +131,7 @@
     ;       mark_spam
     ;       prompt_tag(string)
     ;       toggle_select
+    ;       select_all
     ;       unselect_all
     ;       bulk_tag(keep_selection)
     ;       pipe_thread_id
@@ -791,6 +792,10 @@ index_view_input(NumRows, KeyCode, MessageUpdate, Action, !IndexInfo) :-
             toggle_select(NumRows, MessageUpdate, !IndexInfo),
             Action = continue
         ;
+            Binding = select_all,
+            select_all(MessageUpdate, !IndexInfo),
+            Action = continue
+        ;
             Binding = unselect_all,
             unselect_all(MessageUpdate, !IndexInfo),
             Action = continue
@@ -883,6 +888,7 @@ key_binding_char('$', mark_spam).
 key_binding_char('+', prompt_tag("+")).
 key_binding_char('-', prompt_tag("-")).
 key_binding_char('t', toggle_select).
+key_binding_char('\x01\', select_all). % ^A
 key_binding_char('T', unselect_all).
 key_binding_char('''', bulk_tag(clear_selection)).
 key_binding_char('"', bulk_tag(keep_selection)).
@@ -1463,6 +1469,20 @@ toggle_select(NumRows, MessageUpdate, !Info) :-
     ;
         MessageUpdate = set_warning("No thread.")
     ).
+
+:- pred select_all(message_update::out, index_info::in, index_info::out) is
+    det.
+
+select_all(MessageUpdate, !Info) :-
+    Scrollable0 = !.Info ^ i_scrollable,
+    map_lines(select_line, Scrollable0, Scrollable),
+    !Info ^ i_scrollable := Scrollable,
+    MessageUpdate = set_info("Selected all threads.").
+
+:- pred select_line(index_line::in, index_line::out) is det. 
+
+select_line(!Line) :-
+    !Line ^ i_selected := selected.
 
 :- pred unselect_all(message_update::out, index_info::in, index_info::out)
     is det.

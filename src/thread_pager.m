@@ -1124,6 +1124,11 @@ thread_pager_input(Screen, Key, Action, MessageUpdate, !Info, !IO) :-
         goto_next_message(MessageUpdate, !Info),
         Action = continue
     ;
+        Key = char('\x01\') % ^A
+    ->
+        select_all(MessageUpdate, !Info),
+        Action = continue
+    ;
         Key = char('T')
     ->
         unselect_all(MessageUpdate, !Info),
@@ -1865,6 +1870,20 @@ toggle_select(!Info) :-
     ;
         true
     ).
+
+:- pred select_all(message_update::out, thread_pager_info::in, thread_pager_info::out) is
+    det.
+
+select_all(MessageUpdate, !Info) :-
+    Scrollable0 = !.Info ^ tp_scrollable,
+    map_lines(select_line, Scrollable0, Scrollable),
+    !Info ^ tp_scrollable := Scrollable,
+    MessageUpdate = set_info("Selected all messages.").
+
+:- pred select_line(thread_line::in, thread_line::out) is det.
+
+select_line(!Line) :-
+    !Line ^ tp_selected := selected.
 
 :- pred unselect_all(message_update::out,
     thread_pager_info::in, thread_pager_info::out) is det.
