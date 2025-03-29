@@ -1,6 +1,7 @@
-Bower 1.2-unreleased
-====================
+Bower 1.1.1 (2025-03-29)
+========================
 * Use Ctrl+A to select all threads/messages in both views. (hgv)
+* Don't use ln -L flag on MacOS.
 
 Bower 1.1 (2024-07-21)
 ======================
