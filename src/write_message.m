@@ -46,16 +46,28 @@
                 maybe(string)   % optional signature
             ).
 
+:- type protected_headers
+    --->    protected_headers(
+                hp_type,
+                list(header)
+            ).
+
+:- type hp_type
+    --->    cipher;
+            clear.
+
 :- type mime_part
     --->    discrete(
                 mime_type,
                 maybe(string),  % charset
+                maybe(protected_headers),
                 maybe(write_content_disposition),
                 maybe(write_content_transfer_encoding),
                 mime_part_body
             )
     ;       composite(
                 composite_content_type,
+                maybe(protected_headers),
                 boundary,
                 maybe(write_content_disposition),
                 maybe(write_content_transfer_encoding),
@@ -307,49 +319,63 @@ write_mime_part(Stream, Config, MimePart, PausedCurs, Res, !IO) :-
 
 write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, Res, !IO) :-
     (
-        MimePart = discrete(ContentType, MaybeCharset, MaybeContentDisposition,
-            MaybeTransferEncoding, Body),
-        write_discrete_content_type(Stream, ContentType, MaybeCharset, !IO),
-        fold_maybe(write_content_disposition(Stream),
-            MaybeContentDisposition, !IO),
-        fold_maybe(write_content_transfer_encoding(Stream),
-            MaybeTransferEncoding, !IO),
-        % Separate header and body.
-        put(Stream, "\n", !IO),
+        MimePart = discrete(ContentType, MaybeCharset, MaybeProtectedHeaders,
+            MaybeContentDisposition, MaybeTransferEncoding, Body),
+        write_discrete_content_type(Stream, ContentType, MaybeCharset,
+            MaybeProtectedHeaders, Res0, !IO),
         (
-            MaybeTransferEncoding = yes(TransferEncoding)
+            Res0 = error(_), Res = Res0
         ;
-            MaybeTransferEncoding = no,
-            TransferEncoding = cte_8bit
-        ),
-        write_mime_part_body(Stream, Config, MaybeCharset, TransferEncoding,
-            Body, PausedCurs, Res, !IO)
-    ;
-        MimePart = composite(ContentType, Boundary, MaybeContentDisposition,
-            MaybeTransferEncoding, SubParts),
-        write_composite_content_type(Stream, ContentType, Boundary, !IO),
-        fold_maybe(write_content_disposition(Stream),
-            MaybeContentDisposition, !IO),
-        fold_maybe(write_content_transfer_encoding(Stream),
-            MaybeTransferEncoding, !IO),
-        % Separate header and body.
-        put(Stream, "\n", !IO),
-        write_mime_subparts(Stream, Config, Boundary, PausedCurs, SubParts,
-            Res0, !IO),
-        (
             Res0 = ok,
-            write_mime_final_boundary(Stream, Boundary, !IO),
-            Res = ok
+            fold_maybe(write_content_disposition(Stream),
+                MaybeContentDisposition, !IO),
+            fold_maybe(write_content_transfer_encoding(Stream),
+                MaybeTransferEncoding, !IO),
+            % Separate header and body.
+            put(Stream, "\n", !IO),
+            (
+                MaybeTransferEncoding = yes(TransferEncoding)
+            ;
+                MaybeTransferEncoding = no,
+                TransferEncoding = cte_8bit
+            ),
+            write_mime_part_body(Stream, Config, MaybeCharset,
+                TransferEncoding, Body, PausedCurs, Res, !IO)
+        )
+    ;
+        MimePart = composite(ContentType, MaybeProtectedHeaders, Boundary,
+            MaybeContentDisposition, MaybeTransferEncoding, SubParts),
+        write_composite_content_type(Stream, ContentType,
+            MaybeProtectedHeaders, Boundary, Res0, !IO),
+        (
+            Res0 = error(_), Res = Res0
         ;
-            Res0 = error(Error),
-            Res = error(Error)
+            Res0 = ok,
+            fold_maybe(write_content_disposition(Stream),
+                MaybeContentDisposition, !IO),
+            fold_maybe(write_content_transfer_encoding(Stream),
+                MaybeTransferEncoding, !IO),
+            % Separate header and body.
+            put(Stream, "\n", !IO),
+            write_mime_subparts(Stream, Config, Boundary, PausedCurs, SubParts,
+                Res1, !IO),
+            (
+                Res1 = ok,
+                write_mime_final_boundary(Stream, Boundary, !IO),
+                Res = ok
+            ;
+                Res1 = error(Error),
+                Res = error(Error)
+            )
         )
     ).
 
 :- pred write_discrete_content_type(Stream::in, mime_type::in,
-    maybe(string)::in, io::di, io::uo) is det <= writer(Stream).
+    maybe(string)::in, maybe(protected_headers)::in, maybe_error::out,
+    io::di, io::uo) is det <= writer(Stream).
 
-write_discrete_content_type(Stream, ContentType, MaybeCharset, !IO) :-
+write_discrete_content_type(Stream, ContentType, MaybeCharset,
+        MaybeProtectedHeaders, Res, !IO) :-
     put(Stream, "Content-Type: ", !IO),
     put(Stream, mime_type.to_string(ContentType), !IO),
     ( ContentType = application_pgp_signature ->
@@ -363,40 +389,76 @@ write_discrete_content_type(Stream, ContentType, MaybeCharset, !IO) :-
     ;
         MaybeCharset = no
     ),
-    put(Stream, "\n", !IO).
+    (
+        MaybeProtectedHeaders = yes(protected_headers(HPType, Headers)),
+        put(Stream, "; protected-headers=""v1""", !IO),
+        (
+            HPType = cipher, put(Stream, "; hp=""cipher""", !IO)
+        ;
+            HPType = clear, put(Stream, "; hp=""clear""", !IO)
+        ),
+        list.foldl2(build_header(string.builder.handle), Headers, ok,
+            Res, init, BuilderState),
+        put(Stream, "\n" ++ to_string(BuilderState), !IO)
+    ;
+        MaybeProtectedHeaders = no, put(Stream, "\n", !IO), Res = ok
+    ).
 
 :- pred write_composite_content_type(Stream::in, composite_content_type::in,
-    boundary::in, io::di, io::uo) is det <= writer(Stream).
+    maybe(protected_headers)::in, boundary::in, maybe_error::out,
+    io::di, io::uo) is det <= writer(Stream).
 
-write_composite_content_type(Stream, ContentType, boundary(Boundary), !IO) :-
+write_composite_content_type(Stream, ContentType, MaybeProtectedHeaders,
+        boundary(Boundary), Res, !IO) :-
+    (
+        MaybeProtectedHeaders = yes(protected_headers(HPType, Headers)),
+        (
+            HPType = cipher,
+            ExtraAttrs = "; protected-headers=""v1""; hp=""cipher"""
+        ;
+            HPType = clear,
+            ExtraAttrs = "; protected-headers=""v1""; hp=""clear"""
+        ),
+        list.foldl2(build_header(string.builder.handle), Headers, ok,
+            Res, init, BuilderState),
+        ExtraLines = to_string(BuilderState)
+    ;
+        MaybeProtectedHeaders = no, ExtraAttrs = "", ExtraLines = "", Res = ok
+    ),
     (
         ContentType = multipart_mixed,
         list.foldl(put(Stream),
-            ["Content-Type: multipart/mixed; boundary=""", Boundary, """\n"],
+            ["Content-Type: multipart/mixed",
+            ExtraAttrs,
+            "; boundary=""", Boundary, """",
+            "\n", ExtraLines],
             !IO)
     ;
         ContentType = multipart_alternative,
         list.foldl(put(Stream),
             ["Content-Type: multipart/alternative",
+            ExtraAttrs,
             "; boundary=""", Boundary, """",
-            "\n"],
+            "\n", ExtraLines],
             !IO)
     ;
         ContentType = multipart_encrypted(Protocol),
         list.foldl(put(Stream),
             ["Content-Type: multipart/encrypted",
+            ExtraAttrs,
             "; boundary=""", Boundary, """",
             "; protocol=""", protocol_string(Protocol), """",
-            "\n"],
+            "\n", ExtraLines],
             !IO)
     ;
         ContentType = multipart_signed(micalg(MicAlg), Protocol),
         list.foldl(put(Stream),
             ["Content-Type: multipart/signed",
+            ExtraAttrs,
             "; boundary=""", Boundary, """",
             "; micalg=""", MicAlg, """",
             "; protocol=""", protocol_string(Protocol), """",
-            "\n"], !IO)
+            "\n", ExtraLines], !IO)
     ).
 
 :- func protocol_string(protocol) = string.

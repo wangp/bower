@@ -2051,15 +2051,15 @@ draw_crypto_line(Attrs, Screen, Panel, CryptoInfo, !IO) :-
     (
         Encrypt = yes,
         Sign = yes,
-        Body = "encrypt & sign message body"
+        Body = "encrypt subject and message body; sign entire message"
     ;
         Encrypt = yes,
         Sign = no,
-        Body = "encrypt message body"
+        Body = "encrypt subject and message body"
     ;
         Encrypt = no,
         Sign = yes,
-        Body = "sign message body"
+        Body = "sign message"
     ;
         Encrypt = no,
         Sign = no,
@@ -2553,7 +2553,7 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
             ;
                 TextCTE = cte_quoted_printable
             ),
-            make_text_and_attachments_mime_part(TextCTE, cte_8bit, Text,
+            make_text_and_attachments_mime_part(TextCTE, cte_8bit, no, Text,
                 MaybeAltHtml, Attachments, RS0, _RS, Res0),
             (
                 Res0 = ok(MimePart),
@@ -2597,14 +2597,17 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
                 EncryptKeys = [_ | _],
                 missing_keys_warning(Missing, WarningsA),
                 leaked_bccs_warning(LeakedBccs, WarningsB),
+                make_protected_headers(WriteHeaders, cipher, OuterHeaders,
+                    ProtectedHeaders),
                 make_text_and_attachments_mime_part(TextCTE, TextAttachmentCTE,
-                    Text, MaybeAltHtml, Attachments, RS0, RS1, Res0),
+                    yes(ProtectedHeaders), Text, MaybeAltHtml, Attachments,
+                    RS0, RS1, Res0),
                 (
                     Res0 = ok(PartToEncrypt),
                     generate_boundary(EncryptedBoundary, RS1, _RS),
                     curs.soft_suspend(
-                        encrypt_then_write_temp_message_file(Config, Prepare,
-                            WriteHeaders, PartToEncrypt,
+                        encrypt_then_write_temp_message_file(Config,
+                            Prepare, OuterHeaders, PartToEncrypt,
                             CryptoInfo, MaybeSigners, EncryptKeys,
                             boundary(EncryptedBoundary), i_paused_curses),
                         {Res, WarningsC}, !IO)
@@ -2625,17 +2628,21 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
                 Warnings = []
             ;
                 SignKeys = [_ | _],
+                make_protected_headers(WriteHeaders, clear, OuterHeaders,
+                    ProtectedHeaders),
                 % Force text parts to be base64-encoded to avoid being mangled
                 % during transfer.
                 make_text_and_attachments_mime_part(cte_base64, cte_base64,
-                    Text, MaybeAltHtml, Attachments, RS0, RS1, Res0),
+                    yes(ProtectedHeaders), Text, MaybeAltHtml, Attachments,
+                    RS0, RS1, Res0),
                 (
                     Res0 = ok(PartToSign),
                     generate_boundary(SignedBoundary, RS1, _RS),
                     curs.soft_suspend(
-                        sign_detached_then_write_temp_message_file(Config, Prepare,
-                            WriteHeaders, PartToSign, CryptoInfo, SignKeys,
-                            boundary(SignedBoundary), i_paused_curses),
+                        sign_detached_then_write_temp_message_file(Config,
+                            Prepare, OuterHeaders, PartToSign, CryptoInfo,
+                            SignKeys, boundary(SignedBoundary),
+                            i_paused_curses),
                         {Res, Warnings}, !IO)
                 ;
                     Res0 = error(Error),
@@ -2645,6 +2652,44 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
             )
         )
     ).
+
+:- pred make_protected_headers(list(header)::in, hp_type::in,
+    list(header)::out, protected_headers::out) is det.
+
+make_protected_headers(AllHeaders, ProtectionType, OuterHeaders,
+        ProtectedHeaders) :-
+    (
+        ProtectionType = cipher,
+        list.filter_map(mask_outer_header, AllHeaders, OuterHeaders),
+        list.map(make_hp_outer, OuterHeaders, HPOuterHeaders),
+        InnerHeaders = AllHeaders ++ HPOuterHeaders
+    ;
+        ProtectionType = clear,
+        OuterHeaders = AllHeaders,
+        InnerHeaders = AllHeaders
+    ),
+    ProtectedHeaders = protected_headers(ProtectionType, InnerHeaders).
+
+:- pred mask_outer_header(header::in, header::out) is semidet.
+
+mask_outer_header(InnerHeader, OuterHeader) :-
+    InnerHeader = header(field_name(Name), _),
+    (
+        strcase_equal(Name, "Subject")
+    ->
+        OuterHeader = header(field_name(Name),
+            unstructured(header_value("[...]"), no_encoding))
+    ;
+        not strcase_equal(Name, "Comments"),
+        not strcase_equal(Name, "Keywords"),
+        OuterHeader = InnerHeader
+    ).
+
+:- pred make_hp_outer(header::in, header::out) is det.
+
+make_hp_outer(OuterHeader, HPOuterHeader) :-
+    OuterHeader = header(field_name(Field), Value),
+    HPOuterHeader = header(field_name("HP-Outer: " ++ Field), Value).
 
 %-----------------------------------------------------------------------------%
 
@@ -2891,40 +2936,63 @@ all_lines_within_length_loop(Str, Index0, EndIndex, MaxLen) :-
 %-----------------------------------------------------------------------------%
 
 :- pred make_text_and_attachments_mime_part(write_content_transfer_encoding::in,
-    write_content_transfer_encoding::in, string::in, maybe(string)::in,
+    write_content_transfer_encoding::in,
+    maybe(protected_headers)::in, string::in, maybe(string)::in,
     list(attachment)::in, splitmix64::in, splitmix64::out,
     maybe_error(mime_part)::out) is det.
 
-make_text_and_attachments_mime_part(TextCTE, TextAttachmentCTE, Text,
-        MaybeAltHtml, Attachments, BoundarySeed0, BoundarySeed1, Res) :-
+make_text_and_attachments_mime_part(TextCTE, TextAttachmentCTE,
+        MaybeProtectedHeaders, Text, MaybeAltHtml, Attachments, BoundarySeed0,
+        BoundarySeed1, Res) :-
     generate_boundary(MixedBoundary, BoundarySeed0, BoundarySeed1Half),
-    TextPlainPart = discrete(text_plain, yes("utf-8"),
-        yes(write_content_disposition(inline, no)), yes(TextCTE), text(Text)),
     (
-        MaybeAltHtml = no,
-        TextPart = TextPlainPart,
-        BoundarySeed1 = BoundarySeed1Half
+        MaybeAltHtml = no, Attachments = [],
+        TextPart = discrete(text_plain, yes("utf-8"), MaybeProtectedHeaders,
+            yes(write_content_disposition(inline, no)), yes(TextCTE),
+            text(Text)),
+        BoundarySeed1 = BoundarySeed1Half,
+        Res = ok(TextPart)
     ;
-        MaybeAltHtml = yes(HtmlContent),
-        TextHtmlPart = discrete(text_html, yes("utf-8"),
+        MaybeAltHtml = yes(HtmlContent), Attachments = [],
+        TextPlainPart = discrete(text_plain, yes("utf-8"), no,
+            yes(write_content_disposition(inline, no)),
+            yes(TextCTE), text(Text)),
+        TextHtmlPart = discrete(text_html, yes("utf-8"), no,
             yes(write_content_disposition(inline, no)),
             yes(cte_quoted_printable), text(HtmlContent)),
         generate_boundary(MultipartBoundary, BoundarySeed1Half, BoundarySeed1),
-        TextPart = composite(multipart_alternative,
+        TextPart = composite(multipart_alternative, MaybeProtectedHeaders,
             boundary(MultipartBoundary),
             yes(write_content_disposition(inline, no)), yes(cte_8bit),
-            [TextPlainPart, TextHtmlPart])
-    ),
-    (
-        Attachments = [],
+            [TextPlainPart, TextHtmlPart]),
         Res = ok(TextPart)
     ;
         Attachments = [_ | _],
+        TextPlainPart = discrete(text_plain, yes("utf-8"), no,
+            yes(write_content_disposition(inline, no)), yes(TextCTE),
+            text(Text)),
+        (
+            MaybeAltHtml = no,
+            TextPart = TextPlainPart,
+            BoundarySeed1 = BoundarySeed1Half
+        ;
+            MaybeAltHtml = yes(HtmlContent),
+            TextHtmlPart = discrete(text_html, yes("utf-8"), no,
+                yes(write_content_disposition(inline, no)),
+                yes(cte_quoted_printable), text(HtmlContent)),
+            generate_boundary(MultipartBoundary, BoundarySeed1Half,
+                BoundarySeed1),
+            TextPart = composite(multipart_alternative, no,
+                boundary(MultipartBoundary),
+                yes(write_content_disposition(inline, no)), yes(cte_8bit),
+                [TextPlainPart, TextHtmlPart])
+        ),
         list.map_foldl(make_attachment_mime_part(TextAttachmentCTE),
             Attachments, AttachmentParts, [], AnyErrors),
         (
             AnyErrors = [],
-            MultiPart = composite(multipart_mixed, boundary(MixedBoundary),
+            MultiPart = composite(multipart_mixed, MaybeProtectedHeaders,
+                boundary(MixedBoundary),
                 yes(write_content_disposition(inline, no)), yes(cte_8bit),
                 [TextPart | AttachmentParts]),
             Res = ok(MultiPart)
@@ -2974,7 +3042,7 @@ make_attachment_mime_part(TextAttachmentCTE, Attachment, MimePart,
             cons("Cannot handle old attachment (encapsulated_message)",
                 !AnyErrors)
         ),
-        MimePart = discrete(ContentType, MaybeCharset,
+        MimePart = discrete(ContentType, MaybeCharset, no,
             MaybeWriteContentDisposition, MimePartCTE, MimePartBody)
     ;
         Attachment = new_attachment(ContentType, MaybeAttachmentCharset,
@@ -2998,11 +3066,11 @@ make_attachment_mime_part(TextAttachmentCTE, Attachment, MimePart,
             ;
                 EffectiveCTE = TextAttachmentCTE
             ),
-            MimePart = discrete(text_plain, MaybeCharset,
+            MimePart = discrete(text_plain, MaybeCharset, no,
                 yes(WriteContentDisposition), yes(EffectiveCTE), text(Text))
         ;
             Content = base64_encoded(Base64),
-            MimePart = discrete(ContentType, MaybeCharset,
+            MimePart = discrete(ContentType, MaybeCharset, no,
                 yes(WriteContentDisposition), yes(cte_base64), base64(Base64))
         )
     ).
@@ -3094,10 +3162,10 @@ sign_detached_then_write_temp_message_file(Config, Prepare,
 make_multipart_encrypted_mime_part(Cipher, Boundary, MultiPart) :-
     % RFC 3156
     MultiPart = composite(multipart_encrypted(application_pgp_encrypted),
-        Boundary, no, no, [SubPartA, SubPartB]),
-    SubPartA = discrete(application_pgp_encrypted, no, no, no,
+        no, Boundary, no, no, [SubPartA, SubPartB]),
+    SubPartA = discrete(application_pgp_encrypted, no, no, no, no,
         text("Version: 1\n")),
-    SubPartB = discrete(application_octet_stream, no, no, no,
+    SubPartB = discrete(application_octet_stream, no, no, no, no,
         text(Cipher)).
 
 :- pred make_multipart_signed_mime_part(mime_part::in, string::in, micalg::in,
@@ -3106,8 +3174,9 @@ make_multipart_encrypted_mime_part(Cipher, Boundary, MultiPart) :-
 make_multipart_signed_mime_part(SignedPart, Sig, MicAlg, Boundary, MultiPart) :-
     % RFC 3156
     MultiPart = composite(multipart_signed(MicAlg, application_pgp_signature),
-        Boundary, no, no, [SignedPart, SignaturePart]),
-    SignaturePart = discrete(application_pgp_signature, no, no, no, text(Sig)).
+        no, Boundary, no, no, [SignedPart, SignaturePart]),
+    SignaturePart = discrete(application_pgp_signature, no, no, no, no,
+        text(Sig)).
 
 %-----------------------------------------------------------------------------%
 
