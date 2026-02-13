@@ -5,6 +5,7 @@
 :- interface.
 
 :- import_module io.
+:- import_module list.
 :- import_module maybe.
 :- import_module stream.
 
@@ -35,6 +36,9 @@
 
 :- pred generate_boundary(string::out, splitmix64::in, splitmix64::out) is det.
 
+:- pred address_list_to_sendmail_args(address_list::in, list(string)::out,
+    maybe_error::out) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -43,7 +47,6 @@
 :- import_module bool.
 :- import_module char.
 :- import_module int.
-:- import_module list.
 :- import_module string.
 :- import_module time.
 :- use_module require.
@@ -283,6 +286,68 @@ generate_boundary_char(_, Char, !RS) :-
 
 base64_chars =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".
+
+address_list_to_sendmail_args(Addresses, SendmailArgs, Res) :-
+    (
+        Addresses = [],
+        SendmailArgs = [],
+        Res = ok
+    ;
+        Addresses = [ Addr | Tail ],
+        (
+            Addr = mailbox(Mailbox),
+            mailbox_list_to_sendmail_args([Mailbox], NewArgs, Res0)
+        ;
+            Addr = group(_, MailboxList),
+            mailbox_list_to_sendmail_args(MailboxList, NewArgs, Res0)
+        ),
+        (
+            Res0 = error(Error),
+            SendmailArgs = [],
+            Res = error(Error)
+        ;
+            Res0 = ok,
+            address_list_to_sendmail_args(Tail, ProcessedTail, Res),
+            SendmailArgs = NewArgs ++ ProcessedTail
+        )
+    ).
+
+:- pred mailbox_list_to_sendmail_args(list(mailbox)::in, list(string)::out,
+    maybe_error::out) is det.
+
+mailbox_list_to_sendmail_args(MailboxList, SendmailArgs, Res) :-
+    (
+        MailboxList = [],
+        SendmailArgs = [],
+        Res = ok
+    ;
+        MailboxList = [ Mailbox | Tail ],
+        (
+            Mailbox = bad_mailbox(String),
+            SendmailArgs = [],
+            Res = error("Failed to parse address " ++ String ++ ".")
+        ;
+            Mailbox = mailbox(_, AddrSpec),
+            addr_spec_to_string(AddrSpec, String, Ok),
+            (
+                Ok = yes,
+                mailbox_list_to_sendmail_args(Tail, SendmailArgs0, Res0),
+                (
+                    Res0 = error(Error),
+                    SendmailArgs = [],
+                    Res = error(Error)
+                ;
+                    Res0 = ok,
+                    SendmailArgs = [ String | SendmailArgs0 ],
+                    Res = ok
+                )
+            ;
+                Ok = no,
+                SendmailArgs = [],
+                Res = error("Failed to parse address " ++ String ++ ".")
+            )
+        )
+    ).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

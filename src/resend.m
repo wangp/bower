@@ -218,8 +218,8 @@ create_temp_message_file_and_resend(Config, Screen, MessageId, Account,
         (
             CallRes = ok(ExitStatus),
             ( ExitStatus = 0 ->
-                resend_with_progress(Screen, Account, FileName, MessageUpdate,
-                    !IO)
+                resend_with_progress(Screen, Account, FileName, ToAddresses,
+                    MessageUpdate, !IO)
             ;
                 string.format("notmuch returned exit status %d",
                     [i(ExitStatus)], Msg),
@@ -290,11 +290,12 @@ generate_resent_headers(Stream, FromAddress, ToAddresses, !IO) :-
 %-----------------------------------------------------------------------------%
 
 :- pred resend_with_progress(screen::in, account::in, string::in,
-    message_update::out, io::di, io::uo) is det.
+    address_list::in, message_update::out, io::di, io::uo) is det.
 
-resend_with_progress(Screen, Account, Filename, MessageUpdate, !IO) :-
+resend_with_progress(Screen, Account, Filename, Recipients, MessageUpdate,
+        !IO) :-
     update_message_immed(Screen, set_info("Sending message..."), !IO),
-    call_send_mail(Account, Filename, SendRes, !IO),
+    call_send_mail(Account, Filename, Recipients, SendRes, !IO),
     (
         SendRes = ok,
         MessageUpdate = set_info("Message resent.")
@@ -303,30 +304,34 @@ resend_with_progress(Screen, Account, Filename, MessageUpdate, !IO) :-
         MessageUpdate = set_info(Error)
     ).
 
-:- pred call_send_mail(account::in, string::in, maybe_error::out,
-    io::di, io::uo) is det.
+:- pred call_send_mail(account::in, string::in, address_list::in,
+    maybe_error::out, io::di, io::uo) is det.
 
-call_send_mail(Account, Filename, Res, !IO) :-
-    % Sendmail-compatible programs should extract the recipient from Resent-To
-    % header when passed the "-t" option.
-    get_sendmail_command(Account, sendmail_read_recipients, Sendmail),
-    make_quoted_command(Sendmail, [], redirect_input(Filename), no_redirect,
-        Command),
-    % e.g. msmtp 'passwordeval' option may invoke pinentry-curses.
-    curs.soft_suspend(io.call_system(Command), ResSend, !IO),
+call_send_mail(Account, Filename, Recipients, Res, !IO) :-
+    get_sendmail_command(Account, Sendmail),
+    address_list_to_sendmail_args(Recipients, SendmailArgs, Res0),
     (
-        ResSend = ok(ExitStatus),
-        ( ExitStatus = 0 ->
-            Res = ok
+        Res0 = error(_), Res = Res0
+    ;
+        Res0 = ok,
+        make_quoted_command(Sendmail, SendmailArgs, redirect_input(Filename),
+            no_redirect, Command),
+        % e.g. msmtp 'passwordeval' option may invoke pinentry-curses.
+        curs.soft_suspend(io.call_system(Command), ResSend, !IO),
+        (
+            ResSend = ok(ExitStatus),
+            ( ExitStatus = 0 ->
+                Res = ok
+            ;
+                Msg = string.format("%s: returned with exit status %d",
+                    [s(Command), i(ExitStatus)]),
+                Res = error(Msg)
+            )
         ;
-            Msg = string.format("%s: returned with exit status %d",
-                [s(Command), i(ExitStatus)]),
+            ResSend = error(Error),
+            Msg = Command ++ ": " ++ io.error_message(Error),
             Res = error(Msg)
         )
-    ;
-        ResSend = error(Error),
-        Msg = Command ++ ": " ++ io.error_message(Error),
-        Res = error(Msg)
     ).
 
 %-----------------------------------------------------------------------------%

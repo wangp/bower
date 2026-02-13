@@ -29,9 +29,6 @@
 
 :- type account.
 
-:- type sendmail_option
-    --->    sendmail_read_recipients. % '-t' option
-
 :- type post_sendmail
     --->    default
     ;       nothing
@@ -118,8 +115,7 @@
 
 :- pred get_from_address_as_string(account::in, string::out) is det.
 
-:- pred get_sendmail_command(account::in, sendmail_option::in,
-    command_prefix::out) is det.
+:- pred get_sendmail_command(account::in, command_prefix::out) is det.
 
 :- pred get_post_sendmail_action(account::in, post_sendmail::out) is det.
 
@@ -1134,10 +1130,8 @@ get_from_address(Account, Account ^ from_address).
 get_from_address_as_string(Account, String) :-
     mailbox_to_string(no_encoding, Account ^ from_address, String, _Ok).
 
-get_sendmail_command(Account, sendmail_read_recipients, Command) :-
-    Command0 = Account ^ sendmail,
-    Command0 = command_prefix(shell_quoted(Cmd), QuoteTimes),
-    Command = command_prefix(shell_quoted(Cmd ++ " -t"), QuoteTimes).
+get_sendmail_command(Account, Command) :-
+    Command = Account ^ sendmail.
 
 get_post_sendmail_action(Account, Action) :-
     Action = Account ^ post_sendmail.

@@ -2310,36 +2310,47 @@ send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text, MaybeAltHtml,
     create_temp_message_file(Config, prepare_send, Headers, ParsedHeaders,
         MaybeAutocryptHeader, Text, MaybeAltHtml, Attachments, CryptoInfo,
         MessageId, ResFilename, Warnings, !IO),
+    address_list_to_sendmail_args(ParsedHeaders ^ ph_to ++
+        ParsedHeaders ^ ph_cc ++ ParsedHeaders ^ ph_bcc, Recipients,
+        ResSendmailArgs),
     (
-        ResFilename = ok(Filename),
-        prompt_confirm_warnings(Screen, Warnings, ConfirmAll, !IO),
-        (
-            ConfirmAll = yes,
-            TagDeltas =
-                sent_tag_deltas ++
-                map(tag_to_plus_tag_delta, InteractiveTags),
-            update_message_immed(Screen, set_info("Sending message..."), !IO),
-            call_sendmail_and_post_actions(Config, Account, MessageId,
-                Filename, TagDeltas, SendRes, !IO),
-            (
-                SendRes = ok,
-                MessageUpdate = set_info("Mail sent."),
-                Res = sent
-            ;
-                SendRes = error(Message),
-                MessageUpdate = set_warning(Message),
-                Res = not_sent
-            )
-        ;
-            ConfirmAll = no,
-            MessageUpdate = set_info("Message not sent."),
-            Res = not_sent
-        ),
-        io.remove_file(Filename, _, !IO)
-    ;
-        ResFilename = error(Error),
+        ResSendmailArgs = error(Error),
         MessageUpdate = set_warning(Error),
         Res = not_sent
+    ;
+        ResSendmailArgs = ok,
+        (
+            ResFilename = ok(Filename),
+            prompt_confirm_warnings(Screen, Warnings, ConfirmAll, !IO),
+            (
+                ConfirmAll = yes,
+                TagDeltas =
+                    sent_tag_deltas ++
+                    map(tag_to_plus_tag_delta, InteractiveTags),
+                update_message_immed(Screen, set_info("Sending message..."),
+                    !IO),
+                call_sendmail_and_post_actions(Config, Account, MessageId,
+                    Filename, Recipients, TagDeltas, SendRes, !IO),
+                (
+                    SendRes = ok,
+                    MessageUpdate = set_info("Mail sent."),
+                    Res = sent
+                ;
+                    SendRes = error(Message),
+                    MessageUpdate = set_warning(Message),
+                    Res = not_sent
+                )
+            ;
+                ConfirmAll = no,
+                MessageUpdate = set_info("Message not sent."),
+                Res = not_sent
+            ),
+            io.remove_file(Filename, _, !IO)
+        ;
+            ResFilename = error(Error),
+            MessageUpdate = set_warning(Error),
+            Res = not_sent
+        )
     ).
 
 :- pred make_autocrypt_header(account::in, maybe(header)::out) is det.
@@ -2409,14 +2420,14 @@ sent_tag_deltas =
     [tag_delta("+sent"), tag_delta("-unread")].
 
 :- pred call_sendmail_and_post_actions(prog_config::in, account::in,
-    message_id::in, string::in, list(tag_delta)::in, call_res::out,
-    io::di, io::uo) is det.
+    message_id::in, string::in, list(string)::in, list(tag_delta)::in,
+    call_res::out, io::di, io::uo) is det.
 
-call_sendmail_and_post_actions(Config, Account, MessageId, Filename, TagDeltas,
-        Res, !IO) :-
-    get_sendmail_command(Account, sendmail_read_recipients, Sendmail),
-    make_quoted_command(Sendmail, [], redirect_input(Filename), no_redirect,
-        Command),
+call_sendmail_and_post_actions(Config, Account, MessageId, Filename,
+        Recipients, TagDeltas, Res, !IO) :-
+    get_sendmail_command(Account, Sendmail),
+    make_quoted_command(Sendmail, Recipients, redirect_input(Filename),
+        no_redirect, Command),
     % e.g. msmtp 'passwordeval' option may invoke pinentry-curses.
     curs.soft_suspend(io.call_system(Command), ResSend, !IO),
     (
@@ -2812,11 +2823,19 @@ make_headers(Prepare, Headers, ParsedHeaders, MaybeAutocryptHeader, MessageId,
             SkipEmpty = no,
             Options = no_encoding
         ),
+        (
+            Prepare = prepare_send,
+            WriteBcc = []   % to be on the safe side if sendmail misbehaves
+        ;
+            ( Prepare = prepare_postpone
+            ; Prepare = prepare_edit(_) ),
+            WriteBcc = Bcc
+        ),
         list.foldl(maybe_cons(SkipEmpty), [
             header(field_name("From"), address_list(From, Options)),
             header(field_name("To"), address_list(To, Options)),
             header(field_name("Cc"), address_list(Cc, Options)),
-            header(field_name("Bcc"), address_list(Bcc, Options)),
+            header(field_name("Bcc"), address_list(WriteBcc, Options)),
             header(field_name("Subject"), unstructured(Subject, Options)),
             header(field_name("Reply-To"), address_list(ReplyTo, Options)),
             header(field_name("In-Reply-To"), references(InReplyTo))],
