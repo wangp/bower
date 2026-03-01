@@ -185,8 +185,9 @@
 
 :- type message_flat
     --->    message_flat(
-                mf_message      :: message,
-                mf_maybe_parent :: maybe(message_id)
+                mf_message          :: message,
+                mf_maybe_parent     :: maybe(message_id),
+                mf_parent_timestamp :: timestamp
             ).
 
 %-----------------------------------------------------------------------------%
@@ -594,31 +595,51 @@ not_blank_at_column(Graphics, Col) :-
     list(thread_line)::out, list(message)::out, io::di, io::uo) is det.
 
 append_flat_messages(Nowish, Messages, ThreadLines, SortedFlatMessages, !IO) :-
-    flatten_messages(no, Messages, [], MessagesFlat0),
-    list.sort(compare_by_timestamp, MessagesFlat0, MessagesFlat),
+    flatten_messages(no, timestamp(0.0), Messages, [], MessagesFlat0),
+    list.sort(compare_message_flat_timestamp, MessagesFlat0, MessagesFlat),
     list.foldl3(append_flat_message(Nowish), MessagesFlat,
         no, _MaybePrevSubject, [], RevThreadLines, !IO),
     list.reverse(RevThreadLines, ThreadLines),
     SortedFlatMessages = list.map(mf_message, MessagesFlat).
 
-:- pred flatten_messages(maybe(message_id)::in, list(message)::in,
-    list(message_flat)::in, list(message_flat)::out) is det.
+:- pred flatten_messages(maybe(message_id)::in, timestamp::in,
+    list(message)::in, list(message_flat)::in, list(message_flat)::out) is det.
 
-flatten_messages(_MaybeParentId, [], !Acc).
-flatten_messages(MaybeParentId, [Message | Messages], !Acc) :-
+flatten_messages(_MaybeParentId, _ParentTimestamp, [], !Acc).
+flatten_messages(MaybeParentId, ParentTimestamp, [Message | Messages], !Acc) :-
     MaybeMessageId = get_maybe_message_id(Message),
+    MessageTimestamp = get_timestamp_or_zero(Message),
     Replies = get_replies(Message),
-    list.cons(message_flat(Message, MaybeParentId), !Acc),
-    flatten_messages(MaybeMessageId, Replies, !Acc),
-    flatten_messages(MaybeParentId, Messages, !Acc).
+    list.cons(message_flat(Message, MaybeParentId, ParentTimestamp), !Acc),
+    flatten_messages(MaybeMessageId, MessageTimestamp, Replies, !Acc),
+    flatten_messages(MaybeParentId, ParentTimestamp, Messages, !Acc).
 
-:- pred compare_by_timestamp(message_flat::in, message_flat::in,
+:- pred compare_message_flat_timestamp(message_flat::in, message_flat::in,
     comparison_result::out) is det.
 
-compare_by_timestamp(A, B, Rel) :-
-    TimestampA = get_timestamp_or_zero(A ^ mf_message),
-    TimestampB = get_timestamp_or_zero(B ^ mf_message),
-    compare(Rel, TimestampA, TimestampB).
+compare_message_flat_timestamp(A, B, Rel) :-
+    (
+        is_reaction(A),
+        is_reaction(B),
+        A ^ mf_maybe_parent = yes(Parent),
+        B ^ mf_maybe_parent = yes(Parent)
+    ->
+        TimestampA = get_timestamp_or_zero(A ^ mf_message),
+        TimestampB = get_timestamp_or_zero(B ^ mf_message),
+        compare(Rel, TimestampA, TimestampB)
+    ;
+        ( is_reaction(A) ->
+            TimestampA = A ^ mf_parent_timestamp + 0.000001
+        ;
+            TimestampA = get_timestamp_or_zero(A ^ mf_message)
+        ),
+        ( is_reaction(B) ->
+            TimestampB = B ^ mf_parent_timestamp + 0.000001
+        ;
+            TimestampB = get_timestamp_or_zero(B ^ mf_message)
+        ),
+        compare(Rel, TimestampA, TimestampB)
+    ).
 
 :- pred append_flat_message(tm::in, message_flat::in, maybe(header_value)::in,
     maybe(header_value)::out, list(thread_line)::in, list(thread_line)::out,
@@ -626,9 +647,28 @@ compare_by_timestamp(A, B, Rel) :-
 
 append_flat_message(Nowish, MessageFlat, MaybePrevSubject, MaybeSubject,
         !RevAcc, !IO) :-
-    MessageFlat = message_flat(Message, MaybeParentId),
-    make_thread_line(Nowish, Message, MaybeParentId, no, MaybePrevSubject,
-        Line, !IO),
+    MessageFlat = message_flat(Message, MaybeParentId, _ParentTimestamp),
+    ( is_reaction(MessageFlat) ->
+        (
+            !.RevAcc = [LastLine0 | Tail],
+            LastLine0 ^ tp_graphics = yes([ell])
+        ->
+            LastLine0 = thread_line(MessageL, MaybeParentIdL, CleanFromL,
+                PrevTagsL, CurrTagsL, StdTagsL, NonStdTagsWidthL, SelectedL,
+                _GraphicsL, ReldateL, SubjectL),
+            LastLine1 = thread_line(MessageL, MaybeParentIdL, CleanFromL,
+                PrevTagsL, CurrTagsL, StdTagsL, NonStdTagsWidthL, SelectedL,
+                yes([tee]), ReldateL, SubjectL),
+            !:RevAcc = [LastLine1 | Tail]
+        ;
+            true
+        ),
+        make_thread_line(Nowish, Message, MaybeParentId, yes([ell]),
+            MaybePrevSubject, Line, !IO)
+    ;
+        make_thread_line(Nowish, Message, MaybeParentId, no, MaybePrevSubject,
+            Line, !IO)
+    ),
     MaybeSubject = get_maybe_subject(Message),
     cons(Line, !RevAcc).
 
@@ -719,6 +759,30 @@ is_reply_marker("Vs:").
 is_reply_marker("VS:").
 is_reply_marker("Sv:").
 is_reply_marker("SV:").
+
+:- pred is_reaction(message_flat::in) is semidet.
+
+is_reaction(MessageFlat) :-
+    % Messages that have no parent should never be treated as reactions
+    MessageFlat ^ mf_maybe_parent = yes(_),
+    Body = MessageFlat ^ mf_message ^ m_body,
+    (
+        Body ^ pt_content_disposition = yes(content_disposition("reaction"))
+    ;
+        is_multipart(Body ^ pt_content_type),
+        Body ^ pt_content = subparts(_Encryption, _Signatures, Parts),
+        contains_reaction_part(Parts)
+    ).
+
+:- pred contains_reaction_part(list(part)::in) is semidet.
+
+contains_reaction_part(Parts) :-
+    Parts = [ Head | Tail ],
+    (
+        Head ^ pt_content_disposition = yes(content_disposition("reaction"))
+    ;
+        contains_reaction_part(Tail)
+    ).
 
 %-----------------------------------------------------------------------------%
 
