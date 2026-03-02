@@ -317,107 +317,201 @@ expand_aliases(Config, QuoteOpt, Input, Output, !IO) :-
 
 start_reply(Config, Crypto, Screen, ReplyKind, Message, PartVisibilityMap,
         CurrTags, Transition, !History, !IO) :-
-    Message = message(MessageId, _Timestamp, MessageHeaders, MessageTags,
-        _MessageBody, _MessageReplies),
-    WasEncrypted = contains(MessageTags, encrypted_tag),
-    run_notmuch(Config,
-        [
-            "reply", "--format=json",
-            reply_to_arg(ReplyKind), decrypt_arg(WasEncrypted),
-            "--", message_id_to_search_term(MessageId)
-        ],
-        no_suspend_curses,
-        parse_reply, ResParse, !IO),
+    WasEncrypted = contains(Message ^ m_tags, encrypted_tag),
+    prepare_reply(Config, ReplyKind, Message, PartVisibilityMap, Headers,
+        Body, !IO),
+    Attachments = [],
+    % CurrTags includes uncommitted tag changes, unlike MessageTags.
+    set.to_sorted_list(CurrTags, Tags0),
+    list.filter(copy_tag_for_reply_or_forward, Tags0, Tags),
+    MaybeOldDraft = no,
+    SignInit = no,
+    create_edit_stage(Config, Crypto, Screen, Headers, Body,
+        do_append_signature, Attachments, Tags, MaybeOldDraft,
+        WasEncrypted, SignInit, Transition, !History, !IO).
+
+:- pred prepare_reply(prog_config::in, reply_kind::in, message::in(message),
+    part_visibility_map::in, headers::out, string::out, io::di, io::uo) is det.
+
+prepare_reply(Config, ReplyKind, OrigMessage, PartVisibilityMap, ReplyHeaders,
+        ReplyBody, !IO) :-
+    OrigMessage = message(OrigMessageId, _Timestamp, OrigMessageHeaders, _Tags,
+        Body, _Replies),
+    OrigMessageHeaders = headers(OrigDate, OrigFrom, OrigTo, OrigCc, _OrigBcc,
+        OrigSubject, OrigReplyTo0, _OrigInReplyTo, OrigReferences0,
+        _OrigHRest),
+    %
+    % XXX notmuch show does not include the References header by default. This
+    % can be fixed by using the following setting in notmuch's config file:
+    %
+    %     [show]
+    %     extra_headers=References
+    %
+    % However, we do not know if a user has included this option. Therefore,
+    % we will fall back on parsing the raw message if this option is not set.
+    % Note that parsing raw messages should be considered a legacy method
+    % that can be expected to break for encrypted messages in the near future
+    % (due to RFC 9788). In an ideal world, we could simply tell notmuch
+    % that we always need these headers -- at the time of invocation; without
+    % requiring any specific settings by the user. E.g. by passing a command
+    % line option like '--extra-headers=References,X-Bower-Metadata'. I do
+    % hope that such an option will be added to notmuch in the future, so
+    % that we can completely drop this legacy method at some point. In the
+    % meantime, however, it does seems necessary to include it here.
+    %
+    % XXX I am unsure about the Reply-To header. My impression was that
+    % notmuch will include this header by default -- so supporting it in
+    % the fallback method might not be necessary. On the other hand, bower's
+    % original fallback to raw message parsing, which I adapted here, already
+    % included code to substitute the Reply-To header as well. Therefore,
+    % I decided to err on the side of caution and add such code here as well.
+    %
+    get_extra_headers_from_raw_message(Config, OrigMessageId,
+        ExtraHeadersOrError, !IO),
     (
-        ResParse = ok(ReplyHeaders),
-        prepare_reply(Config, Message, PartVisibilityMap, ReplyHeaders,
-            Headers0, Body, !IO),
-        (
-            ReplyKind = direct_reply,
-            Headers = Headers0
+        ExtraHeadersOrError = ok(ExtraHeaders),
+        ExtraHeaders = extra_headers_from_raw_message(ExtraReplyTo,
+            _ExtraInReplyTo, ExtraReferences, _ExtraPostponedMetadata),
+        ( is_empty_header_value(OrigReplyTo0) ->
+            OrigReplyTo = ExtraReplyTo
         ;
-            ReplyKind = group_reply,
-            set_headers_for_group_reply(Headers0, Headers)
-        ;
-            ReplyKind = list_reply,
-            OrigFrom = MessageHeaders ^ h_from,
-            set_headers_for_list_reply(OrigFrom, Headers0, Headers)
+            OrigReplyTo = OrigReplyTo0
         ),
-        Attachments = [],
-        % CurrTags includes uncommitted tag changes, unlike MessageTags.
-        set.to_sorted_list(CurrTags, Tags0),
-        list.filter(copy_tag_for_reply_or_forward, Tags0, Tags),
-        MaybeOldDraft = no,
-        SignInit = no,
-        create_edit_stage(Config, Crypto, Screen, Headers, Body,
-            do_append_signature, Attachments, Tags, MaybeOldDraft,
-            WasEncrypted, SignInit, Transition, !History, !IO)
+        ( is_empty_header_value(OrigReferences0) ->
+            OrigReferences = ExtraReferences
+        ;
+            OrigReferences = OrigReferences0
+        )
     ;
-        ResParse = error(Error),
-        Warning = "Error parsing notmuch response: " ++ Error,
-        Transition = screen_transition(not_sent, set_warning(Warning))
+        % XXX We should probably not fail silently here. On the other
+        % hand, retrieving headers from the raw message is an error-prone
+        % legacy method anyway and it is only used as a fallback in case
+        % these headers are not included in notmuch's json output.
+        ExtraHeadersOrError = error(_),
+        OrigReplyTo = OrigReplyTo0,
+        OrigReferences = OrigReferences0
+    ),
+    Opt = backslash_quote_all,
+    parse_address_list(Opt, header_value_string(OrigFrom), OrigFromList),
+    parse_address_list(Opt, header_value_string(OrigReplyTo), OrigReplyToList),
+    parse_address_list(Opt, header_value_string(OrigTo), OrigToList),
+    parse_address_list(Opt, header_value_string(OrigCc), OrigCcList),
+    Recipients0 = OrigFromList ++ OrigToList ++ OrigCcList,
+    get_some_matching_account(Config, Recipients0, MaybeMatchingAccount),
+    (
+        MaybeMatchingAccount = yes(Account),
+        get_from_address(Account, FromMailbox),
+        From = [ mailbox(FromMailbox) ],
+        ( get_addr_spec_in_mailbox(FromMailbox, FromAddrSpec) ->
+            filter_address_list_by_addr_spec(FromAddrSpec, Recipients0,
+                Recipients1)
+        ;
+            Recipients1 = Recipients0
+        )
+    ;
+        MaybeMatchingAccount = no,
+        From = [],
+        Recipients1 = Recipients0
+    ),
+    (
+        ReplyKind = direct_reply,
+        ( is_self_address(Config, OrigFromList) ->
+            To = OrigToList,
+            Cc = []
+        ;
+            (
+                OrigReplyToList = [_|_],
+                To = OrigReplyToList
+            ;
+                OrigReplyToList = [],
+                To = OrigFromList
+            ),
+            Cc = []
+        )
+    ;
+        ReplyKind = group_reply,
+        ( is_self_address(Config, OrigFromList) ->
+            To = OrigToList,
+            Cc = OrigCcList
+        ;
+            (
+                OrigReplyToList = [_|_],
+                To = OrigReplyToList
+            ;
+                OrigReplyToList = [],
+                To = OrigFromList
+            ),
+            filter_address_list_by_address_list(To, Recipients1, Cc)
+        )
+    ;
+        % XXX Instead of simply copying the To field for list_reply, we might
+        % want to use some more advanced heuristics to find the list address.
+        ReplyKind = list_reply,
+        filter_address_list_by_address_list(From, OrigToList, To),
+        filter_address_list_by_address_list(From, OrigCcList, Cc)
+    ),
+    Subject0 = header_value_string(OrigSubject),
+    ( is_reply_marker(head(string.words(Subject0))) ->
+        Subject = Subject0
+    ;
+        Subject = "Re: " ++ Subject0
+    ),
+    OrigMessageId = message_id(OrigMessageIdString),
+    InReplyTo = "<" ++ OrigMessageIdString ++ ">",
+    ( empty_header_value(OrigReferences) ->
+        References = InReplyTo
+    ;
+        References = header_value_string(OrigReferences) ++ " " ++ InReplyTo
+    ),
+    % XXX I am not entirely sure if rfc2047_encoding is necessary. Maybe we
+    % could get away with for_display as well.
+    % XXX Ignoring the last value of address_list_to_string basically means
+    % we ignore all errors. This is probably acceptable since the result is
+    % presented to the user for modification, and we could possibly expect
+    % the user to notice and fix any apparent errors.
+    address_list_to_string(rfc2047_encoding, From, FromString, _),
+    address_list_to_string(rfc2047_encoding, To, ToString, _),
+    address_list_to_string(rfc2047_encoding, Cc, CcString, _),
+    ReplyHeaders = headers(
+        header_value(""),           % Date -- filled in later
+        header_value(FromString),
+        header_value(ToString),
+        header_value(CcString),
+        header_value(""),           % Bcc -- filled in manually, if at all
+        header_value(Subject),
+        header_value(""),           % ReplyTo -- filled in manually, if at all
+        header_value(InReplyTo),
+        header_value(References),
+        map.init
+    ),
+    % Efficiency could be better.
+    make_attribution(OrigDate, OrigFrom, Attribution),
+    add_part(Config, PartVisibilityMap, yes_quote_marker, Body,
+        [], RevLines, !IO),
+    list.reverse(RevLines, Lines),
+    ReplyBody = unlines([Attribution | Lines]).
+
+:- pred is_self_address(prog_config::in, address_list::in) is semidet.
+
+is_self_address(Config, [Address]) :-
+    get_matching_account(Config, Address, _Account).
+
+is_self_address(Config, [Address | Rest]) :-
+    ( get_matching_account(Config, Address, _Account)
+    ; is_self_address(Config, Rest)
     ).
 
-:- func reply_to_arg(reply_kind) = string.
+:- pred make_attribution(header_value::in, header_value::in, string::out) is det.
 
-reply_to_arg(direct_reply) = "--reply-to=sender".
-reply_to_arg(group_reply) = "--reply-to=all".
-reply_to_arg(list_reply) = "--reply-to=all".
+make_attribution(Date, From, Line) :-
+    string.format("On %s %s wrote:",
+        [s(header_value_string(Date)), s(header_value_string(From))],
+        Line).
 
 :- func decrypt_arg(bool) = string.
 
 decrypt_arg(yes) = "--decrypt=true".
 decrypt_arg(no) = "--decrypt=false".
-
-:- pred set_headers_for_group_reply(headers::in, headers::out) is det.
-
-set_headers_for_group_reply(!Headers) :-
-    % Move all but the first To address down to Cc.  This acts more like the
-    % behaviour I am used to from Mutt.
-    % XXX do proper address list parsing
-
-    To0 = header_value_string(!.Headers ^ h_to),
-    Cc0 = header_value_string(!.Headers ^ h_cc),
-    Opt = backslash_quote_all,
-    parse_address_list(Opt, To0, ToList0),
-    parse_address_list(Opt, Cc0, CcList0),
-    (
-        ToList0 = [ToHead | ToTail],
-        ToHead = mailbox(_)
-    ->
-        ToList = [ToHead],
-        CcList = ToTail ++ CcList0,
-        address_list_to_string(no_encoding, ToList, To, _ToValid),
-        address_list_to_string(no_encoding, CcList, Cc, _CcValid),
-        !Headers ^ h_to := header_value(To),
-        !Headers ^ h_cc := header_value(Cc)
-    ;
-        true
-    ).
-
-:- pred set_headers_for_list_reply(header_value::in, headers::in, headers::out)
-    is det.
-
-set_headers_for_list_reply(OrigFrom, !Headers) :-
-    % Remove OrigFrom if it appears in the To header, and it is not the only
-    % address in To.  This acts a bit like the list reply function from Mutt
-    % without knowing which addresses are list addresses.
-
-    To0 = header_value_string(!.Headers ^ h_to),
-    Opt = backslash_quote_all,
-    parse_address_list(Opt, header_value_string(OrigFrom), FromList),
-    parse_address_list(Opt, To0, ToList0),
-    (
-        FromList = [mailbox(FromMailbox)],
-        FromMailbox = mailbox(_, FromAddrSpec),
-        list.negated_filter(similar_mailbox(FromAddrSpec), ToList0, ToList),
-        ToList = [_ | _]
-    ->
-        address_list_to_string(no_encoding, ToList, To, _ToValid),
-        !Headers ^ h_to := header_value(To)
-    ;
-        true
-    ).
 
 :- pred similar_mailbox(addr_spec::in, address::in) is semidet.
 
@@ -2792,6 +2886,54 @@ get_addr_spec_in_mailbox(Mailbox, AddrSpec) :-
     ;
         Mailbox = bad_mailbox(_),
         fail
+    ).
+
+:- pred filter_address_list_by_address_list(list(address)::in,
+    list(address)::in, list(address)::out) is det.
+
+filter_address_list_by_address_list([], InList, InList).
+filter_address_list_by_address_list([ Address | Rest ], InList, OutList) :-
+    (
+        % XXX If Address contains more than one AddrSpec (e.g. because it
+        % is a group) get_addr_spec will miss all but the first AddrSpec.
+        % Therefore, this filter does not yet cover all cases.
+        get_addr_spec(Address, AddrSpec)
+    ->
+        filter_address_list_by_addr_spec(AddrSpec, InList, OutList0)
+    ;
+        OutList0 = InList
+    ),
+    filter_address_list_by_address_list(Rest, OutList0, OutList).
+
+:- pred filter_address_list_by_addr_spec(addr_spec::in, list(address)::in,
+    list(address)::out) is det.
+
+filter_address_list_by_addr_spec(_AddrSpec, [], []).
+filter_address_list_by_addr_spec(AddrSpec, [ Address | Rest0 ], OutList) :-
+    filter_address_list_by_addr_spec(AddrSpec, Rest0, Rest1),
+    (
+        Address = mailbox(Mailbox),
+        ( get_addr_spec_in_mailbox(Mailbox, AddrSpec) ->
+            OutList = Rest1
+        ;
+            OutList = [ Address | Rest1 ]
+        )
+    ;
+        Address = group(DisplayName, Mailboxes0),
+        filter_mailbox_list_by_addr_spec(AddrSpec, Mailboxes0, Mailboxes1),
+        OutList = [ group(DisplayName, Mailboxes1) | Rest1 ]
+    ).
+
+:- pred filter_mailbox_list_by_addr_spec(addr_spec::in, list(mailbox)::in,
+    list(mailbox)::out) is det.
+
+filter_mailbox_list_by_addr_spec(_AddrSpec, [], []).
+filter_mailbox_list_by_addr_spec(AddrSpec, [ Mailbox | Rest0 ], OutList) :-
+    filter_mailbox_list_by_addr_spec(AddrSpec, Rest0, Rest1),
+    ( get_addr_spec_in_mailbox(Mailbox, AddrSpec) ->
+        OutList = Rest1
+    ;
+        OutList = [ Mailbox | Rest1 ]
     ).
 
 %-----------------------------------------------------------------------------%

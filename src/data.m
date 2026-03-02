@@ -240,6 +240,8 @@
 
 :- func get_replies(message) = list(message).
 
+:- pred is_reply_marker(string::in) is semidet.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -311,6 +313,16 @@ get_maybe_subject(Message) = MaybeSubject :-
 
 get_replies(message(_, _, _, _, _, Replies)) = Replies.
 get_replies(excluded_message(_, _, _, _, Replies)) = Replies.
+
+is_reply_marker("Re:").
+is_reply_marker("RE:").
+is_reply_marker("R:").
+is_reply_marker("Aw:").
+is_reply_marker("AW:").
+is_reply_marker("Vs:").
+is_reply_marker("VS:").
+is_reply_marker("Sv:").
+is_reply_marker("SV:").
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

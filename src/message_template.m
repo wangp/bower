@@ -10,10 +10,6 @@
 :- import_module data.
 :- import_module prog_config.
 
-:- pred prepare_reply(prog_config::in, message::in(message),
-    part_visibility_map::in, reply_headers::in, headers::out, string::out,
-    io::di, io::uo) is det.
-
 :- type maybe_quote_marker
     --->    yes_quote_marker
     ;       no_quote_marker.
@@ -28,6 +24,10 @@
 :- pred part_has_visibility(part_visibility_map::in, part_visibility::in,
     part::in) is semidet.
 
+:- pred add_part(prog_config::in, part_visibility_map::in,
+    maybe_quote_marker::in, part::in, list(string)::in, list(string)::out,
+    io::di, io::uo) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -40,70 +40,6 @@
 
 :- import_module copious_output.
 :- import_module mime_type.
-:- import_module string_util.
-
-%-----------------------------------------------------------------------------%
-
-prepare_reply(Config, OrigMessage, PartVisibilityMap, ReplyHeaders0,
-        ReplyHeaders, ReplyBody, !IO) :-
-    OrigMessage = message(_MessageId, _Timestamp, OrigMessageHeaders, _Tags,
-        Body, _Replies),
-    OrigDate = OrigMessageHeaders ^ h_date,
-    OrigFrom = OrigMessageHeaders ^ h_from,
-    ReplyHeaders0 = reply_headers(
-        Subject,
-        From,
-        MaybeTo,
-        MaybeCc,
-        MaybeBcc,
-        InReplyTo,
-        References
-    ),
-    (
-        MaybeTo = yes(To)
-    ;
-        MaybeTo = no,
-        To = ""
-    ),
-    (
-        MaybeCc = yes(Cc)
-    ;
-        MaybeCc = no,
-        Cc = ""
-    ),
-    (
-        MaybeBcc = yes(Bcc)
-    ;
-        MaybeBcc = no,
-        Bcc = ""
-    ),
-    ReplyTo = "",
-    ReplyDate = "",                     % filled in later
-    ReplyHeaders = headers(
-        header_value(ReplyDate),
-        header_value(From),
-        header_value(To),
-        header_value(Cc),
-        header_value(Bcc),
-        decoded_unstructured(Subject),
-        header_value(ReplyTo),
-        header_value(InReplyTo),
-        header_value(References),
-        map.init
-    ),
-    % Efficiency could be better.
-    make_attribution(OrigDate, OrigFrom, Attribution),
-    add_part(Config, PartVisibilityMap, yes_quote_marker, Body,
-        [], RevLines, !IO),
-    list.reverse(RevLines, Lines),
-    ReplyBody = unlines([Attribution | Lines]).
-
-:- pred make_attribution(header_value::in, header_value::in, string::out) is det.
-
-make_attribution(Date, From, Line) :-
-    string.format("On %s %s wrote:",
-        [s(header_value_string(Date)), s(header_value_string(From))],
-        Line).
 
 %-----------------------------------------------------------------------------%
 
@@ -112,10 +48,6 @@ render_part_to_text(Config, PartVisibilityMap, MaybeQuoteMarker, Part, Lines,
     add_part(Config, PartVisibilityMap, MaybeQuoteMarker, Part, [], RevLines,
         !IO),
     list.reverse(RevLines, Lines).
-
-:- pred add_part(prog_config::in, part_visibility_map::in,
-    maybe_quote_marker::in, part::in, list(string)::in, list(string)::out,
-    io::di, io::uo) is det.
 
 add_part(Config, PartVisibilityMap, MaybeQuoteMarker, Part, !RevLines, !IO) :-
     ContentType = Part ^ pt_content_type,

@@ -748,18 +748,6 @@ canonicalise_subject(Subject) = Words :-
     String = header_value_string(Subject),
     list.negated_filter(is_reply_marker, string.words(String), Words).
 
-:- pred is_reply_marker(string::in) is semidet.
-
-is_reply_marker("Re:").
-is_reply_marker("RE:").
-is_reply_marker("R:").
-is_reply_marker("Aw:").
-is_reply_marker("AW:").
-is_reply_marker("Vs:").
-is_reply_marker("VS:").
-is_reply_marker("Sv:").
-is_reply_marker("SV:").
-
 :- pred is_reaction(message_flat::in) is semidet.
 
 is_reaction(MessageFlat) :-
