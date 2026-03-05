@@ -514,26 +514,17 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
     DraftSign = contains(Tags0, draft_sign_tag),
     set.to_sorted_list(CurrTags, CurrTagsList),
     list.filter(copy_tag_for_reply_or_forward, CurrTagsList, Tags),
-
-    % XXX notmuch show --format=json does not return References and In-Reply-To
-    % so we parse them from the raw output.
-    % XXX decryption is not yet supported for --format=raw
-    get_notmuch_command(Config, Notmuch),
-    make_quoted_command(Notmuch, [
-        "show", "--format=raw", decrypt_arg(WasEncrypted),
-        "--", message_id_to_search_term(MessageId)
-    ], redirect_input("/dev/null"), no_redirect, Command),
-    % Decryption may invoke pinentry-curses.
-    curs.soft_suspend(call_system_capture_stdout(Command, environ([]), no),
-        CallRes, !IO),
+    get_extra_headers_from_raw_message(Config, MessageId, ExtraHeadersOrError,
+        !IO),
     (
-        CallRes = ok(String),
-        parse_message(String, HeadersB, _Body, PostponedMetadata),
+        ExtraHeadersOrError = ok(ExtraHeaders),
+        ExtraHeaders = extra_headers_from_raw_message(ReplyTo, InReplyTo,
+            References, PostponedMetadata),
         some [!Headers] (
             !:Headers = Headers0,
-            !Headers ^ h_replyto := HeadersB ^ h_replyto,
-            !Headers ^ h_inreplyto := HeadersB ^ h_inreplyto,
-            !Headers ^ h_references := HeadersB ^ h_references,
+            !Headers ^ h_replyto := ReplyTo,
+            !Headers ^ h_inreplyto := InReplyTo,
+            !Headers ^ h_references := References,
             (
                 ContinueBase = postponed_message,
                 (
@@ -561,7 +552,7 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
             do_not_append_signature, Attachments, Tags, MaybeOldDraft,
             WasEncrypted, DraftSign, Transition, !History, !IO)
     ;
-        CallRes = error(Error),
+        ExtraHeadersOrError = error(Error),
         string.append_list(["Error running notmuch: ",
             io.error_message(Error)], Warning),
         Transition = screen_transition(not_sent, set_warning(Warning))

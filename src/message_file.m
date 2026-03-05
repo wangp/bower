@@ -7,14 +7,37 @@
 :- import_module io.
 
 :- import_module data.
+:- import_module prog_config.
+
+%-----------------------------------------------------------------------------%
+
+:- type extra_headers_from_raw_message
+    --->    extra_headers_from_raw_message(
+                replyto                 :: header_value,
+                inreplyto               :: header_value,
+                references              :: header_value,
+                postponed_metadata      :: postponed_metadata
+            ).
 
 %-----------------------------------------------------------------------------%
 
 :- pred parse_message_file(string::in, io.res(parsed_message)::out,
     io::di, io::uo) is det.
 
-:- pred parse_message(string::in, headers::out, string::out,
-    postponed_metadata::out) is det.
+    % XXX This predicate should be used as a last resort only. The
+    % preferred way to get these headers would be to parse notmuch's json
+    % output. Currently, the best way to achieve this is to include the
+    % following in notmuch's config file:
+    %
+    %     [show]
+    %     extra_headers=In-Reply-To;References;X-Bower-Metadata;
+    %
+    % Note that retrieving these headers from raw (i.e. non-decrypted)
+    % email messages is extremely likely to fail once RFC 9788 is more
+    % widely used.
+    %
+:- pred get_extra_headers_from_raw_message(prog_config::in, message_id::in,
+    io.res(extra_headers_from_raw_message)::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -25,8 +48,13 @@
 :- import_module int.
 :- import_module list.
 :- import_module map.
+:- import_module maybe.
 :- import_module string.
 
+:- import_module call_system.
+:- import_module curs.
+:- import_module process.
+:- import_module quote_command.
 :- import_module rfc2047.
 :- import_module rfc2047.decoder.
 :- import_module rfc5322.
@@ -52,6 +80,32 @@ parse_message_file(Filename, Res, !IO) :-
         ResOpen = error(Error),
         Res = error(Error)
     ).
+
+get_extra_headers_from_raw_message(Config, MessageId, ExtraHeadersOrError,
+        !IO) :-
+    get_notmuch_command(Config, Notmuch),
+    make_quoted_command(Notmuch, [
+        "show", "--format=raw", "--", message_id_to_search_term(MessageId)
+    ], redirect_input("/dev/null"), no_redirect, Command),
+    % Decryption may invoke pinentry-curses.
+    curs.soft_suspend(call_system_capture_stdout(Command, environ([]), no),
+        CallRes, !IO),
+    (
+        CallRes = ok(String),
+        parse_message(String, Headers, _Body, PostponedMetadata),
+        ExtraHeadersOrError = ok(extra_headers_from_raw_message(
+            Headers ^ h_replyto,
+            Headers ^ h_inreplyto,
+            Headers ^ h_references,
+            PostponedMetadata
+        ))
+    ;
+        CallRes = error(Error),
+        ExtraHeadersOrError = error(Error)
+    ).
+
+:- pred parse_message(string::in, headers::out, string::out,
+    postponed_metadata::out) is det.
 
 parse_message(String, Headers, Body, PostponedMetadata) :-
     PostponedMetadata0 = postponed_metadata(clear_date),
