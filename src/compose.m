@@ -522,9 +522,12 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
             References, PostponedMetadata),
         some [!Headers] (
             !:Headers = Headers0,
-            !Headers ^ h_replyto := ReplyTo,
-            !Headers ^ h_inreplyto := InReplyTo,
-            !Headers ^ h_references := References,
+            ( is_empty_header_value(!.Headers ^ h_replyto) ->
+                !Headers ^ h_replyto := ReplyTo; true ),
+            ( is_empty_header_value(!.Headers ^ h_inreplyto) ->
+                !Headers ^ h_inreplyto := InReplyTo; true ),
+            ( is_empty_header_value(!.Headers ^ h_references) ->
+                !Headers ^ h_references := References; true ),
             (
                 ContinueBase = postponed_message,
                 (
