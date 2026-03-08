@@ -133,8 +133,7 @@
 
     # How to send a message from this account.
     # The default is to use sendmail but I use msmtp.
-    # The command should understand the "-t" option to read recipients
-    # from the message headers itself.
+    # The recipients will be passed on the command line.
     #
   ; sendmail = /usr/bin/sendmail -oi -oem
   ; sendmail = /usr/bin/msmtp
