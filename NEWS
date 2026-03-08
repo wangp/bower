@@ -1,5 +1,19 @@
+Bower 1.2-unreleased
+====================
+Thanks to Frank Seifferth for these changes.
+
+* Use '--decrypt=true' instead of only '--decrypt'.
+* config: Option to add Autocrypt header on outgoing emails.
+* Don't copy inbox, autocrypt tags from parent message to reply.
+* Use quoted-printable if line length exceeds the SMTP limit.
+* Use base64 for attachments if line length exceeds the SMTP limit.
+* Implement baseline header protection according to RFC 9788.
+* Call sendmail with recipient args instead of using '-t' flag.
+* Sort reactions better in flat message view.
+
 Bower 1.1.1 (2025-03-29)
 ========================
+
 * Use Ctrl+A to select all threads/messages in both views. (hgv)
 * Don't use ln -L flag on MacOS.
 
