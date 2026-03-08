@@ -2828,7 +2828,8 @@ make_headers(Prepare, Headers, ParsedHeaders, MaybeAutocryptHeader, MessageId,
             WriteBcc = []   % to be on the safe side if sendmail misbehaves
         ;
             ( Prepare = prepare_postpone
-            ; Prepare = prepare_edit(_) ),
+            ; Prepare = prepare_edit(_)
+            ),
             WriteBcc = Bcc
         ),
         list.foldl(maybe_cons(SkipEmpty), [
@@ -2966,14 +2967,16 @@ make_text_and_attachments_mime_part(TextCTE, TextAttachmentCTE,
         BoundarySeed1, Res) :-
     generate_boundary(MixedBoundary, BoundarySeed0, BoundarySeed1Half),
     (
-        MaybeAltHtml = no, Attachments = [],
+        MaybeAltHtml = no,
+        Attachments = [],
         TextPart = discrete(text_plain, yes("utf-8"), MaybeProtectedHeaders,
             yes(write_content_disposition(inline, no)), yes(TextCTE),
             text(Text)),
         BoundarySeed1 = BoundarySeed1Half,
         Res = ok(TextPart)
     ;
-        MaybeAltHtml = yes(HtmlContent), Attachments = [],
+        MaybeAltHtml = yes(HtmlContent),
+        Attachments = [],
         TextPlainPart = discrete(text_plain, yes("utf-8"), no,
             yes(write_content_disposition(inline, no)),
             yes(TextCTE), text(Text)),

@@ -324,7 +324,8 @@ write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, Res, !IO) :-
         write_discrete_content_type(Stream, ContentType, MaybeCharset,
             MaybeProtectedHeaders, Res0, !IO),
         (
-            Res0 = error(_), Res = Res0
+            Res0 = error(_),
+            Res = Res0
         ;
             Res0 = ok,
             fold_maybe(write_content_disposition(Stream),
@@ -348,7 +349,8 @@ write_mime_part_nocatch(Stream, Config, MimePart, PausedCurs, Res, !IO) :-
         write_composite_content_type(Stream, ContentType,
             MaybeProtectedHeaders, Boundary, Res0, !IO),
         (
-            Res0 = error(_), Res = Res0
+            Res0 = error(_),
+            Res = Res0
         ;
             Res0 = ok,
             fold_maybe(write_content_disposition(Stream),
