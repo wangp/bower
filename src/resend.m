@@ -309,11 +309,9 @@ resend_with_progress(Screen, Account, Filename, Recipients, MessageUpdate,
 
 call_send_mail(Account, Filename, Recipients, Res, !IO) :-
     get_sendmail_command(Account, Sendmail),
-    address_list_to_sendmail_args(Recipients, SendmailArgs, Res0),
+    address_list_to_sendmail_args(Recipients, Res0),
     (
-        Res0 = error(_), Res = Res0
-    ;
-        Res0 = ok,
+        Res0 = ok(SendmailArgs),
         make_quoted_command(Sendmail, SendmailArgs, redirect_input(Filename),
             no_redirect, Command),
         % e.g. msmtp 'passwordeval' option may invoke pinentry-curses.
@@ -332,6 +330,9 @@ call_send_mail(Account, Filename, Recipients, Res, !IO) :-
             Msg = Command ++ ": " ++ io.error_message(Error),
             Res = error(Msg)
         )
+    ;
+        Res0 = error(Error),
+        Res = error(Error)
     ).
 
 %-----------------------------------------------------------------------------%

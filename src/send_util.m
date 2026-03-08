@@ -36,8 +36,8 @@
 
 :- pred generate_boundary(string::out, splitmix64::in, splitmix64::out) is det.
 
-:- pred address_list_to_sendmail_args(address_list::in, list(string)::out,
-    maybe_error::out) is det.
+:- pred address_list_to_sendmail_args(address_list::in,
+    maybe_error(list(string))::out) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -287,66 +287,55 @@ generate_boundary_char(_, Char, !RS) :-
 base64_chars =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".
 
-address_list_to_sendmail_args(Addresses, SendmailArgs, Res) :-
+address_list_to_sendmail_args(Addresses, Res) :-
+    list.map_foldl(address_to_sendmail_args0, Addresses,
+        SendmailArgs0, [], RevErrors),
+    list.reverse(RevErrors, Errors),
     (
-        Addresses = [],
-        SendmailArgs = [],
-        Res = ok
+        Errors = [],
+        list.condense(SendmailArgs0, SendmailArgs),
+        Res = ok(SendmailArgs)
     ;
-        Addresses = [ Addr | Tail ],
-        (
-            Addr = mailbox(Mailbox),
-            mailbox_list_to_sendmail_args([Mailbox], NewArgs, Res0)
-        ;
-            Addr = group(_, MailboxList),
-            mailbox_list_to_sendmail_args(MailboxList, NewArgs, Res0)
-        ),
-        (
-            Res0 = error(Error),
-            SendmailArgs = [],
-            Res = error(Error)
-        ;
-            Res0 = ok,
-            address_list_to_sendmail_args(Tail, ProcessedTail, Res),
-            SendmailArgs = NewArgs ++ ProcessedTail
-        )
+        Errors = [Error | _],
+        % Report first error.
+        Res = error(Error)
     ).
 
-:- pred mailbox_list_to_sendmail_args(list(mailbox)::in, list(string)::out,
-    maybe_error::out) is det.
+:- pred address_to_sendmail_args0(address::in, list(string)::out,
+    list(string)::in, list(string)::out) is det.
 
-mailbox_list_to_sendmail_args(MailboxList, SendmailArgs, Res) :-
+address_to_sendmail_args0(Addr, SendmailArgs, !RevErrors) :-
     (
-        MailboxList = [],
-        SendmailArgs = [],
-        Res = ok
+        Addr = mailbox(Mailbox),
+        mailbox_to_sendmail_args(Mailbox, SendmailArgs, !RevErrors)
     ;
-        MailboxList = [ Mailbox | Tail ],
+        Addr = group(_, MailboxList),
+        list.map_foldl(mailbox_to_sendmail_args, MailboxList,
+            SendmailArgs0, !RevErrors),
+        list.condense(SendmailArgs0, SendmailArgs)
+    ).
+
+:- pred mailbox_to_sendmail_args(mailbox::in, list(string)::out,
+    list(string)::in, list(string)::out) is det.
+
+mailbox_to_sendmail_args(Mailbox, SendmailArgs, !RevErrors) :-
+    (
+        Mailbox = mailbox(_, AddrSpec),
+        addr_spec_to_string(AddrSpec, String, Ok),
         (
-            Mailbox = bad_mailbox(String),
-            SendmailArgs = [],
-            Res = error("Failed to parse address " ++ String ++ ".")
+            Ok = yes,
+            SendmailArgs = [String]
         ;
-            Mailbox = mailbox(_, AddrSpec),
-            addr_spec_to_string(AddrSpec, String, Ok),
-            (
-                Ok = yes,
-                mailbox_list_to_sendmail_args(Tail, SendmailArgs0, Res0),
-                (
-                    Res0 = error(Error),
-                    SendmailArgs = [],
-                    Res = error(Error)
-                ;
-                    Res0 = ok,
-                    SendmailArgs = [ String | SendmailArgs0 ],
-                    Res = ok
-                )
-            ;
-                Ok = no,
-                SendmailArgs = [],
-                Res = error("Failed to parse address " ++ String ++ ".")
-            )
+            Ok = no,
+            SendmailArgs = [],
+            Error = "Failed to parse address " ++ String ++ ".",
+            cons(Error, !RevErrors)
         )
+    ;
+        Mailbox = bad_mailbox(String),
+        SendmailArgs = [],
+        Error = "Failed to parse address " ++ String ++ ".",
+        cons(Error, !RevErrors)
     ).
 
 %-----------------------------------------------------------------------------%

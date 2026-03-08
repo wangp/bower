@@ -2311,14 +2311,14 @@ send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text, MaybeAltHtml,
         MaybeAutocryptHeader, Text, MaybeAltHtml, Attachments, CryptoInfo,
         MessageId, ResFilename, Warnings, !IO),
     address_list_to_sendmail_args(ParsedHeaders ^ ph_to ++
-        ParsedHeaders ^ ph_cc ++ ParsedHeaders ^ ph_bcc, Recipients,
+        ParsedHeaders ^ ph_cc ++ ParsedHeaders ^ ph_bcc,
         ResSendmailArgs),
     (
         ResSendmailArgs = error(Error),
         MessageUpdate = set_warning(Error),
         Res = not_sent
     ;
-        ResSendmailArgs = ok,
+        ResSendmailArgs = ok(Recipients),
         (
             ResFilename = ok(Filename),
             prompt_confirm_warnings(Screen, Warnings, ConfirmAll, !IO),
