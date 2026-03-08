@@ -2666,6 +2666,8 @@ make_protected_headers(AllHeaders, ProtectionType, OuterHeaders,
     ;
         ProtectionType = clear,
         OuterHeaders = AllHeaders,
+        % All Non-Structural Header Fields must be copied to the
+        % Inner Header Section as-is.
         InnerHeaders = AllHeaders
     ),
     ProtectedHeaders = protected_headers(ProtectionType, InnerHeaders).
@@ -2674,9 +2676,8 @@ make_protected_headers(AllHeaders, ProtectionType, OuterHeaders,
 
 mask_outer_header(InnerHeader, OuterHeader) :-
     InnerHeader = header(field_name(Name), _),
-    (
-        strcase_equal(Name, "Subject")
-    ->
+    % [RFC 9788] Baseline Header Confidentiality Policy
+    ( strcase_equal(Name, "Subject") ->
         OuterHeader = header(field_name(Name),
             unstructured(header_value("[...]"), no_encoding))
     ;

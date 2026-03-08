@@ -49,12 +49,12 @@
 :- type protected_headers
     --->    protected_headers(
                 hp_type,
-                list(header)
+                list(header)    % inner headers
             ).
 
 :- type hp_type
-    --->    cipher;
-            clear.
+    --->    cipher
+    ;       clear.
 
 :- type mime_part
     --->    discrete(
@@ -390,18 +390,22 @@ write_discrete_content_type(Stream, ContentType, MaybeCharset,
         MaybeCharset = no
     ),
     (
-        MaybeProtectedHeaders = yes(protected_headers(HPType, Headers)),
+        MaybeProtectedHeaders = yes(protected_headers(HPType, InnerHeaders)),
         put(Stream, "; protected-headers=""v1""", !IO),
         (
-            HPType = cipher, put(Stream, "; hp=""cipher""", !IO)
+            HPType = cipher,
+            put(Stream, "; hp=""cipher""", !IO)
         ;
-            HPType = clear, put(Stream, "; hp=""clear""", !IO)
+            HPType = clear,
+            put(Stream, "; hp=""clear""", !IO)
         ),
-        list.foldl2(build_header(string.builder.handle), Headers, ok,
-            Res, init, BuilderState),
+        list.foldl2(build_header(string.builder.handle), InnerHeaders,
+            ok, Res, init, BuilderState),
         put(Stream, "\n" ++ to_string(BuilderState), !IO)
     ;
-        MaybeProtectedHeaders = no, put(Stream, "\n", !IO), Res = ok
+        MaybeProtectedHeaders = no,
+        put(Stream, "\n", !IO),
+        Res = ok
     ).
 
 :- pred write_composite_content_type(Stream::in, composite_content_type::in,
@@ -411,7 +415,7 @@ write_discrete_content_type(Stream, ContentType, MaybeCharset,
 write_composite_content_type(Stream, ContentType, MaybeProtectedHeaders,
         boundary(Boundary), Res, !IO) :-
     (
-        MaybeProtectedHeaders = yes(protected_headers(HPType, Headers)),
+        MaybeProtectedHeaders = yes(protected_headers(HPType, InnerHeaders)),
         (
             HPType = cipher,
             ExtraAttrs = "; protected-headers=""v1""; hp=""cipher"""
@@ -419,11 +423,14 @@ write_composite_content_type(Stream, ContentType, MaybeProtectedHeaders,
             HPType = clear,
             ExtraAttrs = "; protected-headers=""v1""; hp=""clear"""
         ),
-        list.foldl2(build_header(string.builder.handle), Headers, ok,
-            Res, init, BuilderState),
+        list.foldl2(build_header(string.builder.handle), InnerHeaders,
+            ok, Res, init, BuilderState),
         ExtraLines = to_string(BuilderState)
     ;
-        MaybeProtectedHeaders = no, ExtraAttrs = "", ExtraLines = "", Res = ok
+        MaybeProtectedHeaders = no,
+        ExtraAttrs = "",
+        ExtraLines = "",
+        Res = ok
     ),
     (
         ContentType = multipart_mixed,
