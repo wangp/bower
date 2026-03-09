@@ -8,8 +8,8 @@ bower is written in [Mercury].
 
 See some [screen shots](screenshots).
 
-[Notmuch]: http://notmuchmail.org/
-[Mercury]: http://mercurylang.org/
+[Notmuch]: https://notmuchmail.org/
+[Mercury]: https://mercurylang.org/
 
 
 Requirements
@@ -21,7 +21,7 @@ require some work to work on other systems.
 At compile time:
 
 * Mercury compiler (20.06 or later, including release-of-the-day);
-  currently available at <http://dl.mercurylang.org/index.html>
+  currently available at <https://dl.mercurylang.org/index.html>
 * ncurses with wide character support
 * gpgme (GnuPG Made Easy)
 
