@@ -35,10 +35,6 @@
 
 :- use_module curs.
 
-:- type sent
-    --->    sent
-    ;       not_sent.
-
 %-----------------------------------------------------------------------------%
 
 handle_resend(Config, Screen, MessageId, Message, !ToHistory, !IO) :-
