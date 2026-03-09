@@ -258,7 +258,7 @@ scroll(NumRows, Delta, HitLimit, !Scrollable) :-
     !.Scrollable = scrollable(Lines, Top0, MaybeCursor0),
     NumLines = version_array.size(Lines),
     TopLimit = max(max(0, NumLines - NumRows), Top0),
-    Top = clamp(0, Top0 + Delta, TopLimit),
+    Top = clamp_to_range(Top0 + Delta, 0, TopLimit),
     ( Top = Top0, Delta < 0 ->
         HitLimit = yes
     ; Top = Top0, Delta > 0 ->
@@ -275,7 +275,7 @@ move_cursor(NumRows, Delta, HitLimit, !Scrollable) :-
     NumLines = version_array.size(Lines),
     (
         MaybeCursor0 = yes(Cursor0),
-        Cursor = clamp(0, Cursor0 + Delta, NumLines - 1),
+        Cursor = clamp_to_range(Cursor0 + Delta, 0, NumLines - 1),
         ( Cursor = Cursor0 ->
             HitLimit = yes
         ;
@@ -451,9 +451,9 @@ draw_lines(Pred, Screen, [Panel | Panels], Lines, I, Cursor, !IO) :-
     ),
     draw_lines(Pred, Screen, Panels, Lines, I + 1, Cursor, !IO).
 
-:- func clamp(int, int, int) = int.
+:- func clamp_to_range(int, int, int) = int.
 
-clamp(Min, X, Max) =
+clamp_to_range(X, Min, Max) =
     ( X < Min -> Min
     ; X > Max -> Max
     ; X
