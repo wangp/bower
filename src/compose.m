@@ -584,9 +584,21 @@ create_edit_stage(Config, Crypto, Screen, Headers0, Text0,
         EncryptInit, SignInit, Transition, !History, !IO) :-
     get_encrypt_by_default(Config, EncryptByDefault),
     get_sign_by_default(Config, SignByDefault),
-    CryptoInfo0 = init_crypto_info(Crypto,
-        EncryptByDefault `or` EncryptInit,
-        SignByDefault `or` SignInit),
+    DoEncrypt = EncryptByDefault `or` EncryptInit,
+    DoSign = SignByDefault `or` SignInit,
+    (
+        DoEncrypt = yes,
+        CryptoInfo0 = init_crypto_info(Crypto, encrypt_and_sign)
+    ;
+        DoEncrypt = no,
+        (
+            DoSign = yes,
+            CryptoInfo0 = init_crypto_info(Crypto, sign_only)
+        ;
+            DoSign = no,
+            CryptoInfo0 = init_crypto_info(Crypto, no_crypto)
+        )
+    ),
     get_use_alt_html_filter(Config, UseAltHtmlFilter),
     create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHtmlFilter,
         MaybeAppendSignature, Attachments, Tags, MaybeOldDraft, Transition,
@@ -1321,15 +1333,32 @@ update_header(Config, Opt, HeaderType, Input, !Headers, !Parsed, !IO) :-
     io::di, io::uo) is det.
 
 toggle_encrypt(StagingInfo, !CryptoInfo, !IO) :-
-    !CryptoInfo ^ ci_encrypt := not(!.CryptoInfo ^ ci_encrypt),
+    (
+        !.CryptoInfo ^ ci_user_choice = encrypt_and_sign,
+        !CryptoInfo ^ ci_user_choice := no_crypto
+    ;
+        ( !.CryptoInfo ^ ci_user_choice = sign_only
+        ; !.CryptoInfo ^ ci_user_choice = no_crypto
+        ),
+        !CryptoInfo ^ ci_user_choice := encrypt_and_sign
+    ),
     ParsedHeaders = StagingInfo ^ si_parsed_hdrs,
+    maintain_sign_keys(ParsedHeaders, !CryptoInfo, !IO),
     maintain_encrypt_keys(ParsedHeaders, !CryptoInfo, !IO).
 
 :- pred toggle_sign(staging_info::in, crypto_info::in, crypto_info::out,
     io::di, io::uo) is det.
 
 toggle_sign(StagingInfo, !CryptoInfo, !IO) :-
-    !CryptoInfo ^ ci_sign := not(!.CryptoInfo ^ ci_sign),
+    (
+        !.CryptoInfo ^ ci_user_choice = sign_only,
+        !CryptoInfo ^ ci_user_choice := no_crypto
+    ;
+        ( !.CryptoInfo ^ ci_user_choice = encrypt_and_sign
+        ; !.CryptoInfo ^ ci_user_choice = no_crypto
+        ),
+        !CryptoInfo ^ ci_user_choice := sign_only
+    ),
     ParsedHeaders = StagingInfo ^ si_parsed_hdrs,
     maintain_sign_keys(ParsedHeaders, !CryptoInfo, !IO).
 
@@ -1931,9 +1960,20 @@ draw_addr_spec(Attrs, Screen, Panel, AddrSpec, !IO) :-
 draw_mailbox_crypto(Attrs, ShowCrypto, CryptoInfo, Screen, Panel, AddrSpec,
         !IO) :-
     ShowCrypto = show_crypto(ShowEncryptKey, ShowSignKey),
-    CryptoInfo = crypto_info(_, Encrypt, EncryptKeys, Sign, SignKeys),
-    E = Encrypt `and` ShowEncryptKey,
-    S = Sign `and` ShowSignKey,
+    CryptoInfo = crypto_info(_, UserChoice, EncryptKeys, SignKeys),
+    (
+        UserChoice = encrypt_and_sign,
+        E = ShowEncryptKey,
+        S = ShowSignKey
+    ;
+        UserChoice = sign_only,
+        E = no,
+        S = ShowSignKey
+    ;
+        UserChoice = no_crypto,
+        E = no,
+        S = no
+    ),
     (
         E = yes,
         (
@@ -2046,23 +2086,14 @@ validity(validity_ultimate, "ultimate", yes).
     crypto_info::in, io::di, io::uo) is det.
 
 draw_crypto_line(Attrs, Screen, Panel, CryptoInfo, !IO) :-
-    CryptoInfo ^ ci_encrypt = Encrypt,
-    CryptoInfo ^ ci_sign = Sign,
     (
-        Encrypt = yes,
-        Sign = yes,
+        CryptoInfo ^ ci_user_choice = encrypt_and_sign,
         Body = "encrypt subject and message body; sign entire message"
     ;
-        Encrypt = yes,
-        Sign = no,
-        Body = "encrypt subject and message body"
-    ;
-        Encrypt = no,
-        Sign = yes,
+        CryptoInfo ^ ci_user_choice = sign_only,
         Body = "sign message"
     ;
-        Encrypt = no,
-        Sign = no,
+        CryptoInfo ^ ci_user_choice = no_crypto,
         Body = "none"
     ),
     erase(Screen, Panel, !IO),
@@ -2246,12 +2277,13 @@ postpone(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
             Confirmation = yes,
             update_message_immed(Screen, set_info("Postponing message..."),
                 !IO),
-            Sign = CryptoInfo ^ ci_sign,
             (
-                Sign = yes,
+                ( CryptoInfo ^ ci_user_choice = encrypt_and_sign
+                ; CryptoInfo ^ ci_user_choice = sign_only
+                ),
                 MaybeSignTag = [tag_delta("+draft-sign")]
             ;
-                Sign = no,
+                CryptoInfo ^ ci_user_choice = no_crypto,
                 MaybeSignTag = []
             ),
             TagDeltas =
@@ -2547,13 +2579,41 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
     ;
         (
             Prepare = prepare_send,
-            Sign = CryptoInfo ^ ci_sign,
-            Encrypt = CryptoInfo ^ ci_encrypt,
+            (
+                CryptoInfo ^ ci_user_choice = no_crypto,
+                Encrypt = bool.no,
+                Sign = bool.no
+            ;
+                CryptoInfo ^ ci_user_choice = sign_only,
+                Encrypt = no,
+                Sign = yes
+            ;
+                CryptoInfo ^ ci_user_choice = encrypt_and_sign,
+                Encrypt = yes,
+                Sign = yes
+            ),
             EncryptForWhom = from_and_recipients
         ;
+            % XXX RFC 9787 suggests that the decision whether or not to
+            % use encryption for storing drafts should be independent of the
+            % user's indication of the desired cryptographic properties of the
+            % final message. Instead, it should be guided by considerations
+            % regarding the security properties of the draft directory. We
+            % might want to adjust what follows at some point in the future.
             Prepare = prepare_postpone,
-            Sign = no,
-            Encrypt = CryptoInfo ^ ci_encrypt,
+            (
+                CryptoInfo ^ ci_user_choice = no_crypto,
+                Encrypt = no,
+                Sign = no
+            ;
+                CryptoInfo ^ ci_user_choice = sign_only,
+                Encrypt = no,
+                Sign = no
+            ;
+                CryptoInfo ^ ci_user_choice = encrypt_and_sign,
+                Encrypt = yes,
+                Sign = no
+            ),
             EncryptForWhom = from_only
         ),
         (

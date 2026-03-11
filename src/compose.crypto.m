@@ -9,16 +9,20 @@
 :- type crypto_info
     --->    crypto_info(
                 ci_context      :: crypto,
-                ci_encrypt      :: bool,
+                ci_user_choice  :: crypto_info_user_choice,
                 ci_encrypt_keys :: map(addr_spec, key_userid),
-                ci_sign         :: bool,
                 ci_sign_keys    :: map(addr_spec, key_userid)
             ).
+
+:- type crypto_info_user_choice
+    --->    no_crypto
+    ;       sign_only
+    ;       encrypt_and_sign.
 
 :- type key_userid
     --->    key_userid(gpgme.key, gpgme.user_id).
 
-:- func init_crypto_info(crypto, bool, bool) = crypto_info.
+:- func init_crypto_info(crypto, crypto_info_user_choice) = crypto_info.
 
 :- pred unref_keys(crypto_info::in, io::di, io::uo) is det.
 
@@ -64,12 +68,12 @@
 
 %-----------------------------------------------------------------------------%
 
-init_crypto_info(Crypto, EncryptInit, SignInit) =
-    crypto_info(Crypto, EncryptInit, map.init, SignInit, map.init).
+init_crypto_info(Crypto, UserChoiceInit) =
+    crypto_info(Crypto, UserChoiceInit, map.init, map.init).
 
 %-----------------------------------------------------------------------------%
 
-unref_keys(crypto_info(_, _, EncryptKeys, _, SignKeys), !IO) :-
+unref_keys(crypto_info(_, _, EncryptKeys, SignKeys), !IO) :-
     unref_keys(map(fst, values(EncryptKeys)), !IO),
     unref_keys(map(fst, values(SignKeys)), !IO).
 
@@ -80,16 +84,18 @@ fst(key_userid(Key, _)) = Key.
 %-----------------------------------------------------------------------------%
 
 maintain_encrypt_keys(ParsedHeaders, !CryptoInfo, !IO) :-
-    Encrypt = !.CryptoInfo ^ ci_encrypt,
+    UserChoice = !.CryptoInfo ^ ci_user_choice,
     (
-        Encrypt = yes,
+        UserChoice = encrypt_and_sign,
         Crypto = !.CryptoInfo ^ ci_context,
         EncryptKeys0 = !.CryptoInfo ^ ci_encrypt_keys,
         maintain_encrypt_keys_map(Crypto, ParsedHeaders,
             EncryptKeys0, EncryptKeys, !IO),
         !CryptoInfo ^ ci_encrypt_keys := EncryptKeys
     ;
-        Encrypt = no
+        UserChoice = sign_only
+    ;
+        UserChoice = no_crypto
     ).
 
 :- pred maintain_encrypt_keys_map(crypto::in, parsed_headers::in,
@@ -123,16 +129,18 @@ maintain_encrypt_key(Crypto, AddrSpec, !EncryptKeys, !IO) :-
 %-----------------------------------------------------------------------------%
 
 maintain_sign_keys(ParsedHeaders, !CryptoInfo, !IO) :-
-    Sign = !.CryptoInfo ^ ci_sign,
+    UserChoice = !.CryptoInfo ^ ci_user_choice,
     (
-        Sign = yes,
+        ( UserChoice = sign_only
+        ; UserChoice = encrypt_and_sign
+        ),
         Crypto = !.CryptoInfo ^ ci_context,
         SignKeys0 = !.CryptoInfo ^ ci_sign_keys,
         maintain_sign_keys_map(Crypto, ParsedHeaders, SignKeys0, SignKeys,
             !IO),
         !CryptoInfo ^ ci_sign_keys := SignKeys
     ;
-        Sign = no
+        UserChoice = no_crypto
     ).
 
 :- pred maintain_sign_keys_map(crypto::in, parsed_headers::in,
