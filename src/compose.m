@@ -2581,7 +2581,7 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
             Prepare = prepare_send,
             (
                 CryptoInfo ^ ci_user_choice = no_crypto,
-                Encrypt = bool.no,
+                Encrypt = no,
                 Sign = bool.no
             ;
                 CryptoInfo ^ ci_user_choice = sign_only,
@@ -2589,10 +2589,9 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
                 Sign = yes
             ;
                 CryptoInfo ^ ci_user_choice = encrypt_and_sign,
-                Encrypt = yes,
+                Encrypt = yes(from_and_recipients),
                 Sign = yes
-            ),
-            EncryptForWhom = from_and_recipients
+            )
         ;
             % XXX RFC 9787 suggests that the decision whether or not to
             % use encryption for storing drafts should be independent of the
@@ -2611,10 +2610,9 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
                 Sign = no
             ;
                 CryptoInfo ^ ci_user_choice = encrypt_and_sign,
-                Encrypt = yes,
+                Encrypt = yes(from_only),
                 Sign = no
-            ),
-            EncryptForWhom = from_only
+            )
         ),
         (
             Encrypt = no,
@@ -2638,7 +2636,7 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
             ),
             Warnings = []
         ;
-            Encrypt = yes,
+            Encrypt = yes(EncryptForWhom),
             (
                 Sign = no,
                 MaybeSigners = no,
