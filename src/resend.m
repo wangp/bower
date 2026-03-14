@@ -29,6 +29,7 @@
 :- import_module compose.
 :- import_module make_temp.
 :- import_module quote_command.
+:- import_module rand_util.
 :- import_module rfc5322.
 :- import_module rfc5322.parser.
 :- import_module send_util.
@@ -270,7 +271,8 @@ write_resent_headers(FromAddress, ToAddresses, Res, !IO) :-
 
 generate_resent_headers(Stream, FromAddress, ToAddresses, !IO) :-
     get_message_id_right_part(FromAddress, RightPart),
-    generate_date_msg_id(RightPart, Date, ResentMessageId0, !IO),
+    get_random_supply(RS0, !IO),
+    generate_date_msg_id(RightPart, Date, ResentMessageId0, RS0, _RS, !IO),
     ResentMessageId = wrap_angle_brackets(ResentMessageId0),
 
     write_address_list_header(rfc2047_encoding, Stream,

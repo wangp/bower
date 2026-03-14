@@ -2563,7 +2563,7 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
         MaybeAutocryptHeader, Text, MaybeAltHtml, Attachments, CryptoInfo,
         MessageId, Res, Warnings, !RS, !IO) :-
     make_headers(Prepare, Headers, ParsedHeaders, MaybeAutocryptHeader,
-        MessageId, WriteHeaders, !IO),
+        MessageId, WriteHeaders, !RS, !IO),
     (
         Prepare = prepare_edit(MaybeAppendSignature),
         (
@@ -2804,10 +2804,10 @@ get_addr_spec_in_mailbox(Mailbox, AddrSpec) :-
 
 :- pred make_headers(prepare_temp::in, headers::in, parsed_headers::in,
     maybe(header)::in, message_id::out, list(header)::out,
-    io::di, io::uo) is det.
+    rs::di, rs::uo, io::di, io::uo) is det.
 
 make_headers(Prepare, Headers, ParsedHeaders, MaybeAutocryptHeader, MessageId,
-        WriteHeaders, !IO) :-
+        WriteHeaders, !RS, !IO) :-
     Headers = headers(_Date, _From, _To, _Cc, _Bcc, Subject, _ReplyTo,
         InReplyTo, References, RestHeaders),
     ParsedHeaders = parsed_headers(MaybeExplicitDate, From, To, Cc, Bcc,
@@ -2823,9 +2823,10 @@ make_headers(Prepare, Headers, ParsedHeaders, MaybeAutocryptHeader, MessageId,
         % Message-ID. Currently, this is ensured by always generating the
         % Message-ID from the current system timestamp. If this policy
         % should ever be altered, the uniqueness of draft Message-IDs
-        % must be ensured by other means.
+        % must be ensured by other means. (The randomness in Message-IDs
+        % means collisions are very unlikely.)
         get_message_id_right_part(ParsedHeaders ^ ph_from, MessageIdRight),
-        generate_date_msg_id(MessageIdRight, Date, MessageId, !IO),
+        generate_date_msg_id(MessageIdRight, Date, MessageId, !RS, !IO),
         (
             MaybeExplicitDate = yes(ExplicitDate),
             cons(header(field_name("Date"),
