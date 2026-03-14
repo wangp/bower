@@ -10,8 +10,8 @@
 :- import_module stream.
 
 :- import_module data.
+:- import_module rand_util.
 :- import_module rfc5322.
-:- import_module splitmix64.
 
 :- pred generate_date_msg_id(string::in, header_value::out, message_id::out,
     io::di, io::uo) is det.
@@ -34,7 +34,7 @@
     string::in, header_value::in, State::di, State::uo) is det
     <= stream.writer(Stream, string, State).
 
-:- pred generate_boundary(string::out, splitmix64::in, splitmix64::out) is det.
+:- pred generate_boundary(string::out, rs::di, rs::uo) is det.
 
 :- pred address_list_to_sendmail_args(address_list::in,
     maybe_error(list(string))::out) is det.
@@ -49,6 +49,7 @@
 :- import_module int.
 :- import_module string.
 :- import_module time.
+:- import_module uint32.
 :- use_module require.
 
 :- import_module fold_lines.
@@ -274,12 +275,11 @@ generate_boundary(Boundary, !RS) :-
     list.map_foldl(generate_boundary_char, 1 .. 16, Chars, !RS),
     string.from_char_list(Chars, Boundary).
 
-:- pred generate_boundary_char(int::in, char::out,
-    splitmix64::in, splitmix64::out) is det.
+:- pred generate_boundary_char(int::in, char::out, rs::di, rs::uo) is det.
 
 generate_boundary_char(_, Char, !RS) :-
-    next(I, !RS),
-    Index = I /\ 0x3f,
+    generate_uint32(I, !RS),
+    Index = uint32.cast_to_int(I /\ 0x3f_u32),
     string.unsafe_index(base64_chars, Index, Char).
 
 :- func base64_chars = string.

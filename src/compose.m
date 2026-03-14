@@ -69,7 +69,6 @@
 :- import_module assoc_list.
 :- import_module char.
 :- import_module dir.
-:- import_module float.
 :- import_module int.
 :- import_module list.
 :- import_module map.
@@ -94,6 +93,7 @@
 :- import_module path_expand.
 :- import_module process.
 :- import_module quote_command.
+:- import_module rand_util.
 :- import_module rfc2047.
 :- import_module rfc2047.decoder.
 :- import_module rfc5322.writer.
@@ -101,7 +101,6 @@
 :- import_module scrollable.
 :- import_module send_util.
 :- import_module size_util.
-:- import_module splitmix64.
 :- import_module string_util.
 :- import_module tags.
 :- import_module text_entry.
@@ -616,9 +615,10 @@ create_edit_stage_2(Config, Screen, Headers0, Text0, UseAltHtmlFilter,
         MaybeAppendSignature, Attachments, Tags, MaybeOldDraft, Transition,
         !CryptoInfo, !History, !IO) :-
     make_parsed_headers(Headers0, ParsedHeaders0),
+    get_random_supply(RS0, !IO),
     create_temp_message_file(Config, prepare_edit(MaybeAppendSignature),
         Headers0, ParsedHeaders0, no, Text0, no, Attachments, !.CryptoInfo,
-        _MessageId, ResFilename, _MaybeWarning, !IO),
+        _MessageId, ResFilename, _MaybeWarning, RS0, _RS, !IO),
     (
         ResFilename = ok(Filename),
         call_editor(Config, Filename, ResEdit, !IO),
@@ -2262,9 +2262,10 @@ draw_staging_bar(Attrs, Screen, StagingInfo, !IO) :-
 postpone(Config, Screen, Headers, ParsedHeaders, Text, Attachments,
         CryptoInfo, InteractiveTags, Res, MessageUpdate, !IO) :-
     MaybeAltHtml = no,
+    get_random_supply(RS0, !IO),
     create_temp_message_file(Config, prepare_postpone, Headers, ParsedHeaders,
         no, Text, MaybeAltHtml, Attachments, CryptoInfo, _MessageId,
-        ResFilename, Warnings, !IO),
+        ResFilename, Warnings, RS0, _RS, !IO),
     (
         ResFilename = ok(Filename),
         (
@@ -2341,9 +2342,10 @@ maybe_remove_draft(StagingInfo, !IO) :-
 send_mail(Config, Account, Screen, Headers, ParsedHeaders, Text, MaybeAltHtml,
         Attachments, CryptoInfo, InteractiveTags, Res, MessageUpdate, !IO) :-
     make_autocrypt_header(Account, MaybeAutocryptHeader),
+    get_random_supply(RS0, !IO),
     create_temp_message_file(Config, prepare_send, Headers, ParsedHeaders,
         MaybeAutocryptHeader, Text, MaybeAltHtml, Attachments, CryptoInfo,
-        MessageId, ResFilename, Warnings, !IO),
+        MessageId, ResFilename, Warnings, RS0, _RS, !IO),
     address_list_to_sendmail_args(ParsedHeaders ^ ph_to ++
         ParsedHeaders ^ ph_cc ++ ParsedHeaders ^ ph_bcc,
         ResSendmailArgs),
@@ -2550,17 +2552,16 @@ tag_replied_message(Config, Headers, Res, !IO) :-
     --->    do_append_signature
     ;       do_not_append_signature.
 
+    % TODO: ensure this does not throw exception
 :- pred create_temp_message_file(prog_config::in, prepare_temp::in,
     headers::in, parsed_headers::in, maybe(header)::in, string::in,
     maybe(string)::in, list(attachment)::in, crypto_info::in, message_id::out,
-    maybe_error(string)::out, list(string)::out, io::di, io::uo) is det.
+    maybe_error(string)::out, list(string)::out, rs::di, rs::uo,
+    io::di, io::uo) is det.
 
 create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
         MaybeAutocryptHeader, Text, MaybeAltHtml, Attachments, CryptoInfo,
-        MessageId, Res, Warnings, !IO) :-
-    % We only use this timestamp to generate MIME boundaries.
-    current_timestamp(timestamp(Seed), !IO),
-    splitmix64.init(truncate_to_int(Seed), RS0),
+        MessageId, Res, Warnings, !RS, !IO) :-
     make_headers(Prepare, Headers, ParsedHeaders, MaybeAutocryptHeader,
         MessageId, WriteHeaders, !IO),
     (
@@ -2625,7 +2626,7 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
                 TextCTE = cte_quoted_printable
             ),
             make_text_and_attachments_mime_part(TextCTE, cte_8bit, no, Text,
-                MaybeAltHtml, Attachments, RS0, _RS, Res0),
+                MaybeAltHtml, Attachments, Res0, !RS),
             (
                 Res0 = ok(MimePart),
                 Spec = message_spec(WriteHeaders, mime_v1(MimePart)),
@@ -2672,10 +2673,10 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
                     ProtectedHeaders),
                 make_text_and_attachments_mime_part(TextCTE, TextAttachmentCTE,
                     yes(ProtectedHeaders), Text, MaybeAltHtml, Attachments,
-                    RS0, RS1, Res0),
+                    Res0, !RS),
                 (
                     Res0 = ok(PartToEncrypt),
-                    generate_boundary(EncryptedBoundary, RS1, _RS),
+                    generate_boundary(EncryptedBoundary, !RS),
                     curs.soft_suspend(
                         encrypt_then_write_temp_message_file(Config,
                             Prepare, OuterHeaders, PartToEncrypt,
@@ -2705,10 +2706,10 @@ create_temp_message_file(Config, Prepare, Headers, ParsedHeaders,
                 % during transfer.
                 make_text_and_attachments_mime_part(cte_base64, cte_base64,
                     yes(ProtectedHeaders), Text, MaybeAltHtml, Attachments,
-                    RS0, RS1, Res0),
+                    Res0, !RS),
                 (
                     Res0 = ok(PartToSign),
-                    generate_boundary(SignedBoundary, RS1, _RS),
+                    generate_boundary(SignedBoundary, !RS),
                     curs.soft_suspend(
                         sign_detached_then_write_temp_message_file(Config,
                             Prepare, OuterHeaders, PartToSign, CryptoInfo,
@@ -3019,20 +3020,17 @@ all_lines_within_length_loop(Str, Index0, EndIndex, MaxLen) :-
 :- pred make_text_and_attachments_mime_part(write_content_transfer_encoding::in,
     write_content_transfer_encoding::in,
     maybe(protected_headers)::in, string::in, maybe(string)::in,
-    list(attachment)::in, splitmix64::in, splitmix64::out,
-    maybe_error(mime_part)::out) is det.
+    list(attachment)::in, maybe_error(mime_part)::out, rs::di, rs::uo) is det.
 
 make_text_and_attachments_mime_part(TextCTE, TextAttachmentCTE,
-        MaybeProtectedHeaders, Text, MaybeAltHtml, Attachments, BoundarySeed0,
-        BoundarySeed1, Res) :-
-    generate_boundary(MixedBoundary, BoundarySeed0, BoundarySeed1Half),
+        MaybeProtectedHeaders, Text, MaybeAltHtml, Attachments, Res, !RS) :-
+    generate_boundary(MixedBoundary, !RS),
     (
         MaybeAltHtml = no,
         Attachments = [],
         TextPart = discrete(text_plain, yes("utf-8"), MaybeProtectedHeaders,
             yes(write_content_disposition(inline, no)), yes(TextCTE),
             text(Text)),
-        BoundarySeed1 = BoundarySeed1Half,
         Res = ok(TextPart)
     ;
         MaybeAltHtml = yes(HtmlContent),
@@ -3043,7 +3041,7 @@ make_text_and_attachments_mime_part(TextCTE, TextAttachmentCTE,
         TextHtmlPart = discrete(text_html, yes("utf-8"), no,
             yes(write_content_disposition(inline, no)),
             yes(cte_quoted_printable), text(HtmlContent)),
-        generate_boundary(MultipartBoundary, BoundarySeed1Half, BoundarySeed1),
+        generate_boundary(MultipartBoundary, !RS),
         TextPart = composite(multipart_alternative, MaybeProtectedHeaders,
             boundary(MultipartBoundary),
             yes(write_content_disposition(inline, no)), yes(cte_8bit),
@@ -3056,15 +3054,13 @@ make_text_and_attachments_mime_part(TextCTE, TextAttachmentCTE,
             text(Text)),
         (
             MaybeAltHtml = no,
-            TextPart = TextPlainPart,
-            BoundarySeed1 = BoundarySeed1Half
+            TextPart = TextPlainPart
         ;
             MaybeAltHtml = yes(HtmlContent),
             TextHtmlPart = discrete(text_html, yes("utf-8"), no,
                 yes(write_content_disposition(inline, no)),
                 yes(cte_quoted_printable), text(HtmlContent)),
-            generate_boundary(MultipartBoundary, BoundarySeed1Half,
-                BoundarySeed1),
+            generate_boundary(MultipartBoundary, !RS),
             TextPart = composite(multipart_alternative, no,
                 boundary(MultipartBoundary),
                 yes(write_content_disposition(inline, no)), yes(cte_8bit),
