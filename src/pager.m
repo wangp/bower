@@ -2609,15 +2609,19 @@ do_open_part(Screen, Config, Part, CommandStr, MessageUpdate, Tempfile, !IO) :-
 
 do_open_part_2(Screen, Config, Part, CommandTokens, Bg, MessageUpdate,
         Tempfile, !IO) :-
-    MaybePartFileName = Part ^ pt_filename,
     (
-        MaybePartFileName = yes(filename(PartFilename)),
+        Part ^ pt_filename = yes(filename(PartFilename)),
         get_extension(PartFilename, Ext)
     ->
-        make_temp_suffix(Ext, MakeTempRes, !IO)
+        TempExt = Ext
     ;
-        make_temp_suffix("", MakeTempRes, !IO)
+        infer_file_extension(Part ^ pt_content_type, Ext)
+    ->
+        TempExt = Ext
+    ;
+        TempExt = ""
     ),
+    make_temp_suffix(TempExt, MakeTempRes, !IO),
     (
         MakeTempRes = ok(FileName),
         do_save_part(Config, Part, FileName, SaveRes, !IO),

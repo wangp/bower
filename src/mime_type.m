@@ -31,6 +31,8 @@
 :- func application_pgp_signature = mime_type.
 :- func application_pkcs7_mime = mime_type.
 
+:- pred infer_file_extension(mime_type::in, string::out) is semidet.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -79,6 +81,30 @@ application_octet_stream = mime_type("application/octet-stream").
 application_pgp_encrypted = mime_type("application/pgp-encrypted").
 application_pgp_signature = mime_type("application/pgp-signature").
 application_pkcs7_mime = mime_type("application/pkcs7-mime").
+
+%-----------------------------------------------------------------------------%
+
+infer_file_extension(Type, Ext) :-
+    ( infer_file_extension_2(Type, Ext0) ->
+        Ext = Ext0
+    ; is_text(Type) ->
+        Ext = ".txt"
+    ;
+        fail
+    ).
+
+:- pred infer_file_extension_2(mime_type::in, string::out) is semidet.
+
+infer_file_extension_2(mime_type("application/gzip"), ".gz").
+infer_file_extension_2(mime_type("application/json"), ".json").
+infer_file_extension_2(mime_type("application/pdf"), ".pdf").
+infer_file_extension_2(mime_type("application/zip"), ".zip").
+infer_file_extension_2(mime_type("image/gif"), ".gif").
+infer_file_extension_2(mime_type("image/jpeg"), ".jpg").
+infer_file_extension_2(mime_type("image/png"), ".png").
+infer_file_extension_2(mime_type("text/html"), ".html").
+infer_file_extension_2(mime_type("text/plain"), ".txt").
+infer_file_extension_2(mime_type("text/xml"), ".xml").
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
