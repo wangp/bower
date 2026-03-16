@@ -1,6 +1,6 @@
 Bower 1.2-unreleased
 ====================
-Thanks to Frank Seifferth for these changes.
+Thanks to Frank Seifferth for most of these changes.
 
 * Use '--decrypt=true' instead of only '--decrypt'.
 * config: Option to add Autocrypt header on outgoing emails.
@@ -10,6 +10,8 @@ Thanks to Frank Seifferth for these changes.
 * Implement baseline header protection according to RFC 9788.
 * Call sendmail with recipient args instead of using '-t' flag.
 * Sort reactions better in flat message view.
+* Generate Message-IDs with randomness.
+* Add file extensions when opening/saving parts with out filename.
 
 Bower 1.1.1 (2025-03-29)
 ========================
