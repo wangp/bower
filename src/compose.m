@@ -3265,7 +3265,7 @@ make_multipart_signed_mime_part(SignedPart, Sig, MicAlg, Boundary, MultiPart) :-
     io::di, io::uo) is det.
 
 write_temp_message_file(Config, Prepare, Spec, PausedCurs, Res, !IO) :-
-    make_temp_suffix("", Res0, !IO),
+    make_temp_suffix(".txt", Res0, !IO),
     (
         Res0 = ok(Filename),
         io.open_output(Filename, ResOpen, !IO),

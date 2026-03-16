@@ -238,7 +238,7 @@ create_temp_message_file_and_resend(Config, Screen, MessageId, Account,
     maybe_error(string)::out, io::di, io::uo) is det.
 
 write_resent_headers(FromAddress, ToAddresses, Res, !IO) :-
-    make_temp_suffix("", ResTemp, !IO),
+    make_temp_suffix(".txt", ResTemp, !IO),
     (
         ResTemp = ok(FileName),
         io.open_output(FileName, ResOpen, !IO),
