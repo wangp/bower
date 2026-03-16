@@ -2346,36 +2346,8 @@ save_part(Screen, Info, Action, MessageUpdate, !History, !IO) :-
 
 prompt_save_part(Screen, Info, Part, MaybeSubject, !History, !IO) :-
     Config = Info ^ p_config,
-    MessageId = Part ^ pt_msgid,
-    MaybePartId = Part ^ pt_part,
-    MaybePartFilename = Part ^ pt_filename,
-    (
-        MaybePartFilename = yes(filename(PartFilename))
-    ;
-        MaybePartFilename = no,
-        MaybeSubject = yes(Subject),
-        suggest_filename(header_value_string(Subject), PartFilename)
-    ;
-        MaybePartFilename = no,
-        MaybeSubject = no,
-        MessageId = message_id(IdStr),
-        (
-            MaybePartId = yes(part_id(PartIdInt)),
-            PartFilename0 = string.format("%s.part_%d", [s(IdStr), i(PartIdInt)])
-        ;
-            MaybePartId = yes(part_id_string(PartIdStr)),
-            PartFilename0 = string.format("%s.part_%s", [s(IdStr), s(PartIdStr)])
-        ;
-            MaybePartId = no,
-            ( IdStr \= "" ->
-                PartFilename0 = IdStr ++ ".part"
-            ;
-                PartFilename0 = "message.part"
-            )
-        ),
-        suggest_filename(PartFilename0, PartFilename)
-    ),
     SaveHistory0 = !.History ^ ch_save_history,
+    suggest_part_filename(Part, MaybeSubject, PartFilename),
     make_save_part_initial_prompt(Config, SaveHistory0, PartFilename, Initial),
     get_home_dir(Home, !IO),
     text_entry_initial(Screen, "Save to file: ", SaveHistory0, Initial,
@@ -2400,6 +2372,7 @@ prompt_save_part(Screen, Info, Part, MaybeSubject, !History, !IO) :-
             do_save_part(Config, Part, FileName, Res, !IO),
             (
                 Res = ok,
+                MaybePartId = Part ^ pt_part,
                 ( MaybePartId = yes(part_id(0)) ->
                     MessageUpdate = set_info("Message saved.")
                 ;
@@ -2415,18 +2388,66 @@ prompt_save_part(Screen, Info, Part, MaybeSubject, !History, !IO) :-
     ),
     update_message(Screen, MessageUpdate, !IO).
 
-:- pred suggest_filename(string::in, string::out) is det.
+:- pred suggest_part_filename(part::in, maybe(header_value)::in, string::out)
+    is det.
 
-suggest_filename(String0, String) :-
+suggest_part_filename(Part, MaybeSubject, Filename) :-
+    MaybePartFilename = Part ^ pt_filename,
+    (
+        MaybePartFilename = yes(filename(Filename0)),
+        KeepSpace = yes,
+        sanitise_filename(KeepSpace, Filename0, Filename)
+    ;
+        MaybePartFilename = no,
+        MessageId = Part ^ pt_msgid,
+        MaybePartId = Part ^ pt_part,
+        PartContentType = Part ^ pt_content_type,
+        (
+            MaybeSubject = yes(Subject),
+            Filename0 = header_value_string(Subject)
+        ;
+            MaybeSubject = no,
+            MessageId = message_id(IdStr0),
+            ( IdStr0 \= "" ->
+                IdStr = IdStr0
+            ;
+                IdStr = "message"
+            ),
+            (
+                MaybePartId = yes(part_id(PartIdInt)),
+                Filename0 = string.format("%s.part_%d",
+                    [s(IdStr), i(PartIdInt)])
+            ;
+                MaybePartId = yes(part_id_string(PartIdStr)),
+                Filename0 = string.format("%s.part_%s",
+                    [s(IdStr), s(PartIdStr)])
+            ;
+                MaybePartId = no,
+                Filename0 = IdStr ++ ".part"
+            )
+        ),
+        sanitise_filename(no, Filename0, Filename1),
+        ( infer_file_extension(PartContentType, Ext) ->
+            Filename = Filename1 ++ Ext
+        ;
+            Filename = Filename1
+        )
+    ).
+
+:- pred sanitise_filename(bool::in, string::in, string::out) is det.
+
+sanitise_filename(KeepSpace, String0, String) :-
     string.to_char_list(String0, CharList0),
-    list.filter_map(replace_filename_char, CharList0, CharList),
-    string.from_char_list(CharList, String).
+    list.filter_map(replace_filename_char(KeepSpace), CharList0, CharList),
+    string.from_char_list(CharList, String1),
+    String = strip(String1).
 
-:- pred replace_filename_char(char::in, char::out) is semidet.
+:- pred replace_filename_char(bool::in, char::in, char::out) is semidet.
 
-replace_filename_char(C0, C) :-
+replace_filename_char(KeepSpace, C0, C) :-
     (
         ( char.is_alnum_or_underscore(C0)
+        ; C0 = (' '), KeepSpace = yes
         ; C0 = ('+')
         ; C0 = ('-')
         ; C0 = ('.')
