@@ -338,7 +338,7 @@ prepare_reply(Config, ReplyKind, OrigMessage, PartVisibilityMap, ReplyHeaders,
     OrigMessage = message(OrigMessageId, _Timestamp, OrigMessageHeaders, _Tags,
         Body, _Replies),
     OrigMessageHeaders = headers(OrigDate, OrigFrom, OrigTo, OrigCc, _OrigBcc,
-        OrigSubject, OrigReplyTo0, _OrigInReplyTo, OrigReferences0,
+        OrigSubject, OrigReplyTo, _OrigInReplyTo, OrigReferences0,
         _OrigHRest),
     %
     % XXX notmuch show does not include the References header by default. This
@@ -359,24 +359,12 @@ prepare_reply(Config, ReplyKind, OrigMessage, PartVisibilityMap, ReplyHeaders,
     % that we can completely drop this legacy method at some point. In the
     % meantime, however, it does seems necessary to include it here.
     %
-    % XXX I am unsure about the Reply-To header. My impression was that
-    % notmuch will include this header by default -- so supporting it in
-    % the fallback method might not be necessary. On the other hand, bower's
-    % original fallback to raw message parsing, which I adapted here, already
-    % included code to substitute the Reply-To header as well. Therefore,
-    % I decided to err on the side of caution and add such code here as well.
-    %
     get_extra_headers_from_raw_message(Config, OrigMessageId,
         ExtraHeadersOrError, !IO),
     (
         ExtraHeadersOrError = ok(ExtraHeaders),
-        ExtraHeaders = extra_headers_from_raw_message(ExtraReplyTo,
-            _ExtraInReplyTo, ExtraReferences, _ExtraPostponedMetadata),
-        ( is_empty_header_value(OrigReplyTo0) ->
-            OrigReplyTo = ExtraReplyTo
-        ;
-            OrigReplyTo = OrigReplyTo0
-        ),
+        ExtraHeaders = extra_headers_from_raw_message(_ExtraInReplyTo,
+            ExtraReferences, _ExtraPostponedMetadata),
         ( is_empty_header_value(OrigReferences0) ->
             OrigReferences = ExtraReferences
         ;
@@ -388,7 +376,6 @@ prepare_reply(Config, ReplyKind, OrigMessage, PartVisibilityMap, ReplyHeaders,
         % legacy method anyway and it is only used as a fallback in case
         % these headers are not included in notmuch's json output.
         ExtraHeadersOrError = error(_),
-        OrigReplyTo = OrigReplyTo0,
         OrigReferences = OrigReferences0
     ),
     Opt = backslash_quote_all,
@@ -644,12 +631,10 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
         !IO),
     (
         ExtraHeadersOrError = ok(ExtraHeaders),
-        ExtraHeaders = extra_headers_from_raw_message(ReplyTo, InReplyTo,
-            References, PostponedMetadata),
+        ExtraHeaders = extra_headers_from_raw_message(InReplyTo, References,
+            PostponedMetadata),
         some [!Headers] (
             !:Headers = Headers0,
-            ( is_empty_header_value(!.Headers ^ h_replyto) ->
-                !Headers ^ h_replyto := ReplyTo; true ),
             ( is_empty_header_value(!.Headers ^ h_inreplyto) ->
                 !Headers ^ h_inreplyto := InReplyTo; true ),
             ( is_empty_header_value(!.Headers ^ h_references) ->

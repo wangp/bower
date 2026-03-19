@@ -13,7 +13,6 @@
 
 :- type extra_headers_from_raw_message
     --->    extra_headers_from_raw_message(
-                replyto                 :: header_value,
                 inreplyto               :: header_value,
                 references              :: header_value,
                 postponed_metadata      :: postponed_metadata
@@ -94,7 +93,6 @@ get_extra_headers_from_raw_message(Config, MessageId, ExtraHeadersOrError,
         CallRes = ok(String),
         parse_message(String, Headers, _Body, PostponedMetadata),
         ExtraHeadersOrError = ok(extra_headers_from_raw_message(
-            Headers ^ h_replyto,
             Headers ^ h_inreplyto,
             Headers ^ h_references,
             PostponedMetadata
