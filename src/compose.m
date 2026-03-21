@@ -393,9 +393,9 @@ prepare_reply(Config, ReplyKind, OrigMessage, PartVisibilityMap, ReplyHeaders,
     ),
     Opt = backslash_quote_all,
     parse_address_list(Opt, header_value_string(OrigFrom), OrigFromList),
-    parse_address_list(Opt, header_value_string(OrigReplyTo), OrigReplyToList),
     parse_address_list(Opt, header_value_string(OrigTo), OrigToList),
     parse_address_list(Opt, header_value_string(OrigCc), OrigCcList),
+    parse_address_list(Opt, header_value_string(OrigReplyTo), OrigReplyToList),
     Recipients0 = OrigFromList ++ OrigToList ++ OrigCcList,
     get_some_matching_account(Config, Recipients0, MaybeMatchingAccount),
     (
@@ -413,43 +413,8 @@ prepare_reply(Config, ReplyKind, OrigMessage, PartVisibilityMap, ReplyHeaders,
         From = [],
         Recipients1 = Recipients0
     ),
-    (
-        ReplyKind = direct_reply,
-        ( is_self_address(Config, OrigFromList) ->
-            To = OrigToList,
-            Cc = []
-        ;
-            (
-                OrigReplyToList = [_|_],
-                To = OrigReplyToList
-            ;
-                OrigReplyToList = [],
-                To = OrigFromList
-            ),
-            Cc = []
-        )
-    ;
-        ReplyKind = group_reply,
-        ( is_self_address(Config, OrigFromList) ->
-            To = OrigToList,
-            Cc = OrigCcList
-        ;
-            (
-                OrigReplyToList = [_|_],
-                To = OrigReplyToList
-            ;
-                OrigReplyToList = [],
-                To = OrigFromList
-            ),
-            filter_address_list_by_address_list(To, Recipients1, Cc)
-        )
-    ;
-        % XXX Instead of simply copying the To field for list_reply, we might
-        % want to use some more advanced heuristics to find the list address.
-        ReplyKind = list_reply,
-        filter_address_list_by_address_list(From, OrigToList, To),
-        filter_address_list_by_address_list(From, OrigCcList, Cc)
-    ),
+    choose_to_cc(Config, ReplyKind, OrigFromList, OrigToList, OrigCcList,
+        OrigReplyToList, Recipients1, From, To, Cc),
     Subject0 = header_value_string(OrigSubject),
     ( is_reply_marker(head(string.words(Subject0))) ->
         Subject = Subject0
@@ -491,15 +456,79 @@ prepare_reply(Config, ReplyKind, OrigMessage, PartVisibilityMap, ReplyHeaders,
     list.reverse(RevLines, Lines),
     ReplyBody = unlines([Attribution | Lines]).
 
+:- pred choose_to_cc(prog_config::in, reply_kind::in, address_list::in,
+    address_list::in, address_list::in, address_list::in, address_list::in,
+    address_list::in, address_list::out, address_list::out) is det.
+
+choose_to_cc(Config, ReplyKind, OrigFromList, OrigToList, OrigCcList,
+        OrigReplyToList, Recipients1, From, To, Cc) :-
+    (
+        ReplyKind = direct_reply,
+        ( is_self_address(Config, OrigFromList) ->
+            To = OrigToList
+        ;
+            To = first_nonempty(OrigReplyToList, OrigFromList)
+        ),
+        Cc = []
+    ;
+        ReplyKind = group_reply,
+        ( is_self_address(Config, OrigFromList) ->
+            To = OrigToList,
+            Cc = OrigCcList
+        ;
+            % Send reply to the Reply-To or From address(es).
+            % Place all other recipients in the Cc header.
+            To = first_nonempty(OrigReplyToList, OrigFromList),
+            filter_address_list_by_address_list(
+                OrigReplyToList ++ OrigFromList, Recipients1, Cc)
+        )
+    ;
+        ReplyKind = list_reply,
+        ( is_self_address(Config, OrigFromList) ->
+            To = OrigToList,
+            Cc = OrigCcList
+        ;
+            % We want to send a message to the mailing list address (that we
+            % don't know), but preferably not directly to the From address of
+            % the message we are replying to (OrigFromList).
+            %
+            % We remove our own From address (as well as OrigFromList,
+            % for completeness) from the original Reply-To / To header.
+            %
+            % 1. If that produces a non-empty list, then at least one of the
+            % addresses is to a third party.
+            %
+            % 2. If the trimmed To header would be empty, then the message we
+            % are replying to was addressed to us (or the sender). Instead of
+            % leaving it empty, generate the To header as for a group reply.
+            To0 = first_nonempty(OrigReplyToList, OrigToList),
+            (
+                filter_address_list_by_address_list(From ++ OrigFromList,
+                    To0, To1),
+                To1 = [_ | _]
+            ->
+                To = To1
+            ;
+                To = first_nonempty(OrigReplyToList, OrigFromList)
+            ),
+            % Place all other recipients in the Cc header.
+            filter_address_list_by_address_list(
+                OrigReplyToList ++ OrigFromList ++ To, Recipients1, Cc)
+        )
+    ).
+
 :- pred is_self_address(prog_config::in, address_list::in) is semidet.
 
 is_self_address(Config, [Address]) :-
     get_matching_account(Config, Address, _Account).
-
 is_self_address(Config, [Address | Rest]) :-
     ( get_matching_account(Config, Address, _Account)
     ; is_self_address(Config, Rest)
     ).
+
+:- func first_nonempty(list(T), list(T)) = list(T).
+
+first_nonempty(Xs, Ys) = ( if Xs = [_ | _] then Xs else Ys ).
 
 :- pred make_attribution(header_value::in, header_value::in, string::out) is det.
 
@@ -507,16 +536,6 @@ make_attribution(Date, From, Line) :-
     string.format("On %s %s wrote:",
         [s(header_value_string(Date)), s(header_value_string(From))],
         Line).
-
-:- func decrypt_arg(bool) = string.
-
-decrypt_arg(yes) = "--decrypt=true".
-decrypt_arg(no) = "--decrypt=false".
-
-:- pred similar_mailbox(addr_spec::in, address::in) is semidet.
-
-similar_mailbox(AddrSpec, OtherAddress) :-
-    OtherAddress = mailbox(mailbox(_DisplayName, AddrSpec)).
 
 :- pred copy_tag_for_reply_or_forward(tag::in) is semidet.
 
