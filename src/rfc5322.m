@@ -87,6 +87,15 @@
 :- func word_to_string(word) = string.
 
 %-----------------------------------------------------------------------------%
+
+    % Compare addr_specs for equality, ignoring case in the ASCII range.
+    % Technically, only the domain part of an addr-spec is case-insensitive.
+    % In practice, most email systems treat the local part as case-insensitive
+    % as well.
+    %
+:- pred addr_spec_equal_ignore_case(addr_spec::in, addr_spec::in) is semidet.
+
+%-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
@@ -181,6 +190,71 @@ word_to_string(Word) = String :-
     ( Wrap = ascii(String)
     ; Wrap = unicode(String)
     ).
+
+%-----------------------------------------------------------------------------%
+
+addr_spec_equal_ignore_case(A, B) :-
+    A = addr_spec(LocalPartA, DomainA),
+    B = addr_spec(LocalPartB, DomainB),
+    local_part_equal_ignore_case(LocalPartA, LocalPartB),
+    domain_equal_ignore_case(DomainA, DomainB).
+
+:- pred local_part_equal_ignore_case(local_part::in, local_part::in) is semidet.
+
+local_part_equal_ignore_case(A, B) :-
+    require_complete_switch [A]
+    (
+        A = lpart_atom(DotAtomA),
+        B = lpart_atom(DotAtomB),
+        dot_atom_equal_ignore_case(DotAtomA, DotAtomB)
+    ;
+        A = lpart_quoted_string(QuotedStringA),
+        B = lpart_quoted_string(QuotedStringB),
+        quoted_string_equal_ignore_case(QuotedStringA, QuotedStringB)
+    ).
+
+:- pred domain_equal_ignore_case(domain::in, domain::in) is semidet.
+
+domain_equal_ignore_case(A, B) :-
+    require_complete_switch [A]
+    (
+        A = domain_name(DotAtomA),
+        B = domain_name(DotAtomB),
+        dot_atom_equal_ignore_case(DotAtomA, DotAtomB)
+    ;
+        A = domain_literal(AsciiUnicodeA),
+        B = domain_literal(AsciiUnicodeB),
+        ascii_unicode_equal_ignore_case(AsciiUnicodeA, AsciiUnicodeB)
+    ).
+
+:- pred dot_atom_equal_ignore_case(dot_atom::in, dot_atom::in) is semidet.
+
+dot_atom_equal_ignore_case(A, B) :-
+    A = dot_atom(AsciiUnicodeA),
+    B = dot_atom(AsciiUnicodeB),
+    ascii_unicode_equal_ignore_case(AsciiUnicodeA, AsciiUnicodeB).
+
+:- pred quoted_string_equal_ignore_case(quoted_string::in, quoted_string::in)
+    is semidet.
+
+quoted_string_equal_ignore_case(A, B) :-
+    A = quoted_string(AsciiUnicodeA),
+    B = quoted_string(AsciiUnicodeB),
+    ascii_unicode_equal_ignore_case(AsciiUnicodeA, AsciiUnicodeB).
+
+:- pred ascii_unicode_equal_ignore_case(ascii_unicode::in, ascii_unicode::in)
+    is semidet.
+
+ascii_unicode_equal_ignore_case(A, B) :-
+    require_complete_switch [A]
+    (
+        A = ascii(StrA),
+        B = ascii(StrB)
+    ;
+        A = unicode(StrA),
+        B = unicode(StrB)
+    ),
+    string.compare_ignore_case_ascii((=), StrA, StrB).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

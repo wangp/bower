@@ -2931,32 +2931,39 @@ filter_address_list_by_address_list([ Address | Rest ], InList, OutList) :-
 :- pred filter_address_list_by_addr_spec(addr_spec::in, list(address)::in,
     list(address)::out) is det.
 
-filter_address_list_by_addr_spec(_AddrSpec, [], []).
-filter_address_list_by_addr_spec(AddrSpec, [ Address | Rest0 ], OutList) :-
-    filter_address_list_by_addr_spec(AddrSpec, Rest0, Rest1),
+filter_address_list_by_addr_spec(_AddrSpecToMatch, [], []).
+filter_address_list_by_addr_spec(AddrSpecToMatch, [Address | Rest0], OutList) :-
+    filter_address_list_by_addr_spec(AddrSpecToMatch, Rest0, Rest1),
     (
         Address = mailbox(Mailbox),
-        ( get_addr_spec_in_mailbox(Mailbox, AddrSpec) ->
+        (
+            get_addr_spec_in_mailbox(Mailbox, AddrSpec),
+            addr_spec_equal_ignore_case(AddrSpecToMatch, AddrSpec)
+        ->
             OutList = Rest1
         ;
-            OutList = [ Address | Rest1 ]
+            OutList = [Address | Rest1]
         )
     ;
         Address = group(DisplayName, Mailboxes0),
-        filter_mailbox_list_by_addr_spec(AddrSpec, Mailboxes0, Mailboxes1),
-        OutList = [ group(DisplayName, Mailboxes1) | Rest1 ]
+        filter_mailbox_list_by_addr_spec(AddrSpecToMatch,
+            Mailboxes0, Mailboxes1),
+        OutList = [group(DisplayName, Mailboxes1) | Rest1]
     ).
 
 :- pred filter_mailbox_list_by_addr_spec(addr_spec::in, list(mailbox)::in,
     list(mailbox)::out) is det.
 
-filter_mailbox_list_by_addr_spec(_AddrSpec, [], []).
-filter_mailbox_list_by_addr_spec(AddrSpec, [ Mailbox | Rest0 ], OutList) :-
-    filter_mailbox_list_by_addr_spec(AddrSpec, Rest0, Rest1),
-    ( get_addr_spec_in_mailbox(Mailbox, AddrSpec) ->
+filter_mailbox_list_by_addr_spec(_AddrSpecToMatch, [], []).
+filter_mailbox_list_by_addr_spec(AddrSpecToMatch, [Mailbox | Rest0], OutList) :-
+    filter_mailbox_list_by_addr_spec(AddrSpecToMatch, Rest0, Rest1),
+    (
+        get_addr_spec_in_mailbox(Mailbox, AddrSpec),
+        addr_spec_equal_ignore_case(AddrSpecToMatch, AddrSpec)
+    ->
         OutList = Rest1
     ;
-        OutList = [ Mailbox | Rest1 ]
+        OutList = [Mailbox | Rest1]
     ).
 
 %-----------------------------------------------------------------------------%

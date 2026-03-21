@@ -1121,7 +1121,7 @@ match_account(Address, Account) :-
     Account ^ from_address = MailboxB,
     MailboxA = mailbox(_, AddrSpecA),
     MailboxB = mailbox(_, AddrSpecB),
-    AddrSpecA = AddrSpecB.
+    addr_spec_equal_ignore_case(AddrSpecA, AddrSpecB).
 
 get_account_name(Account, Account ^ account_name).
 
