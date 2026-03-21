@@ -413,8 +413,13 @@ prepare_reply(Config, ReplyKind, OrigMessage, PartVisibilityMap, ReplyHeaders,
         From = [],
         Recipients1 = Recipients0
     ),
+    % Ignore redundant addresses in Reply-To header. This mimics notmuch reply
+    % behaviour. The main motivation is that it makes direct replies to
+    % messages on mailing lists that munge the Reply-To header more useful.
+    filter_address_list_by_address_list(OrigToList ++ OrigCcList,
+        OrigReplyToList, OrigReplyToListNotIgnored),
     choose_to_cc(Config, ReplyKind, OrigFromList, OrigToList, OrigCcList,
-        OrigReplyToList, Recipients1, From, To, Cc),
+        OrigReplyToListNotIgnored, Recipients1, From, To, Cc),
     Subject0 = header_value_string(OrigSubject),
     ( is_reply_marker(head(string.words(Subject0))) ->
         Subject = Subject0
@@ -461,13 +466,13 @@ prepare_reply(Config, ReplyKind, OrigMessage, PartVisibilityMap, ReplyHeaders,
     address_list::in, address_list::out, address_list::out) is det.
 
 choose_to_cc(Config, ReplyKind, OrigFromList, OrigToList, OrigCcList,
-        OrigReplyToList, Recipients1, From, To, Cc) :-
+        OrigReplyToListNotIgnored, Recipients1, From, To, Cc) :-
     (
         ReplyKind = direct_reply,
         ( is_self_address(Config, OrigFromList) ->
             To = OrigToList
         ;
-            To = first_nonempty(OrigReplyToList, OrigFromList)
+            To = first_nonempty(OrigReplyToListNotIgnored, OrigFromList)
         ),
         Cc = []
     ;
@@ -478,9 +483,8 @@ choose_to_cc(Config, ReplyKind, OrigFromList, OrigToList, OrigCcList,
         ;
             % Send reply to the Reply-To or From address(es).
             % Place all other recipients in the Cc header.
-            To = first_nonempty(OrigReplyToList, OrigFromList),
-            filter_address_list_by_address_list(
-                OrigReplyToList ++ OrigFromList, Recipients1, Cc)
+            To = first_nonempty(OrigReplyToListNotIgnored, OrigFromList),
+            filter_address_list_by_address_list(To, Recipients1, Cc)
         )
     ;
         ReplyKind = list_reply,
@@ -501,7 +505,7 @@ choose_to_cc(Config, ReplyKind, OrigFromList, OrigToList, OrigCcList,
             % 2. If the trimmed To header would be empty, then the message we
             % are replying to was addressed to us (or the sender). Instead of
             % leaving it empty, generate the To header as for a group reply.
-            To0 = first_nonempty(OrigReplyToList, OrigToList),
+            To0 = first_nonempty(OrigReplyToListNotIgnored, OrigToList),
             (
                 filter_address_list_by_address_list(From ++ OrigFromList,
                     To0, To1),
@@ -509,11 +513,11 @@ choose_to_cc(Config, ReplyKind, OrigFromList, OrigToList, OrigCcList,
             ->
                 To = To1
             ;
-                To = first_nonempty(OrigReplyToList, OrigFromList)
+                To = first_nonempty(OrigReplyToListNotIgnored, OrigFromList)
             ),
             % Place all other recipients in the Cc header.
-            filter_address_list_by_address_list(
-                OrigReplyToList ++ OrigFromList ++ To, Recipients1, Cc)
+            filter_address_list_by_address_list(OrigFromList ++ To,
+                Recipients1, Cc)
         )
     ).
 
