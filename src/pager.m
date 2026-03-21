@@ -146,6 +146,7 @@
 :- import_module time.
 :- import_module version_array.
 
+:- import_module char_util.
 :- import_module copious_output.
 :- import_module fold_lines.
 :- import_module list_util.
@@ -2395,8 +2396,7 @@ suggest_part_filename(Part, MaybeSubject, Filename) :-
     MaybePartFilename = Part ^ pt_filename,
     (
         MaybePartFilename = yes(filename(Filename0)),
-        KeepSpace = yes,
-        sanitise_filename(KeepSpace, Filename0, Filename)
+        sanitise_filename(allow_more, Filename0, Filename)
     ;
         MaybePartFilename = no,
         MessageId = Part ^ pt_msgid,
@@ -2426,7 +2426,7 @@ suggest_part_filename(Part, MaybeSubject, Filename) :-
                 Filename0 = IdStr ++ ".part"
             )
         ),
-        sanitise_filename(no, Filename0, Filename1),
+        sanitise_filename(allow_less, Filename0, Filename1),
         ( infer_file_extension(PartContentType, Ext) ->
             Filename = Filename1 ++ Ext
         ;
@@ -2434,24 +2434,42 @@ suggest_part_filename(Part, MaybeSubject, Filename) :-
         )
     ).
 
-:- pred sanitise_filename(bool::in, string::in, string::out) is det.
+:- type sanitise_mode
+    --->    allow_more
+    ;       allow_less.
 
-sanitise_filename(KeepSpace, String0, String) :-
+:- pred sanitise_filename(sanitise_mode::in, string::in, string::out) is det.
+
+sanitise_filename(Mode, String0, String) :-
     string.to_char_list(String0, CharList0),
-    list.filter_map(replace_filename_char(KeepSpace), CharList0, CharList),
+    list.filter_map(sanitise_filename_char(Mode), CharList0, CharList),
     string.from_char_list(CharList, String1),
     String = strip(String1).
 
-:- pred replace_filename_char(bool::in, char::in, char::out) is semidet.
+:- pred sanitise_filename_char(sanitise_mode::in, char::in, char::out)
+    is semidet.
 
-replace_filename_char(KeepSpace, C0, C) :-
+sanitise_filename_char(Mode, C0, C) :-
+    is_printable(C0),
+    (
+        Mode = allow_less,
+        char.is_ascii(C0)
+    ->
+        restrict_ascii_char(C0, C)
+    ;
+        % For now, accept all non-ASCII.
+        % XXX we might want to at least reject C1 control chars
+        C = C0
+    ).
+
+:- pred restrict_ascii_char(char::in, char::out) is semidet.
+
+restrict_ascii_char(C0, C) :-
     (
         ( char.is_alnum_or_underscore(C0)
-        ; C0 = (' '), KeepSpace = yes
         ; C0 = ('+')
         ; C0 = ('-')
         ; C0 = ('.')
-        ; char.to_int(C0) >= 0x80
         )
     ->
         C = C0
