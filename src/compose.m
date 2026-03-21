@@ -340,42 +340,41 @@ prepare_reply(Config, ReplyKind, OrigMessage, PartVisibilityMap, ReplyHeaders,
     OrigMessageHeaders = headers(OrigDate, OrigFrom, OrigTo, OrigCc, _OrigBcc,
         OrigSubject, OrigReplyTo, _OrigInReplyTo, OrigReferences0,
         _OrigHRest),
-    %
-    % XXX notmuch show does not include the References header by default. This
-    % can be fixed by using the following setting in notmuch's config file:
-    %
-    %     [show]
-    %     extra_headers=References
-    %
-    % However, we do not know if a user has included this option. Therefore,
-    % we will fall back on parsing the raw message if this option is not set.
-    % Note that parsing raw messages should be considered a legacy method
-    % that can be expected to break for encrypted messages in the near future
-    % (due to RFC 9788). In an ideal world, we could simply tell notmuch
-    % that we always need these headers -- at the time of invocation; without
-    % requiring any specific settings by the user. E.g. by passing a command
-    % line option like '--extra-headers=References,X-Bower-Metadata'. I do
-    % hope that such an option will be added to notmuch in the future, so
-    % that we can completely drop this legacy method at some point. In the
-    % meantime, however, it does seems necessary to include it here.
-    %
-    get_extra_headers_from_raw_message(Config, OrigMessageId,
-        ExtraHeadersOrError, !IO),
-    (
-        ExtraHeadersOrError = ok(ExtraHeaders),
-        ExtraHeaders = extra_headers_from_raw_message(_ExtraInReplyTo,
-            ExtraReferences, _ExtraPostponedMetadata),
-        ( is_empty_header_value(OrigReferences0) ->
-            OrigReferences = ExtraReferences
+    ( is_empty_header_value(OrigReferences0) ->
+        % XXX notmuch show does not include the References header by default.
+        % This can be fixed by using the following setting in notmuch's config
+        % file:
+        %
+        %     [show]
+        %     extra_headers=References
+        %
+        % However, we do not know if a user has included this option.
+        % Therefore, we will fall back on parsing the raw message if this
+        % option is not set. Note that parsing raw messages should be
+        % considered a legacy method that can be expected to break for
+        % encrypted messages in the near future (due to RFC 9788).
+        % In an ideal world, we could simply tell notmuch that we always need
+        % these headers -- at the time of invocation; without requiring any
+        % specific settings by the user. E.g. by passing a command line option
+        % like '--extra-headers=References,X-Bower-Metadata'.
+        % I do hope that such an option will be added to notmuch in the future,
+        % so that we can completely drop this legacy method at some point.
+        % In the meantime, however, it does seems necessary to include it here.
+        %
+        get_extra_headers_from_raw_message(Config, OrigMessageId,
+            ExtraHeadersOrError, !IO),
+        (
+            ExtraHeadersOrError = ok(ExtraHeaders),
+            OrigReferences = ExtraHeaders ^ references
         ;
+            % XXX We should probably not fail silently here. On the other
+            % hand, retrieving headers from the raw message is an error-prone
+            % legacy method anyway and it is only used as a fallback in case
+            % these headers are not included in notmuch's json output.
+            ExtraHeadersOrError = error(_),
             OrigReferences = OrigReferences0
         )
     ;
-        % XXX We should probably not fail silently here. On the other
-        % hand, retrieving headers from the raw message is an error-prone
-        % legacy method anyway and it is only used as a fallback in case
-        % these headers are not included in notmuch's json output.
-        ExtraHeadersOrError = error(_),
         OrigReferences = OrigReferences0
     ),
     Opt = backslash_quote_all,
