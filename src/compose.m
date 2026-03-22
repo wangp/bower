@@ -391,7 +391,7 @@ prepare_reply(Config, ReplyKind, OrigMessage, PartVisibilityMap, ReplyHeaders,
     (
         MaybeMatchingAccount = yes(Account),
         get_from_address(Account, FromMailbox),
-        From = [ mailbox(FromMailbox) ],
+        From = [mailbox(FromMailbox)],
         ( get_addr_spec_in_mailbox(FromMailbox, FromAddrSpec) ->
             filter_address_list_by_addr_spec(FromAddrSpec, Recipients0,
                 Recipients1)
@@ -635,9 +635,15 @@ continue_from_message(Config, Crypto, Screen, ContinueBase, Message,
         some [!Headers] (
             !:Headers = Headers0,
             ( is_empty_header_value(!.Headers ^ h_inreplyto) ->
-                !Headers ^ h_inreplyto := InReplyTo; true ),
+                !Headers ^ h_inreplyto := InReplyTo
+            ;
+                true
+            ),
             ( is_empty_header_value(!.Headers ^ h_references) ->
-                !Headers ^ h_references := References; true ),
+                !Headers ^ h_references := References
+            ;
+                true
+            ),
             (
                 ContinueBase = postponed_message,
                 (
