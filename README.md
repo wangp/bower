@@ -113,11 +113,14 @@ where to place draft and sent messages.  The defaults are given here:
     drafts_folder = Drafts
     sent_folder = Sent
 
-It is recommended that your `.notmuch-config` file contains at least
-these search exclusions:
+It is recommended to add these configuration keys to your `.notmuch-config`
+file, with at least these values:
 
     [search]
     exclude_tags=deleted;draft
+
+    [show]
+    extra_headers=In-Reply-To;References;X-Bower-Metadata;
 
 
 Usage
