@@ -88,6 +88,8 @@
 
 %-----------------------------------------------------------------------------%
 
+:- pred is_empty_group(address::in) is semidet.
+
     % Compare addr_specs for equality, ignoring case in the ASCII range.
     % Technically, only the domain part of an addr-spec is case-insensitive.
     % In practice, most email systems treat the local part as case-insensitive
@@ -189,6 +191,18 @@ word_to_string(Word) = String :-
     ),
     ( Wrap = ascii(String)
     ; Wrap = unicode(String)
+    ).
+
+%-----------------------------------------------------------------------------%
+
+is_empty_group(Address) :-
+    require_complete_switch [Address]
+    (
+        Address = mailbox(_),
+        fail
+    ;
+        Address = group(_DisplayName, Mailboxes),
+        Mailboxes = []
     ).
 
 %-----------------------------------------------------------------------------%

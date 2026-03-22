@@ -392,10 +392,14 @@ prepare_reply(Config, ReplyKind, OrigMessage, PartVisibilityMap, ReplyHeaders,
         OrigReferences = OrigReferences0
     ),
     Opt = backslash_quote_all,
-    parse_address_list(Opt, header_value_string(OrigFrom), OrigFromList),
-    parse_address_list(Opt, header_value_string(OrigTo), OrigToList),
-    parse_address_list(Opt, header_value_string(OrigCc), OrigCcList),
-    parse_address_list(Opt, header_value_string(OrigReplyTo), OrigReplyToList),
+    parse_address_list(Opt, header_value_string(OrigFrom), OrigFromList0),
+    parse_address_list(Opt, header_value_string(OrigTo), OrigToList0),
+    parse_address_list(Opt, header_value_string(OrigCc), OrigCcList0),
+    parse_address_list(Opt, header_value_string(OrigReplyTo), OrigReplyToList0),
+    drop_empty_groups(OrigFromList0, OrigFromList),
+    drop_empty_groups(OrigToList0, OrigToList),
+    drop_empty_groups(OrigCcList0, OrigCcList),
+    drop_empty_groups(OrigReplyToList0, OrigReplyToList),
     Recipients0 = OrigFromList ++ OrigToList ++ OrigCcList,
     get_some_matching_account(Config, Recipients0, MaybeMatchingAccount),
     (
@@ -460,6 +464,11 @@ prepare_reply(Config, ReplyKind, OrigMessage, PartVisibilityMap, ReplyHeaders,
         [], RevLines, !IO),
     list.reverse(RevLines, Lines),
     ReplyBody = unlines([Attribution | Lines]).
+
+:- pred drop_empty_groups(address_list::in, address_list::out) is det.
+
+drop_empty_groups(Addresses0, Addresses) :-
+    negated_filter(is_empty_group, Addresses0, Addresses).
 
 :- pred choose_to_cc(prog_config::in, reply_kind::in, address_list::in,
     address_list::in, address_list::in, address_list::in, address_list::in,
@@ -2915,7 +2924,7 @@ get_addr_spec_in_mailbox(Mailbox, AddrSpec) :-
     list(address)::in, list(address)::out) is det.
 
 filter_address_list_by_address_list([], InList, InList).
-filter_address_list_by_address_list([ Address | Rest ], InList, OutList) :-
+filter_address_list_by_address_list([Address | Rest], InList, OutList) :-
     (
         % XXX If Address contains more than one AddrSpec (e.g. because it
         % is a group) get_addr_spec will miss all but the first AddrSpec.
