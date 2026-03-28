@@ -57,8 +57,6 @@
 :- pred parse_address_count_list(json::in, list(pair(int, string))::out)
     is det.
 
-:- pred parse_reply(json::in, reply_headers::out) is det.
-
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -783,50 +781,6 @@ parse_address_count(Json, Result) :-
     ;
         exception.throw(notmuch_json_error("parse_address_count"))
     ).
-
-%-----------------------------------------------------------------------------%
-
-    % notmuch/devel/schemata: reply
-    %
-parse_reply(Json, Res) :-
-    (
-        Json/"reply-headers" = ReplyHeadersJson,
-        parse_reply_headers(ReplyHeadersJson, ReplyHeaders)
-        % original: message
-    ->
-        Res = ReplyHeaders
-    ;
-        exception.throw(notmuch_json_error(
-            "parse_reply expected reply-headers"))
-    ).
-
-:- pred parse_reply_headers(json::in, reply_headers::out) is semidet.
-
-parse_reply_headers(Json, ReplyHeaders) :-
-    Json/"Subject" = unesc_string(Subject),
-    Json/"From" = unesc_string(From),
-    ( Json/"To" = ToJson ->
-        ToJson = string(ToEscStr),
-        MaybeTo = yes(unescape(ToEscStr))
-    ;
-        MaybeTo = no
-    ),
-    ( Json/"Cc" = CcJson ->
-        CcJson = string(CcEscStr),
-        MaybeCc = yes(unescape(CcEscStr))
-    ;
-        MaybeCc = no
-    ),
-    ( Json/"Bcc" = BccJson ->
-        BccJson = string(BccEscStr),
-        MaybeBcc = yes(unescape(BccEscStr))
-    ;
-        MaybeBcc = no
-    ),
-    Json/"In-reply-to" = unesc_string(InReplyTo),
-    Json/"References" = unesc_string(References),
-    ReplyHeaders = reply_headers(Subject, From, MaybeTo, MaybeCc, MaybeBcc,
-        InReplyTo, References).
 
 %-----------------------------------------------------------------------------%
 
