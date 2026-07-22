@@ -4,7 +4,12 @@
 :- module compose.crypto.
 :- interface.
 
+:- import_module list.
+:- import_module map.
 :- import_module pair.
+
+:- import_module gpgme.
+:- import_module write_message.
 
 :- type crypto_info
     --->    crypto_info(
